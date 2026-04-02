@@ -639,17 +639,42 @@ function buildDimensions({
   const answerLengthRatio = Math.min(user_answer_text.length / Math.max(expected_answer_text.length, 1), 1);
   const lexicalSimilarity = overlapRatio(userTokens, userTokens.length > expectedTokens.length ? userTokens : expectedTokens);
   const detectedCoreConcepts = detectCoreConcepts({ user_answer_text, expected_answer_text, subject });
+  const typoHeavyNearMiss =
+    keywordCoverageSignals.fuzzyMatchRate >= 0.1 &&
+    answerLengthRatio >= 0.55 &&
+    keywordCoverage >= KEYWORD_COVERAGE_DISTRIBUTION.FAIL.p75;
 
   let core_idea = toDiscreteScore(keywordCoverage, 'core_idea');
   if (isSemanticCoreIdeaRescueEnabled() && core_idea < 0.5 && detectedCoreConcepts.matched) {
     core_idea = 0.5;
   }
+  if (
+    core_idea === 0 &&
+    typoHeavyNearMiss &&
+    keywordCoverage >= DIMENSION_THRESHOLDS.core_idea.mid - 0.08
+  ) {
+    core_idea = 0.5;
+  }
 
-  const conceptual_accuracy = toDiscreteScore(
-    keywordCoverage * 0.8 + answerLengthRatio * 0.2,
-    'conceptual_accuracy'
-  );
-  const completeness = toDiscreteScore(keywordCoverage * 0.7 + answerLengthRatio * 0.3, 'completeness');
+  const conceptualAccuracySignal = keywordCoverage * 0.8 + answerLengthRatio * 0.2;
+  let conceptual_accuracy = toDiscreteScore(conceptualAccuracySignal, 'conceptual_accuracy');
+  if (
+    conceptual_accuracy === 0 &&
+    typoHeavyNearMiss &&
+    conceptualAccuracySignal >= DIMENSION_THRESHOLDS.conceptual_accuracy.mid - 0.08
+  ) {
+    conceptual_accuracy = 0.5;
+  }
+
+  const completenessSignal = keywordCoverage * 0.7 + answerLengthRatio * 0.3;
+  let completeness = toDiscreteScore(completenessSignal, 'completeness');
+  if (
+    completeness === 0 &&
+    typoHeavyNearMiss &&
+    completenessSignal >= DIMENSION_THRESHOLDS.completeness.mid - 0.08
+  ) {
+    completeness = 0.5;
+  }
 
   let memorization_risk = 1.0;
 
