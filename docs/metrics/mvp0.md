@@ -183,3 +183,24 @@ Propuesta de criterio de validación (durante 2 semanas consecutivas y al menos 
    - `p95_seconds <= 240`
 
 Si se incumple 1 semana aislada no bloquea; si se incumplen 2 semanas consecutivas, el MVP0 se considera **no validado** y requiere ajuste de rúbrica/UX antes de escalar.
+
+## 6) Auditoría de variantes de `overall_score` vs corrector humano
+
+Para comparar impacto entre:
+
+- `include_memorization` (suma `memorization_risk`)
+- `subtract_memorization` (resta `memorization_risk`, sensibilidad)
+- `core_only_experimental` (solo `core_idea`, `conceptual_accuracy`, `completeness`)
+
+usar:
+
+```bash
+cd backend
+npm run audit:overall-variants
+```
+
+El script cruza `evaluation_signals` con la última decisión humana (`user_decisions`) y reporta:
+
+- `agreement_rate_pct`: acuerdo contra `final_grade` humano (threshold de PASS en `overall_score >= 0.5`)
+- `false_fail_rate_pct`: casos donde la variante predice `FAIL` y humano marcó `PASS`
+- `deltas_vs_include_memorization`: diferencia porcentual contra baseline actual

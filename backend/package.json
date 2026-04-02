@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
-    "test": "node --test src/services/__tests__/scoring.test.js"
+    "test": "node --test src/services/__tests__/scoring.test.js",
+    "audit:overall-variants": "node scripts/compare-overall-variants.js"
   },
   "dependencies": {
     "dotenv": "^16.6.1",

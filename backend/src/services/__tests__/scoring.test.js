@@ -13,6 +13,7 @@ const payload = {
 
 async function loadScoringModule(flagEnabled) {
   process.env.ENABLE_SEMANTIC_CORE_IDEA_RESCUE = flagEnabled ? 'true' : 'false';
+  process.env.ENABLE_EXPERIMENTAL_OVERALL_CORE_ONLY = 'false';
   const modulePath = `../scoring.js?flag=${flagEnabled ? 'on' : 'off'}-${Date.now()}-${Math.random()}`;
   return import(modulePath);
 }
@@ -105,4 +106,27 @@ test('sugiere REVIEW cuando falla solo una dimensión crítica por margen peque�
   assert.equal(result.dimensions.conceptual_accuracy, 0.5);
   assert.ok(result.dimensions.completeness >= 0.5);
   assert.equal(result.suggested_grade, 'REVIEW');
+});
+
+test('expone variantes de overall y permite modo experimental core-only', async () => {
+  process.env.ENABLE_SEMANTIC_CORE_IDEA_RESCUE = 'true';
+  process.env.ENABLE_EXPERIMENTAL_OVERALL_CORE_ONLY = 'false';
+  const moduleBase = await import(`../scoring.js?overall=base-${Date.now()}-${Math.random()}`);
+  const baseResult = moduleBase.scoreEvaluation(payload);
+  const baseVariants = baseResult.signals.overallScoreVariants;
+
+  assert.equal(baseResult.overall_score, baseVariants.include_memorization);
+  assert.ok(typeof baseResult.justification_short === 'string');
+  assert.ok(baseResult.justification_short.includes('Señal memorization_risk'));
+  assert.ok(baseVariants.subtract_memorization <= baseVariants.include_memorization);
+  assert.ok(baseVariants.core_only_experimental >= 0.0 && baseVariants.core_only_experimental <= 1.0);
+
+  process.env.ENABLE_EXPERIMENTAL_OVERALL_CORE_ONLY = 'true';
+  const moduleExperimental = await import(`../scoring.js?overall=exp-${Date.now()}-${Math.random()}`);
+  const experimentalResult = moduleExperimental.scoreEvaluation(payload);
+
+  assert.equal(
+    experimentalResult.overall_score,
+    experimentalResult.signals.overallScoreVariants.core_only_experimental
+  );
 });

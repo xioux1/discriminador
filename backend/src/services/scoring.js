@@ -1,4 +1,7 @@
-import { isSemanticCoreIdeaRescueEnabled } from '../config/env.js';
+import {
+  isExperimentalOverallCoreOnlyEnabled,
+  isSemanticCoreIdeaRescueEnabled
+} from '../config/env.js';
 
 const ALLOWED_SCORES = [0.0, 0.5, 1.0];
 
@@ -8,6 +11,8 @@ const OVERALL_WEIGHTS = {
   completeness: 0.25,
   memorization_risk: 0.1
 };
+const CORE_DIMENSION_WEIGHT_SUM =
+  OVERALL_WEIGHTS.core_idea + OVERALL_WEIGHTS.conceptual_accuracy + OVERALL_WEIGHTS.completeness;
 
 const CONFIDENCE_BASE = 0.55;
 
@@ -309,7 +314,7 @@ function computeSuggestedGrade(dimensions) {
   return 'FAIL';
 }
 
-function computeOverallScore(dimensions) {
+function computeOverallScoreIncludingMemorization(dimensions) {
   const weightedScore =
     dimensions.core_idea * OVERALL_WEIGHTS.core_idea +
     dimensions.conceptual_accuracy * OVERALL_WEIGHTS.conceptual_accuracy +
@@ -317,6 +322,33 @@ function computeOverallScore(dimensions) {
     dimensions.memorization_risk * OVERALL_WEIGHTS.memorization_risk;
 
   return Number(weightedScore.toFixed(2));
+}
+
+function computeOverallScoreSubtractingMemorization(dimensions) {
+  const weightedScore =
+    dimensions.core_idea * OVERALL_WEIGHTS.core_idea +
+    dimensions.conceptual_accuracy * OVERALL_WEIGHTS.conceptual_accuracy +
+    dimensions.completeness * OVERALL_WEIGHTS.completeness -
+    dimensions.memorization_risk * OVERALL_WEIGHTS.memorization_risk;
+
+  return Number(clamp(weightedScore, 0, 1).toFixed(2));
+}
+
+function computeOverallScoreCoreOnly(dimensions) {
+  const weightedCoreScore =
+    dimensions.core_idea * OVERALL_WEIGHTS.core_idea +
+    dimensions.conceptual_accuracy * OVERALL_WEIGHTS.conceptual_accuracy +
+    dimensions.completeness * OVERALL_WEIGHTS.completeness;
+
+  return Number((weightedCoreScore / CORE_DIMENSION_WEIGHT_SUM).toFixed(2));
+}
+
+export function computeOverallScoreVariants(dimensions) {
+  return {
+    include_memorization: computeOverallScoreIncludingMemorization(dimensions),
+    subtract_memorization: computeOverallScoreSubtractingMemorization(dimensions),
+    core_only_experimental: computeOverallScoreCoreOnly(dimensions)
+  };
 }
 
 function computeModelConfidence(dimensions) {
@@ -374,7 +406,14 @@ function gapText(dimensions) {
 }
 
 function buildJustification(dimensions) {
-  return `Fortaleza: ${strengthText(dimensions)}. Brecha: ${gapText(dimensions)}.`;
+  const memorizationSignal =
+    dimensions.memorization_risk === 0.0
+      ? 'alta dependencia de formulación textual del back'
+      : dimensions.memorization_risk === 0.5
+        ? 'riesgo intermedio de respuesta memorizada'
+        : 'bajo riesgo de memorización literal';
+
+  return `Fortaleza: ${strengthText(dimensions)}. Brecha: ${gapText(dimensions)}. Señal memorization_risk: ${memorizationSignal}.`;
 }
 
 export function getScoringCalibrationSnapshot() {
@@ -400,9 +439,13 @@ export function scoreEvaluation(payload) {
   }
 
   const suggestedGrade = computeSuggestedGrade(dimensions);
+  const overallScoreVariants = computeOverallScoreVariants(dimensions);
+  const overallScore = isExperimentalOverallCoreOnlyEnabled()
+    ? overallScoreVariants.core_only_experimental
+    : overallScoreVariants.include_memorization;
   const result = {
     suggested_grade: suggestedGrade,
-    overall_score: computeOverallScore(dimensions),
+    overall_score: overallScore,
     dimensions,
     justification_short: buildJustification(dimensions),
     model_confidence: computeModelConfidence(dimensions),
@@ -410,7 +453,8 @@ export function scoreEvaluation(payload) {
       keywordCoverage,
       answerLengthRatio,
       lexicalSimilarity,
-      detectedCoreConcepts
+      detectedCoreConcepts,
+      overallScoreVariants
     }
   };
 
