@@ -140,3 +140,29 @@ test('mantiene doble ruta legacy/v2 disponible para evaluación offline', async 
   assert.equal(comparison.selected_variant, 'v2');
   assert.deepEqual(Object.keys(comparison.legacy.dimensions), Object.keys(comparison.preprocessed.dimensions));
 });
+
+test('v2 tolera errores ortográficos leves para sostener cobertura de keywords', async () => {
+  process.env.ENABLE_SEMANTIC_CORE_IDEA_RESCUE = 'true';
+  process.env.ENABLE_EXPERIMENTAL_OVERALL_CORE_ONLY = 'false';
+
+  process.env.ENABLE_PREPROCESSING_V2 = 'false';
+  const moduleLegacy = await import(`../scoring.js?typo=legacy-${Date.now()}-${Math.random()}`);
+
+  process.env.ENABLE_PREPROCESSING_V2 = 'true';
+  const moduleV2 = await import(`../scoring.js?typo=v2-${Date.now()}-${Math.random()}`);
+
+  const typoPayload = {
+    evaluation_id: 'eval-typo-tolerance',
+    prompt_text: 'Describe una estrategia de equipo',
+    subject: 'General',
+    expected_answer_text:
+      'la comunicación constante mejora la colaboración del equipo y reduce conflictos',
+    user_answer_text:
+      'la comunicacion constnte mejora la colaboracion del equipo y reduce conflicots'
+  };
+
+  const legacyResult = moduleLegacy.scoreEvaluation(typoPayload);
+  const v2Result = moduleV2.scoreEvaluation(typoPayload);
+
+  assert.ok(v2Result.signals.keywordCoverage >= legacyResult.signals.keywordCoverage);
+});

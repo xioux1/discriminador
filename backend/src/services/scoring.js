@@ -83,6 +83,12 @@ function normalizeTextV2(text) {
     .trim();
 }
 
+function foldAccents(text) {
+  return String(text || '')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '');
+}
+
 function tokenizeV2(text) {
   return normalizeTextV2(text)
     .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, ' ')
@@ -96,6 +102,7 @@ function tokenizeV2(text) {
 
 function lemmatizeToken(token) {
   if (!token) return token;
+  const foldedToken = foldAccents(token);
 
   const irregular = {
     datos: 'dato',
@@ -104,11 +111,11 @@ function lemmatizeToken(token) {
     distribuciones: 'distribucion'
   };
 
-  if (irregular[token]) return irregular[token];
-  if (token.length > 5 && token.endsWith('ciones')) return `${token.slice(0, -6)}cion`;
-  if (token.length > 5 && token.endsWith('es')) return token.slice(0, -2);
-  if (token.length > 4 && token.endsWith('s')) return token.slice(0, -1);
-  return token;
+  if (irregular[foldedToken]) return irregular[foldedToken];
+  if (foldedToken.length > 5 && foldedToken.endsWith('ciones')) return `${foldedToken.slice(0, -6)}cion`;
+  if (foldedToken.length > 5 && foldedToken.endsWith('es')) return foldedToken.slice(0, -2);
+  if (foldedToken.length > 4 && foldedToken.endsWith('s')) return foldedToken.slice(0, -1);
+  return foldedToken;
 }
 
 function lemmatizeTokens(tokens) {
@@ -213,9 +220,52 @@ function toDiscreteScore(value, dimension = 'core_idea') {
   return 0.0;
 }
 
-function overlapRatio(sourceTokens, targetTokens) {
-  const sourceSet = new Set(sourceTokens);
-  const targetSet = new Set(targetTokens);
+function canonicalToken(token) {
+  return foldAccents(String(token || '').toLowerCase()).replace(/[^a-z0-9]/g, '');
+}
+
+function boundedLevenshteinDistance(a, b, maxDistance = 1) {
+  if (a === b) return 0;
+  if (!a || !b) return Math.max(a.length, b.length);
+  if (Math.abs(a.length - b.length) > maxDistance) return maxDistance + 1;
+
+  let previous = new Array(b.length + 1);
+  let current = new Array(b.length + 1);
+
+  for (let j = 0; j <= b.length; j += 1) {
+    previous[j] = j;
+  }
+
+  for (let i = 1; i <= a.length; i += 1) {
+    current[0] = i;
+    let minInRow = current[0];
+
+    for (let j = 1; j <= b.length; j += 1) {
+      const substitutionCost = a[i - 1] === b[j - 1] ? 0 : 1;
+      const value = Math.min(
+        previous[j] + 1,
+        current[j - 1] + 1,
+        previous[j - 1] + substitutionCost
+      );
+      current[j] = value;
+      if (value < minInRow) minInRow = value;
+    }
+
+    if (minInRow > maxDistance) {
+      return maxDistance + 1;
+    }
+
+    [previous, current] = [current, previous];
+  }
+
+  return previous[b.length];
+}
+
+function overlapRatio(sourceTokens, targetTokens, options = {}) {
+  const sourceCanonical = sourceTokens.map((token) => canonicalToken(token)).filter(Boolean);
+  const targetCanonical = targetTokens.map((token) => canonicalToken(token)).filter(Boolean);
+  const sourceSet = new Set(sourceCanonical);
+  const targetSet = new Set(targetCanonical);
 
   if (targetSet.size === 0) {
     return 0;
@@ -226,6 +276,18 @@ function overlapRatio(sourceTokens, targetTokens) {
   for (const token of targetSet) {
     if (sourceSet.has(token)) {
       intersection += 1;
+      continue;
+    }
+
+    if (options.enableTypoTolerance && token.length >= 5) {
+      const hasCloseMatch = sourceCanonical.some(
+        (sourceToken) =>
+          sourceToken.length >= 5 && boundedLevenshteinDistance(sourceToken, token, 1) <= 1
+      );
+
+      if (hasCloseMatch) {
+        intersection += 1;
+      }
     }
   }
 
@@ -320,10 +382,19 @@ function buildDimensions({
 }) {
   const userTokens = preprocessingOutput.user.lemmas;
   const expectedTokens = preprocessingOutput.expected.lemmas;
+  const typoToleranceEnabled = preprocessingOutput.variant === 'v2';
 
-  const keywordCoverage = overlapRatio(userTokens, expectedTokens);
+  const keywordCoverage = overlapRatio(userTokens, expectedTokens, {
+    enableTypoTolerance: typoToleranceEnabled
+  });
   const answerLengthRatio = Math.min(user_answer_text.length / Math.max(expected_answer_text.length, 1), 1);
-  const lexicalSimilarity = overlapRatio(userTokens, userTokens.length > expectedTokens.length ? userTokens : expectedTokens);
+  const lexicalSimilarity = overlapRatio(
+    userTokens,
+    userTokens.length > expectedTokens.length ? userTokens : expectedTokens,
+    {
+      enableTypoTolerance: typoToleranceEnabled
+    }
+  );
   const detectedCoreConcepts = detectCoreConcepts({ user_answer_text, expected_answer_text, subject });
 
   let core_idea = toDiscreteScore(keywordCoverage, 'core_idea');
