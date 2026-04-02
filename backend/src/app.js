@@ -10,8 +10,14 @@ export function createApp() {
   app.use((err, req, res, next) => {
     if (err instanceof SyntaxError && 'body' in err) {
       return res.status(400).json({
-        error: 'Request Error',
-        message: 'Invalid JSON payload.'
+        error: 'bad_request',
+        message: 'Invalid JSON payload or unsupported Content-Type.',
+        details: [
+          {
+            field: 'body',
+            issue: 'Malformed JSON'
+          }
+        ]
       });
     }
 
