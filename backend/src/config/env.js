@@ -32,12 +32,17 @@ export function isExperimentalOverallCoreOnlyEnabled() {
   return parseBoolean(process.env.ENABLE_EXPERIMENTAL_OVERALL_CORE_ONLY, false);
 }
 
+export function isPreprocessingV2Enabled() {
+  return parseBoolean(process.env.ENABLE_PREPROCESSING_V2, false);
+}
+
 export const env = {
   host: process.env.HOST || DEFAULT_HOST,
   port: parsePort(process.env.PORT),
   databaseUrl: process.env.DATABASE_URL || '',
   enableSemanticCoreIdeaRescue: isSemanticCoreIdeaRescueEnabled(),
-  enableExperimentalOverallCoreOnly: isExperimentalOverallCoreOnlyEnabled()
+  enableExperimentalOverallCoreOnly: isExperimentalOverallCoreOnlyEnabled(),
+  enablePreprocessingV2: isPreprocessingV2Enabled()
 };
 
 export function assertRequiredEnv() {
