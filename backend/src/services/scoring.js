@@ -639,7 +639,16 @@ function buildDimensions({
   const answerLengthRatio = Math.min(user_answer_text.length / Math.max(expected_answer_text.length, 1), 1);
   const shortAnswerThreshold = 0.5;
   const normalizedLengthAdequacy = Math.min(answerLengthRatio, shortAnswerThreshold) / shortAnswerThreshold;
-  const lexicalSimilarity = overlapRatio(userTokens, userTokens.length > expectedTokens.length ? userTokens : expectedTokens);
+  // completeness requires more content coverage than conceptual_accuracy
+  const completenessLengthThreshold = 0.65;
+  const completenessLengthAdequacy = Math.min(answerLengthRatio, completenessLengthThreshold) / completenessLengthThreshold;
+  // |A ∩ B| / max(|A|, |B|) — avoids self-comparison when user answer is longer than expected
+  const userTokenSet = new Set(userTokens);
+  const expectedTokenSet = new Set(expectedTokens);
+  const maxSetSize = Math.max(userTokenSet.size, expectedTokenSet.size);
+  const lexicalSimilarity = maxSetSize > 0
+    ? [...userTokenSet].filter((t) => expectedTokenSet.has(t)).length / maxSetSize
+    : 0;
   const detectedCoreConcepts = detectCoreConcepts({ user_answer_text, expected_answer_text, subject });
   const typoHeavyNearMiss =
     keywordCoverageSignals.fuzzyMatchRate >= 0.1 &&
@@ -668,7 +677,7 @@ function buildDimensions({
     conceptual_accuracy = 0.5;
   }
 
-  const completenessSignal = keywordCoverage * 0.7 + normalizedLengthAdequacy * 0.3;
+  const completenessSignal = keywordCoverage * 0.7 + completenessLengthAdequacy * 0.3;
   let completeness = toDiscreteScore(completenessSignal, 'completeness');
   if (
     completeness === 0 &&
@@ -745,6 +754,11 @@ function computeSuggestedGrade(dimensions) {
   const pass = failingCriticalDimensions.length === 0;
 
   if (pass) {
+    // Downgrade to REVIEW when high memorization risk is detected:
+    // the evaluated may have copied the expected answer verbatim rather than demonstrating knowledge.
+    if (dimensions.memorization_risk === 0.0) {
+      return 'REVIEW';
+    }
     return 'PASS';
   }
 
@@ -770,11 +784,14 @@ function computeOverallScoreIncludingMemorization(dimensions) {
 }
 
 function computeOverallScoreSubtractingMemorization(dimensions) {
+  // memorization_risk=0.0 means high memorization, 1.0 means original answer.
+  // To penalize high memorization we subtract (1 - memorization_risk), not memorization_risk itself.
+  const memorization_penalty = 1.0 - dimensions.memorization_risk;
   const weightedScore =
     dimensions.core_idea * OVERALL_WEIGHTS.core_idea +
     dimensions.conceptual_accuracy * OVERALL_WEIGHTS.conceptual_accuracy +
     dimensions.completeness * OVERALL_WEIGHTS.completeness -
-    dimensions.memorization_risk * OVERALL_WEIGHTS.memorization_risk;
+    memorization_penalty * OVERALL_WEIGHTS.memorization_risk;
 
   return Number(clamp(weightedScore, 0, 1).toFixed(2));
 }
@@ -796,7 +813,7 @@ export function computeOverallScoreVariants(dimensions) {
   };
 }
 
-function computeModelConfidence(dimensions) {
+function computeModelConfidence(dimensions, { detectedCoreConcepts, fuzzyMatchRate, subject } = {}) {
   let confidence = CONFIDENCE_BASE;
 
   if (dimensions.core_idea === dimensions.conceptual_accuracy) {
@@ -813,6 +830,20 @@ function computeModelConfidence(dimensions) {
 
   if (dimensions.memorization_risk === 0.0) {
     confidence -= 0.1;
+  }
+
+  // Lower confidence when no semantic concept map is available for the subject:
+  // scoring is purely lexical and cannot validate conceptual paraphrases.
+  const normalizedSubject = (subject || '').toLowerCase();
+  if (normalizedSubject && !CORE_CONCEPT_SYNONYMS[normalizedSubject]) {
+    confidence -= 0.05;
+  }
+
+  // Lower confidence when most matched tokens came from fuzzy matching:
+  // high fuzzy match rate means the signal is based on approximate token similarity,
+  // which is less reliable than exact keyword overlap.
+  if (typeof fuzzyMatchRate === 'number' && fuzzyMatchRate >= 0.5) {
+    confidence -= 0.05;
   }
 
   return Number(clamp(confidence, 0.0, 1.0).toFixed(2));
@@ -892,18 +923,26 @@ export function scoreEvaluation(payload) {
   const overallScore = isExperimentalOverallCoreOnlyEnabled()
     ? overallScoreVariants.core_only_experimental
     : overallScoreVariants.include_memorization;
+  // semanticRescueAvailable signals whether this subject has a concept synonym map.
+  // When false, keyword coverage is the only signal and conceptual paraphrases may be missed.
+  const semanticRescueAvailable = Boolean(CORE_CONCEPT_SYNONYMS[(payload.subject || '').toLowerCase()]);
   const result = {
     suggested_grade: suggestedGrade,
     overall_score: overallScore,
     dimensions,
     justification_short: buildJustification(dimensions),
-    model_confidence: computeModelConfidence(dimensions),
+    model_confidence: computeModelConfidence(dimensions, {
+      detectedCoreConcepts,
+      fuzzyMatchRate,
+      subject: payload.subject
+    }),
     signals: {
       keywordCoverage,
       fuzzyMatchRate,
       answerLengthRatio,
       lexicalSimilarity,
       detectedCoreConcepts,
+      semanticRescueAvailable,
       replacements,
       overallScoreVariants
     }
