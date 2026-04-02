@@ -73,6 +73,7 @@ decisionRouter.post('/decision', async (req, res) => {
   const suggestedGrade = normalizeString(evaluationResult?.suggested_grade).toLowerCase();
   const finalGrade = resolveFinalGrade(action, req.body.final_grade, suggestedGrade);
   const acceptedSuggestion = req.body.accepted_suggestion;
+  const evaluationId = normalizeString(req.body.evaluation_id);
 
   const validationErrors = [];
 
@@ -141,7 +142,7 @@ decisionRouter.post('/decision', async (req, res) => {
   const inputExpectedAnswer = normalizeString(req.body.expected_answer_text);
   const inputSubject = normalizeString(req.body.subject);
 
-  if (!inputPrompt || !inputUserAnswer || !inputExpectedAnswer) {
+  if (!evaluationId && (!inputPrompt || !inputUserAnswer || !inputExpectedAnswer)) {
     return validationError(res, [
       {
         field: 'prompt_text/user_answer_text/expected_answer_text',
@@ -163,7 +164,16 @@ decisionRouter.post('/decision', async (req, res) => {
     ]);
   }
 
-  const resolveQuery = `
+  const resolveByEvaluationIdQuery = `
+    SELECT id
+    FROM evaluation_items
+    WHERE source_system = 'evaluate_api'
+      AND source_record_id = $1
+    ORDER BY id DESC
+    LIMIT 1
+  `;
+
+  const resolveByContextQuery = `
     SELECT ei.id
     FROM evaluation_items ei
     INNER JOIN grade_suggestions gs ON gs.evaluation_item_id = ei.id
@@ -180,7 +190,7 @@ decisionRouter.post('/decision', async (req, res) => {
     LIMIT 1
   `;
 
-  const resolveValues = [
+  const resolveByContextValues = [
     inputPrompt,
     inputUserAnswer,
     inputExpectedAnswer,
@@ -197,14 +207,16 @@ decisionRouter.post('/decision', async (req, res) => {
     client = await dbPool.connect();
     await client.query('BEGIN');
 
-    const resolvedItem = await client.query(resolveQuery, resolveValues);
+    const resolvedItem = evaluationId
+      ? await client.query(resolveByEvaluationIdQuery, [evaluationId])
+      : await client.query(resolveByContextQuery, resolveByContextValues);
 
     if (resolvedItem.rowCount === 0) {
       await client.query('ROLLBACK');
       return validationError(res, [
         {
           field: 'evaluation_item_id',
-          issue: 'Unable to resolve evaluation item with provided input/result context.'
+          issue: 'Unable to resolve evaluation item with provided evaluation_id or input/result context.'
         }
       ]);
     }
@@ -240,6 +252,7 @@ decisionRouter.post('/decision', async (req, res) => {
       success: true,
       decision: {
         id: decision.id,
+        evaluation_id: evaluationId || null,
         evaluation_item_id: decision.evaluation_item_id,
         action,
         final_grade: decision.final_grade,
@@ -266,6 +279,61 @@ decisionRouter.post('/decision', async (req, res) => {
     if (client) {
       client.release();
     }
+  }
+});
+
+
+
+decisionRouter.get('/decision/audit/latest', async (req, res) => {
+  const rawLimit = Number.parseInt(normalizeString(req.query.limit), 10);
+  const limit = Number.isNaN(rawLimit) ? 100 : Math.min(Math.max(rawLimit, 1), 100);
+
+  const latestSignalsQuery = `
+    SELECT
+      es.evaluation_id,
+      es.prompt_text,
+      es.subject,
+      es.keyword_coverage,
+      es.answer_length_ratio,
+      es.lexical_similarity,
+      es.dimensions,
+      es.suggested_grade,
+      ei.created_at AS evaluated_at,
+      ud.final_grade,
+      ud.decision_type,
+      ud.reason AS decision_reason,
+      ud.decided_at
+    FROM evaluation_signals es
+    INNER JOIN evaluation_items ei ON ei.id = es.evaluation_item_id
+    LEFT JOIN LATERAL (
+      SELECT final_grade, decision_type, reason, decided_at
+      FROM user_decisions
+      WHERE evaluation_item_id = ei.id
+      ORDER BY decided_at DESC
+      LIMIT 1
+    ) ud ON true
+    ORDER BY es.created_at DESC
+    LIMIT $1
+  `;
+
+  try {
+    const { rows } = await dbPool.query(latestSignalsQuery, [limit]);
+
+    return res.status(200).json({
+      count: rows.length,
+      limit,
+      data: rows
+    });
+  } catch (error) {
+    console.error('Error while listing evaluation signals audit records', {
+      message: error.message,
+      stack: error.stack
+    });
+
+    return res.status(500).json({
+      error: 'server_error',
+      message: 'Failed to fetch evaluation signals audit data.'
+    });
   }
 });
 
