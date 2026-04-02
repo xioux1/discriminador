@@ -1,5 +1,6 @@
 import {
   isExperimentalOverallCoreOnlyEnabled,
+  isPreprocessingV2Enabled,
   isSemanticCoreIdeaRescueEnabled
 } from '../config/env.js';
 
@@ -72,6 +73,46 @@ function tokenize(text) {
     .split(/\s+/)
     .map((token) => token.trim())
     .filter((token) => token.length >= 4);
+}
+
+function normalizeTextV2(text) {
+  return String(text || '')
+    .normalize('NFC')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function tokenizeV2(text) {
+  return normalizeTextV2(text)
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, ' ')
+    .replace(/[.,;:!?"'()[\]{}¿¡]/g, ' ')
+    .replace(/[-/]/g, ' ')
+    .replace(/(\d),(\d)/g, '$1.$2')
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 2);
+}
+
+function lemmatizeToken(token) {
+  if (!token) return token;
+
+  const irregular = {
+    datos: 'dato',
+    clases: 'clase',
+    conjuntos: 'conjunto',
+    distribuciones: 'distribucion'
+  };
+
+  if (irregular[token]) return irregular[token];
+  if (token.length > 5 && token.endsWith('ciones')) return `${token.slice(0, -6)}cion`;
+  if (token.length > 5 && token.endsWith('es')) return token.slice(0, -2);
+  if (token.length > 4 && token.endsWith('s')) return token.slice(0, -1);
+  return token;
+}
+
+function lemmatizeTokens(tokens) {
+  return tokens.map((token) => lemmatizeToken(token));
 }
 
 function clamp(value, min, max) {
@@ -195,6 +236,42 @@ function containsAnyExpression(text, expressions) {
   return expressions.some((expression) => text.includes(expression));
 }
 
+function buildPreprocessingOutput({ user_answer_text, expected_answer_text }, variant) {
+  if (variant === 'v2') {
+    const userTokens = tokenizeV2(user_answer_text);
+    const expectedTokens = tokenizeV2(expected_answer_text);
+    return {
+      variant,
+      user: {
+        normalizedText: normalizeTextV2(user_answer_text),
+        tokens: userTokens,
+        lemmas: lemmatizeTokens(userTokens)
+      },
+      expected: {
+        normalizedText: normalizeTextV2(expected_answer_text),
+        tokens: expectedTokens,
+        lemmas: lemmatizeTokens(expectedTokens)
+      }
+    };
+  }
+
+  const userTokens = tokenize(user_answer_text);
+  const expectedTokens = tokenize(expected_answer_text);
+  return {
+    variant: 'legacy',
+    user: {
+      normalizedText: normalizeText(user_answer_text || ''),
+      tokens: userTokens,
+      lemmas: userTokens
+    },
+    expected: {
+      normalizedText: normalizeText(expected_answer_text || ''),
+      tokens: expectedTokens,
+      lemmas: expectedTokens
+    }
+  };
+}
+
 export function detectCoreConcepts({ user_answer_text, expected_answer_text, subject }) {
   const normalizedUser = normalizeText(user_answer_text || '');
   const normalizedExpected = normalizeText(expected_answer_text || '');
@@ -233,9 +310,16 @@ export function detectCoreConcepts({ user_answer_text, expected_answer_text, sub
   };
 }
 
-function buildDimensions({ user_answer_text, expected_answer_text, evaluation_id, prompt_text, subject }) {
-  const userTokens = tokenize(user_answer_text);
-  const expectedTokens = tokenize(expected_answer_text);
+function buildDimensions({
+  user_answer_text,
+  expected_answer_text,
+  evaluation_id,
+  prompt_text,
+  subject,
+  preprocessingOutput
+}) {
+  const userTokens = preprocessingOutput.user.lemmas;
+  const expectedTokens = preprocessingOutput.expected.lemmas;
 
   const keywordCoverage = overlapRatio(userTokens, expectedTokens);
   const answerLengthRatio = Math.min(user_answer_text.length / Math.max(expected_answer_text.length, 1), 1);
@@ -272,6 +356,7 @@ function buildDimensions({ user_answer_text, expected_answer_text, evaluation_id
     evaluation_id,
     prompt_text,
     subject,
+    preprocessingVariant: preprocessingOutput.variant,
     keywordCoverage,
     answerLengthRatio,
     lexicalSimilarity,
@@ -287,6 +372,22 @@ function buildDimensions({ user_answer_text, expected_answer_text, evaluation_id
     answerLengthRatio,
     lexicalSimilarity,
     detectedCoreConcepts
+  };
+}
+
+function runDualPathEvaluation(payload) {
+  const legacyPreprocessing = buildPreprocessingOutput(payload, 'legacy');
+  const v2Preprocessing = buildPreprocessingOutput(payload, 'v2');
+  const useV2 = isPreprocessingV2Enabled();
+
+  const legacy = buildDimensions({ ...payload, preprocessingOutput: legacyPreprocessing });
+  const preprocessed = buildDimensions({ ...payload, preprocessingOutput: v2Preprocessing });
+
+  return {
+    selectedVariant: useV2 ? 'v2' : 'legacy',
+    selected: useV2 ? preprocessed : legacy,
+    legacy,
+    preprocessed
   };
 }
 
@@ -424,13 +525,9 @@ export function getScoringCalibrationSnapshot() {
 }
 
 export function scoreEvaluation(payload) {
-  const {
-    dimensions,
-    keywordCoverage,
-    answerLengthRatio,
-    lexicalSimilarity,
-    detectedCoreConcepts
-  } = buildDimensions(payload);
+  const evaluationPaths = runDualPathEvaluation(payload);
+  const { dimensions, keywordCoverage, answerLengthRatio, lexicalSimilarity, detectedCoreConcepts } =
+    evaluationPaths.selected;
 
   for (const value of Object.values(dimensions)) {
     if (!ALLOWED_SCORES.includes(value)) {
@@ -462,6 +559,11 @@ export function scoreEvaluation(payload) {
     evaluation_id: payload.evaluation_id,
     prompt_text: payload.prompt_text,
     subject: payload.subject,
+    preprocessingVariant: evaluationPaths.selectedVariant,
+    preprocessingComparison: {
+      legacy: evaluationPaths.legacy.dimensions,
+      preprocessed: evaluationPaths.preprocessed.dimensions
+    },
     keywordCoverage,
     answerLengthRatio,
     lexicalSimilarity,
@@ -472,4 +574,14 @@ export function scoreEvaluation(payload) {
   });
 
   return result;
+}
+
+export function scoreEvaluationOfflineComparison(payload) {
+  const evaluationPaths = runDualPathEvaluation(payload);
+  return {
+    selected_variant: evaluationPaths.selectedVariant,
+    selected: evaluationPaths.selected,
+    legacy: evaluationPaths.legacy,
+    preprocessed: evaluationPaths.preprocessed
+  };
 }

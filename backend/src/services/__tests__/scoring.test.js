@@ -14,6 +14,7 @@ const payload = {
 async function loadScoringModule(flagEnabled) {
   process.env.ENABLE_SEMANTIC_CORE_IDEA_RESCUE = flagEnabled ? 'true' : 'false';
   process.env.ENABLE_EXPERIMENTAL_OVERALL_CORE_ONLY = 'false';
+  process.env.ENABLE_PREPROCESSING_V2 = 'false';
   const modulePath = `../scoring.js?flag=${flagEnabled ? 'on' : 'off'}-${Date.now()}-${Math.random()}`;
   return import(modulePath);
 }
@@ -129,4 +130,13 @@ test('expone variantes de overall y permite modo experimental core-only', async 
     experimentalResult.overall_score,
     experimentalResult.signals.overallScoreVariants.core_only_experimental
   );
+});
+
+test('mantiene doble ruta legacy/v2 disponible para evaluación offline', async () => {
+  process.env.ENABLE_PREPROCESSING_V2 = 'true';
+  const moduleWithPreprocessing = await import(`../scoring.js?preproc=${Date.now()}-${Math.random()}`);
+  const comparison = moduleWithPreprocessing.scoreEvaluationOfflineComparison(payload);
+
+  assert.equal(comparison.selected_variant, 'v2');
+  assert.deepEqual(Object.keys(comparison.legacy.dimensions), Object.keys(comparison.preprocessed.dimensions));
 });

@@ -2,7 +2,10 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { computeOverallScoreVariants } from '../../backend/src/services/scoring.js';
+import {
+  computeOverallScoreVariants,
+  scoreEvaluationOfflineComparison
+} from '../../backend/src/services/scoring.js';
 
 const OVERALL_PASS_THRESHOLD = 0.5;
 const SIGNIFICANT_AGREEMENT_DROP = 0.02;
@@ -12,7 +15,8 @@ function parseArgs(argv) {
     dataset: 'db/seeds/internal_eval_dataset_v1.json',
     baseline: 'include_memorization',
     candidate: 'core_guardrail_v1',
-    output: 'docs/qa/offline-eval-report-latest.md'
+    output: 'docs/qa/offline-eval-report-latest.md',
+    preprocessingOutput: 'docs/qa/offline-preprocessing-comparison-latest.json'
   };
 
   for (let i = 2; i < argv.length; i += 1) {
@@ -21,6 +25,7 @@ function parseArgs(argv) {
     if (token === '--baseline') args.baseline = argv[++i];
     if (token === '--candidate') args.candidate = argv[++i];
     if (token === '--output') args.output = argv[++i];
+    if (token === '--preprocessing-output') args.preprocessingOutput = argv[++i];
   }
 
   return args;
@@ -139,10 +144,32 @@ function buildMarkdownReport({ args, dataset, baselineMetrics, candidateMetrics,
 `;
 }
 
+function buildPreprocessingComparison(records) {
+  return records.map((record) => {
+    const payload = {
+      evaluation_id: record.case_id,
+      prompt_text: record.prompt_text,
+      subject: record.subject,
+      expected_answer_text: record.expected_answer_text,
+      user_answer_text: record.user_answer_text
+    };
+    const comparison = scoreEvaluationOfflineComparison(payload);
+    return {
+      case_id: record.case_id,
+      selected_variant: comparison.selected_variant,
+      legacy_dimensions: comparison.legacy.dimensions,
+      preprocessed_dimensions: comparison.preprocessed.dimensions,
+      has_discrepancy:
+        JSON.stringify(comparison.legacy.dimensions) !== JSON.stringify(comparison.preprocessed.dimensions)
+    };
+  });
+}
+
 function main() {
   const args = parseArgs(process.argv);
   const datasetPath = path.resolve(args.dataset);
   const outputPath = path.resolve(args.output);
+  const preprocessingOutputPath = path.resolve(args.preprocessingOutput);
   const dataset = JSON.parse(fs.readFileSync(datasetPath, 'utf8'));
 
   if (!Array.isArray(dataset.records) || dataset.records.length === 0) {
@@ -157,6 +184,7 @@ function main() {
   const promotion = buildPromotionDecision(baselineMetrics, candidateMetrics);
 
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+  fs.mkdirSync(path.dirname(preprocessingOutputPath), { recursive: true });
   const report = buildMarkdownReport({
     args,
     dataset,
@@ -165,6 +193,9 @@ function main() {
     promotion
   });
   fs.writeFileSync(outputPath, report, 'utf8');
+
+  const preprocessingComparison = buildPreprocessingComparison(dataset.records);
+  fs.writeFileSync(preprocessingOutputPath, JSON.stringify(preprocessingComparison, null, 2), 'utf8');
 
   const payload = {
     dataset_version: dataset.dataset_version,
@@ -177,6 +208,9 @@ function main() {
 
   console.log(JSON.stringify(payload, null, 2));
   console.log(`Report written to ${path.relative(process.cwd(), outputPath)}`);
+  console.log(
+    `Preprocessing comparison written to ${path.relative(process.cwd(), preprocessingOutputPath)}`
+  );
 }
 
 main();
