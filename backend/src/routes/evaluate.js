@@ -225,12 +225,34 @@ evaluateRouter.post('/evaluate', async (req, res) => {
       result.suggested_grade.toLowerCase()
     ];
 
-    const evaluationSignalsInsertResult = await client.query(
-      evaluationSignalsInsertQuery,
-      evaluationSignalsInsertValues
-    );
+    let evaluationSignals = null;
 
-    const evaluationSignals = evaluationSignalsInsertResult.rows[0];
+    await client.query('SAVEPOINT persist_evaluation_signals');
+
+    try {
+      const evaluationSignalsInsertResult = await client.query(
+        evaluationSignalsInsertQuery,
+        evaluationSignalsInsertValues
+      );
+
+      evaluationSignals = evaluationSignalsInsertResult.rows[0];
+    } catch (signalsError) {
+      await client.query('ROLLBACK TO SAVEPOINT persist_evaluation_signals');
+
+      if (signalsError?.code === '42P01') {
+        console.warn(
+          'Skipping evaluation_signals persistence because table does not exist.',
+          {
+            code: signalsError.code,
+            message: signalsError.message
+          }
+        );
+      } else {
+        throw signalsError;
+      }
+    } finally {
+      await client.query('RELEASE SAVEPOINT persist_evaluation_signals');
+    }
 
     await client.query('COMMIT');
 
