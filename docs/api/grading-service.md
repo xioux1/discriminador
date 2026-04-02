@@ -69,7 +69,7 @@ Interpretación operativa (resumen):
 - `completeness`: cobertura de elementos mínimos esperados.
 - `memorization_risk`: evidencia de comprensión vs. recitado mecánico.
 
-### 3) Regla de negocio para sugerir `PASS`/`FAIL`
+### 3) Regla de negocio para sugerir `PASS`/`REVIEW`/`FAIL`
 
 Se sugiere `PASS` cuando se cumplen **todas** estas condiciones:
 
@@ -77,16 +77,18 @@ Se sugiere `PASS` cuando se cumplen **todas** estas condiciones:
 - `conceptual_accuracy >= 0.5`
 - `completeness >= 0.5`
 
+Se sugiere `REVIEW` cuando falla **solo una** dimensión crítica por margen pequeño (valor `0.0`) y las otras dos están en `>= 0.5`.
+
 En cualquier otro caso, se sugiere `FAIL`.
 
 Notas:
 
-- `memorization_risk` **no bloquea por sí sola** un `PASS`, pero impacta el score y la confianza.
+- `memorization_risk` **no bloquea por sí sola** un `PASS`, pero impacta la confianza y se reporta como señal explicativa en la justificación.
 - Si hay conflicto fuerte entre dimensiones (por ejemplo, `core_idea = 1.0` pero `conceptual_accuracy = 0.0`), prevalece la regla y el resultado es `FAIL`.
 
 ### 4) Cálculo heurístico inicial de `overall_score`
 
-`overall_score` se entrega en rango `0.0–1.0` con la siguiente fórmula:
+Por defecto, `overall_score` se entrega en rango `0.0–1.0` con la fórmula:
 
 ```text
 overall_score =
@@ -98,6 +100,19 @@ overall_score =
 
 - Redondeo recomendado: 2 decimales.
 - Esta ponderación prioriza núcleo conceptual y corrección por encima del estilo.
+
+Variante experimental habilitable con `ENABLE_EXPERIMENTAL_OVERALL_CORE_ONLY=true`:
+
+```text
+overall_score =
+  (0.35 * core_idea + 0.30 * conceptual_accuracy + 0.25 * completeness) / 0.90
+```
+
+Además, la API devuelve en `signals.overallScoreVariants` un set de variantes para auditoría offline:
+
+- `include_memorization` (base actual)
+- `subtract_memorization` (auditoría de sensibilidad)
+- `core_only_experimental` (experimental)
 
 ### 5) Cálculo heurístico inicial de `model_confidence`
 
@@ -121,7 +136,7 @@ Donde `clamp(x, 0.0, 1.0)` limita el resultado al rango permitido.
 
 ### 6) Plantilla para `justification_short`
 
-`justification_short` debe ser breve, consistente y accionable. Plantilla recomendada:
+`justification_short` debe ser breve, consistente y accionable. Debe incluir fortaleza, brecha y señal de `memorization_risk`.
 
 ```text
 "Núcleo: {fortaleza_core}. Precisión: {estado_precision}. Falta: {brecha_completeness}."
@@ -146,7 +161,7 @@ Ejemplos:
 
 ```json
 {
-  "suggested_grade": "PASS | FAIL",
+  "suggested_grade": "PASS | REVIEW | FAIL",
   "overall_score": 0.0,
   "dimensions": {
     "core_idea": 0.0,
@@ -161,7 +176,7 @@ Ejemplos:
 
 ### Campos
 
-- `suggested_grade` (string): recomendación final (`PASS` o `FAIL`).
+- `suggested_grade` (string): recomendación final (`PASS`, `REVIEW` o `FAIL`).
 - `overall_score` (number): score global normalizado en rango `0.0–1.0`.
 - `dimensions` (object): sub-scores de la rúbrica V1 (`0.0 | 0.5 | 1.0` por dimensión).
 - `justification_short` (string): explicación breve y accionable con plantilla consistente.

@@ -183,3 +183,68 @@ Propuesta de criterio de validación (durante 2 semanas consecutivas y al menos 
    - `p95_seconds <= 240`
 
 Si se incumple 1 semana aislada no bloquea; si se incumplen 2 semanas consecutivas, el MVP0 se considera **no validado** y requiere ajuste de rúbrica/UX antes de escalar.
+
+## 6) Auditoría de variantes de `overall_score` vs corrector humano
+
+Para comparar impacto entre:
+
+- `include_memorization` (suma `memorization_risk`)
+- `subtract_memorization` (resta `memorization_risk`, sensibilidad)
+- `core_only_experimental` (solo `core_idea`, `conceptual_accuracy`, `completeness`)
+
+usar:
+
+```bash
+cd backend
+npm run audit:overall-variants
+```
+
+El script cruza `evaluation_signals` con la última decisión humana (`user_decisions`) y reporta:
+
+- `agreement_rate_pct`: acuerdo contra `final_grade` humano (threshold de PASS en `overall_score >= 0.5`)
+- `false_fail_rate_pct`: casos donde la variante predice `FAIL` y humano marcó `PASS`
+- `deltas_vs_include_memorization`: diferencia porcentual contra baseline actual
+
+## 7) Dataset interno versionado + evaluación offline comparativa
+
+Para evitar regresiones entre ajustes de scoring, se incorpora dataset interno canónico:
+
+- Fixture versionado: `db/seeds/internal_eval_dataset_v1.json`
+- Seed SQL equivalente: `db/seeds/seed_internal_eval_dataset_v1.sql`
+
+### Métricas mínimas requeridas
+
+El reporte offline debe incluir al menos:
+
+- `false_fail_rate`
+- `override_rate`
+- `agreement_with_human`
+- `coverage_of_core_idea`
+
+### Script de comparación baseline vs candidato
+
+```bash
+node scripts/qa/evaluate-offline-variants.mjs \
+  --dataset db/seeds/internal_eval_dataset_v1.json \
+  --baseline include_memorization \
+  --candidate core_guardrail_v1 \
+  --output docs/qa/offline-eval-report-latest.md
+```
+
+Estrategias soportadas inicialmente:
+
+- `include_memorization` (baseline actual)
+- `subtract_memorization`
+- `core_only_experimental`
+- `core_guardrail_v1` (regla propuesta para reducir false fail)
+
+### Criterio de promoción (gate)
+
+No se promocionan cambios si no cumplen simultáneamente:
+
+1. Mejorar `false_fail_rate` vs baseline.
+2. No degradar significativamente `agreement_with_human` global.
+
+Implementación actual del umbral de degradación significativa:
+
+- caída de `agreement_with_human` > `0.02` (2 pp) => bloqueo.

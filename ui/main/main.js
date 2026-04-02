@@ -13,6 +13,7 @@ const uiState = {
   savingDecision: false,
   lastRequest: null,
   lastResult: null,
+  manualQueue: [],
 };
 
 const minRules = {
@@ -84,8 +85,62 @@ function setFeedback(message, type = '') {
   }
 }
 
+function normalizeSuggestedGrade(grade) {
+  return String(grade || '').toUpperCase();
+}
+
+function getSuggestedGradeLabel(grade) {
+  const normalized = normalizeSuggestedGrade(grade);
+  if (normalized === 'REVIEW') {
+    return 'requiere validación docente';
+  }
+
+  return normalized;
+}
+
+function enqueueManualCase(result) {
+  if (!result?.evaluation_id) {
+    return { position: null, size: uiState.manualQueue.length };
+  }
+
+  const priorityByGrade = {
+    REVIEW: 0,
+    FAIL: 1,
+    PASS: 2,
+  };
+  const normalizedGrade = normalizeSuggestedGrade(result.suggested_grade);
+  const existingIndex = uiState.manualQueue.findIndex((item) => item.evaluation_id === result.evaluation_id);
+
+  const queueItem = {
+    evaluation_id: result.evaluation_id,
+    suggested_grade: normalizedGrade,
+    priority: priorityByGrade[normalizedGrade] ?? 3,
+    created_at: Date.now(),
+  };
+
+  if (existingIndex >= 0) {
+    uiState.manualQueue[existingIndex] = queueItem;
+  } else {
+    uiState.manualQueue.push(queueItem);
+  }
+
+  uiState.manualQueue.sort((a, b) => a.priority - b.priority || a.created_at - b.created_at);
+  return {
+    size: uiState.manualQueue.length,
+    position: uiState.manualQueue.findIndex((item) => item.evaluation_id === result.evaluation_id) + 1,
+  };
+}
+
+function removeManualCase(evaluationId) {
+  if (!evaluationId) {
+    return;
+  }
+
+  uiState.manualQueue = uiState.manualQueue.filter((item) => item.evaluation_id !== evaluationId);
+}
+
 function renderResult(result) {
-  document.querySelector('#suggested-grade').textContent = result.suggested_grade;
+  document.querySelector('#suggested-grade').textContent = getSuggestedGradeLabel(result.suggested_grade);
   document.querySelector('#overall-score').textContent = Number(result.overall_score).toFixed(2);
   document.querySelector('#model-confidence').textContent = Number(result.model_confidence).toFixed(2);
   document.querySelector('#justification-short').textContent = result.justification_short;
@@ -161,11 +216,16 @@ form.addEventListener('submit', async (event) => {
     const result = await postJson(EVALUATE_ENDPOINT, payload);
     uiState.lastRequest = payload;
     uiState.lastResult = result;
+    const manualQueueStatus = enqueueManualCase(result);
 
     renderResult(result);
     resultLoading.classList.add('hidden');
     resultContent.classList.remove('hidden');
-    setFeedback('Evaluación lista. Ahora firma una decisión final.');
+    const normalizedSuggestedGrade = normalizeSuggestedGrade(result.suggested_grade);
+    const reviewHint = normalizedSuggestedGrade === 'REVIEW'
+      ? ` Caso priorizado en cola manual (#${manualQueueStatus.position} de ${manualQueueStatus.size}).`
+      : '';
+    setFeedback(`Evaluación lista. Ahora firma una decisión final.${reviewHint}`);
   } catch (error) {
     resultLoading.classList.add('hidden');
     resultContent.classList.add('hidden');
@@ -185,6 +245,12 @@ resultContent.addEventListener('click', async (event) => {
 
   const suggestion = uiState.lastResult.suggested_grade;
   const correctionReason = normalize(document.querySelector('#correction_reason').value);
+  const normalizedSuggestion = normalizeSuggestedGrade(suggestion);
+
+  if (action === 'accept' && normalizedSuggestion === 'REVIEW') {
+    setFeedback('Las sugerencias en revisión requieren validación docente: usa corregir o marcar duda.', 'error');
+    return;
+  }
 
   const finalGradeByAction = {
     accept: suggestion,
@@ -208,6 +274,7 @@ resultContent.addEventListener('click', async (event) => {
 
   try {
     await postJson(DECISION_ENDPOINT, decisionPayload);
+    removeManualCase(uiState.lastResult.evaluation_id);
     setFeedback('Decisión final guardada correctamente.', 'success');
   } catch (error) {
     setFeedback(`Error al guardar la decisión: ${error.message}`, 'error');
