@@ -83,6 +83,209 @@ function normalizeTextV2(text) {
     .trim();
 }
 
+const ABBREVIATION_MAP = {
+  rrhh: 'recursos humanos',
+  'p/': 'para',
+  pq: 'porque',
+  xq: 'porque'
+};
+
+const NO_TOUCH_SET = new Set([
+  'api',
+  'sql',
+  'json',
+  'http',
+  'https',
+  'aws',
+  'gcp',
+  'azure',
+  'javascript',
+  'typescript',
+  'python',
+  'node',
+  'react',
+  'docker',
+  'kubernetes',
+  'linux',
+  'git',
+  'github',
+  'postgres',
+  'mysql',
+  'tensorflow',
+  'pytorch',
+  'openai',
+  'chatgpt',
+  'rn'
+]);
+
+const BASE_CORRECTION_LEXICON = new Set([
+  'para',
+  'porque',
+  'recursos',
+  'humanos',
+  'distribucion',
+  'proporcion',
+  'clase',
+  'clases',
+  'estratificado',
+  'estratificar',
+  'aleatorio',
+  'aleatorizar',
+  'conjunto',
+  'conjuntos',
+  'datos',
+  'entrenamiento',
+  'validacion',
+  'prueba'
+]);
+
+function cleanTokenForCorrection(rawToken) {
+  return String(rawToken || '')
+    .replace(/^[^\p{L}\p{N}/]+|[^\p{L}\p{N}/]+$/gu, '')
+    .trim();
+}
+
+function toCorrectionLookupToken(token) {
+  return token
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/[^a-z0-9/]/g, '')
+    .trim();
+}
+
+function levenshteinDistanceWithLimit(a, b, limit = 2) {
+  if (a === b) return 0;
+  if (!a || !b) return Math.max(a.length, b.length);
+  if (Math.abs(a.length - b.length) > limit) return limit + 1;
+
+  const prev = new Array(b.length + 1).fill(0);
+  const curr = new Array(b.length + 1).fill(0);
+
+  for (let j = 0; j <= b.length; j += 1) {
+    prev[j] = j;
+  }
+
+  for (let i = 1; i <= a.length; i += 1) {
+    curr[0] = i;
+    let rowMin = curr[0];
+
+    for (let j = 1; j <= b.length; j += 1) {
+      const substitutionCost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(
+        prev[j] + 1,
+        curr[j - 1] + 1,
+        prev[j - 1] + substitutionCost
+      );
+      rowMin = Math.min(rowMin, curr[j]);
+    }
+
+    if (rowMin > limit) {
+      return limit + 1;
+    }
+
+    for (let j = 0; j <= b.length; j += 1) {
+      prev[j] = curr[j];
+    }
+  }
+
+  return prev[b.length];
+}
+
+function buildCorrectionVocabulary(referenceText = '') {
+  const vocabulary = new Set(BASE_CORRECTION_LEXICON);
+  const referenceTokens = tokenizeV2(referenceText);
+  for (const token of referenceTokens) {
+    const normalized = toCorrectionLookupToken(token);
+    if (normalized.length >= 2) {
+      vocabulary.add(normalized);
+    }
+  }
+  return vocabulary;
+}
+
+function suggestConservativeCorrection(token, vocabulary) {
+  if (!token || token.length < 4 || /\d/.test(token) || NO_TOUCH_SET.has(token) || vocabulary.has(token)) {
+    return token;
+  }
+
+  let bestCandidate = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  let bestCount = 0;
+
+  for (const candidate of vocabulary) {
+    if (candidate === token || Math.abs(candidate.length - token.length) > 2) {
+      continue;
+    }
+
+    if (candidate[0] !== token[0]) {
+      continue;
+    }
+
+    const distance = levenshteinDistanceWithLimit(token, candidate, 2);
+    if (distance > 2) {
+      continue;
+    }
+
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestCandidate = candidate;
+      bestCount = 1;
+    } else if (distance === bestDistance) {
+      bestCount += 1;
+    }
+  }
+
+  const hasHighConfidenceDistance =
+    bestDistance === 1 || (bestDistance === 2 && token.length >= 6 && token.slice(0, 3) === bestCandidate?.slice(0, 3));
+
+  if (bestCandidate && bestCount === 1 && hasHighConfidenceDistance) {
+    return bestCandidate;
+  }
+
+  return token;
+}
+
+function normalizeTextV2WithCorrections(text, { referenceText = '' } = {}) {
+  const normalizedText = normalizeTextV2(text);
+  if (!normalizedText) {
+    return { normalizedText: '', correctedText: '', replacements: {} };
+  }
+
+  const vocabulary = buildCorrectionVocabulary(referenceText);
+  const replacements = {};
+  const correctedTokens = [];
+  const rawTokens = normalizedText.split(/\s+/);
+
+  for (const rawToken of rawTokens) {
+    const cleanedToken = cleanTokenForCorrection(rawToken);
+    if (!cleanedToken) {
+      continue;
+    }
+
+    const lookupToken = toCorrectionLookupToken(cleanedToken);
+    const abbreviationExpanded = ABBREVIATION_MAP[lookupToken] || lookupToken;
+    const expandedTokens = abbreviationExpanded.split(/\s+/).filter(Boolean);
+    const correctedExpandedTokens = [];
+
+    for (const expandedToken of expandedTokens) {
+      const correctedToken = suggestConservativeCorrection(expandedToken, vocabulary);
+      correctedTokens.push(correctedToken);
+      correctedExpandedTokens.push(correctedToken);
+    }
+
+    const correctedExpression = correctedExpandedTokens.join(' ');
+    if (lookupToken && lookupToken !== correctedExpression) {
+      replacements[lookupToken] = correctedExpression;
+    }
+  }
+
+  return {
+    normalizedText,
+    correctedText: correctedTokens.join(' '),
+    replacements
+  };
+}
+
 function tokenizeV2(text) {
   return normalizeTextV2(text)
     .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, ' ')
@@ -238,19 +441,29 @@ function containsAnyExpression(text, expressions) {
 
 function buildPreprocessingOutput({ user_answer_text, expected_answer_text }, variant) {
   if (variant === 'v2') {
-    const userTokens = tokenizeV2(user_answer_text);
-    const expectedTokens = tokenizeV2(expected_answer_text);
+    const userNormalized = normalizeTextV2WithCorrections(user_answer_text, {
+      referenceText: expected_answer_text
+    });
+    const expectedNormalized = normalizeTextV2WithCorrections(expected_answer_text, {
+      referenceText: expected_answer_text
+    });
+    const userTokens = tokenizeV2(userNormalized.correctedText);
+    const expectedTokens = tokenizeV2(expectedNormalized.correctedText);
     return {
       variant,
       user: {
-        normalizedText: normalizeTextV2(user_answer_text),
+        normalizedText: userNormalized.correctedText || userNormalized.normalizedText,
         tokens: userTokens,
         lemmas: lemmatizeTokens(userTokens)
       },
       expected: {
-        normalizedText: normalizeTextV2(expected_answer_text),
+        normalizedText: expectedNormalized.correctedText || expectedNormalized.normalizedText,
         tokens: expectedTokens,
         lemmas: lemmatizeTokens(expectedTokens)
+      },
+      replacements: {
+        user: userNormalized.replacements,
+        expected: expectedNormalized.replacements
       }
     };
   }
@@ -268,6 +481,10 @@ function buildPreprocessingOutput({ user_answer_text, expected_answer_text }, va
       normalizedText: normalizeText(expected_answer_text || ''),
       tokens: expectedTokens,
       lemmas: expectedTokens
+    },
+    replacements: {
+      user: {},
+      expected: {}
     }
   };
 }
@@ -371,7 +588,8 @@ function buildDimensions({
     keywordCoverage,
     answerLengthRatio,
     lexicalSimilarity,
-    detectedCoreConcepts
+    detectedCoreConcepts,
+    replacements: preprocessingOutput.replacements || { user: {}, expected: {} }
   };
 }
 
@@ -526,7 +744,14 @@ export function getScoringCalibrationSnapshot() {
 
 export function scoreEvaluation(payload) {
   const evaluationPaths = runDualPathEvaluation(payload);
-  const { dimensions, keywordCoverage, answerLengthRatio, lexicalSimilarity, detectedCoreConcepts } =
+  const {
+    dimensions,
+    keywordCoverage,
+    answerLengthRatio,
+    lexicalSimilarity,
+    detectedCoreConcepts,
+    replacements
+  } =
     evaluationPaths.selected;
 
   for (const value of Object.values(dimensions)) {
@@ -551,6 +776,7 @@ export function scoreEvaluation(payload) {
       answerLengthRatio,
       lexicalSimilarity,
       detectedCoreConcepts,
+      replacements,
       overallScoreVariants
     }
   };
