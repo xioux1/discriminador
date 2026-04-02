@@ -2,6 +2,11 @@
 
 BEGIN;
 
+INSERT INTO evaluation_sessions (started_at, ended_at, subject, deck_filter)
+VALUES
+    (NOW() - INTERVAL '40 minutes', NOW() - INTERVAL '10 minutes', 'BIO101', 'photosynthesis')
+ON CONFLICT DO NOTHING;
+
 INSERT INTO evaluation_items (source_system, source_record_id, input_payload, evaluator_context)
 VALUES
     (
@@ -17,6 +22,18 @@ VALUES
         '{"course":"BIO101","language":"es"}'
     )
 ON CONFLICT (source_system, source_record_id) DO NOTHING;
+
+UPDATE evaluation_items ei
+SET evaluation_session_id = es.id
+FROM (
+    SELECT id
+    FROM evaluation_sessions
+    ORDER BY started_at DESC
+    LIMIT 1
+) es
+WHERE ei.source_system = 'lms'
+  AND ei.source_record_id IN ('submission-001', 'submission-002')
+  AND ei.evaluation_session_id IS NULL;
 
 INSERT INTO grade_suggestions (evaluation_item_id, suggested_grade, confidence, model_name, model_version, explanation)
 SELECT id, 'A', 0.9300, 'discriminador', 'v0', 'Respuesta completa y correcta.'
