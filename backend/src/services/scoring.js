@@ -637,11 +637,13 @@ function buildDimensions({
   const keywordCoverageSignals = overlapRatioFuzzy(userTokens, expectedTokens);
   const keywordCoverage = keywordCoverageSignals.ratio;
   const answerLengthRatio = Math.min(user_answer_text.length / Math.max(expected_answer_text.length, 1), 1);
+  const shortAnswerThreshold = 0.5;
+  const normalizedLengthAdequacy = Math.min(answerLengthRatio, shortAnswerThreshold) / shortAnswerThreshold;
   const lexicalSimilarity = overlapRatio(userTokens, userTokens.length > expectedTokens.length ? userTokens : expectedTokens);
   const detectedCoreConcepts = detectCoreConcepts({ user_answer_text, expected_answer_text, subject });
   const typoHeavyNearMiss =
     keywordCoverageSignals.fuzzyMatchRate >= 0.1 &&
-    answerLengthRatio >= 0.55 &&
+    answerLengthRatio >= shortAnswerThreshold &&
     keywordCoverage >= KEYWORD_COVERAGE_DISTRIBUTION.FAIL.p75;
 
   let core_idea = toDiscreteScore(keywordCoverage, 'core_idea');
@@ -656,7 +658,7 @@ function buildDimensions({
     core_idea = 0.5;
   }
 
-  const conceptualAccuracySignal = keywordCoverage * 0.8 + answerLengthRatio * 0.2;
+  const conceptualAccuracySignal = keywordCoverage * 0.8 + normalizedLengthAdequacy * 0.2;
   let conceptual_accuracy = toDiscreteScore(conceptualAccuracySignal, 'conceptual_accuracy');
   if (
     conceptual_accuracy === 0 &&
@@ -666,7 +668,7 @@ function buildDimensions({
     conceptual_accuracy = 0.5;
   }
 
-  const completenessSignal = keywordCoverage * 0.7 + answerLengthRatio * 0.3;
+  const completenessSignal = keywordCoverage * 0.7 + normalizedLengthAdequacy * 0.3;
   let completeness = toDiscreteScore(completenessSignal, 'completeness');
   if (
     completeness === 0 &&
