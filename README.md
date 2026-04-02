@@ -509,3 +509,13 @@ El siguiente entregable técnico debería ser:
 * esquema de API del `grading-service`;
 * esquema SQL o modelo de persistencia inicial;
 * lista corta de 20 preguntas piloto para prueba.
+
+## UI principal (MVP V0)
+
+Se agregó un módulo base en `ui/main/` con:
+
+- formulario con validación local;
+- integración con `POST /evaluate`;
+- render de respuesta estructurada (sugerencia, score, dimensiones, justificación y confianza);
+- acciones de firma (`Aceptar sugerencia`, `Corregir a PASS`, `Corregir a FAIL`, `Marcar duda`) con envío al backend vía `POST /decision`;
+- feedback de guardado y bloqueo de doble envío durante evaluación/guardado.

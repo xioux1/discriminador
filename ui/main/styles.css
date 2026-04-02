@@ -1,0 +1,73 @@
+:root {
+  color-scheme: light;
+  font-family: Arial, sans-serif;
+}
+
+body {
+  margin: 0;
+  background: #f7f7f8;
+}
+
+.container {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+label {
+  display: block;
+  margin-top: 10px;
+  font-weight: 700;
+}
+
+input,
+textarea,
+button {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 6px;
+  padding: 10px;
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.field-error {
+  color: #a40000;
+  font-size: 0.9rem;
+  min-height: 1.2em;
+}
+
+.feedback {
+  margin-top: 10px;
+  font-weight: 700;
+}
+
+.feedback.success {
+  color: #0a6d0a;
+}
+
+.feedback.error {
+  color: #a40000;
+}
+
+.hidden {
+  display: none;
+}
