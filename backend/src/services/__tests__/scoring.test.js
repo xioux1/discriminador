@@ -109,6 +109,34 @@ test('sugiere REVIEW cuando falla solo una dimensión crítica por margen peque�
   assert.equal(result.suggested_grade, 'REVIEW');
 });
 
+test('no otorga beneficio adicional por respuestas más largas cuando ya superan 50% del back', async () => {
+  const { scoreEvaluation } = await loadScoringModule(true);
+
+  const basePayload = {
+    evaluation_id: 'eval-length-neutral',
+    prompt_text: 'Explica train_test_split en RN',
+    subject: 'RN',
+    expected_answer_text:
+      'shuffle estratificar separar datos entrenamiento prueba manteniendo proporcion de clases para evitar sesgo',
+    user_answer_text:
+      'shuffle estratificar separar datos entrenamiento prueba manteniendo proporcion de clases'
+  };
+
+  const longerPayload = {
+    ...basePayload,
+    evaluation_id: 'eval-length-neutral-long',
+    user_answer_text: `${basePayload.user_answer_text} con observaciones adicionales de contexto operativo y ejemplos prácticos`
+  };
+
+  const baseResult = scoreEvaluation(basePayload);
+  const longerResult = scoreEvaluation(longerPayload);
+
+  assert.equal(baseResult.signals.answerLengthRatio > 0.5, true);
+  assert.equal(longerResult.signals.answerLengthRatio > 0.5, true);
+  assert.equal(baseResult.dimensions.conceptual_accuracy, longerResult.dimensions.conceptual_accuracy);
+  assert.equal(baseResult.dimensions.completeness, longerResult.dimensions.completeness);
+});
+
 test('expone variantes de overall y permite modo experimental core-only', async () => {
   process.env.ENABLE_SEMANTIC_CORE_IDEA_RESCUE = 'true';
   process.env.ENABLE_EXPERIMENTAL_OVERALL_CORE_ONLY = 'false';
