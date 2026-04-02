@@ -43,6 +43,103 @@ Evalúa una respuesta teórica escrita y devuelve una calificación sugerida con
 
 ---
 
+## Lógica de evaluación V1
+
+### 1) Evaluador por dimensiones
+
+El servicio evalúa siempre estas 4 dimensiones:
+
+- `core_idea`
+- `conceptual_accuracy`
+- `completeness`
+- `memorization_risk`
+
+### 2) Escala por dimensión
+
+Todas las dimensiones usan exactamente la escala discreta:
+
+- `0.0`
+- `0.5`
+- `1.0`
+
+Interpretación operativa (resumen):
+
+- `core_idea`: presencia de la idea central.
+- `conceptual_accuracy`: ausencia de errores conceptuales graves.
+- `completeness`: cobertura de elementos mínimos esperados.
+- `memorization_risk`: evidencia de comprensión vs. recitado mecánico.
+
+### 3) Regla de negocio para sugerir `PASS`/`FAIL`
+
+Se sugiere `PASS` cuando se cumplen **todas** estas condiciones:
+
+- `core_idea >= 0.5`
+- `conceptual_accuracy >= 0.5`
+- `completeness >= 0.5`
+
+En cualquier otro caso, se sugiere `FAIL`.
+
+Notas:
+
+- `memorization_risk` **no bloquea por sí sola** un `PASS`, pero impacta el score y la confianza.
+- Si hay conflicto fuerte entre dimensiones (por ejemplo, `core_idea = 1.0` pero `conceptual_accuracy = 0.0`), prevalece la regla y el resultado es `FAIL`.
+
+### 4) Cálculo heurístico inicial de `overall_score`
+
+`overall_score` se entrega en rango `0.0–1.0` con la siguiente fórmula:
+
+```text
+overall_score =
+  0.35 * core_idea +
+  0.30 * conceptual_accuracy +
+  0.25 * completeness +
+  0.10 * memorization_risk
+```
+
+- Redondeo recomendado: 2 decimales.
+- Esta ponderación prioriza núcleo conceptual y corrección por encima del estilo.
+
+### 5) Cálculo heurístico inicial de `model_confidence`
+
+`model_confidence` (rango `0.0–1.0`) se calcula de forma simple con base en coherencia interna:
+
+```text
+base_confidence = 0.55
+
+bonus_alignment =
+  +0.15 si core_idea y conceptual_accuracy son iguales
+  +0.10 si completeness >= 0.5
+
+penalty_conflict =
+  -0.20 si core_idea = 1.0 y conceptual_accuracy = 0.0
+  -0.10 si memorization_risk = 0.0
+
+model_confidence = clamp(base_confidence + bonus_alignment - penalty_conflict, 0.0, 1.0)
+```
+
+Donde `clamp(x, 0.0, 1.0)` limita el resultado al rango permitido.
+
+### 6) Plantilla para `justification_short`
+
+`justification_short` debe ser breve, consistente y accionable. Plantilla recomendada:
+
+```text
+"Núcleo: {fortaleza_core}. Precisión: {estado_precision}. Falta: {brecha_completeness}."
+```
+
+Reglas de redacción:
+
+- Máximo recomendado: 180 caracteres.
+- Siempre mencionar al menos **1 fortaleza** y **1 brecha**.
+- Evitar lenguaje ambiguo (“más o menos”, “podría”).
+
+Ejemplos:
+
+- `"Núcleo: correcto. Precisión: sin errores graves. Falta: desarrollar un punto clave del proceso."`
+- `"Núcleo: parcial. Precisión: confunde mitosis con meiosis. Falta: diferencia sobre número cromosómico."`
+
+---
+
 ## Response
 
 ### Body JSON
@@ -50,24 +147,24 @@ Evalúa una respuesta teórica escrita y devuelve una calificación sugerida con
 ```json
 {
   "suggested_grade": "PASS | FAIL",
-  "overall_score": 0,
+  "overall_score": 0.0,
   "dimensions": {
-    "core_idea": 0,
-    "completeness": 0,
-    "conceptual_accuracy": 0,
-    "memorization_risk": 0
+    "core_idea": 0.0,
+    "conceptual_accuracy": 0.0,
+    "completeness": 0.0,
+    "memorization_risk": 0.0
   },
   "justification_short": "string",
-  "model_confidence": 0
+  "model_confidence": 0.0
 }
 ```
 
 ### Campos
 
 - `suggested_grade` (string): recomendación final (`PASS` o `FAIL`).
-- `overall_score` (number): score global normalizado en rango `0–100`.
-- `dimensions` (object): sub-scores de la rúbrica V1 (`0–100` por dimensión).
-- `justification_short` (string): explicación breve y accionable de la sugerencia.
+- `overall_score` (number): score global normalizado en rango `0.0–1.0`.
+- `dimensions` (object): sub-scores de la rúbrica V1 (`0.0 | 0.5 | 1.0` por dimensión).
+- `justification_short` (string): explicación breve y accionable con plantilla consistente.
 - `model_confidence` (number): confianza del modelo en rango `0.0–1.0`.
 
 ---
@@ -172,15 +269,15 @@ Content-Type: application/json
 ```json
 {
   "suggested_grade": "PASS",
-  "overall_score": 89,
+  "overall_score": 0.90,
   "dimensions": {
-    "core_idea": 95,
-    "completeness": 86,
-    "conceptual_accuracy": 90,
-    "memorization_risk": 72
+    "core_idea": 1.0,
+    "conceptual_accuracy": 1.0,
+    "completeness": 1.0,
+    "memorization_risk": 0.5
   },
-  "justification_short": "La respuesta cubre correctamente el mecanismo de la fotosíntesis y su impacto ecosistémico, con buena precisión conceptual y nivel de detalle suficiente.",
-  "model_confidence": 0.91
+  "justification_short": "Núcleo: correcto. Precisión: sin errores graves. Falta: menor detalle en productividad primaria.",
+  "model_confidence": 0.80
 }
 ```
 
@@ -207,14 +304,14 @@ Content-Type: application/json
 ```json
 {
   "suggested_grade": "FAIL",
-  "overall_score": 34,
+  "overall_score": 0.18,
   "dimensions": {
-    "core_idea": 40,
-    "completeness": 25,
-    "conceptual_accuracy": 20,
-    "memorization_risk": 58
+    "core_idea": 0.5,
+    "conceptual_accuracy": 0.0,
+    "completeness": 0.0,
+    "memorization_risk": 0.5
   },
-  "justification_short": "La respuesta omite la diferencia central entre mitosis y meiosis e incurre en un error conceptual sobre número cromosómico y resultado celular.",
-  "model_confidence": 0.88
+  "justification_short": "Núcleo: parcial. Precisión: confunde mitosis con meiosis. Falta: diferencia en resultado y número cromosómico.",
+  "model_confidence": 0.45
 }
 ```
