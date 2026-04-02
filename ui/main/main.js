@@ -167,6 +167,8 @@ form.addEventListener('submit', async (event) => {
     resultContent.classList.remove('hidden');
     setFeedback('Evaluación lista. Ahora firma una decisión final.');
   } catch (error) {
+    resultLoading.classList.add('hidden');
+    resultContent.classList.add('hidden');
     setFeedback(`No se pudo evaluar: ${error.message}`, 'error');
   } finally {
     uiState.evaluating = false;

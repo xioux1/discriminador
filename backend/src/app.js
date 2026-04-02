@@ -1,11 +1,21 @@
 import express from 'express';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import routes from './routes/index.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
+
+const currentDir = path.dirname(fileURLToPath(import.meta.url));
+const uiDir = path.resolve(currentDir, '../../ui/main');
 
 export function createApp() {
   const app = express();
 
   app.use(express.json({ limit: '1mb' }));
+  app.use(express.static(uiDir));
+
+  app.get('/', (_req, res) => {
+    res.sendFile(path.join(uiDir, 'index.html'));
+  });
 
   app.use((err, req, res, next) => {
     if (err instanceof SyntaxError && 'body' in err) {
