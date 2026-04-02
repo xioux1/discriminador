@@ -45,3 +45,43 @@ test('con feature flag, rescata core_idea a 0.5 cuando hay conceptos obligatorio
   assert.equal(result.dimensions.core_idea, 0.5);
   assert.equal(result.signals.detectedCoreConcepts.matched, true);
 });
+
+test('calibra umbrales por dimensión a partir de muestra auditada PASS/FAIL', async () => {
+  const { getScoringCalibrationSnapshot } = await loadScoringModule(true);
+
+  const snapshot = getScoringCalibrationSnapshot();
+
+  assert.equal(snapshot.keywordCoverageDistribution.PASS.count, 8);
+  assert.equal(snapshot.keywordCoverageDistribution.FAIL.count, 8);
+  assert.ok(snapshot.keywordCoverageDistribution.PASS.p50 > snapshot.keywordCoverageDistribution.FAIL.p75);
+
+  assert.notEqual(snapshot.dimensionThresholds.core_idea.mid, snapshot.dimensionThresholds.completeness.mid);
+  assert.notEqual(snapshot.dimensionThresholds.core_idea.high, snapshot.dimensionThresholds.conceptual_accuracy.high);
+});
+
+test('regresión: cambios menores de wording no deben voltear core_idea de 0.5 a 0.0', async () => {
+  const { scoreEvaluation } = await loadScoringModule(true);
+
+  const basePayload = {
+    evaluation_id: 'eval-wording-base',
+    prompt_text: 'Explica train_test_split en RN',
+    subject: 'RN',
+    expected_answer_text:
+      'En RN se recomienda shuffle antes de separar y stratify para mantener proporción de clases.',
+    user_answer_text:
+      'Se debe mezclar de forma aleatoria y mantener la distribucion por clase antes de separar conjuntos.'
+  };
+
+  const minorWordingChangePayload = {
+    ...basePayload,
+    evaluation_id: 'eval-wording-variant',
+    user_answer_text:
+      'Conviene mezclar aleatoriamente y conservar la distribucion por clase antes de separar los conjuntos.'
+  };
+
+  const baseResult = scoreEvaluation(basePayload);
+  const variantResult = scoreEvaluation(minorWordingChangePayload);
+
+  assert.equal(baseResult.dimensions.core_idea, 0.5);
+  assert.notEqual(variantResult.dimensions.core_idea, 0.0);
+});
