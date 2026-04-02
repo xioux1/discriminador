@@ -4,6 +4,7 @@ dotenv.config();
 
 const DEFAULT_HOST = '0.0.0.0';
 const DEFAULT_PORT = 3000;
+const PREPROCESSING_V2_AUTO_ENABLED_ENVS = new Set(['staging', 'production', 'prod']);
 
 function parsePort(value) {
   if (!value) return DEFAULT_PORT;
@@ -33,6 +34,11 @@ export function isExperimentalOverallCoreOnlyEnabled() {
 }
 
 export function isPreprocessingV2Enabled() {
+  if (process.env.ENABLE_PREPROCESSING_V2 === undefined) {
+    const runtimeEnv = (process.env.APP_ENV || process.env.NODE_ENV || 'development').toLowerCase();
+    return PREPROCESSING_V2_AUTO_ENABLED_ENVS.has(runtimeEnv);
+  }
+
   return parseBoolean(process.env.ENABLE_PREPROCESSING_V2, false);
 }
 
