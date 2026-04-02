@@ -112,15 +112,17 @@ evaluateRouter.post('/evaluate', async (req, res) => {
   }
 
   const normalizedSubject = normalize(req.body.subject);
+  const evaluationId = randomUUID();
 
   const result = scoreEvaluation({
     prompt_text: normalizedFields.prompt_text,
     user_answer_text: normalizedFields.user_answer_text,
     expected_answer_text: normalizedFields.expected_answer_text,
-    subject: normalizedSubject
+    subject: normalizedSubject,
+    evaluation_id: evaluationId
   });
 
-  const sourceRecordId = randomUUID();
+  const sourceRecordId = evaluationId;
 
   const inputPayload = {
     prompt_text: normalizedFields.prompt_text,
@@ -195,14 +197,56 @@ evaluateRouter.post('/evaluate', async (req, res) => {
 
     const gradeSuggestion = gradeSuggestionInsertResult.rows[0];
 
+    const evaluationSignalsInsertQuery = `
+      INSERT INTO evaluation_signals (
+        evaluation_item_id,
+        evaluation_id,
+        prompt_text,
+        subject,
+        keyword_coverage,
+        answer_length_ratio,
+        lexical_similarity,
+        dimensions,
+        suggested_grade
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)
+      RETURNING id, created_at
+    `;
+
+    const evaluationSignalsInsertValues = [
+      evaluationItem.id,
+      evaluationId,
+      normalizedFields.prompt_text,
+      normalizedSubject || null,
+      result.signals.keywordCoverage,
+      result.signals.answerLengthRatio,
+      result.signals.lexicalSimilarity,
+      JSON.stringify(result.dimensions),
+      result.suggested_grade.toLowerCase()
+    ];
+
+    const evaluationSignalsInsertResult = await client.query(
+      evaluationSignalsInsertQuery,
+      evaluationSignalsInsertValues
+    );
+
+    const evaluationSignals = evaluationSignalsInsertResult.rows[0];
+
     await client.query('COMMIT');
 
     console.info('Persisted evaluation flow records', {
+      evaluation_id: evaluationId,
       evaluation_item: evaluationItem,
-      grade_suggestion: gradeSuggestion
+      grade_suggestion: gradeSuggestion,
+      evaluation_signals: evaluationSignals
     });
 
-    return res.status(200).json(result);
+    return res.status(200).json({
+      ...result,
+      evaluation_id: evaluationId,
+      prompt_text: normalizedFields.prompt_text,
+      subject: normalizedSubject || null
+    });
   } catch (error) {
     if (client) {
       await client.query('ROLLBACK');

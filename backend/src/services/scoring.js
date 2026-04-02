@@ -59,7 +59,7 @@ function overlapRatio(sourceTokens, targetTokens) {
   return intersection / targetSet.size;
 }
 
-function buildDimensions({ user_answer_text, expected_answer_text }) {
+function buildDimensions({ user_answer_text, expected_answer_text, evaluation_id, prompt_text, subject }) {
   const userTokens = tokenize(user_answer_text);
   const expectedTokens = tokenize(expected_answer_text);
 
@@ -79,11 +79,28 @@ function buildDimensions({ user_answer_text, expected_answer_text }) {
     memorization_risk = 0.5;
   }
 
-  return {
+  const dimensions = {
     core_idea,
     conceptual_accuracy,
     completeness,
     memorization_risk
+  };
+
+  console.info('buildDimensions signals', {
+    evaluation_id,
+    prompt_text,
+    subject,
+    keywordCoverage,
+    answerLengthRatio,
+    lexicalSimilarity,
+    dimensions
+  });
+
+  return {
+    dimensions,
+    keywordCoverage,
+    answerLengthRatio,
+    lexicalSimilarity
   };
 }
 
@@ -165,7 +182,12 @@ function buildJustification(dimensions) {
 }
 
 export function scoreEvaluation(payload) {
-  const dimensions = buildDimensions(payload);
+  const {
+    dimensions,
+    keywordCoverage,
+    answerLengthRatio,
+    lexicalSimilarity
+  } = buildDimensions(payload);
 
   for (const value of Object.values(dimensions)) {
     if (!ALLOWED_SCORES.includes(value)) {
@@ -173,11 +195,30 @@ export function scoreEvaluation(payload) {
     }
   }
 
-  return {
-    suggested_grade: computeSuggestedGrade(dimensions),
+  const suggestedGrade = computeSuggestedGrade(dimensions);
+  const result = {
+    suggested_grade: suggestedGrade,
     overall_score: computeOverallScore(dimensions),
     dimensions,
     justification_short: buildJustification(dimensions),
-    model_confidence: computeModelConfidence(dimensions)
+    model_confidence: computeModelConfidence(dimensions),
+    signals: {
+      keywordCoverage,
+      answerLengthRatio,
+      lexicalSimilarity
+    }
   };
+
+  console.info('scoreEvaluation result', {
+    evaluation_id: payload.evaluation_id,
+    prompt_text: payload.prompt_text,
+    subject: payload.subject,
+    keywordCoverage,
+    answerLengthRatio,
+    lexicalSimilarity,
+    dimensions,
+    suggested_grade: suggestedGrade
+  });
+
+  return result;
 }
