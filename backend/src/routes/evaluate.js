@@ -1,5 +1,7 @@
 import { Router } from 'express';
+import { randomUUID } from 'node:crypto';
 import { scoreEvaluation } from '../services/scoring.js';
+import { dbPool } from '../db/client.js';
 
 const evaluateRouter = Router();
 
@@ -30,7 +32,7 @@ function validationError(res, details) {
   });
 }
 
-evaluateRouter.post('/evaluate', (req, res) => {
+evaluateRouter.post('/evaluate', async (req, res) => {
   if (!req.is('application/json')) {
     return badRequest(res, [
       {
@@ -109,14 +111,117 @@ evaluateRouter.post('/evaluate', (req, res) => {
     return validationError(res, validationErrors);
   }
 
+  const normalizedSubject = normalize(req.body.subject);
+
   const result = scoreEvaluation({
     prompt_text: normalizedFields.prompt_text,
     user_answer_text: normalizedFields.user_answer_text,
     expected_answer_text: normalizedFields.expected_answer_text,
-    subject: normalize(req.body.subject)
+    subject: normalizedSubject
   });
 
-  return res.status(200).json(result);
+  const sourceRecordId = randomUUID();
+
+  const inputPayload = {
+    prompt_text: normalizedFields.prompt_text,
+    user_answer_text: normalizedFields.user_answer_text,
+    expected_answer_text: normalizedFields.expected_answer_text,
+    subject: normalizedSubject || null
+  };
+
+  const evaluatorContext = {
+    overall_score: result.overall_score,
+    dimensions: result.dimensions,
+    model_confidence: result.model_confidence
+  };
+
+  let client;
+
+  try {
+    client = await dbPool.connect();
+    await client.query('BEGIN');
+
+    const evaluationItemInsertQuery = `
+      INSERT INTO evaluation_items (
+        source_system,
+        source_record_id,
+        input_payload,
+        evaluator_context
+      )
+      VALUES ($1, $2, $3::jsonb, $4::jsonb)
+      RETURNING id, created_at, updated_at
+    `;
+
+    const evaluationItemInsertValues = [
+      'evaluate_api',
+      sourceRecordId,
+      JSON.stringify(inputPayload),
+      JSON.stringify(evaluatorContext)
+    ];
+
+    const evaluationItemInsertResult = await client.query(
+      evaluationItemInsertQuery,
+      evaluationItemInsertValues
+    );
+
+    const evaluationItem = evaluationItemInsertResult.rows[0];
+
+    const gradeSuggestionInsertQuery = `
+      INSERT INTO grade_suggestions (
+        evaluation_item_id,
+        suggested_grade,
+        confidence,
+        model_name,
+        model_version,
+        explanation
+      )
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING id, created_at
+    `;
+
+    const gradeSuggestionInsertValues = [
+      evaluationItem.id,
+      result.suggested_grade.toLowerCase(),
+      result.model_confidence,
+      'heuristic_discriminator',
+      'v1',
+      result.justification_short
+    ];
+
+    const gradeSuggestionInsertResult = await client.query(
+      gradeSuggestionInsertQuery,
+      gradeSuggestionInsertValues
+    );
+
+    const gradeSuggestion = gradeSuggestionInsertResult.rows[0];
+
+    await client.query('COMMIT');
+
+    console.info('Persisted evaluation flow records', {
+      evaluation_item: evaluationItem,
+      grade_suggestion: gradeSuggestion
+    });
+
+    return res.status(200).json(result);
+  } catch (error) {
+    if (client) {
+      await client.query('ROLLBACK');
+    }
+
+    console.error('Error while persisting /evaluate flow records', {
+      message: error.message,
+      stack: error.stack
+    });
+
+    return res.status(500).json({
+      error: 'server_error',
+      message: 'Failed to persist evaluation data.'
+    });
+  } finally {
+    if (client) {
+      client.release();
+    }
+  }
 });
 
 export default evaluateRouter;
