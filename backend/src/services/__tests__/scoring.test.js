@@ -161,3 +161,22 @@ test('v2 aplica abreviaturas/correcciones conservadoras y expone replacements en
   assert.equal(result.signals.replacements.user.distribuciom, 'distribucion');
   assert.ok(result.signals.keywordCoverage >= 0.6);
 });
+
+test('rescata respuestas con typos densas en conceptos para evitar falso FAIL', async () => {
+  const { scoreEvaluation } = await loadScoringModule(false);
+
+  const typoDensePayload = {
+    evaluation_id: 'eval-cicladas-typo-dense',
+    prompt_text: 'puede caracterizarse en general el arte de las Islas Cícladas?',
+    subject: '',
+    expected_answer_text:
+      'La civilización cicládica se desarrolló aproximadamente entre el 3000 y el 2000 a. C., en un contexto ligado a la pesca y al comercio. Su producción más característica son las figurillas talladas en mármol blanco. En ellas domina una fuerte síntesis formal: figuras femeninas sin rostro, con brazos pegados al cuerpo y anatomía reducida a lo esencial. Por eso, el rasgo central del arte cicládico es la geometrización y la abstracción, más que el detalle naturalista.',
+    user_answer_text:
+      'en las islas cicládicas consistía en estatuillas pequenas, que no podian apoyarse, no tenian apoyo, las misma tenian brazos pegados y una simplificacion muy alta, tambien geometrizacion alta. talladas en marmol blanco. la civilizacion se desarrollo entre 3000 y 2000 ac, pezca y comercio. rasgo central es gemotrizacion y abstraccion'
+  };
+
+  const result = scoreEvaluation(typoDensePayload);
+
+  assert.notEqual(result.suggested_grade, 'FAIL');
+  assert.equal(result.dimensions.core_idea, 0.5);
+});
