@@ -435,6 +435,102 @@ function overlapRatio(sourceTokens, targetTokens) {
   return intersection / targetSet.size;
 }
 
+export function fuzzyTokenMatch(a, b) {
+  if (!a || !b) return false;
+
+  const left = String(a).trim();
+  const right = String(b).trim();
+
+  if (!left || !right || left === right) {
+    return false;
+  }
+
+  const maxLen = Math.max(left.length, right.length);
+  const minLen = Math.min(left.length, right.length);
+
+  if (minLen < 4) {
+    return false;
+  }
+
+  const normalizedDistanceThreshold = maxLen <= 5 ? 0.2 : 0.34;
+  const maxDistance = Math.floor(maxLen * normalizedDistanceThreshold);
+
+  if (maxDistance < 1 || Math.abs(left.length - right.length) > maxDistance) {
+    return false;
+  }
+
+  const distance = levenshteinDistanceWithLimit(left, right, maxDistance);
+  if (distance > maxDistance) {
+    return false;
+  }
+
+  return distance / maxLen <= normalizedDistanceThreshold;
+}
+
+function overlapRatioFuzzy(sourceTokens, targetTokens) {
+  const sourceSet = [...new Set(sourceTokens)];
+  const targetSet = [...new Set(targetTokens)];
+
+  if (targetSet.length === 0) {
+    return { ratio: 0, fuzzyMatches: 0, totalMatches: 0, fuzzyMatchRate: 0 };
+  }
+
+  const usedSourceIndexes = new Set();
+  const matchedTargetIndexes = new Set();
+  let exactMatches = 0;
+  let fuzzyMatches = 0;
+
+  for (let targetIndex = 0; targetIndex < targetSet.length; targetIndex += 1) {
+    const targetToken = targetSet[targetIndex];
+    const exactSourceIndex = sourceSet.findIndex(
+      (sourceToken, sourceIndex) =>
+        !usedSourceIndexes.has(sourceIndex) && sourceToken === targetToken
+    );
+
+    if (exactSourceIndex >= 0) {
+      usedSourceIndexes.add(exactSourceIndex);
+      matchedTargetIndexes.add(targetIndex);
+      exactMatches += 1;
+    }
+  }
+
+  for (let targetIndex = 0; targetIndex < targetSet.length; targetIndex += 1) {
+    if (matchedTargetIndexes.has(targetIndex)) {
+      continue;
+    }
+
+    const targetToken = targetSet[targetIndex];
+    let matchedSourceIndex = -1;
+
+    for (let sourceIndex = 0; sourceIndex < sourceSet.length; sourceIndex += 1) {
+      if (usedSourceIndexes.has(sourceIndex)) {
+        continue;
+      }
+
+      if (fuzzyTokenMatch(sourceSet[sourceIndex], targetToken)) {
+        matchedSourceIndex = sourceIndex;
+        break;
+      }
+    }
+
+    if (matchedSourceIndex >= 0) {
+      usedSourceIndexes.add(matchedSourceIndex);
+      matchedTargetIndexes.add(targetIndex);
+      fuzzyMatches += 1;
+    }
+  }
+
+  const totalMatches = exactMatches + fuzzyMatches;
+  const fuzzyMatchRate = totalMatches > 0 ? fuzzyMatches / totalMatches : 0;
+
+  return {
+    ratio: totalMatches / targetSet.length,
+    fuzzyMatches,
+    totalMatches,
+    fuzzyMatchRate
+  };
+}
+
 function containsAnyExpression(text, expressions) {
   return expressions.some((expression) => text.includes(expression));
 }
@@ -538,7 +634,8 @@ function buildDimensions({
   const userTokens = preprocessingOutput.user.lemmas;
   const expectedTokens = preprocessingOutput.expected.lemmas;
 
-  const keywordCoverage = overlapRatio(userTokens, expectedTokens);
+  const keywordCoverageSignals = overlapRatioFuzzy(userTokens, expectedTokens);
+  const keywordCoverage = keywordCoverageSignals.ratio;
   const answerLengthRatio = Math.min(user_answer_text.length / Math.max(expected_answer_text.length, 1), 1);
   const lexicalSimilarity = overlapRatio(userTokens, userTokens.length > expectedTokens.length ? userTokens : expectedTokens);
   const detectedCoreConcepts = detectCoreConcepts({ user_answer_text, expected_answer_text, subject });
@@ -575,6 +672,7 @@ function buildDimensions({
     subject,
     preprocessingVariant: preprocessingOutput.variant,
     keywordCoverage,
+    fuzzyMatchRate: keywordCoverageSignals.fuzzyMatchRate,
     answerLengthRatio,
     lexicalSimilarity,
     detectedCoreConcepts,
@@ -586,6 +684,7 @@ function buildDimensions({
   return {
     dimensions,
     keywordCoverage,
+    fuzzyMatchRate: keywordCoverageSignals.fuzzyMatchRate,
     answerLengthRatio,
     lexicalSimilarity,
     detectedCoreConcepts,
@@ -747,6 +846,7 @@ export function scoreEvaluation(payload) {
   const {
     dimensions,
     keywordCoverage,
+    fuzzyMatchRate,
     answerLengthRatio,
     lexicalSimilarity,
     detectedCoreConcepts,
@@ -773,6 +873,7 @@ export function scoreEvaluation(payload) {
     model_confidence: computeModelConfidence(dimensions),
     signals: {
       keywordCoverage,
+      fuzzyMatchRate,
       answerLengthRatio,
       lexicalSimilarity,
       detectedCoreConcepts,
@@ -791,6 +892,7 @@ export function scoreEvaluation(payload) {
       preprocessed: evaluationPaths.preprocessed.dimensions
     },
     keywordCoverage,
+    fuzzyMatchRate,
     answerLengthRatio,
     lexicalSimilarity,
     detectedCoreConcepts,
