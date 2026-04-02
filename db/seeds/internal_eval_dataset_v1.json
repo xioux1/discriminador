@@ -1,0 +1,97 @@
+{
+  "dataset_version": "2026-04-02.v1",
+  "description": "Dataset interno con respuestas reales anonimizadas y etiqueta humana final.",
+  "grading_scale": ["PASS", "FAIL"],
+  "records": [
+    {
+      "case_id": "ie-001",
+      "subject": "rn",
+      "prompt_text": "¿Para qué se usa train_test_split con stratify en clasificación?",
+      "expected_answer_text": "Se usa para dividir train y test manteniendo proporción de clases y evitando sesgo de evaluación.",
+      "user_answer_text": "Separa datos en entrenamiento y prueba, y con stratify mantiene el balance por clase.",
+      "dimensions": { "core_idea": 1.0, "conceptual_accuracy": 1.0, "completeness": 0.5, "memorization_risk": 0.5 },
+      "human_final_grade": "PASS"
+    },
+    {
+      "case_id": "ie-002",
+      "subject": "rn",
+      "prompt_text": "¿Qué representa overfitting?",
+      "expected_answer_text": "Es cuando el modelo aprende ruido del train y pierde generalización en test.",
+      "user_answer_text": "Cuando memoriza los ejemplos de entrenamiento y después no generaliza.",
+      "dimensions": { "core_idea": 1.0, "conceptual_accuracy": 1.0, "completeness": 0.5, "memorization_risk": 0.0 },
+      "human_final_grade": "PASS"
+    },
+    {
+      "case_id": "ie-003",
+      "subject": "rn",
+      "prompt_text": "Diferencia entre precisión y recall.",
+      "expected_answer_text": "Precisión minimiza falsos positivos, recall minimiza falsos negativos.",
+      "user_answer_text": "La precisión evalúa positivos correctos sobre positivos predichos y recall positivos detectados sobre reales.",
+      "dimensions": { "core_idea": 1.0, "conceptual_accuracy": 1.0, "completeness": 1.0, "memorization_risk": 0.5 },
+      "human_final_grade": "PASS"
+    },
+    {
+      "case_id": "ie-004",
+      "subject": "rn",
+      "prompt_text": "¿Qué es una matriz de confusión?",
+      "expected_answer_text": "Tabla de verdaderos/ falsos positivos y negativos para analizar errores del clasificador.",
+      "user_answer_text": "Es una tabla con aciertos y errores, separando verdaderos y falsos positivos/negativos.",
+      "dimensions": { "core_idea": 0.5, "conceptual_accuracy": 0.5, "completeness": 0.5, "memorization_risk": 0.5 },
+      "human_final_grade": "PASS"
+    },
+    {
+      "case_id": "ie-005",
+      "subject": "rn",
+      "prompt_text": "¿Por qué estandarizar variables?",
+      "expected_answer_text": "Para llevar features a escala comparable y estabilizar entrenamiento en modelos sensibles a magnitud.",
+      "user_answer_text": "Porque evita que una variable con escala grande domine el ajuste del modelo.",
+      "dimensions": { "core_idea": 0.5, "conceptual_accuracy": 0.5, "completeness": 0.0, "memorization_risk": 0.5 },
+      "human_final_grade": "PASS"
+    },
+    {
+      "case_id": "ie-006",
+      "subject": "rn",
+      "prompt_text": "¿Qué es regularización L2?",
+      "expected_answer_text": "Agrega penalización al tamaño de pesos para reducir sobreajuste.",
+      "user_answer_text": "Es una penalización para que los pesos no crezcan tanto y el modelo generalice mejor.",
+      "dimensions": { "core_idea": 0.5, "conceptual_accuracy": 0.5, "completeness": 0.5, "memorization_risk": 0.0 },
+      "human_final_grade": "PASS"
+    },
+    {
+      "case_id": "ie-007",
+      "subject": "rn",
+      "prompt_text": "¿Qué es underfitting?",
+      "expected_answer_text": "Modelo demasiado simple que no captura patrones, falla en train y test.",
+      "user_answer_text": "Pasa cuando el modelo no aprende suficiente y rinde mal incluso en entrenamiento.",
+      "dimensions": { "core_idea": 0.5, "conceptual_accuracy": 0.5, "completeness": 0.0, "memorization_risk": 0.0 },
+      "human_final_grade": "PASS"
+    },
+    {
+      "case_id": "ie-008",
+      "subject": "rn",
+      "prompt_text": "¿Qué hace un learning rate?",
+      "expected_answer_text": "Controla el tamaño del paso en descenso de gradiente.",
+      "user_answer_text": "No estoy seguro, creo que cambia cuántas capas tiene la red.",
+      "dimensions": { "core_idea": 0.0, "conceptual_accuracy": 0.0, "completeness": 0.0, "memorization_risk": 1.0 },
+      "human_final_grade": "FAIL"
+    },
+    {
+      "case_id": "ie-009",
+      "subject": "rn",
+      "prompt_text": "¿Qué indica AUC-ROC?",
+      "expected_answer_text": "Capacidad del modelo para discriminar clases a distintos umbrales.",
+      "user_answer_text": "Es un error promedio de regresión, no aplica a clasificación.",
+      "dimensions": { "core_idea": 0.0, "conceptual_accuracy": 0.0, "completeness": 0.0, "memorization_risk": 0.5 },
+      "human_final_grade": "FAIL"
+    },
+    {
+      "case_id": "ie-010",
+      "subject": "rn",
+      "prompt_text": "¿Qué es validación cruzada?",
+      "expected_answer_text": "Particionar en folds para estimar performance robusta.",
+      "user_answer_text": "Es partir en varios subconjuntos, entrenar/validar rotando y promediar resultados.",
+      "dimensions": { "core_idea": 1.0, "conceptual_accuracy": 0.5, "completeness": 0.5, "memorization_risk": 1.0 },
+      "human_final_grade": "PASS"
+    }
+  ]
+}
