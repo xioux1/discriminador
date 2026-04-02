@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { scoreEvaluation } from '../services/scoring.js';
 
 const evaluateRouter = Router();
 
@@ -12,9 +13,6 @@ function normalize(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function scoreField(value) {
-  return value ? 1 : 0;
-}
 
 function badRequest(res, details) {
   return res.status(400).json({
@@ -111,32 +109,14 @@ evaluateRouter.post('/evaluate', (req, res) => {
     return validationError(res, validationErrors);
   }
 
-  const userAnswerText = normalizedFields.user_answer_text;
-  const expectedAnswerText = normalizedFields.expected_answer_text;
-
-  const dimensions = {
-    core_idea: scoreField(userAnswerText),
-    conceptual_accuracy: scoreField(expectedAnswerText),
-    completeness: userAnswerText.length >= 20 ? 1 : 0.5,
-    memorization_risk: 0.5
-  };
-
-  const overallScore = Number(
-    ((dimensions.core_idea + dimensions.conceptual_accuracy + dimensions.completeness + dimensions.memorization_risk) / 4).toFixed(2)
-  );
-
-  const suggestedGrade = overallScore >= 0.6 ? 'PASS' : 'FAIL';
-
-  return res.status(200).json({
-    suggested_grade: suggestedGrade,
-    overall_score: overallScore,
-    dimensions,
-    justification_short:
-      suggestedGrade === 'PASS'
-        ? 'La respuesta parece capturar el núcleo esperado, pero requiere revisión humana final.'
-        : 'La respuesta no alcanza el umbral mínimo y requiere corrección manual.',
-    model_confidence: 0.5
+  const result = scoreEvaluation({
+    prompt_text: normalizedFields.prompt_text,
+    user_answer_text: normalizedFields.user_answer_text,
+    expected_answer_text: normalizedFields.expected_answer_text,
+    subject: normalize(req.body.subject)
   });
+
+  return res.status(200).json(result);
 });
 
 export default evaluateRouter;
