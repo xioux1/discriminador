@@ -16,10 +16,23 @@ function parsePort(value) {
   return parsed;
 }
 
+function parseBoolean(value, defaultValue = false) {
+  if (value === undefined) {
+    return defaultValue;
+  }
+
+  return ['1', 'true', 'yes', 'on'].includes(String(value).toLowerCase());
+}
+
+export function isSemanticCoreIdeaRescueEnabled() {
+  return parseBoolean(process.env.ENABLE_SEMANTIC_CORE_IDEA_RESCUE, false);
+}
+
 export const env = {
   host: process.env.HOST || DEFAULT_HOST,
   port: parsePort(process.env.PORT),
-  databaseUrl: process.env.DATABASE_URL || ''
+  databaseUrl: process.env.DATABASE_URL || '',
+  enableSemanticCoreIdeaRescue: isSemanticCoreIdeaRescueEnabled()
 };
 
 export function assertRequiredEnv() {

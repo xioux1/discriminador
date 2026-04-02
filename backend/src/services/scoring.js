@@ -1,3 +1,5 @@
+import { isSemanticCoreIdeaRescueEnabled } from '../config/env.js';
+
 const ALLOWED_SCORES = [0.0, 0.5, 1.0];
 
 const OVERALL_WEIGHTS = {
@@ -8,6 +10,30 @@ const OVERALL_WEIGHTS = {
 };
 
 const CONFIDENCE_BASE = 0.55;
+
+const CORE_CONCEPT_SYNONYMS = {
+  rn: {
+    shuffle: [
+      'shuffle',
+      'mezclar',
+      'aleatorizar',
+      'aleatorio',
+      'reordenar',
+      'reordenamiento'
+    ],
+    stratify: [
+      'stratify',
+      'estratificar',
+      'estratificado',
+      'mantener proporcion',
+      'mantener distribucion',
+      'misma proporcion',
+      'proporcion por clase',
+      'distribucion por clase',
+      'balance por clase'
+    ]
+  }
+};
 
 function normalizeText(text) {
   return text
@@ -59,6 +85,48 @@ function overlapRatio(sourceTokens, targetTokens) {
   return intersection / targetSet.size;
 }
 
+function containsAnyExpression(text, expressions) {
+  return expressions.some((expression) => text.includes(expression));
+}
+
+export function detectCoreConcepts({ user_answer_text, expected_answer_text, subject }) {
+  const normalizedUser = normalizeText(user_answer_text || '');
+  const normalizedExpected = normalizeText(expected_answer_text || '');
+  const conceptMap = CORE_CONCEPT_SYNONYMS[(subject || '').toLowerCase()];
+
+  if (!conceptMap) {
+    return { matched: false, requiredConcepts: 0, matchedConcepts: 0, details: {} };
+  }
+
+  const requiredConcepts = Object.entries(conceptMap)
+    .filter(([, expressions]) => containsAnyExpression(normalizedExpected, expressions))
+    .map(([concept]) => concept);
+
+  if (requiredConcepts.length === 0) {
+    return { matched: false, requiredConcepts: 0, matchedConcepts: 0, details: {} };
+  }
+
+  const details = {};
+  let matchedConcepts = 0;
+
+  for (const concept of requiredConcepts) {
+    const expressions = conceptMap[concept];
+    const conceptMatched = containsAnyExpression(normalizedUser, expressions);
+    details[concept] = conceptMatched;
+
+    if (conceptMatched) {
+      matchedConcepts += 1;
+    }
+  }
+
+  return {
+    matched: matchedConcepts === requiredConcepts.length,
+    requiredConcepts: requiredConcepts.length,
+    matchedConcepts,
+    details
+  };
+}
+
 function buildDimensions({ user_answer_text, expected_answer_text, evaluation_id, prompt_text, subject }) {
   const userTokens = tokenize(user_answer_text);
   const expectedTokens = tokenize(expected_answer_text);
@@ -66,8 +134,13 @@ function buildDimensions({ user_answer_text, expected_answer_text, evaluation_id
   const keywordCoverage = overlapRatio(userTokens, expectedTokens);
   const answerLengthRatio = Math.min(user_answer_text.length / Math.max(expected_answer_text.length, 1), 1);
   const lexicalSimilarity = overlapRatio(userTokens, userTokens.length > expectedTokens.length ? userTokens : expectedTokens);
+  const detectedCoreConcepts = detectCoreConcepts({ user_answer_text, expected_answer_text, subject });
 
-  const core_idea = toDiscreteScore(keywordCoverage);
+  let core_idea = toDiscreteScore(keywordCoverage);
+  if (isSemanticCoreIdeaRescueEnabled() && core_idea < 0.5 && detectedCoreConcepts.matched) {
+    core_idea = 0.5;
+  }
+
   const conceptual_accuracy = toDiscreteScore(keywordCoverage * 0.8 + answerLengthRatio * 0.2);
   const completeness = toDiscreteScore(keywordCoverage * 0.7 + answerLengthRatio * 0.3);
 
@@ -93,6 +166,7 @@ function buildDimensions({ user_answer_text, expected_answer_text, evaluation_id
     keywordCoverage,
     answerLengthRatio,
     lexicalSimilarity,
+    detectedCoreConcepts,
     dimensions
   });
 
@@ -100,7 +174,8 @@ function buildDimensions({ user_answer_text, expected_answer_text, evaluation_id
     dimensions,
     keywordCoverage,
     answerLengthRatio,
-    lexicalSimilarity
+    lexicalSimilarity,
+    detectedCoreConcepts
   };
 }
 
@@ -186,7 +261,8 @@ export function scoreEvaluation(payload) {
     dimensions,
     keywordCoverage,
     answerLengthRatio,
-    lexicalSimilarity
+    lexicalSimilarity,
+    detectedCoreConcepts
   } = buildDimensions(payload);
 
   for (const value of Object.values(dimensions)) {
@@ -205,7 +281,8 @@ export function scoreEvaluation(payload) {
     signals: {
       keywordCoverage,
       answerLengthRatio,
-      lexicalSimilarity
+      lexicalSimilarity,
+      detectedCoreConcepts
     }
   };
 
@@ -216,6 +293,7 @@ export function scoreEvaluation(payload) {
     keywordCoverage,
     answerLengthRatio,
     lexicalSimilarity,
+    detectedCoreConcepts,
     dimensions,
     suggested_grade: suggestedGrade
   });
