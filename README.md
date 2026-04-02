@@ -519,3 +519,41 @@ Se agregó un módulo base en `ui/main/` con:
 - render de respuesta estructurada (sugerencia, score, dimensiones, justificación y confianza);
 - acciones de firma (`Aceptar sugerencia`, `Corregir a PASS`, `Corregir a FAIL`, `Marcar duda`) con envío al backend vía `POST /decision`;
 - feedback de guardado y bloqueo de doble envío durante evaluación/guardado.
+
+## Backend module (`backend/`)
+
+El módulo backend expone una API HTTP base para integrarse con `ui/main/main.js`.
+
+### Requisitos
+
+1. Node.js 20+.
+2. Copiar variables de entorno:
+
+```bash
+cd backend
+cp .env.example .env
+```
+
+### Variables de entorno
+
+- `HOST`: host de bind del servidor (default `0.0.0.0`).
+- `PORT`: puerto HTTP (default `3000`).
+- `DATABASE_URL`: connection string de base de datos (obligatoria).
+
+### Ejecutar en local
+
+```bash
+cd backend
+npm install
+npm run start
+```
+
+Servidor local esperado:
+
+- `http://localhost:3000`
+
+### Endpoints
+
+- `GET /health`
+- `POST /evaluate`
+- `POST /decision`

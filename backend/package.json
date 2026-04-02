@@ -1,0 +1,15 @@
+{
+  "name": "discriminador-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Backend HTTP API for evaluation and decision endpoints",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "express": "^4.21.2"
+  }
+}
