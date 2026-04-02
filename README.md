@@ -1,6 +1,27 @@
 # discriminador
 # Product Spec V1 — Asistente de Evaluación Teórica Escrita
 
+## Ejecución local (backend + UI estática)
+
+La UI (`ui/main`) se sirve desde el backend Express para mantener **mismo origen** y evitar problemas de CORS en los endpoints `/evaluate` y `/decision`.
+
+Secuencia recomendada:
+
+1. Configurar variables de entorno del backend (mínimo `DATABASE_URL`; opcionales `HOST` y `PORT`).
+2. Instalar dependencias del backend:
+   ```bash
+   cd backend
+   npm install
+   ```
+3. Iniciar el backend (también sirve la UI estática):
+   ```bash
+   npm run dev
+   ```
+4. Abrir en navegador `http://localhost:3000/` (o el `PORT` configurado).
+5. Desde esa misma URL, la UI consume:
+   * `POST /evaluate`
+   * `POST /decision`
+
 ## 1. Propósito
 
 Construir una plataforma asistida para evaluación de respuestas teóricas escritas, donde el usuario pegue manualmente la consigna, su respuesta y la respuesta esperada, el sistema genere una calificación sugerida con justificación, y la decisión final quede en manos del usuario.
