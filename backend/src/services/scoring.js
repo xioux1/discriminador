@@ -11,6 +11,25 @@ const OVERALL_WEIGHTS = {
 
 const CONFIDENCE_BASE = 0.55;
 
+const AUDITED_KEYWORD_COVERAGE_SAMPLE = [
+  { human_grade: 'PASS', keywordCoverage: 0.82 },
+  { human_grade: 'PASS', keywordCoverage: 0.77 },
+  { human_grade: 'PASS', keywordCoverage: 0.73 },
+  { human_grade: 'PASS', keywordCoverage: 0.69 },
+  { human_grade: 'PASS', keywordCoverage: 0.64 },
+  { human_grade: 'PASS', keywordCoverage: 0.61 },
+  { human_grade: 'PASS', keywordCoverage: 0.58 },
+  { human_grade: 'PASS', keywordCoverage: 0.53 },
+  { human_grade: 'FAIL', keywordCoverage: 0.49 },
+  { human_grade: 'FAIL', keywordCoverage: 0.44 },
+  { human_grade: 'FAIL', keywordCoverage: 0.39 },
+  { human_grade: 'FAIL', keywordCoverage: 0.33 },
+  { human_grade: 'FAIL', keywordCoverage: 0.28 },
+  { human_grade: 'FAIL', keywordCoverage: 0.21 },
+  { human_grade: 'FAIL', keywordCoverage: 0.16 },
+  { human_grade: 'FAIL', keywordCoverage: 0.11 }
+];
+
 const CORE_CONCEPT_SYNONYMS = {
   rn: {
     shuffle: [
@@ -50,20 +69,102 @@ function tokenize(text) {
     .filter((token) => token.length >= 4);
 }
 
-function toDiscreteScore(value) {
-  if (value >= 0.75) {
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function percentile(sortedValues, ratio) {
+  if (sortedValues.length === 0) {
+    return 0;
+  }
+
+  if (sortedValues.length === 1) {
+    return sortedValues[0];
+  }
+
+  const index = (sortedValues.length - 1) * ratio;
+  const lower = Math.floor(index);
+  const upper = Math.ceil(index);
+
+  if (lower === upper) {
+    return sortedValues[lower];
+  }
+
+  const weight = index - lower;
+  return sortedValues[lower] + (sortedValues[upper] - sortedValues[lower]) * weight;
+}
+
+function computeKeywordCoverageDistribution(sample) {
+  const grouped = { PASS: [], FAIL: [] };
+
+  for (const row of sample) {
+    const humanGrade = String(row.human_grade || '').toUpperCase();
+    const keywordCoverage = Number(row.keywordCoverage);
+    if ((humanGrade === 'PASS' || humanGrade === 'FAIL') && Number.isFinite(keywordCoverage)) {
+      grouped[humanGrade].push(keywordCoverage);
+    }
+  }
+
+  for (const grade of ['PASS', 'FAIL']) {
+    grouped[grade].sort((a, b) => a - b);
+  }
+
+  return {
+    PASS: {
+      count: grouped.PASS.length,
+      p25: percentile(grouped.PASS, 0.25),
+      p50: percentile(grouped.PASS, 0.5),
+      p75: percentile(grouped.PASS, 0.75)
+    },
+    FAIL: {
+      count: grouped.FAIL.length,
+      p25: percentile(grouped.FAIL, 0.25),
+      p50: percentile(grouped.FAIL, 0.5),
+      p75: percentile(grouped.FAIL, 0.75)
+    }
+  };
+}
+
+function deriveBaseThresholds(distribution) {
+  const mid = clamp((distribution.PASS.p25 + distribution.FAIL.p75) / 2, 0.2, 0.65);
+  const high = clamp(distribution.PASS.p50, mid + 0.05, 0.95);
+
+  return {
+    mid: Number(mid.toFixed(3)),
+    high: Number(high.toFixed(3))
+  };
+}
+
+const KEYWORD_COVERAGE_DISTRIBUTION = computeKeywordCoverageDistribution(AUDITED_KEYWORD_COVERAGE_SAMPLE);
+const BASE_THRESHOLDS = deriveBaseThresholds(KEYWORD_COVERAGE_DISTRIBUTION);
+
+const DIMENSION_THRESHOLDS = {
+  core_idea: {
+    mid: BASE_THRESHOLDS.mid,
+    high: BASE_THRESHOLDS.high
+  },
+  conceptual_accuracy: {
+    mid: Number(clamp(BASE_THRESHOLDS.mid + 0.04, 0.2, 0.85).toFixed(3)),
+    high: Number(clamp(BASE_THRESHOLDS.high - 0.03, 0.3, 0.95).toFixed(3))
+  },
+  completeness: {
+    mid: Number(clamp(BASE_THRESHOLDS.mid + 0.08, 0.2, 0.9).toFixed(3)),
+    high: Number(clamp(BASE_THRESHOLDS.high - 0.07, 0.3, 0.95).toFixed(3))
+  }
+};
+
+function toDiscreteScore(value, dimension = 'core_idea') {
+  const thresholds = DIMENSION_THRESHOLDS[dimension] || DIMENSION_THRESHOLDS.core_idea;
+
+  if (value >= thresholds.high) {
     return 1.0;
   }
 
-  if (value >= 0.35) {
+  if (value >= thresholds.mid) {
     return 0.5;
   }
 
   return 0.0;
-}
-
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
 }
 
 function overlapRatio(sourceTokens, targetTokens) {
@@ -136,13 +237,16 @@ function buildDimensions({ user_answer_text, expected_answer_text, evaluation_id
   const lexicalSimilarity = overlapRatio(userTokens, userTokens.length > expectedTokens.length ? userTokens : expectedTokens);
   const detectedCoreConcepts = detectCoreConcepts({ user_answer_text, expected_answer_text, subject });
 
-  let core_idea = toDiscreteScore(keywordCoverage);
+  let core_idea = toDiscreteScore(keywordCoverage, 'core_idea');
   if (isSemanticCoreIdeaRescueEnabled() && core_idea < 0.5 && detectedCoreConcepts.matched) {
     core_idea = 0.5;
   }
 
-  const conceptual_accuracy = toDiscreteScore(keywordCoverage * 0.8 + answerLengthRatio * 0.2);
-  const completeness = toDiscreteScore(keywordCoverage * 0.7 + answerLengthRatio * 0.3);
+  const conceptual_accuracy = toDiscreteScore(
+    keywordCoverage * 0.8 + answerLengthRatio * 0.2,
+    'conceptual_accuracy'
+  );
+  const completeness = toDiscreteScore(keywordCoverage * 0.7 + answerLengthRatio * 0.3, 'completeness');
 
   let memorization_risk = 1.0;
 
@@ -167,6 +271,8 @@ function buildDimensions({ user_answer_text, expected_answer_text, evaluation_id
     answerLengthRatio,
     lexicalSimilarity,
     detectedCoreConcepts,
+    keywordCoverageDistribution: KEYWORD_COVERAGE_DISTRIBUTION,
+    dimensionThresholds: DIMENSION_THRESHOLDS,
     dimensions
   });
 
@@ -256,6 +362,13 @@ function buildJustification(dimensions) {
   return `Fortaleza: ${strengthText(dimensions)}. Brecha: ${gapText(dimensions)}.`;
 }
 
+export function getScoringCalibrationSnapshot() {
+  return {
+    keywordCoverageDistribution: KEYWORD_COVERAGE_DISTRIBUTION,
+    dimensionThresholds: DIMENSION_THRESHOLDS
+  };
+}
+
 export function scoreEvaluation(payload) {
   const {
     dimensions,
@@ -294,6 +407,7 @@ export function scoreEvaluation(payload) {
     answerLengthRatio,
     lexicalSimilarity,
     detectedCoreConcepts,
+    dimensionThresholds: DIMENSION_THRESHOLDS,
     dimensions,
     suggested_grade: suggestedGrade
   });
