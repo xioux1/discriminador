@@ -259,6 +259,25 @@ Ejemplo:
 
 ---
 
+## Feature flag de preprocessing
+
+### `ENABLE_PREPROCESSING_V2`
+
+Define qué variante de preprocessing usa `scoreEvaluation`:
+
+- `true` → variante `v2`.
+- `false` → variante `legacy`.
+- sin definir → estrategia de rollout **opción A**:
+  - `true` en `APP_ENV`/`NODE_ENV` igual a `staging`, `production` o `prod`;
+  - `false` en el resto de entornos.
+
+Recomendación:
+
+- `development` / `test`: `false`.
+- `staging` / `production`: `true` (con rollback inmediato posible seteando `false`).
+
+Para auditoría offline, `scoreEvaluationOfflineComparison(payload)` continúa disponible y devuelve ambas rutas (`legacy` y `preprocessed`) en paralelo.
+
 ## Ejemplos reales
 
 ## 1) Caso PASS

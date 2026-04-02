@@ -22,6 +22,27 @@ Secuencia recomendada:
    * `POST /evaluate`
    * `POST /decision`
 
+## Flags de scoring y rollout
+
+### `ENABLE_PREPROCESSING_V2`
+
+Controla la variante de preprocessing usada por el scoring:
+
+* `true`: activa preprocessing `v2`.
+* `false`: mantiene preprocessing `legacy`.
+* si no se define, el backend aplica estrategia **opción A**:
+  * `true` automáticamente en `APP_ENV`/`NODE_ENV` = `staging`, `production` o `prod`;
+  * `false` en otros entornos (por ejemplo `development` y `test`).
+
+Recomendación por entorno:
+
+* `development`: `ENABLE_PREPROCESSING_V2=false` (debug simple).
+* `test`: `ENABLE_PREPROCESSING_V2=false` (baseline estable).
+* `staging`: `ENABLE_PREPROCESSING_V2=true` (validación previa a producción).
+* `production`: `ENABLE_PREPROCESSING_V2=true`, con rollback rápido seteando `ENABLE_PREPROCESSING_V2=false`.
+
+Durante el rollout se mantiene disponible `scoreEvaluationOfflineComparison` para comparar `legacy` vs `v2` offline.
+
 ## 1. Propósito
 
 Construir una plataforma asistida para evaluación de respuestas teóricas escritas, donde el usuario pegue manualmente la consigna, su respuesta y la respuesta esperada, el sistema genere una calificación sugerida con justificación, y la decisión final quede en manos del usuario.
