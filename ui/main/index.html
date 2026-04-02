@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Discriminador — UI principal</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>Evaluación teórica escrita</h1>
+
+      <section class="card">
+        <h2>Entrada</h2>
+        <form id="evaluation-form" novalidate>
+          <label for="prompt_text">Consigna</label>
+          <textarea id="prompt_text" name="prompt_text" rows="4" required></textarea>
+          <p class="field-error" data-error-for="prompt_text"></p>
+
+          <label for="user_answer_text">Respuesta del usuario</label>
+          <textarea id="user_answer_text" name="user_answer_text" rows="4" required></textarea>
+          <p class="field-error" data-error-for="user_answer_text"></p>
+
+          <label for="expected_answer_text">Respuesta esperada</label>
+          <textarea id="expected_answer_text" name="expected_answer_text" rows="4" required></textarea>
+          <p class="field-error" data-error-for="expected_answer_text"></p>
+
+          <label for="subject">Materia (opcional)</label>
+          <input id="subject" name="subject" type="text" />
+          <p class="field-error" data-error-for="subject"></p>
+
+          <button id="evaluate-btn" type="submit">Evaluar</button>
+        </form>
+      </section>
+
+      <section id="result-card" class="card hidden" aria-live="polite">
+        <h2>Resultado</h2>
+        <div id="result-loading" class="hidden">Evaluando...</div>
+
+        <div id="result-content" class="hidden">
+          <p><strong>Calificación sugerida:</strong> <span id="suggested-grade"></span></p>
+          <p><strong>Score general:</strong> <span id="overall-score"></span></p>
+          <p><strong>Confianza:</strong> <span id="model-confidence"></span></p>
+          <p><strong>Justificación:</strong> <span id="justification-short"></span></p>
+
+          <h3>Dimensiones</h3>
+          <ul id="dimensions-list"></ul>
+
+          <div class="actions">
+            <button type="button" data-action="accept">Aceptar sugerencia</button>
+            <button type="button" data-action="correct-pass">Corregir a PASS</button>
+            <button type="button" data-action="correct-fail">Corregir a FAIL</button>
+            <button type="button" data-action="uncertain">Marcar duda</button>
+          </div>
+
+          <label for="correction_reason">Motivo (opcional, recomendado si corriges o dudas)</label>
+          <textarea id="correction_reason" name="correction_reason" rows="2"></textarea>
+        </div>
+
+        <p id="save-feedback" class="feedback"></p>
+      </section>
+    </main>
+
+    <script src="./main.js"></script>
+  </body>
+</html>
