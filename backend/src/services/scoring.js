@@ -286,12 +286,27 @@ function buildDimensions({ user_answer_text, expected_answer_text, evaluation_id
 }
 
 function computeSuggestedGrade(dimensions) {
-  const pass =
-    dimensions.core_idea >= 0.5 &&
-    dimensions.conceptual_accuracy >= 0.5 &&
-    dimensions.completeness >= 0.5;
+  const criticalDimensions = [
+    dimensions.core_idea,
+    dimensions.conceptual_accuracy,
+    dimensions.completeness
+  ];
+  const failingCriticalDimensions = criticalDimensions.filter((score) => score < 0.5);
+  const pass = failingCriticalDimensions.length === 0;
 
-  return pass ? 'PASS' : 'FAIL';
+  if (pass) {
+    return 'PASS';
+  }
+
+  const smallMarginFailure =
+    failingCriticalDimensions.length === 1 &&
+    failingCriticalDimensions[0] === 0.0;
+
+  if (smallMarginFailure) {
+    return 'REVIEW';
+  }
+
+  return 'FAIL';
 }
 
 function computeOverallScore(dimensions) {

@@ -85,3 +85,24 @@ test('regresión: cambios menores de wording no deben voltear core_idea de 0.5 a
   assert.equal(baseResult.dimensions.core_idea, 0.5);
   assert.notEqual(variantResult.dimensions.core_idea, 0.0);
 });
+
+test('sugiere REVIEW cuando falla solo una dimensión crítica por margen pequeño', async () => {
+  const { scoreEvaluation } = await loadScoringModule(true);
+
+  const reviewPayload = {
+    evaluation_id: 'eval-review',
+    prompt_text: 'Explica el flujo mínimo de evaluación.',
+    subject: 'General',
+    expected_answer_text:
+      'analisis modelo evidencia contexto criterio respuesta validacion docente manual',
+    user_answer_text:
+      'analisis modelo evidencia contexto con comentarios adicionales para aportar trazabilidad'
+  };
+
+  const result = scoreEvaluation(reviewPayload);
+
+  assert.equal(result.dimensions.core_idea, 0.0);
+  assert.equal(result.dimensions.conceptual_accuracy, 0.5);
+  assert.ok(result.dimensions.completeness >= 0.5);
+  assert.equal(result.suggested_grade, 'REVIEW');
+});
