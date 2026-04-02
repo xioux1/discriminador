@@ -4,7 +4,8 @@ import { dbPool } from '../db/client.js';
 const decisionRouter = Router();
 
 const ALLOWED_ACTIONS = new Set(['accept', 'correct-pass', 'correct-fail', 'uncertain']);
-const ALLOWED_GRADES = new Set(['pass', 'fail']);
+const ALLOWED_FINAL_GRADES = new Set(['pass', 'fail']);
+const ALLOWED_SUGGESTED_GRADES = new Set(['pass', 'review', 'fail']);
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -91,14 +92,14 @@ decisionRouter.post('/decision', async (req, res) => {
     });
   }
 
-  if (!ALLOWED_GRADES.has(suggestedGrade)) {
+  if (!ALLOWED_SUGGESTED_GRADES.has(suggestedGrade)) {
     validationErrors.push({
       field: 'evaluation_result.suggested_grade',
-      issue: "Must be one of: 'PASS' or 'FAIL'."
+      issue: "Must be one of: 'PASS', 'REVIEW' or 'FAIL'."
     });
   }
 
-  if (!ALLOWED_GRADES.has(finalGrade)) {
+  if (!ALLOWED_FINAL_GRADES.has(finalGrade)) {
     validationErrors.push({
       field: 'final_grade',
       issue: "Must resolve to one of: 'PASS' or 'FAIL'."
