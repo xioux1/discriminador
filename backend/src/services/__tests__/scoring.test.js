@@ -140,3 +140,24 @@ test('mantiene doble ruta legacy/v2 disponible para evaluación offline', async 
   assert.equal(comparison.selected_variant, 'v2');
   assert.deepEqual(Object.keys(comparison.legacy.dimensions), Object.keys(comparison.preprocessed.dimensions));
 });
+
+test('v2 aplica abreviaturas/correcciones conservadoras y expone replacements en signals', async () => {
+  process.env.ENABLE_PREPROCESSING_V2 = 'true';
+  const moduleWithPreprocessing = await import(`../scoring.js?corrections=${Date.now()}-${Math.random()}`);
+
+  const correctedPayload = {
+    evaluation_id: 'eval-corrections',
+    prompt_text: 'Explica por qué RRHH registra datos.',
+    subject: 'General',
+    expected_answer_text: 'recursos humanos registra porque mejora la distribucion por clase',
+    user_answer_text: 'rrhh registra xq mejora la distribuciom p/ clase'
+  };
+
+  const result = moduleWithPreprocessing.scoreEvaluation(correctedPayload);
+
+  assert.equal(result.signals.replacements.user.rrhh, 'recursos humanos');
+  assert.equal(result.signals.replacements.user.xq, 'porque');
+  assert.equal(result.signals.replacements.user['p/'], 'para');
+  assert.equal(result.signals.replacements.user.distribuciom, 'distribucion');
+  assert.ok(result.signals.keywordCoverage >= 0.6);
+});
