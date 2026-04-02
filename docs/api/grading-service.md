@@ -83,12 +83,12 @@ En cualquier otro caso, se sugiere `FAIL`.
 
 Notas:
 
-- `memorization_risk` **no bloquea por sí sola** un `PASS`, pero impacta el score y la confianza.
+- `memorization_risk` **no bloquea por sí sola** un `PASS`, pero impacta la confianza y se reporta como señal explicativa en la justificación.
 - Si hay conflicto fuerte entre dimensiones (por ejemplo, `core_idea = 1.0` pero `conceptual_accuracy = 0.0`), prevalece la regla y el resultado es `FAIL`.
 
 ### 4) Cálculo heurístico inicial de `overall_score`
 
-`overall_score` se entrega en rango `0.0–1.0` con la siguiente fórmula:
+Por defecto, `overall_score` se entrega en rango `0.0–1.0` con la fórmula:
 
 ```text
 overall_score =
@@ -100,6 +100,19 @@ overall_score =
 
 - Redondeo recomendado: 2 decimales.
 - Esta ponderación prioriza núcleo conceptual y corrección por encima del estilo.
+
+Variante experimental habilitable con `ENABLE_EXPERIMENTAL_OVERALL_CORE_ONLY=true`:
+
+```text
+overall_score =
+  (0.35 * core_idea + 0.30 * conceptual_accuracy + 0.25 * completeness) / 0.90
+```
+
+Además, la API devuelve en `signals.overallScoreVariants` un set de variantes para auditoría offline:
+
+- `include_memorization` (base actual)
+- `subtract_memorization` (auditoría de sensibilidad)
+- `core_only_experimental` (experimental)
 
 ### 5) Cálculo heurístico inicial de `model_confidence`
 
@@ -123,7 +136,7 @@ Donde `clamp(x, 0.0, 1.0)` limita el resultado al rango permitido.
 
 ### 6) Plantilla para `justification_short`
 
-`justification_short` debe ser breve, consistente y accionable. Plantilla recomendada:
+`justification_short` debe ser breve, consistente y accionable. Debe incluir fortaleza, brecha y señal de `memorization_risk`.
 
 ```text
 "Núcleo: {fortaleza_core}. Precisión: {estado_precision}. Falta: {brecha_completeness}."
