@@ -231,10 +231,19 @@ function renderResult(result) {
 
   const socraticTrigger = document.querySelector('#socratic-trigger-btn');
   const socraticSection = document.querySelector('#socratic-section');
+  const socraticSubmit = document.querySelector('#socratic-submit-btn');
   socraticSection.classList.add('hidden');
+  socraticSubmit.classList.remove('hidden');
   document.querySelector('#socratic-questions').innerHTML = '';
 
-  if (normalizeSuggestedGrade(result.suggested_grade) === 'REVIEW') {
+  const grade = normalizeSuggestedGrade(result.suggested_grade);
+  if (grade === 'REVIEW') {
+    socraticTrigger.textContent = 'Responder preguntas de profundización';
+    socraticTrigger.dataset.label = 'Responder preguntas de profundización';
+    socraticTrigger.classList.remove('hidden');
+  } else if (grade === 'FAIL') {
+    socraticTrigger.textContent = 'Entender el error';
+    socraticTrigger.dataset.label = 'Entender el error';
     socraticTrigger.classList.remove('hidden');
   } else {
     socraticTrigger.classList.add('hidden');
@@ -331,9 +340,14 @@ form.addEventListener('submit', async (event) => {
   const questionsContainer = document.querySelector('#socratic-questions');
   const submitBtn = document.querySelector('#socratic-submit-btn');
 
+  function getSocraticMode() {
+    return normalizeSuggestedGrade(uiState.lastResult?.suggested_grade) === 'FAIL' ? 'fail' : 'review';
+  }
+
   triggerBtn.addEventListener('click', async () => {
     if (!uiState.lastResult || !uiState.lastRequest) return;
 
+    const mode = getSocraticMode();
     triggerBtn.disabled = true;
     triggerBtn.textContent = 'Generando preguntas...';
 
@@ -344,7 +358,8 @@ form.addEventListener('submit', async (event) => {
         expected_answer_text: uiState.lastRequest.expected_answer_text,
         subject: uiState.lastRequest.subject || '',
         dimensions: uiState.lastResult.dimensions,
-        justification: uiState.lastResult.justification_short
+        justification: uiState.lastResult.justification_short,
+        mode
       });
 
       questionsContainer.innerHTML = '';
@@ -363,12 +378,14 @@ form.addEventListener('submit', async (event) => {
         questionsContainer.appendChild(block);
       });
 
+      submitBtn.textContent = mode === 'fail' ? 'Ver feedback del error' : 'Re-evaluar con mis respuestas';
+      submitBtn.dataset.mode = mode;
       section.classList.remove('hidden');
       triggerBtn.classList.add('hidden');
     } catch (err) {
       setFeedback(`Error al generar preguntas: ${err.message}`, 'error');
       triggerBtn.disabled = false;
-      triggerBtn.textContent = 'Responder preguntas de profundización';
+      triggerBtn.textContent = triggerBtn.dataset.label || 'Responder preguntas';
     }
   });
 
@@ -378,32 +395,47 @@ form.addEventListener('submit', async (event) => {
 
     for (const ta of answerTextareas) {
       if (ta.value.trim().length < 3) {
-        setFeedback('Respondé todas las preguntas antes de re-evaluar.', 'error');
+        setFeedback('Respondé todas las preguntas antes de continuar.', 'error');
         return;
       }
       socratic_qa.push({ question: ta.dataset.question, answer: ta.value.trim() });
     }
 
+    const mode = submitBtn.dataset.mode || 'review';
     submitBtn.disabled = true;
-    submitBtn.textContent = 'Re-evaluando...';
+    submitBtn.textContent = mode === 'fail' ? 'Procesando...' : 'Re-evaluando...';
 
     try {
-      const reeval = await postJson('/socratic/evaluate', {
-        ...uiState.lastRequest,
-        evaluation_id: uiState.lastResult.evaluation_id,
-        socratic_qa
-      });
+      if (mode === 'fail') {
+        const { error_summary, correct_concept } = await postJson('/socratic/feedback', {
+          ...uiState.lastRequest,
+          socratic_qa
+        });
 
-      uiState.lastResult = { ...uiState.lastResult, ...reeval };
-      document.querySelector('#suggested-grade').textContent = getSuggestedGradeLabel(reeval.suggested_grade);
-      document.querySelector('#justification-short').textContent = reeval.justification;
-      section.classList.add('hidden');
-      setFeedback('Re-evaluación completada. Ahora firma una decisión final.');
+        questionsContainer.innerHTML = '';
+        const feedbackBlock = document.createElement('div');
+        feedbackBlock.className = 'socratic-feedback';
+        feedbackBlock.innerHTML = `<p><strong>Lo que faltó:</strong> ${error_summary}</p><p><strong>Concepto correcto:</strong> ${correct_concept}</p>`;
+        questionsContainer.appendChild(feedbackBlock);
+        submitBtn.classList.add('hidden');
+        setFeedback('Revisá el feedback y luego firma tu decisión.');
+      } else {
+        const reeval = await postJson('/socratic/evaluate', {
+          ...uiState.lastRequest,
+          evaluation_id: uiState.lastResult.evaluation_id,
+          socratic_qa
+        });
+
+        uiState.lastResult = { ...uiState.lastResult, ...reeval };
+        document.querySelector('#suggested-grade').textContent = getSuggestedGradeLabel(reeval.suggested_grade);
+        document.querySelector('#justification-short').textContent = reeval.justification;
+        section.classList.add('hidden');
+        setFeedback('Re-evaluación completada. Ahora firma una decisión final.');
+      }
     } catch (err) {
-      setFeedback(`Error en re-evaluación: ${err.message}`, 'error');
-    } finally {
+      setFeedback(`Error: ${err.message}`, 'error');
       submitBtn.disabled = false;
-      submitBtn.textContent = 'Re-evaluar con mis respuestas';
+      submitBtn.textContent = mode === 'fail' ? 'Ver feedback del error' : 'Re-evaluar con mis respuestas';
     }
   });
 })();
