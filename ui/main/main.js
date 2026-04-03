@@ -569,6 +569,7 @@ resultContent.addEventListener('click', async (event) => {
 
   const decisionPayload = {
     ...uiState.lastRequest,
+    evaluation_id: uiState.lastResult?.evaluation_id,
     evaluation_result: uiState.lastResult,
     action,
     final_grade: finalGradeByAction[action],
