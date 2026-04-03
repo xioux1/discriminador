@@ -228,6 +228,17 @@ function renderResult(result) {
     li.textContent = `${dimension}: ${value}`;
     dimensionsList.appendChild(li);
   });
+
+  const socraticTrigger = document.querySelector('#socratic-trigger-btn');
+  const socraticSection = document.querySelector('#socratic-section');
+  socraticSection.classList.add('hidden');
+  document.querySelector('#socratic-questions').innerHTML = '';
+
+  if (normalizeSuggestedGrade(result.suggested_grade) === 'REVIEW') {
+    socraticTrigger.classList.remove('hidden');
+  } else {
+    socraticTrigger.classList.add('hidden');
+  }
 }
 
 async function postJson(url, body) {
@@ -311,6 +322,93 @@ form.addEventListener('submit', async (event) => {
     evaluateBtn.textContent = 'Evaluar';
   }
 });
+
+// --- Socratic questions ---
+
+(function initSocratic() {
+  const triggerBtn = document.querySelector('#socratic-trigger-btn');
+  const section = document.querySelector('#socratic-section');
+  const questionsContainer = document.querySelector('#socratic-questions');
+  const submitBtn = document.querySelector('#socratic-submit-btn');
+
+  triggerBtn.addEventListener('click', async () => {
+    if (!uiState.lastResult || !uiState.lastRequest) return;
+
+    triggerBtn.disabled = true;
+    triggerBtn.textContent = 'Generando preguntas...';
+
+    try {
+      const { questions } = await postJson('/socratic/questions', {
+        prompt_text: uiState.lastRequest.prompt_text,
+        user_answer_text: uiState.lastRequest.user_answer_text,
+        expected_answer_text: uiState.lastRequest.expected_answer_text,
+        subject: uiState.lastRequest.subject || '',
+        dimensions: uiState.lastResult.dimensions,
+        justification: uiState.lastResult.justification_short
+      });
+
+      questionsContainer.innerHTML = '';
+      questions.forEach((q, i) => {
+        const block = document.createElement('div');
+        block.className = 'socratic-question-block';
+        const label = document.createElement('label');
+        label.setAttribute('for', `socratic-answer-${i}`);
+        label.textContent = q;
+        const textarea = document.createElement('textarea');
+        textarea.id = `socratic-answer-${i}`;
+        textarea.rows = 2;
+        textarea.dataset.question = q;
+        block.appendChild(label);
+        block.appendChild(textarea);
+        questionsContainer.appendChild(block);
+      });
+
+      section.classList.remove('hidden');
+      triggerBtn.classList.add('hidden');
+    } catch (err) {
+      setFeedback(`Error al generar preguntas: ${err.message}`, 'error');
+      triggerBtn.disabled = false;
+      triggerBtn.textContent = 'Responder preguntas de profundización';
+    }
+  });
+
+  submitBtn.addEventListener('click', async () => {
+    const answerTextareas = questionsContainer.querySelectorAll('textarea');
+    const socratic_qa = [];
+
+    for (const ta of answerTextareas) {
+      if (ta.value.trim().length < 3) {
+        setFeedback('Respondé todas las preguntas antes de re-evaluar.', 'error');
+        return;
+      }
+      socratic_qa.push({ question: ta.dataset.question, answer: ta.value.trim() });
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Re-evaluando...';
+
+    try {
+      const reeval = await postJson('/socratic/evaluate', {
+        ...uiState.lastRequest,
+        evaluation_id: uiState.lastResult.evaluation_id,
+        socratic_qa
+      });
+
+      uiState.lastResult = { ...uiState.lastResult, ...reeval };
+      document.querySelector('#suggested-grade').textContent = getSuggestedGradeLabel(reeval.suggested_grade);
+      document.querySelector('#justification-short').textContent = reeval.justification;
+      section.classList.add('hidden');
+      setFeedback('Re-evaluación completada. Ahora firma una decisión final.');
+    } catch (err) {
+      setFeedback(`Error en re-evaluación: ${err.message}`, 'error');
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Re-evaluar con mis respuestas';
+    }
+  });
+})();
+
+// --- End Socratic ---
 
 // --- Dictation (MediaRecorder + Whisper) ---
 

@@ -20,7 +20,7 @@ function getClient() {
  * Prefers examples for the same subject; falls back to any subject.
  * Returns a balanced set of PASS and FAIL cases.
  */
-async function fetchFewShotExamples(pool, subject) {
+export async function fetchFewShotExamples(pool, subject) {
   const result = await pool.query(
     `SELECT
        ei.input_payload->>'prompt_text'          AS prompt_text,

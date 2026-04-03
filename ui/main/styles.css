@@ -102,3 +102,37 @@ button {
   color: #c0392b;
   font-weight: 700;
 }
+
+.socratic-trigger {
+  width: auto;
+  margin: 12px 0 0;
+  padding: 6px 14px;
+  font-size: 0.9rem;
+  background: #eef4ff;
+  border: 1px solid #6a9fd8;
+  border-radius: 4px;
+  color: #1a4f8a;
+}
+
+.socratic-section {
+  margin: 14px 0;
+  padding: 14px;
+  background: #f5f8ff;
+  border: 1px solid #c5d8f0;
+  border-radius: 6px;
+}
+
+.socratic-section h3 {
+  margin: 0 0 12px;
+  font-size: 1rem;
+}
+
+.socratic-question-block {
+  margin-bottom: 12px;
+}
+
+.socratic-question-block label {
+  font-weight: 600;
+  font-size: 0.95rem;
+  margin-top: 0;
+}
