@@ -409,22 +409,24 @@ function renderQuestionStats(data) {
     });
   }
 
-  // Recurring errors
+  // Observations (LLM + user corrections)
   const errEl = document.querySelector('#stats-errors');
   errEl.innerHTML = '';
-  if (data.recurring_errors && data.recurring_errors.length > 0) {
+  if (data.observations && data.observations.length > 0) {
     const title = document.createElement('p');
     title.className = 'stats-section-title';
-    title.textContent = 'Errores registrados';
+    title.textContent = 'Observaciones';
     errEl.appendChild(title);
-    const ul = document.createElement('ul');
-    ul.style.cssText = 'margin:4px 0 0;padding-left:18px;font-size:0.85rem;';
-    data.recurring_errors.forEach((err) => {
-      const li = document.createElement('li');
-      li.textContent = err;
-      ul.appendChild(li);
+    data.observations.forEach((obs) => {
+      const row = document.createElement('div');
+      row.className = 'stats-history-item';
+      const badge = `<span class="grade-badge ${obs.grade}">${obs.grade.toUpperCase()}</span>`;
+      const sourceTag = obs.source === 'user'
+        ? '<span style="font-size:0.75rem;color:#888">[corrección]</span>'
+        : '<span style="font-size:0.75rem;color:#888">[LLM]</span>';
+      row.innerHTML = `${badge} ${sourceTag} <span style="color:#333">${obs.text}</span>`;
+      errEl.appendChild(row);
     });
-    errEl.appendChild(ul);
   }
 
   // History

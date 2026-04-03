@@ -85,16 +85,20 @@ statsRouter.get('/stats/question', async (req, res) => {
       }
     }
 
-    // Recurring errors: correction reasons from corrected decisions
-    const recurringErrors = rows
-      .filter((r) => r.decision_type === 'corrected' && r.correction_reason)
-      .map((r) => r.correction_reason)
-      .slice(0, 5);
+    // Observations: LLM justification for every evaluation + correction reason when user corrected
+    const observations = rows.slice(0, 10).map((r) => ({
+      grade: r.final_grade,
+      source: r.decision_type === 'corrected' && r.correction_reason ? 'user' : 'llm',
+      text: (r.decision_type === 'corrected' && r.correction_reason)
+        ? r.correction_reason
+        : r.justification || null
+    })).filter((o) => o.text);
 
     const history = rows.slice(0, 10).map((r) => ({
       final_grade: r.final_grade,
       decision_type: r.decision_type,
       correction_reason: r.correction_reason || null,
+      justification: r.justification || null,
       overall_score: r.overall_score ? Number(r.overall_score) : null,
       decided_at: r.decided_at || r.created_at
     }));
@@ -107,7 +111,7 @@ statsRouter.get('/stats/question', async (req, res) => {
       last_grade: rows[0].final_grade,
       trend,
       dimension_stats: dimensionStats,
-      recurring_errors: recurringErrors,
+      observations,
       history
     });
   } catch (error) {
