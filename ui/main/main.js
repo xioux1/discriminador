@@ -290,10 +290,11 @@ form.addEventListener('submit', async (event) => {
 
       try {
         const base64 = await blobToBase64(blob);
+        const subject = document.querySelector('#subject')?.value?.trim() || '';
         const response = await fetch('/transcribe', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ audio: base64, mime_type: mimeType })
+          body: JSON.stringify({ audio: base64, mime_type: mimeType, subject })
         });
 
         if (!response.ok) {
