@@ -24,16 +24,21 @@
           <textarea id="user_answer_text" name="user_answer_text" rows="4" required></textarea>
           <p class="field-error" data-error-for="user_answer_text"></p>
 
-          <label for="expected_answer_text">Respuesta esperada</label>
+          <div class="field-header">
+            <label for="expected_answer_text">Respuesta esperada</label>
+            <button type="button" id="fill-expected-btn" class="dictation-btn hidden">Hay una respuesta guardada. ¿Completar?</button>
+          </div>
           <textarea id="expected_answer_text" name="expected_answer_text" rows="4" required></textarea>
           <p class="field-error" data-error-for="expected_answer_text"></p>
 
           <label for="subject">Materia (opcional)</label>
-          <input id="subject" name="subject" type="text" />
+          <input id="subject" name="subject" type="text" list="subjects-list" autocomplete="off" />
+          <datalist id="subjects-list"></datalist>
           <p class="field-error" data-error-for="subject"></p>
 
           <button id="evaluate-btn" type="submit">Evaluar</button>
         </form>
+        <p id="form-feedback" class="feedback"></p>
       </section>
 
       <section id="result-card" class="card hidden" aria-live="polite">

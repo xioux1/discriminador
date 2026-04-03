@@ -7,6 +7,81 @@ const resultCard = document.querySelector('#result-card');
 const resultLoading = document.querySelector('#result-loading');
 const resultContent = document.querySelector('#result-content');
 const feedbackEl = document.querySelector('#save-feedback');
+const formFeedbackEl = document.querySelector('#form-feedback');
+const fillExpectedBtn = document.querySelector('#fill-expected-btn');
+const subjectsDatalist = document.querySelector('#subjects-list');
+
+// --- Subject datalist ---
+async function loadSubjects() {
+  try {
+    const res = await fetch('/subjects');
+    if (!res.ok) return;
+    const { subjects } = await res.json();
+    subjectsDatalist.innerHTML = '';
+    subjects.forEach((s) => {
+      const opt = document.createElement('option');
+      opt.value = s;
+      subjectsDatalist.appendChild(opt);
+    });
+  } catch (_e) { /* non-blocking */ }
+}
+loadSubjects();
+
+// --- Expected answer lookup ---
+let _expectedAnswerCache = null;
+let _lookupDebounce = null;
+
+function clearExpectedHint() {
+  _expectedAnswerCache = null;
+  fillExpectedBtn.classList.add('hidden');
+}
+
+async function lookupExpectedAnswer(promptText) {
+  if (promptText.trim().length < 10) {
+    clearExpectedHint();
+    return;
+  }
+  try {
+    const res = await fetch(`/expected-answer?prompt=${encodeURIComponent(promptText.trim())}`);
+    if (!res.ok) { clearExpectedHint(); return; }
+    const data = await res.json();
+    if (data.found && data.expected_answer_text) {
+      _expectedAnswerCache = data.expected_answer_text;
+      fillExpectedBtn.classList.remove('hidden');
+    } else {
+      clearExpectedHint();
+    }
+  } catch (_e) {
+    clearExpectedHint();
+  }
+}
+
+document.querySelector('#prompt_text').addEventListener('input', (e) => {
+  clearTimeout(_lookupDebounce);
+  clearExpectedHint();
+  formFeedbackEl.textContent = '';
+  _lookupDebounce = setTimeout(() => lookupExpectedAnswer(e.target.value), 800);
+});
+
+fillExpectedBtn.addEventListener('click', () => {
+  if (_expectedAnswerCache) {
+    document.querySelector('#expected_answer_text').value = _expectedAnswerCache;
+    fillExpectedBtn.classList.add('hidden');
+  }
+});
+
+// --- Reset form after decision ---
+function resetForm() {
+  const subject = form.subject.value;
+  form.reset();
+  form.subject.value = subject;
+  clearExpectedHint();
+  resultCard.classList.add('hidden');
+  resultContent.classList.add('hidden');
+  resultLoading.classList.add('hidden');
+  uiState.lastRequest = null;
+  uiState.lastResult = null;
+}
 
 const uiState = {
   evaluating: false,
@@ -377,8 +452,11 @@ resultContent.addEventListener('click', async (event) => {
 
   try {
     await postJson(DECISION_ENDPOINT, decisionPayload);
-    removeManualCase(uiState.lastResult.evaluation_id);
-    setFeedback('Decisión final guardada correctamente.', 'success');
+    removeManualCase(uiState.lastResult?.evaluation_id);
+    loadSubjects();
+    resetForm();
+    formFeedbackEl.textContent = 'Decisión guardada. Podés continuar con la siguiente.';
+    formFeedbackEl.className = 'feedback success';
   } catch (error) {
     setFeedback(`Error al guardar la decisión: ${error.message}`, 'error');
   } finally {
