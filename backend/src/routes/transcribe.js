@@ -34,7 +34,7 @@ transcribeRouter.post('/transcribe', async (req, res) => {
     });
   }
 
-  const { audio, mime_type } = req.body;
+  const { audio, mime_type, subject } = req.body;
 
   if (!audio || typeof audio !== 'string') {
     return res.status(422).json({
@@ -50,11 +50,17 @@ transcribeRouter.post('/transcribe', async (req, res) => {
     const buffer = Buffer.from(audio, 'base64');
     const file = await toFile(buffer, `audio.${ext}`, { type: mimeType });
 
-    const transcription = await getClient().audio.transcriptions.create({
+    const transcribeParams = {
       file,
       model: 'whisper-1',
       language: 'es'
-    });
+    };
+
+    if (typeof subject === 'string' && subject.trim().length > 0) {
+      transcribeParams.prompt = subject.trim();
+    }
+
+    const transcription = await getClient().audio.transcriptions.create(transcribeParams);
 
     return res.status(200).json({ text: transcription.text });
   } catch (error) {
