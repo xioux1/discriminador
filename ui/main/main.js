@@ -237,74 +237,99 @@ form.addEventListener('submit', async (event) => {
   }
 });
 
-// --- Dictation (Web Speech API) ---
+// --- Dictation (MediaRecorder + Whisper) ---
 
 (function initDictation() {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const dictationBtn = document.querySelector('#dictation-btn');
-  const userAnswerTextarea = document.querySelector('#user_answer_text');
-
-  if (!SpeechRecognition) {
+  if (!window.MediaRecorder || !navigator.mediaDevices) {
     return;
   }
 
+  const dictationBtn = document.querySelector('#dictation-btn');
+  const userAnswerTextarea = document.querySelector('#user_answer_text');
+
   dictationBtn.hidden = false;
 
-  const recognition = new SpeechRecognition();
-  recognition.lang = 'es-AR';
-  recognition.continuous = true;
-  recognition.interimResults = true;
+  let mediaRecorder = null;
+  let audioChunks = [];
+  let stream = null;
 
-  let recording = false;
-  let committedText = '';
+  function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
 
-  recognition.onresult = (event) => {
-    let interim = '';
-
-    for (let i = event.resultIndex; i < event.results.length; i++) {
-      const transcript = event.results[i][0].transcript;
-      if (event.results[i].isFinal) {
-        const separator = committedText && !committedText.endsWith(' ') ? ' ' : '';
-        committedText += separator + transcript.trim();
-      } else {
-        interim += transcript;
-      }
-    }
-
-    userAnswerTextarea.value = committedText + (interim ? ' ' + interim : '');
-  };
-
-  recognition.onerror = (event) => {
-    if (event.error === 'no-speech') {
+  async function startRecording() {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (_err) {
+      setFeedback('No se pudo acceder al micrófono.', 'error');
       return;
     }
-    stopRecording();
-    setFeedback(`Error de dictado: ${event.error}`, 'error');
-  };
 
-  recognition.onend = () => {
-    if (recording) {
-      recognition.start();
-    }
-  };
+    audioChunks = [];
+    mediaRecorder = new MediaRecorder(stream);
 
-  function startRecording() {
-    committedText = userAnswerTextarea.value;
-    recording = true;
-    recognition.start();
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        audioChunks.push(event.data);
+      }
+    };
+
+    mediaRecorder.onstop = async () => {
+      stream.getTracks().forEach((t) => t.stop());
+
+      const mimeType = mediaRecorder.mimeType || 'audio/webm';
+      const blob = new Blob(audioChunks, { type: mimeType });
+
+      dictationBtn.textContent = 'Transcribiendo...';
+      dictationBtn.disabled = true;
+
+      try {
+        const base64 = await blobToBase64(blob);
+        const response = await fetch('/transcribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ audio: base64, mime_type: mimeType })
+        });
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data.message || `Error HTTP ${response.status}`);
+        }
+
+        const { text } = await response.json();
+
+        if (text) {
+          const current = userAnswerTextarea.value;
+          const separator = current && !current.endsWith(' ') ? ' ' : '';
+          userAnswerTextarea.value = current + separator + text;
+        }
+      } catch (err) {
+        setFeedback(`Error de transcripción: ${err.message}`, 'error');
+      } finally {
+        dictationBtn.textContent = 'Dictar respuesta';
+        dictationBtn.disabled = false;
+        dictationBtn.classList.remove('recording');
+      }
+    };
+
+    mediaRecorder.start();
     dictationBtn.textContent = 'Detener dictado';
     dictationBtn.classList.add('recording');
   }
 
   function stopRecording() {
-    recording = false;
-    recognition.stop();
-    dictationBtn.textContent = 'Dictar respuesta';
-    dictationBtn.classList.remove('recording');
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+      mediaRecorder.stop();
+    }
   }
 
   dictationBtn.addEventListener('click', () => {
-    if (recording) {
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
       stopRecording();
     } else {
       startRecording();
