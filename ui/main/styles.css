@@ -136,3 +136,8 @@ button {
   font-size: 0.95rem;
   margin-top: 0;
 }
+
+.socratic-feedback p {
+  margin: 6px 0;
+  font-size: 0.95rem;
+}

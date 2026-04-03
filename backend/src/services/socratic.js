@@ -26,13 +26,26 @@ const DIMENSION_LABELS = {
 };
 
 /**
- * Generate 2 targeted Socratic questions for a REVIEW case.
+ * Generate 2 targeted Socratic questions.
+ * mode='review': apunta a la brecha para determinar comprensión.
+ * mode='fail': apunta al error para guiar el aprendizaje.
  */
-export async function generateSocraticQuestions({ prompt_text, user_answer_text, expected_answer_text, subject, dimensions, justification }) {
+export async function generateSocraticQuestions({ prompt_text, user_answer_text, expected_answer_text, subject, dimensions, justification, mode = 'review' }) {
   const weak = weakestDimension(dimensions);
   const weakLabel = DIMENSION_LABELS[weak] || 'la comprensión del concepto';
 
-  const systemPrompt = `Sos un evaluador académico. Una respuesta resultó ambigua o le faltó profundidad en ${weakLabel}.
+  const systemPrompt = mode === 'fail'
+    ? `Sos un tutor académico. El evaluado respondió incorrectamente una pregunta, con errores en ${weakLabel}.
+Tu tarea es generar exactamente 2 preguntas que lo guíen a entender qué estuvo mal y por qué.
+
+Reglas:
+- Las preguntas deben ayudarlo a reflexionar sobre su error, no simplemente darle la respuesta.
+- Podés insinuar la dirección correcta, pero sin revelar la respuesta esperada.
+- Cada pregunta debe poder responderse en 1-3 oraciones.
+- Respondé ÚNICAMENTE con este formato exacto, sin texto adicional:
+PREGUNTA_1: <pregunta>
+PREGUNTA_2: <pregunta>`
+    : `Sos un evaluador académico. Una respuesta resultó ambigua o le faltó profundidad en ${weakLabel}.
 Tu tarea es generar exactamente 2 preguntas cortas para determinar si el evaluado comprende el concepto.
 
 Reglas:
@@ -127,5 +140,47 @@ ${dialogue}`;
   return {
     suggested_grade: gradeMatch[1].toUpperCase(),
     justification: justMatch ? justMatch[1].trim() : 'Re-evaluación socrática.'
+  };
+}
+
+/**
+ * Generate educational feedback for a FAIL case after Socratic dialogue.
+ * Does NOT change the grade — purely for learning.
+ */
+export async function generateSocraticFeedback({ prompt_text, user_answer_text, expected_answer_text, subject, socratic_qa }) {
+  const systemPrompt = `Sos un tutor académico. El evaluado respondió incorrectamente y luego participó de un diálogo socrático.
+Tu tarea es dar una explicación educativa breve: qué estuvo mal, por qué, y cuál es la comprensión correcta.
+
+Respondé ÚNICAMENTE con este formato exacto (dos líneas, sin texto adicional):
+ERROR: <qué faltó o estuvo mal, en una oración>
+CONCEPTO: <la explicación correcta del concepto, en 1-2 oraciones>`;
+
+  const dialogue = socratic_qa
+    .map((item) => `P: ${item.question}\nR: ${item.answer}`)
+    .join('\n');
+
+  const userMessage = `Materia: ${subject || 'general'}
+Pregunta: ${prompt_text}
+Respuesta esperada: ${expected_answer_text}
+Respuesta del evaluado: ${user_answer_text}
+
+Diálogo socrático:
+${dialogue}`;
+
+  const response = await getClient().messages.create({
+    model: LLM_MODEL,
+    max_tokens: 256,
+    temperature: 0,
+    system: systemPrompt,
+    messages: [{ role: 'user', content: userMessage }]
+  });
+
+  const text = response.content.find((b) => b.type === 'text')?.text ?? '';
+  const errorMatch = text.match(/ERROR:\s*(.+)/i);
+  const conceptMatch = text.match(/CONCEPTO:\s*(.+)/i);
+
+  return {
+    error_summary: errorMatch ? errorMatch[1].trim() : 'No se identificó el error específico.',
+    correct_concept: conceptMatch ? conceptMatch[1].trim() : 'Revisá la respuesta esperada para reforzar el concepto.'
   };
 }
