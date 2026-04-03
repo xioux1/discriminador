@@ -114,6 +114,13 @@ decisionRouter.post('/decision', async (req, res) => {
   }
 
 
+  if ((action === 'correct-pass' || action === 'correct-fail' || action === 'uncertain') && correctionReason.length < 5) {
+    validationErrors.push({
+      field: 'correction_reason',
+      issue: 'Must contain at least 5 characters for correction/uncertain decisions.'
+    });
+  }
+
   if (action === 'accept' && acceptedSuggestion !== true) {
     validationErrors.push({
       field: 'accepted_suggestion',
