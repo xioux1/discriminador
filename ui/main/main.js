@@ -645,16 +645,33 @@ document.querySelector('#stats-toggle').addEventListener('click', () => {
       questions.forEach((q, i) => {
         const block = document.createElement('div');
         block.className = 'socratic-question-block';
+
+        const header = document.createElement('div');
+        header.className = 'field-header';
+
         const label = document.createElement('label');
         label.setAttribute('for', `socratic-answer-${i}`);
         label.textContent = q;
+
+        const dictBtn = document.createElement('button');
+        dictBtn.type = 'button';
+        dictBtn.className = 'dictation-btn';
+        dictBtn.textContent = 'Dictar';
+        dictBtn.hidden = true;
+
+        header.appendChild(label);
+        header.appendChild(dictBtn);
+
         const textarea = document.createElement('textarea');
         textarea.id = `socratic-answer-${i}`;
         textarea.rows = 2;
         textarea.dataset.question = q;
-        block.appendChild(label);
+
+        block.appendChild(header);
         block.appendChild(textarea);
         questionsContainer.appendChild(block);
+
+        attachDictation(dictBtn, textarea, 'Dictar');
       });
 
       submitBtn.textContent = mode === 'fail' ? 'Ver feedback del error' : 'Re-evaluar con mis respuestas';
@@ -723,28 +740,29 @@ document.querySelector('#stats-toggle').addEventListener('click', () => {
 
 // --- Dictation (MediaRecorder + Whisper) ---
 
-(function initDictation() {
-  if (!window.MediaRecorder || !navigator.mediaDevices) {
-    return;
-  }
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
 
-  const dictationBtn = document.querySelector('#dictation-btn');
-  const userAnswerTextarea = document.querySelector('#user_answer_text');
+/**
+ * Attach dictation (record + Whisper transcribe) to a button/textarea pair.
+ * btn: the trigger button element
+ * textarea: the target textarea element
+ * labelIdle: button text when idle
+ */
+function attachDictation(btn, textarea, labelIdle = 'Dictar') {
+  if (!window.MediaRecorder || !navigator.mediaDevices) return;
 
-  dictationBtn.hidden = false;
+  btn.hidden = false;
 
   let mediaRecorder = null;
   let audioChunks = [];
   let stream = null;
-
-  function blobToBase64(blob) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result.split(',')[1]);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  }
 
   async function startRecording() {
     try {
@@ -758,19 +776,16 @@ document.querySelector('#stats-toggle').addEventListener('click', () => {
     mediaRecorder = new MediaRecorder(stream);
 
     mediaRecorder.ondataavailable = (event) => {
-      if (event.data.size > 0) {
-        audioChunks.push(event.data);
-      }
+      if (event.data.size > 0) audioChunks.push(event.data);
     };
 
     mediaRecorder.onstop = async () => {
       stream.getTracks().forEach((t) => t.stop());
-
       const mimeType = mediaRecorder.mimeType || 'audio/webm';
       const blob = new Blob(audioChunks, { type: mimeType });
 
-      dictationBtn.textContent = 'Transcribiendo...';
-      dictationBtn.disabled = true;
+      btn.textContent = 'Transcribiendo...';
+      btn.disabled = true;
 
       try {
         const base64 = await blobToBase64(blob);
@@ -787,40 +802,40 @@ document.querySelector('#stats-toggle').addEventListener('click', () => {
         }
 
         const { text } = await response.json();
-
         if (text) {
-          const current = userAnswerTextarea.value;
+          const current = textarea.value;
           const separator = current && !current.endsWith(' ') ? ' ' : '';
-          userAnswerTextarea.value = current + separator + text;
+          textarea.value = current + separator + text;
         }
       } catch (err) {
         setFeedback(`Error de transcripción: ${err.message}`, 'error');
       } finally {
-        dictationBtn.textContent = 'Dictar respuesta';
-        dictationBtn.disabled = false;
-        dictationBtn.classList.remove('recording');
+        btn.textContent = labelIdle;
+        btn.disabled = false;
+        btn.classList.remove('recording');
       }
     };
 
     mediaRecorder.start();
-    dictationBtn.textContent = 'Detener dictado';
-    dictationBtn.classList.add('recording');
+    btn.textContent = 'Detener dictado';
+    btn.classList.add('recording');
   }
 
-  function stopRecording() {
+  btn.addEventListener('click', () => {
     if (mediaRecorder && mediaRecorder.state === 'recording') {
       mediaRecorder.stop();
-    }
-  }
-
-  dictationBtn.addEventListener('click', () => {
-    if (mediaRecorder && mediaRecorder.state === 'recording') {
-      stopRecording();
     } else {
       startRecording();
     }
   });
-})();
+}
+
+// Attach to main answer field
+attachDictation(
+  document.querySelector('#dictation-btn'),
+  document.querySelector('#user_answer_text'),
+  'Dictar respuesta'
+);
 
 // --- End Dictation ---
 
