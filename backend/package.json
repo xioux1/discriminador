@@ -11,6 +11,7 @@
     "audit:overall-variants": "node scripts/compare-overall-variants.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.82.0",
     "dotenv": "^16.6.1",
     "express": "^4.21.2",
     "pg": "^8.16.3"
