@@ -1,6 +1,159 @@
 const EVALUATE_ENDPOINT = '/evaluate';
 const DECISION_ENDPOINT = '/decision';
 
+// --- Tab navigation ---
+
+(function initTabs() {
+  const tabs = document.querySelectorAll('.tab-btn');
+  const tabEvaluate = document.querySelector('#tab-evaluate');
+  const tabHistory = document.querySelector('#tab-history');
+  let historyLoaded = false;
+
+  tabs.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      tabs.forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      const tab = btn.dataset.tab;
+
+      if (tab === 'evaluate') {
+        tabEvaluate.classList.remove('hidden');
+        tabHistory.classList.add('hidden');
+      } else {
+        tabEvaluate.classList.add('hidden');
+        tabHistory.classList.remove('hidden');
+        if (!historyLoaded) {
+          historyLoaded = true;
+          loadHistoryOverview();
+        }
+      }
+    });
+  });
+})();
+
+const DIM_LABELS_OVERVIEW = {
+  core_idea: 'Idea central',
+  conceptual_accuracy: 'Precisión conceptual',
+  completeness: 'Completitud'
+};
+
+async function loadHistoryOverview() {
+  const loading = document.querySelector('#history-loading');
+  const content = document.querySelector('#history-content');
+  loading.classList.remove('hidden');
+  content.innerHTML = '';
+
+  try {
+    const res = await fetch('/stats/overview');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const { subjects } = await res.json();
+    loading.classList.add('hidden');
+
+    if (!subjects || subjects.length === 0) {
+      content.innerHTML = '<p style="padding:16px;color:#888">Todavía no hay evaluaciones registradas.</p>';
+      return;
+    }
+
+    subjects.forEach((subj) => {
+      const section = document.createElement('div');
+      section.className = 'history-subject';
+
+      const passRatePct = Math.round(subj.pass_rate * 100);
+      const header = document.createElement('div');
+      header.className = 'history-subject-header';
+      header.innerHTML = `
+        <span>${subj.subject} <small style="font-weight:400;color:#666">${subj.total_questions} pregunta${subj.total_questions !== 1 ? 's' : ''}</small></span>
+        <span class="stat-pill ${passRatePct >= 60 ? 'pass' : 'fail'}" style="margin:0">${passRatePct}% PASS</span>`;
+
+      const body = document.createElement('div');
+      body.className = 'history-subject-body';
+
+      subj.questions.forEach((q) => {
+        const row = document.createElement('div');
+        row.className = 'history-question-row';
+        const qPassPct = Math.round(q.pass_rate * 100);
+        const weakLabel = q.weakest_dimension ? DIM_LABELS_OVERVIEW[q.weakest_dimension] || q.weakest_dimension : null;
+        row.innerHTML = `
+          <span class="history-question-prompt">${q.prompt_text.length > 120 ? q.prompt_text.slice(0, 120) + '…' : q.prompt_text}</span>
+          <span class="history-question-meta">
+            <span class="grade-badge ${q.last_grade}">${q.last_grade.toUpperCase()}</span>
+            <span class="stat-pill ${qPassPct >= 60 ? 'pass' : 'fail'}" style="margin:0;font-size:0.75rem">${qPassPct}% · ${q.total}x</span>
+            ${weakLabel ? `<span style="font-size:0.75rem;color:#888">débil: ${weakLabel}</span>` : ''}
+          </span>`;
+
+        // Expandable detail
+        const detail = document.createElement('div');
+        detail.className = 'history-question-detail';
+        detail.innerHTML = '<p style="color:#888;font-size:0.85rem">Cargando...</p>';
+
+        row.addEventListener('click', async () => {
+          const isOpen = detail.classList.toggle('open');
+          if (isOpen && detail.innerHTML.includes('Cargando')) {
+            try {
+              const r = await fetch(`/stats/question?prompt=${encodeURIComponent(q.prompt_text)}`);
+              const data = await r.json();
+              detail.innerHTML = '';
+              renderQuestionStats(data);
+              // Move rendered stats nodes into detail
+              const statsEl = document.querySelector('#question-stats');
+              const clone = document.querySelector('#stats-body').cloneNode(true);
+              clone.classList.remove('hidden');
+              clone.removeAttribute('id');
+              detail.innerHTML = '';
+
+              // Rebuild inline stats for the detail panel
+              const summaryDiv = document.createElement('div');
+              summaryDiv.className = 'stats-summary';
+              const pct = Math.round(data.pass_rate * 100);
+              [
+                { label: `${data.total} evaluacion${data.total !== 1 ? 'es' : ''}`, cls: '' },
+                { label: `${pct}% PASS`, cls: pct >= 60 ? 'pass' : 'fail' }
+              ].forEach(({ label, cls }) => {
+                const s = document.createElement('span');
+                s.className = `stat-pill${cls ? ' ' + cls : ''}`;
+                s.textContent = label;
+                summaryDiv.appendChild(s);
+              });
+              detail.appendChild(summaryDiv);
+
+              if (data.history) {
+                const histTitle = document.createElement('p');
+                histTitle.className = 'stats-section-title';
+                histTitle.textContent = 'Últimas evaluaciones';
+                detail.appendChild(histTitle);
+                data.history.forEach((item) => {
+                  const hrow = document.createElement('div');
+                  hrow.className = 'stats-history-item';
+                  const date = item.decided_at ? new Date(item.decided_at).toLocaleDateString('es-AR') : '';
+                  hrow.innerHTML = `<span class="grade-badge ${item.final_grade}">${item.final_grade.toUpperCase()}</span>
+                    <span style="color:#888;font-size:0.8rem">${date}</span>
+                    ${item.justification ? `<span style="color:#555;font-size:0.82rem">${item.justification}</span>` : ''}
+                    ${item.correction_reason ? `<span style="color:#888;font-size:0.8rem">[corrección: ${item.correction_reason}]</span>` : ''}`;
+                  detail.appendChild(hrow);
+                });
+              }
+            } catch (_e) {
+              detail.innerHTML = '<p style="color:#a40000;font-size:0.85rem">Error al cargar el detalle.</p>';
+            }
+          }
+        });
+
+        body.appendChild(row);
+        body.appendChild(detail);
+      });
+
+      header.addEventListener('click', () => body.classList.toggle('open'));
+      section.appendChild(header);
+      section.appendChild(body);
+      content.appendChild(section);
+    });
+  } catch (err) {
+    loading.classList.add('hidden');
+    content.innerHTML = `<p style="padding:16px;color:#a40000">Error al cargar historial: ${err.message}</p>`;
+  }
+}
+
+// --- End Tab navigation ---
+
 const form = document.querySelector('#evaluation-form');
 const evaluateBtn = document.querySelector('#evaluate-btn');
 const resultCard = document.querySelector('#result-card');
