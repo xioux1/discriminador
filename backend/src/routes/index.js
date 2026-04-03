@@ -5,6 +5,7 @@ import transcribeRouter from './transcribe.js';
 import lookupRouter from './lookup.js';
 import socraticRouter from './socratic.js';
 import statsRouter from './stats.js';
+import overviewRouter from './overview.js';
 
 const router = Router();
 
@@ -18,5 +19,6 @@ router.use(transcribeRouter);
 router.use(lookupRouter);
 router.use(socraticRouter);
 router.use(statsRouter);
+router.use(overviewRouter);
 
 export default router;

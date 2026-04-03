@@ -10,81 +10,100 @@
     <main class="container">
       <h1>Evaluación teórica escrita</h1>
 
-      <section class="card">
-        <h2>Entrada</h2>
-        <form id="evaluation-form" novalidate>
-          <label for="prompt_text">Consigna</label>
-          <textarea id="prompt_text" name="prompt_text" rows="4" required></textarea>
-          <p class="field-error" data-error-for="prompt_text"></p>
+      <nav class="tab-nav">
+        <button class="tab-btn active" data-tab="evaluate">Evaluar</button>
+        <button class="tab-btn" data-tab="history">Historial</button>
+      </nav>
 
-          <div class="field-header">
-            <label for="user_answer_text">Respuesta del usuario</label>
-            <button type="button" id="dictation-btn" class="dictation-btn" hidden>Dictar respuesta</button>
-          </div>
-          <textarea id="user_answer_text" name="user_answer_text" rows="4" required></textarea>
-          <p class="field-error" data-error-for="user_answer_text"></p>
+      <!-- TAB: Evaluar -->
+      <section id="tab-evaluate">
 
-          <div class="field-header">
-            <label for="expected_answer_text">Respuesta esperada</label>
-            <button type="button" id="fill-expected-btn" class="dictation-btn hidden">Hay una respuesta guardada. ¿Completar?</button>
-          </div>
-          <textarea id="expected_answer_text" name="expected_answer_text" rows="4" required></textarea>
-          <p class="field-error" data-error-for="expected_answer_text"></p>
+        <section class="card">
+          <h2>Entrada</h2>
+          <form id="evaluation-form" novalidate>
+            <label for="prompt_text">Consigna</label>
+            <textarea id="prompt_text" name="prompt_text" rows="4" required></textarea>
+            <p class="field-error" data-error-for="prompt_text"></p>
 
-          <label for="subject">Materia (opcional)</label>
-          <input id="subject" name="subject" type="text" list="subjects-list" autocomplete="off" />
-          <datalist id="subjects-list"></datalist>
-          <p class="field-error" data-error-for="subject"></p>
+            <div class="field-header">
+              <label for="user_answer_text">Respuesta del usuario</label>
+              <button type="button" id="dictation-btn" class="dictation-btn" hidden>Dictar respuesta</button>
+            </div>
+            <textarea id="user_answer_text" name="user_answer_text" rows="4" required></textarea>
+            <p class="field-error" data-error-for="user_answer_text"></p>
 
-          <button id="evaluate-btn" type="submit">Evaluar</button>
-        </form>
-        <p id="form-feedback" class="feedback"></p>
-      </section>
+            <div class="field-header">
+              <label for="expected_answer_text">Respuesta esperada</label>
+              <button type="button" id="fill-expected-btn" class="dictation-btn hidden">Hay una respuesta guardada. ¿Completar?</button>
+            </div>
+            <textarea id="expected_answer_text" name="expected_answer_text" rows="4" required></textarea>
+            <p class="field-error" data-error-for="expected_answer_text"></p>
 
-      <section id="result-card" class="card hidden" aria-live="polite">
-        <h2>Resultado</h2>
-        <div id="result-loading" class="hidden">Evaluando...</div>
+            <label for="subject">Materia (opcional)</label>
+            <input id="subject" name="subject" type="text" list="subjects-list" autocomplete="off" />
+            <datalist id="subjects-list"></datalist>
+            <p class="field-error" data-error-for="subject"></p>
 
-        <div id="result-content" class="hidden">
-          <p><strong>Calificación sugerida:</strong> <span id="suggested-grade"></span></p>
-          <p><strong>Score general:</strong> <span id="overall-score"></span></p>
-          <p><strong>Confianza:</strong> <span id="model-confidence"></span></p>
-          <p><strong>Justificación:</strong> <span id="justification-short"></span></p>
+            <button id="evaluate-btn" type="submit">Evaluar</button>
+          </form>
+          <p id="form-feedback" class="feedback"></p>
+        </section>
 
-          <h3>Dimensiones</h3>
-          <ul id="dimensions-list"></ul>
+        <section id="result-card" class="card hidden" aria-live="polite">
+          <h2>Resultado</h2>
+          <div id="result-loading" class="hidden">Evaluando...</div>
 
-          <div class="actions">
-            <button type="button" data-action="accept">Aceptar sugerencia</button>
-            <button type="button" data-action="correct-pass">Corregir a PASS</button>
-            <button type="button" data-action="correct-fail">Corregir a FAIL</button>
-            <button type="button" data-action="uncertain">Marcar duda</button>
-          </div>
+          <div id="result-content" class="hidden">
+            <p><strong>Calificación sugerida:</strong> <span id="suggested-grade"></span></p>
+            <p><strong>Score general:</strong> <span id="overall-score"></span></p>
+            <p><strong>Confianza:</strong> <span id="model-confidence"></span></p>
+            <p><strong>Justificación:</strong> <span id="justification-short"></span></p>
 
-          <button type="button" id="socratic-trigger-btn" class="socratic-trigger hidden">Responder preguntas de profundización</button>
+            <h3>Dimensiones</h3>
+            <ul id="dimensions-list"></ul>
 
-          <div id="socratic-section" class="socratic-section hidden">
-            <h3>Profundización</h3>
-            <div id="socratic-questions"></div>
-            <button type="button" id="socratic-submit-btn">Re-evaluar con mis respuestas</button>
-          </div>
+            <div class="actions">
+              <button type="button" data-action="accept">Aceptar sugerencia</button>
+              <button type="button" data-action="correct-pass">Corregir a PASS</button>
+              <button type="button" data-action="correct-fail">Corregir a FAIL</button>
+              <button type="button" data-action="uncertain">Marcar duda</button>
+            </div>
 
-          <label for="correction_reason">Motivo (obligatorio si corriges o marcas duda)</label>
-          <textarea id="correction_reason" name="correction_reason" rows="2"></textarea>
+            <button type="button" id="socratic-trigger-btn" class="socratic-trigger hidden">Responder preguntas de profundización</button>
 
-          <div id="question-stats" class="question-stats hidden">
-            <button type="button" id="stats-toggle" class="stats-toggle">Historial de esta pregunta <span id="stats-toggle-icon">▼</span></button>
-            <div id="stats-body" class="hidden">
-              <div id="stats-summary"></div>
-              <div id="stats-dimensions"></div>
-              <div id="stats-errors"></div>
-              <div id="stats-history"></div>
+            <div id="socratic-section" class="socratic-section hidden">
+              <h3>Profundización</h3>
+              <div id="socratic-questions"></div>
+              <button type="button" id="socratic-submit-btn">Re-evaluar con mis respuestas</button>
+            </div>
+
+            <label for="correction_reason">Motivo (obligatorio si corriges o marcas duda)</label>
+            <textarea id="correction_reason" name="correction_reason" rows="2"></textarea>
+
+            <div id="question-stats" class="question-stats hidden">
+              <button type="button" id="stats-toggle" class="stats-toggle">Historial de esta pregunta <span id="stats-toggle-icon">▼</span></button>
+              <div id="stats-body" class="hidden">
+                <div class="stats-summary" id="stats-summary"></div>
+                <div id="stats-dimensions"></div>
+                <div id="stats-errors"></div>
+                <div id="stats-history"></div>
+              </div>
             </div>
           </div>
-        </div>
 
-        <p id="save-feedback" class="feedback"></p>
+          <p id="save-feedback" class="feedback"></p>
+        </section>
+
       </section>
+      <!-- /TAB: Evaluar -->
+
+      <!-- TAB: Historial -->
+      <section id="tab-history" class="hidden">
+        <div id="history-loading" class="hidden" style="padding:16px;color:#888">Cargando historial...</div>
+        <div id="history-content"></div>
+      </section>
+      <!-- /TAB: Historial -->
+
     </main>
 
     <script src="./main.js"></script>
