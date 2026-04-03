@@ -56,10 +56,21 @@ Respondé ÚNICAMENTE con este formato exacto (dos líneas, sin texto adicional)
 GRADE: PASS|FAIL|REVIEW
 JUSTIFICATION: <una oración breve en español>
 
-Criterios:
-- PASS: el evaluado demuestra comprensión del concepto central, aunque use palabras distintas a la respuesta esperada.
+Criterios de aprobación:
+- PASS: el evaluado demuestra comprensión del concepto central, aunque use palabras distintas, orden diferente o más palabras que la respuesta esperada.
 - FAIL: faltan conceptos esenciales o hay errores conceptuales graves.
-- REVIEW: caso borderline que requiere validación docente.`;
+- REVIEW: caso borderline que requiere validación docente.
+
+NO penalizar bajo ninguna circunstancia:
+- Respuesta más larga, verbal o conversacional que la esperada.
+- Uso de sinónimos, paráfrasis o ejemplos para explicar el mismo concepto.
+- Falta de concisión o de estructura de lista.
+- Redacción típica de lenguaje hablado o dictado.
+
+SÍ penalizar:
+- Ausencia de la idea central del concepto.
+- Errores conceptuales que contradigan la respuesta esperada.
+- Enumeración vacía sin explicar el núcleo.`;
 
   if (examples.length > 0) {
     system += '\n\nEjemplos de calibración de este evaluador:\n';
