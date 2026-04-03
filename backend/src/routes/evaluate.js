@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import { scoreEvaluation } from '../services/scoring.js';
+import { judgeWithLLM } from '../services/llm-judge.js';
+import { isLLMJudgeEnabled } from '../config/env.js';
 import { dbPool } from '../db/client.js';
 
 const evaluateRouter = Router();
@@ -114,13 +116,42 @@ evaluateRouter.post('/evaluate', async (req, res) => {
   const normalizedSubject = normalize(req.body.subject);
   const evaluationId = randomUUID();
 
-  const result = scoreEvaluation({
+  const heuristicResult = scoreEvaluation({
     prompt_text: normalizedFields.prompt_text,
     user_answer_text: normalizedFields.user_answer_text,
     expected_answer_text: normalizedFields.expected_answer_text,
     subject: normalizedSubject,
     evaluation_id: evaluationId
   });
+
+  // LLM judge: primary evaluator when enabled.
+  // Falls back to heuristic if the API call fails.
+  let llmJudge = null;
+  if (isLLMJudgeEnabled()) {
+    try {
+      llmJudge = await judgeWithLLM(dbPool, {
+        prompt_text: normalizedFields.prompt_text,
+        user_answer_text: normalizedFields.user_answer_text,
+        expected_answer_text: normalizedFields.expected_answer_text,
+        subject: normalizedSubject
+      });
+    } catch (llmError) {
+      console.warn('LLM judge failed, falling back to heuristic.', {
+        message: llmError.message
+      });
+    }
+  }
+
+  // Merge: LLM grade + justification override heuristic when available.
+  const result = {
+    ...heuristicResult,
+    suggested_grade: llmJudge?.suggested_grade ?? heuristicResult.suggested_grade,
+    justification_short: llmJudge?.justification ?? heuristicResult.justification_short,
+    signals: {
+      ...heuristicResult.signals,
+      ...(llmJudge ? { llm_judge: llmJudge } : {})
+    }
+  };
 
   const sourceRecordId = evaluationId;
 
@@ -185,8 +216,8 @@ evaluateRouter.post('/evaluate', async (req, res) => {
       evaluationItem.id,
       result.suggested_grade.toLowerCase(),
       result.model_confidence,
-      'heuristic_discriminator',
-      'v1',
+      llmJudge ? 'llm_judge' : 'heuristic_discriminator',
+      llmJudge ? llmJudge.model : 'v1',
       result.justification_short
     ];
 

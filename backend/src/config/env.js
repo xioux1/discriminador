@@ -51,8 +51,16 @@ export const env = {
   enablePreprocessingV2: isPreprocessingV2Enabled()
 };
 
+export function isLLMJudgeEnabled() {
+  return parseBoolean(process.env.ENABLE_LLM_JUDGE, false);
+}
+
 export function assertRequiredEnv() {
   if (!env.databaseUrl) {
     throw new Error('DATABASE_URL is required.');
+  }
+
+  if (isLLMJudgeEnabled() && !process.env.ANTHROPIC_API_KEY) {
+    throw new Error('ANTHROPIC_API_KEY is required when ENABLE_LLM_JUDGE=true.');
   }
 }
