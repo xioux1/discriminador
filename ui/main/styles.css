@@ -141,3 +141,103 @@ button {
   margin: 6px 0;
   font-size: 0.95rem;
 }
+
+.question-stats {
+  margin-top: 16px;
+  border-top: 1px solid #ddd;
+  padding-top: 10px;
+}
+
+.stats-toggle {
+  width: auto;
+  background: none;
+  border: none;
+  padding: 4px 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #444;
+  cursor: pointer;
+  text-align: left;
+}
+
+.stats-summary {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 10px 0 6px;
+}
+
+.stat-pill {
+  background: #f0f0f0;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.stat-pill.pass  { background: #e6f4e6; color: #1a6e1a; }
+.stat-pill.fail  { background: #fde8e8; color: #a40000; }
+.stat-pill.trend-improving { background: #e6f4e6; color: #1a6e1a; }
+.stat-pill.trend-declining { background: #fde8e8; color: #a40000; }
+.stat-pill.trend-stable    { background: #f0f0f0; color: #444; }
+
+.stats-section-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #666;
+  margin: 10px 0 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.dimension-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 5px;
+  font-size: 0.85rem;
+}
+
+.dimension-bar-label {
+  width: 160px;
+  flex-shrink: 0;
+}
+
+.dimension-bar-track {
+  flex: 1;
+  height: 8px;
+  background: #e0e0e0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.dimension-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: #4caf50;
+}
+
+.dimension-bar-fill.weak  { background: #e53935; }
+.dimension-bar-fill.mid   { background: #fb8c00; }
+
+.stats-history-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.85rem;
+  padding: 3px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.stats-history-item:last-child { border-bottom: none; }
+
+.grade-badge {
+  font-weight: 700;
+  font-size: 0.8rem;
+  padding: 1px 6px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.grade-badge.pass { background: #e6f4e6; color: #1a6e1a; }
+.grade-badge.fail { background: #fde8e8; color: #a40000; }

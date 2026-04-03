@@ -314,6 +314,7 @@ form.addEventListener('submit', async (event) => {
     const manualQueueStatus = enqueueManualCase(result);
 
     renderResult(result);
+    loadQuestionStats(payload.prompt_text);
     resultLoading.classList.add('hidden');
     resultContent.classList.remove('hidden');
     const normalizedSuggestedGrade = normalizeSuggestedGrade(result.suggested_grade);
@@ -331,6 +332,129 @@ form.addEventListener('submit', async (event) => {
     evaluateBtn.textContent = 'Evaluar';
   }
 });
+
+// --- Question stats ---
+
+const TREND_LABELS = {
+  improving: 'Mejorando',
+  declining: 'Bajando',
+  stable: 'Estable',
+  insufficient_data: ''
+};
+
+const DIM_LABELS = {
+  core_idea: 'Idea central',
+  conceptual_accuracy: 'Precisión conceptual',
+  completeness: 'Completitud',
+  memorization_risk: 'Riesgo memorización'
+};
+
+async function loadQuestionStats(promptText) {
+  const statsEl = document.querySelector('#question-stats');
+  statsEl.classList.add('hidden');
+  document.querySelector('#stats-body').classList.add('hidden');
+  document.querySelector('#stats-toggle-icon').textContent = '▼';
+
+  if (!promptText || promptText.trim().length < 10) return;
+
+  try {
+    const res = await fetch(`/stats/question?prompt=${encodeURIComponent(promptText.trim())}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.total || data.total === 0) return;
+
+    renderQuestionStats(data);
+    statsEl.classList.remove('hidden');
+  } catch (_e) { /* non-blocking */ }
+}
+
+function renderQuestionStats(data) {
+  // Summary pills
+  const summary = document.querySelector('#stats-summary');
+  summary.innerHTML = '';
+  const passRatePct = Math.round(data.pass_rate * 100);
+  const trendLabel = TREND_LABELS[data.trend] || '';
+
+  const pills = [
+    { label: `${data.total} evaluacion${data.total !== 1 ? 'es' : ''}`, cls: '' },
+    { label: `${passRatePct}% PASS`, cls: data.pass_rate >= 0.6 ? 'pass' : 'fail' },
+    ...(trendLabel ? [{ label: trendLabel, cls: `trend-${data.trend}` }] : [])
+  ];
+  pills.forEach(({ label, cls }) => {
+    const span = document.createElement('span');
+    span.className = `stat-pill${cls ? ' ' + cls : ''}`;
+    span.textContent = label;
+    summary.appendChild(span);
+  });
+
+  // Dimension bars (exclude memorization_risk, sort weakest first)
+  const dimEl = document.querySelector('#stats-dimensions');
+  dimEl.innerHTML = '';
+  const dims = (data.dimension_stats || []).filter((d) => d.dimension !== 'memorization_risk');
+  if (dims.length > 0) {
+    const title = document.createElement('p');
+    title.className = 'stats-section-title';
+    title.textContent = 'Dimensiones';
+    dimEl.appendChild(title);
+    dims.forEach(({ dimension, avg_score, fail_count }) => {
+      const pct = Math.round(avg_score * 100);
+      const colorCls = avg_score < 0.4 ? 'weak' : avg_score < 0.7 ? 'mid' : '';
+      const row = document.createElement('div');
+      row.className = 'dimension-bar-row';
+      row.innerHTML = `
+        <span class="dimension-bar-label">${DIM_LABELS[dimension] || dimension}${fail_count > 0 ? ` <small>(${fail_count}✗)</small>` : ''}</span>
+        <div class="dimension-bar-track"><div class="dimension-bar-fill${colorCls ? ' ' + colorCls : ''}" style="width:${pct}%"></div></div>
+        <span>${pct}%</span>`;
+      dimEl.appendChild(row);
+    });
+  }
+
+  // Recurring errors
+  const errEl = document.querySelector('#stats-errors');
+  errEl.innerHTML = '';
+  if (data.recurring_errors && data.recurring_errors.length > 0) {
+    const title = document.createElement('p');
+    title.className = 'stats-section-title';
+    title.textContent = 'Errores registrados';
+    errEl.appendChild(title);
+    const ul = document.createElement('ul');
+    ul.style.cssText = 'margin:4px 0 0;padding-left:18px;font-size:0.85rem;';
+    data.recurring_errors.forEach((err) => {
+      const li = document.createElement('li');
+      li.textContent = err;
+      ul.appendChild(li);
+    });
+    errEl.appendChild(ul);
+  }
+
+  // History
+  const histEl = document.querySelector('#stats-history');
+  histEl.innerHTML = '';
+  if (data.history && data.history.length > 0) {
+    const title = document.createElement('p');
+    title.className = 'stats-section-title';
+    title.textContent = 'Últimas evaluaciones';
+    histEl.appendChild(title);
+    data.history.forEach((item) => {
+      const row = document.createElement('div');
+      row.className = 'stats-history-item';
+      const date = item.decided_at ? new Date(item.decided_at).toLocaleDateString('es-AR') : '';
+      row.innerHTML = `<span class="grade-badge ${item.final_grade}">${item.final_grade.toUpperCase()}</span>
+        <span style="color:#888;font-size:0.8rem">${date}</span>
+        ${item.correction_reason ? `<span style="color:#555">${item.correction_reason}</span>` : ''}`;
+      histEl.appendChild(row);
+    });
+  }
+}
+
+document.querySelector('#stats-toggle').addEventListener('click', () => {
+  const body = document.querySelector('#stats-body');
+  const icon = document.querySelector('#stats-toggle-icon');
+  const hidden = body.classList.toggle('hidden');
+  icon.textContent = hidden ? '▼' : '▲';
+});
+
+// --- End Question stats ---
 
 // --- Socratic questions ---
 

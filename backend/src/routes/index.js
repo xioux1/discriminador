@@ -4,6 +4,7 @@ import decisionRouter from './decision.js';
 import transcribeRouter from './transcribe.js';
 import lookupRouter from './lookup.js';
 import socraticRouter from './socratic.js';
+import statsRouter from './stats.js';
 
 const router = Router();
 
@@ -16,5 +17,6 @@ router.use(decisionRouter);
 router.use(transcribeRouter);
 router.use(lookupRouter);
 router.use(socraticRouter);
+router.use(statsRouter);
 
 export default router;

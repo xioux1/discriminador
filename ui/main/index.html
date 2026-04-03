@@ -71,6 +71,16 @@
 
           <label for="correction_reason">Motivo (obligatorio si corriges o marcas duda)</label>
           <textarea id="correction_reason" name="correction_reason" rows="2"></textarea>
+
+          <div id="question-stats" class="question-stats hidden">
+            <button type="button" id="stats-toggle" class="stats-toggle">Historial de esta pregunta <span id="stats-toggle-icon">▼</span></button>
+            <div id="stats-body" class="hidden">
+              <div id="stats-summary"></div>
+              <div id="stats-dimensions"></div>
+              <div id="stats-errors"></div>
+              <div id="stats-history"></div>
+            </div>
+          </div>
         </div>
 
         <p id="save-feedback" class="feedback"></p>
