@@ -237,6 +237,83 @@ form.addEventListener('submit', async (event) => {
   }
 });
 
+// --- Dictation (Web Speech API) ---
+
+(function initDictation() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const dictationBtn = document.querySelector('#dictation-btn');
+  const userAnswerTextarea = document.querySelector('#user_answer_text');
+
+  if (!SpeechRecognition) {
+    return;
+  }
+
+  dictationBtn.hidden = false;
+
+  const recognition = new SpeechRecognition();
+  recognition.lang = 'es-AR';
+  recognition.continuous = true;
+  recognition.interimResults = true;
+
+  let recording = false;
+  let committedText = '';
+
+  recognition.onresult = (event) => {
+    let interim = '';
+
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const transcript = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        const separator = committedText && !committedText.endsWith(' ') ? ' ' : '';
+        committedText += separator + transcript.trim();
+      } else {
+        interim += transcript;
+      }
+    }
+
+    userAnswerTextarea.value = committedText + (interim ? ' ' + interim : '');
+  };
+
+  recognition.onerror = (event) => {
+    if (event.error === 'no-speech') {
+      return;
+    }
+    stopRecording();
+    setFeedback(`Error de dictado: ${event.error}`, 'error');
+  };
+
+  recognition.onend = () => {
+    if (recording) {
+      recognition.start();
+    }
+  };
+
+  function startRecording() {
+    committedText = userAnswerTextarea.value;
+    recording = true;
+    recognition.start();
+    dictationBtn.textContent = 'Detener dictado';
+    dictationBtn.classList.add('recording');
+  }
+
+  function stopRecording() {
+    recording = false;
+    recognition.stop();
+    dictationBtn.textContent = 'Dictar respuesta';
+    dictationBtn.classList.remove('recording');
+  }
+
+  dictationBtn.addEventListener('click', () => {
+    if (recording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  });
+})();
+
+// --- End Dictation ---
+
 resultContent.addEventListener('click', async (event) => {
   const action = event.target?.dataset?.action;
   if (!action || uiState.savingDecision || !uiState.lastResult || !uiState.lastRequest) {

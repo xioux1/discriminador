@@ -71,3 +71,34 @@ button {
 .hidden {
   display: none;
 }
+
+.field-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.field-header label {
+  margin-top: 0;
+}
+
+.dictation-btn {
+  width: auto;
+  margin-top: 0;
+  padding: 4px 12px;
+  font-size: 0.85rem;
+  background: #f0f0f0;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.dictation-btn.recording {
+  background: #fde8e8;
+  border-color: #c0392b;
+  color: #c0392b;
+  font-weight: 700;
+}

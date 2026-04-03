@@ -17,7 +17,10 @@
           <textarea id="prompt_text" name="prompt_text" rows="4" required></textarea>
           <p class="field-error" data-error-for="prompt_text"></p>
 
-          <label for="user_answer_text">Respuesta del usuario</label>
+          <div class="field-header">
+            <label for="user_answer_text">Respuesta del usuario</label>
+            <button type="button" id="dictation-btn" class="dictation-btn" hidden>Dictar respuesta</button>
+          </div>
           <textarea id="user_answer_text" name="user_answer_text" rows="4" required></textarea>
           <p class="field-error" data-error-for="user_answer_text"></p>
 
