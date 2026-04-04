@@ -616,3 +616,16 @@ button {
 
 .agenda-micro-due { color: #888; font-size: 0.78rem; }
 .agenda-micro-q   { color: #555; }
+
+.study-result-expected {
+  background: #f0f7ff;
+  border-left: 3px solid #2a5fc8;
+  border-radius: 0 4px 4px 0;
+  padding: 8px 12px;
+  margin-top: 10px;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: #333;
+}
+
+.study-result-expected.hidden { display: none; }

@@ -1093,10 +1093,12 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
     });
 
     studyState.currentEvalResult = result;
+    studyState.currentExpectedAnswer = expected_answer_text;
 
     const gradeEl    = document.querySelector('#study-result-grade');
     const justEl     = document.querySelector('#study-result-justification');
     const missingEl  = document.querySelector('#study-result-missing');
+    const expectedEl = document.querySelector('#study-result-expected');
     const grade      = normalizeSuggestedGrade(result.suggested_grade);
 
     gradeEl.textContent = getSuggestedGradeLabel(result.suggested_grade);
@@ -1110,6 +1112,15 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
     } else {
       missingEl.textContent = '';
       missingEl.classList.add('hidden');
+    }
+
+    // Show expected answer on FAIL or REVIEW so the student can learn
+    if (grade === 'FAIL' || grade === 'REVIEW') {
+      expectedEl.innerHTML = `<strong>Respuesta esperada:</strong> ${expected_answer_text}`;
+      expectedEl.classList.remove('hidden');
+    } else {
+      expectedEl.textContent = '';
+      expectedEl.classList.add('hidden');
     }
 
     document.querySelector('#study-answer-block').classList.add('hidden');
