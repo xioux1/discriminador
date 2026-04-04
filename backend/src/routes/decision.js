@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { dbPool } from '../db/client.js';
+import { computeNextReview } from '../services/scheduler.js';
+import { generateMicroCard } from '../services/micro-generator.js';
 
 const decisionRouter = Router();
 
@@ -249,6 +251,17 @@ decisionRouter.post('/decision', async (req, res) => {
 
     const decision = insertResult.rows[0];
 
+    // Bridge: keep scheduler in sync (best-effort, non-blocking)
+    if (action !== 'uncertain' && inputPrompt && inputExpectedAnswer && ['pass', 'fail'].includes(finalGrade)) {
+      syncSchedulerCard(dbPool, {
+        prompt_text: inputPrompt,
+        expected_answer_text: inputExpectedAnswer,
+        subject: inputSubject || null,
+        final_grade: finalGrade,
+        evaluation_item_id: evaluationItemId
+      }).catch((e) => console.warn('[scheduler sync] failed (non-blocking):', e.message));
+    }
+
     return res.status(201).json({
       status: 'saved',
       success: true,
@@ -285,6 +298,95 @@ decisionRouter.post('/decision', async (req, res) => {
 });
 
 
+
+/**
+ * Upsert a card into the scheduler and apply SM-2 based on the decision grade.
+ * If FAIL and concept gaps exist, generate micro-cards for missing concepts.
+ * If PASS, archive any active micro-cards for that card.
+ */
+async function syncSchedulerCard(pool, { prompt_text, expected_answer_text, subject, final_grade, evaluation_item_id }) {
+  // Find or create the card
+  const existing = await pool.query(
+    'SELECT * FROM cards WHERE prompt_text = $1 LIMIT 1',
+    [prompt_text]
+  );
+
+  let card;
+  if (existing.rows.length) {
+    card = existing.rows[0];
+    // Update subject if it was missing before
+    if (subject && !card.subject) {
+      await pool.query('UPDATE cards SET subject = $1, updated_at = now() WHERE id = $2', [subject, card.id]);
+      card.subject = subject;
+    }
+  } else {
+    const inserted = await pool.query(
+      `INSERT INTO cards (subject, prompt_text, expected_answer_text)
+       VALUES ($1, $2, $3) RETURNING *`,
+      [subject, prompt_text, expected_answer_text]
+    );
+    card = inserted.rows[0];
+  }
+
+  // Apply SM-2
+  const schedule = computeNextReview(
+    parseFloat(card.interval_days),
+    parseFloat(card.ease_factor),
+    final_grade
+  );
+
+  await pool.query(
+    `UPDATE cards
+     SET interval_days = $1, ease_factor = $2, next_review_at = $3,
+         review_count = review_count + 1,
+         pass_count   = pass_count + $4,
+         last_reviewed_at = now(),
+         updated_at = now()
+     WHERE id = $5`,
+    [schedule.interval_days, schedule.ease_factor, schedule.next_review_at,
+     final_grade === 'pass' ? 1 : 0, card.id]
+  );
+
+  if (final_grade === 'pass') {
+    // Full understanding confirmed — retire active micro-cards
+    await pool.query(
+      `UPDATE micro_cards SET status = 'archived', updated_at = now()
+       WHERE parent_card_id = $1 AND status = 'active'`,
+      [card.id]
+    );
+  } else {
+    // Fetch concept gaps stored at evaluation time
+    const { rows: gaps } = await pool.query(
+      'SELECT concept FROM concept_gaps WHERE evaluation_item_id = $1',
+      [evaluation_item_id]
+    );
+
+    for (const { concept } of gaps) {
+      const already = await pool.query(
+        `SELECT id FROM micro_cards WHERE parent_card_id = $1 AND concept = $2 AND status = 'active'`,
+        [card.id, concept]
+      );
+      if (already.rows.length) continue;
+
+      try {
+        const micro = await generateMicroCard({
+          prompt_text: card.prompt_text,
+          expected_answer_text: card.expected_answer_text,
+          subject: card.subject,
+          concept
+        });
+        await pool.query(
+          `INSERT INTO micro_cards (parent_card_id, concept, question, expected_answer)
+           VALUES ($1, $2, $3, $4)`,
+          [card.id, concept, micro.question, micro.expected_answer]
+        );
+        console.info(`[scheduler sync] micro-card created for concept "${concept}" (card ${card.id})`);
+      } catch (e) {
+        console.warn(`[scheduler sync] micro-card gen failed for "${concept}":`, e.message);
+      }
+    }
+  }
+}
 
 decisionRouter.get('/decision/audit/latest', async (req, res) => {
   const rawLimit = Number.parseInt(normalizeString(req.query.limit), 10);
