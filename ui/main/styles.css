@@ -459,6 +459,25 @@ textarea:focus, input[type="text"]:focus {
   margin-bottom: 12px;
 }
 
+.study-card-parent-context {
+  background: var(--bg);
+  border-left: 3px solid var(--border);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: 6px 10px;
+  margin-bottom: 14px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+.study-card-parent-label {
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  margin-right: 6px;
+  color: var(--text-muted);
+}
+
 .study-card-prompt {
   font-size: 1.1rem;
   font-weight: 700;

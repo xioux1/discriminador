@@ -1230,13 +1230,23 @@ function showStudyCard() {
 
   const badge = document.querySelector('#study-card-badge');
   const promptEl = document.querySelector('#study-card-prompt');
+  const parentContextEl = document.querySelector('#study-card-parent-context');
+  const parentPromptEl  = document.querySelector('#study-card-parent-prompt');
 
   if (item.type === 'micro') {
     badge.textContent = `Micro-concepto: ${item.data.concept}`;
     badge.classList.remove('hidden');
     promptEl.textContent = item.data.question;
+    // Show parent card as context so student knows what topic this stems from
+    if (item.data.parent_prompt) {
+      parentPromptEl.textContent = item.data.parent_prompt;
+      parentContextEl.classList.remove('hidden');
+    } else {
+      parentContextEl.classList.add('hidden');
+    }
   } else {
     badge.classList.add('hidden');
+    parentContextEl.classList.add('hidden');
     const hasMicros = parseInt(item.data.active_micro_count) > 0;
     badge.textContent = hasMicros ? `⚠ Conceptos pendientes (${item.data.active_micro_count})` : '';
     if (hasMicros) badge.classList.remove('hidden');
