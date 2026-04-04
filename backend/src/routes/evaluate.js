@@ -147,6 +147,7 @@ evaluateRouter.post('/evaluate', async (req, res) => {
     ...heuristicResult,
     suggested_grade: llmJudge?.suggested_grade ?? heuristicResult.suggested_grade,
     justification_short: llmJudge?.justification ?? heuristicResult.justification_short,
+    missing_concepts: llmJudge?.missing_concepts ?? [],
     signals: {
       ...heuristicResult.signals,
       ...(llmJudge ? { llm_judge: llmJudge } : {})
@@ -285,6 +286,37 @@ evaluateRouter.post('/evaluate', async (req, res) => {
       await client.query('RELEASE SAVEPOINT persist_evaluation_signals');
     }
 
+    // Persist concept gaps extracted by the LLM judge (best-effort, non-blocking).
+    if (result.missing_concepts.length > 0) {
+      await client.query('SAVEPOINT persist_concept_gaps');
+      try {
+        for (const concept of result.missing_concepts) {
+          await client.query(
+            `INSERT INTO concept_gaps (evaluation_item_id, concept, subject, prompt_text)
+             VALUES ($1, $2, $3, $4)`,
+            [
+              evaluationItem.id,
+              concept,
+              normalizedSubject || null,
+              normalizedFields.prompt_text
+            ]
+          );
+        }
+      } catch (gapsError) {
+        await client.query('ROLLBACK TO SAVEPOINT persist_concept_gaps');
+        if (gapsError?.code === '42P01') {
+          console.warn('Skipping concept_gaps persistence because table does not exist.', {
+            code: gapsError.code,
+            message: gapsError.message
+          });
+        } else {
+          throw gapsError;
+        }
+      } finally {
+        await client.query('RELEASE SAVEPOINT persist_concept_gaps');
+      }
+    }
+
     await client.query('COMMIT');
 
     console.info('Persisted evaluation flow records', {
@@ -298,7 +330,8 @@ evaluateRouter.post('/evaluate', async (req, res) => {
       ...result,
       evaluation_id: evaluationId,
       prompt_text: normalizedFields.prompt_text,
-      subject: normalizedSubject || null
+      subject: normalizedSubject || null,
+      missing_concepts: result.missing_concepts
     });
   } catch (error) {
     if (client) {

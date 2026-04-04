@@ -6,6 +6,7 @@ import lookupRouter from './lookup.js';
 import socraticRouter from './socratic.js';
 import statsRouter from './stats.js';
 import overviewRouter from './overview.js';
+import schedulerRouter from './scheduler.js';
 
 const router = Router();
 
@@ -20,5 +21,6 @@ router.use(lookupRouter);
 router.use(socraticRouter);
 router.use(statsRouter);
 router.use(overviewRouter);
+router.use(schedulerRouter);
 
 export default router;

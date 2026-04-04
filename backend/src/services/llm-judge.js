@@ -3,7 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 // claude-haiku-4-5: optimized for latency — classification task with short output.
 // Swap to claude-opus-4-6 if you need deeper reasoning on ambiguous cases.
 const LLM_MODEL = 'claude-haiku-4-5';
-const LLM_MAX_TOKENS = 256;
+const LLM_MAX_TOKENS = 384;
 const FEW_SHOT_LIMIT = 4;
 
 let _client = null;
@@ -52,9 +52,10 @@ export async function fetchFewShotExamples(pool, subject) {
 function buildSystemPrompt(examples) {
   let system = `Sos un evaluador académico calibrado. Tu tarea es determinar si la respuesta del evaluado demuestra comprensión real del concepto pedido.
 
-Respondé ÚNICAMENTE con este formato exacto (dos líneas, sin texto adicional):
+Respondé ÚNICAMENTE con este formato exacto (tres líneas, sin texto adicional):
 GRADE: PASS|FAIL|REVIEW
 JUSTIFICATION: <una oración breve en español>
+MISSING: <concepto1>, <concepto2> | NONE
 
 Criterios de aprobación:
 - PASS: el evaluado demuestra comprensión del concepto central, aunque use palabras distintas, orden diferente o más palabras que la respuesta esperada.
@@ -70,7 +71,9 @@ NO penalizar bajo ninguna circunstancia:
 SÍ penalizar:
 - Ausencia de la idea central del concepto.
 - Errores conceptuales que contradigan la respuesta esperada.
-- Enumeración vacía sin explicar el núcleo.`;
+- Enumeración vacía sin explicar el núcleo.
+
+Para MISSING: listá los conceptos o ideas específicas que faltan o están incorrectos (ej: "función de control", "ciclo de retroalimentación"). Usá NONE si no falta nada relevante. Máximo 3 conceptos, sin oraciones largas.`;
 
   if (examples.length > 0) {
     system += '\n\nEjemplos de calibración de este evaluador:\n';
@@ -92,8 +95,9 @@ Calificación: ${ex.final_grade.toUpperCase()}`;
 }
 
 function parseResponse(text) {
-  const gradeMatch = text.match(/GRADE:\s*(PASS|FAIL|REVIEW)/i);
-  const justMatch  = text.match(/JUSTIFICATION:\s*(.+)/i);
+  const gradeMatch   = text.match(/GRADE:\s*(PASS|FAIL|REVIEW)/i);
+  const justMatch    = text.match(/JUSTIFICATION:\s*(.+)/i);
+  const missingMatch = text.match(/MISSING:\s*(.+)/i);
 
   if (!gradeMatch) {
     throw new Error(`LLM judge: cannot parse grade from response: "${text}"`);
@@ -104,9 +108,18 @@ function parseResponse(text) {
     throw new Error(`LLM judge: unexpected grade value "${grade}"`);
   }
 
+  let missing_concepts = [];
+  if (missingMatch) {
+    const raw = missingMatch[1].trim();
+    if (raw.toUpperCase() !== 'NONE') {
+      missing_concepts = raw.split(',').map((s) => s.trim()).filter(Boolean);
+    }
+  }
+
   return {
     suggested_grade: grade,
-    justification: justMatch ? justMatch[1].trim() : 'Evaluación automática.'
+    justification: justMatch ? justMatch[1].trim() : 'Evaluación automática.',
+    missing_concepts
   };
 }
 
@@ -139,6 +152,7 @@ Respuesta del evaluado: ${user_answer_text}`
   return {
     ...parsed,
     few_shot_count: examples.length,
-    model: LLM_MODEL
+    model: LLM_MODEL,
+    missing_concepts: parsed.missing_concepts
   };
 }

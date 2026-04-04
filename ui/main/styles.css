@@ -329,3 +329,162 @@ button {
 
 .grade-badge.pass { background: #e6f4e6; color: #1a6e1a; }
 .grade-badge.fail { background: #fde8e8; color: #a40000; }
+
+.concept-tag {
+  display: inline-block;
+  background: #fff3cd;
+  color: #7a5200;
+  border: 1px solid #f0c840;
+  border-radius: 3px;
+  padding: 1px 7px;
+  font-size: 0.82rem;
+  margin: 2px 2px 0 0;
+}
+
+#missing-concepts { margin-top: 6px; font-size: 0.88rem; }
+#missing-concepts.hidden { display: none; }
+
+/* ─── Study tab ─────────────────────────────────────────────────────────────── */
+
+.study-queue-summary {
+  font-size: 1rem;
+  margin-bottom: 12px;
+}
+
+.study-queue-count {
+  font-size: 2rem;
+  font-weight: 800;
+  color: #2a5fc8;
+  margin-right: 4px;
+}
+
+.study-queue-detail {
+  font-size: 0.85rem;
+  color: #888;
+  margin-left: 6px;
+}
+
+.study-overview-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.study-start-btn {
+  background: #2a5fc8;
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  padding: 9px 20px;
+  font-size: 0.95rem;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.study-start-btn:hover { background: #1e4aa8; }
+
+.study-add-btn {
+  background: #f4f4f4;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  padding: 9px 16px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.study-progress-bar {
+  background: #e8eef8;
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  color: #555;
+  margin-bottom: 12px;
+  font-weight: 600;
+}
+
+.study-card-panel {
+  border-left: 4px solid #2a5fc8;
+}
+
+.study-card-badge {
+  display: inline-block;
+  background: #fff3cd;
+  color: #7a5200;
+  border: 1px solid #f0c840;
+  border-radius: 4px;
+  padding: 2px 10px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.study-card-prompt {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-bottom: 14px;
+  line-height: 1.5;
+}
+
+.study-eval-btn {
+  background: #2a5fc8;
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  padding: 8px 18px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  margin-top: 8px;
+}
+
+.study-eval-btn:hover { background: #1e4aa8; }
+.study-eval-btn:disabled { background: #9ab0e0; cursor: default; }
+
+.study-result-block {
+  border-top: 1px solid #e0e0e0;
+  padding-top: 12px;
+  margin-top: 4px;
+}
+
+.study-result-justification {
+  color: #555;
+  font-size: 0.9rem;
+  margin: 4px 0 10px;
+}
+
+.study-result-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.study-next-btn {
+  background: #2a5fc8;
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  padding: 8px 18px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.study-next-btn:hover { background: #1e4aa8; }
+
+.study-grade-inline {
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 3px;
+}
+
+.study-grade-inline.pass { background: #e6f4e6; color: #1a6e1a; }
+.study-grade-inline.fail { background: #fde8e8; color: #a40000; }
+.study-grade-inline.review { background: #fff3cd; color: #7a5200; }
+
+.btn-secondary {
+  background: #f4f4f4;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  padding: 8px 14px;
+  cursor: pointer;
+}

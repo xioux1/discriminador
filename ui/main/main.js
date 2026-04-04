@@ -4,10 +4,12 @@ const DECISION_ENDPOINT = '/decision';
 // --- Tab navigation ---
 
 (function initTabs() {
-  const tabs = document.querySelectorAll('.tab-btn');
-  const tabEvaluate = document.querySelector('#tab-evaluate');
+  const tabs       = document.querySelectorAll('.tab-btn');
+  const tabEval    = document.querySelector('#tab-evaluate');
   const tabHistory = document.querySelector('#tab-history');
+  const tabStudy   = document.querySelector('#tab-study');
   let historyLoaded = false;
+  let studyLoaded   = false;
 
   tabs.forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -15,16 +17,18 @@ const DECISION_ENDPOINT = '/decision';
       btn.classList.add('active');
       const tab = btn.dataset.tab;
 
+      tabEval.classList.add('hidden');
+      tabHistory.classList.add('hidden');
+      tabStudy.classList.add('hidden');
+
       if (tab === 'evaluate') {
-        tabEvaluate.classList.remove('hidden');
-        tabHistory.classList.add('hidden');
-      } else {
-        tabEvaluate.classList.add('hidden');
+        tabEval.classList.remove('hidden');
+      } else if (tab === 'history') {
         tabHistory.classList.remove('hidden');
-        if (!historyLoaded) {
-          historyLoaded = true;
-          loadHistoryOverview();
-        }
+        if (!historyLoaded) { historyLoaded = true; loadHistoryOverview(); }
+      } else if (tab === 'study') {
+        tabStudy.classList.remove('hidden');
+        if (!studyLoaded) { studyLoaded = true; initStudyTab(); }
       }
     });
   });
@@ -381,6 +385,22 @@ function renderResult(result) {
     li.textContent = `${dimension}: ${value}`;
     dimensionsList.appendChild(li);
   });
+
+  // Render missing concepts if present
+  let missingEl = document.querySelector('#missing-concepts');
+  if (!missingEl) {
+    missingEl = document.createElement('p');
+    missingEl.id = 'missing-concepts';
+    document.querySelector('#justification-short').parentElement.after(missingEl);
+  }
+  const concepts = result.missing_concepts;
+  if (concepts && concepts.length > 0) {
+    missingEl.innerHTML = `<strong>Conceptos ausentes:</strong> ${concepts.map((c) => `<span class="concept-tag">${c}</span>`).join(' ')}`;
+    missingEl.classList.remove('hidden');
+  } else {
+    missingEl.textContent = '';
+    missingEl.classList.add('hidden');
+  }
 
   const socraticTrigger = document.querySelector('#socratic-trigger-btn');
   const socraticSection = document.querySelector('#socratic-section');
@@ -755,7 +775,7 @@ function blobToBase64(blob) {
  * textarea: the target textarea element
  * labelIdle: button text when idle
  */
-function attachDictation(btn, textarea, labelIdle = 'Dictar') {
+function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = null) {
   if (!window.MediaRecorder || !navigator.mediaDevices) return;
 
   btn.hidden = false;
@@ -789,7 +809,7 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar') {
 
       try {
         const base64 = await blobToBase64(blob);
-        const subject = document.querySelector('#subject')?.value?.trim() || '';
+        const subject = subjectOverride ?? document.querySelector('#subject')?.value?.trim() ?? '';
         const response = await fetch('/transcribe', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -889,3 +909,277 @@ resultContent.addEventListener('click', async (event) => {
     setDecisionButtonsDisabled(false);
   }
 });
+
+// ─── Study tab ────────────────────────────────────────────────────────────────
+
+function initStudyTab() {
+  loadStudyOverview();
+
+  document.querySelector('#study-add-card-btn').addEventListener('click', () => {
+    document.querySelector('#study-add-form').classList.remove('hidden');
+  });
+  document.querySelector('#card-cancel-btn').addEventListener('click', () => {
+    document.querySelector('#study-add-form').classList.add('hidden');
+  });
+  document.querySelector('#card-save-btn').addEventListener('click', saveNewCard);
+  document.querySelector('#study-start-btn').addEventListener('click', startStudySession);
+  document.querySelector('#study-again-btn').addEventListener('click', () => {
+    document.querySelector('#study-complete').classList.add('hidden');
+    loadStudyOverview();
+  });
+}
+
+async function loadStudyOverview() {
+  const summary = document.querySelector('#study-queue-summary');
+  const actions = document.querySelector('#study-overview-actions');
+  summary.innerHTML = '<span style="color:#888">Cargando cola...</span>';
+  actions.classList.add('hidden');
+
+  try {
+    const data = await getJson('/scheduler/session');
+    const microCount = data.micro_cards?.length ?? 0;
+    const cardCount  = data.cards?.length ?? 0;
+    const total      = microCount + cardCount;
+
+    if (total === 0) {
+      summary.innerHTML = '<span style="color:#4a7;font-weight:600">Sin tarjetas para hoy. ¡Al día!</span>';
+    } else {
+      summary.innerHTML = `
+        <span class="study-queue-count">${total}</span> tarjeta${total !== 1 ? 's' : ''} para hoy
+        ${microCount > 0 ? `<span class="study-queue-detail">(${microCount} micro-concepto${microCount !== 1 ? 's' : ''})</span>` : ''}
+      `;
+    }
+    actions.classList.remove('hidden');
+  } catch (err) {
+    summary.innerHTML = `<span style="color:#c00">Error al cargar la cola: ${err.message}</span>`;
+  }
+}
+
+async function saveNewCard() {
+  const subject  = document.querySelector('#card-subject').value.trim();
+  const prompt   = document.querySelector('#card-prompt').value.trim();
+  const expected = document.querySelector('#card-expected').value.trim();
+  const feedback = document.querySelector('#card-save-feedback');
+
+  if (!prompt || !expected) {
+    feedback.textContent = 'La pregunta y la respuesta esperada son obligatorias.';
+    feedback.style.color = '#c00';
+    return;
+  }
+
+  try {
+    await postJson('/scheduler/cards', { subject, prompt_text: prompt, expected_answer_text: expected });
+    feedback.textContent = 'Tarjeta guardada.';
+    feedback.style.color = '#4a7';
+    document.querySelector('#card-prompt').value = '';
+    document.querySelector('#card-expected').value = '';
+    loadStudyOverview();
+    setTimeout(() => {
+      document.querySelector('#study-add-form').classList.add('hidden');
+      feedback.textContent = '';
+    }, 1500);
+  } catch (err) {
+    feedback.textContent = `Error: ${err.message}`;
+    feedback.style.color = '#c00';
+  }
+}
+
+// ─── Active session state ─────────────────────────────────────────────────────
+const studyState = {
+  queue: [],        // [{type:'card'|'micro', data:{...}}]
+  index: 0,
+  results: [],      // {grade, type, concept?}
+  currentEvalResult: null
+};
+
+async function startStudySession() {
+  const data = await getJson('/scheduler/session');
+  const micros = (data.micro_cards ?? []).map((m) => ({ type: 'micro', data: m }));
+  const cards  = (data.cards ?? []).map((c) => ({ type: 'card', data: c }));
+
+  studyState.queue   = [...micros, ...cards];
+  studyState.index   = 0;
+  studyState.results = [];
+
+  if (studyState.queue.length === 0) {
+    loadStudyOverview();
+    return;
+  }
+
+  document.querySelector('#study-overview').classList.add('hidden');
+  document.querySelector('#study-add-form').classList.add('hidden');
+  document.querySelector('#study-complete').classList.add('hidden');
+  document.querySelector('#study-session').classList.remove('hidden');
+
+  showStudyCard();
+}
+
+function showStudyCard() {
+  const item = studyState.queue[studyState.index];
+  if (!item) { finishStudySession(); return; }
+
+  const total   = studyState.queue.length;
+  const current = studyState.index + 1;
+
+  document.querySelector('#study-progress-text').textContent = `${current} / ${total}`;
+
+  const badge = document.querySelector('#study-card-badge');
+  const promptEl = document.querySelector('#study-card-prompt');
+
+  if (item.type === 'micro') {
+    badge.textContent = `Micro-concepto: ${item.data.concept}`;
+    badge.classList.remove('hidden');
+    promptEl.textContent = item.data.question;
+  } else {
+    badge.classList.add('hidden');
+    const hasMicros = parseInt(item.data.active_micro_count) > 0;
+    badge.textContent = hasMicros ? `⚠ Conceptos pendientes (${item.data.active_micro_count})` : '';
+    if (hasMicros) badge.classList.remove('hidden');
+    promptEl.textContent = item.data.prompt_text;
+  }
+
+  // Reset answer + result blocks
+  document.querySelector('#study-answer-input').value = '';
+  document.querySelector('#study-answer-block').classList.remove('hidden');
+  document.querySelector('#study-result-block').classList.add('hidden');
+  document.querySelector('#study-eval-btn').disabled = false;
+  studyState.currentEvalResult = null;
+
+  // Attach dictation to study textarea
+  const dictBtn = document.querySelector('#study-dictation-btn');
+  const textarea = document.querySelector('#study-answer-input');
+  const subject = item.type === 'micro' ? item.data.parent_subject : item.data.subject;
+  attachDictation(dictBtn, textarea, 'Dictar', subject);
+}
+
+document.querySelector('#study-eval-btn').addEventListener('click', async () => {
+  const item     = studyState.queue[studyState.index];
+  const answer   = document.querySelector('#study-answer-input').value.trim();
+  const evalBtn  = document.querySelector('#study-eval-btn');
+
+  if (!answer) return;
+
+  evalBtn.disabled = true;
+  evalBtn.textContent = 'Evaluando...';
+
+  let prompt_text, expected_answer_text, subject;
+
+  if (item.type === 'micro') {
+    prompt_text          = item.data.question;
+    expected_answer_text = item.data.expected_answer;
+    subject              = item.data.parent_subject;
+  } else {
+    prompt_text          = item.data.prompt_text;
+    expected_answer_text = item.data.expected_answer_text;
+    subject              = item.data.subject;
+  }
+
+  try {
+    const result = await postJson(EVALUATE_ENDPOINT, {
+      prompt_text,
+      user_answer_text: answer,
+      expected_answer_text,
+      subject: subject || ''
+    });
+
+    studyState.currentEvalResult = result;
+
+    const gradeEl    = document.querySelector('#study-result-grade');
+    const justEl     = document.querySelector('#study-result-justification');
+    const missingEl  = document.querySelector('#study-result-missing');
+    const grade      = normalizeSuggestedGrade(result.suggested_grade);
+
+    gradeEl.textContent = getSuggestedGradeLabel(result.suggested_grade);
+    gradeEl.className   = `study-grade-inline ${grade.toLowerCase()}`;
+    justEl.textContent  = result.justification_short;
+
+    const concepts = result.missing_concepts ?? [];
+    if (concepts.length > 0) {
+      missingEl.innerHTML = `<strong>Faltó:</strong> ${concepts.map((c) => `<span class="concept-tag">${c}</span>`).join(' ')}`;
+      missingEl.classList.remove('hidden');
+    } else {
+      missingEl.textContent = '';
+      missingEl.classList.add('hidden');
+    }
+
+    document.querySelector('#study-answer-block').classList.add('hidden');
+    document.querySelector('#study-result-block').classList.remove('hidden');
+  } catch (err) {
+    evalBtn.disabled = false;
+    evalBtn.textContent = 'Evaluar';
+    alert(`Error al evaluar: ${err.message}`);
+  }
+});
+
+document.querySelector('#study-next-btn').addEventListener('click', async () => {
+  const item   = studyState.queue[studyState.index];
+  const evalResult = studyState.currentEvalResult;
+  if (!evalResult) { advanceStudyCard(); return; }
+
+  const grade  = normalizeSuggestedGrade(evalResult.suggested_grade).toLowerCase();
+  const gaps   = evalResult.missing_concepts ?? [];
+
+  try {
+    if (item.type === 'micro') {
+      await postJson('/scheduler/review', {
+        micro_card_id: item.data.id,
+        grade
+      });
+    } else {
+      const reviewResp = await postJson('/scheduler/review', {
+        card_id: item.data.id,
+        grade,
+        concept_gaps: gaps
+      });
+
+      // Insert new micro-cards at the front of the remaining queue (study them now)
+      const newMicros = (reviewResp.new_micro_cards ?? []).map((m) => ({ type: 'micro', data: m }));
+      if (newMicros.length) {
+        studyState.queue.splice(studyState.index + 1, 0, ...newMicros);
+      }
+    }
+  } catch (err) {
+    console.warn('Review record failed:', err.message);
+  }
+
+  studyState.results.push({
+    grade,
+    type: item.type,
+    concept: item.type === 'micro' ? item.data.concept : null
+  });
+
+  advanceStudyCard();
+});
+
+function advanceStudyCard() {
+  studyState.index++;
+  if (studyState.index >= studyState.queue.length) {
+    finishStudySession();
+  } else {
+    showStudyCard();
+  }
+}
+
+function finishStudySession() {
+  document.querySelector('#study-session').classList.add('hidden');
+  document.querySelector('#study-overview').classList.remove('hidden');
+  document.querySelector('#study-complete').classList.remove('hidden');
+
+  const results = studyState.results;
+  const passes  = results.filter((r) => r.grade === 'pass').length;
+  const fails   = results.filter((r) => r.grade === 'fail').length;
+  const microsPassed = results.filter((r) => r.type === 'micro' && r.grade === 'pass').length;
+
+  document.querySelector('#study-complete-summary').innerHTML = `
+    <p><strong>${passes}</strong> correctas &nbsp;·&nbsp; <strong>${fails}</strong> incorrectas</p>
+    ${microsPassed > 0 ? `<p style="color:#4a7;font-size:0.9rem">${microsPassed} micro-concepto${microsPassed !== 1 ? 's' : ''} superado${microsPassed !== 1 ? 's' : ''}.</p>` : ''}
+  `;
+
+  loadStudyOverview();
+}
+
+async function getJson(url) {
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+  return resp.json();
+}
