@@ -268,4 +268,81 @@ async function reviewMicroCard(res, microCardId, grade) {
   });
 }
 
+// ─── Agenda: full schedule view ──────────────────────────────────────────────
+// Returns all cards + their micro-cards, grouped into time buckets.
+schedulerRouter.get('/scheduler/agenda', async (req, res) => {
+  const { subject } = req.query;
+  const subjectFilter = subject ? 'WHERE c.subject = $1' : '';
+  const params = subject ? [subject] : [];
+
+  try {
+    const { rows: cards } = await dbPool.query(
+      `SELECT c.*,
+         json_agg(
+           json_build_object(
+             'id',             mc.id,
+             'concept',        mc.concept,
+             'question',       mc.question,
+             'next_review_at', mc.next_review_at,
+             'interval_days',  mc.interval_days,
+             'ease_factor',    mc.ease_factor,
+             'review_count',   mc.review_count,
+             'status',         mc.status
+           ) ORDER BY mc.next_review_at
+         ) FILTER (WHERE mc.id IS NOT NULL AND mc.status = 'active') AS micro_cards
+       FROM cards c
+       LEFT JOIN micro_cards mc ON mc.parent_card_id = c.id AND mc.status = 'active'
+       ${subjectFilter}
+       GROUP BY c.id
+       ORDER BY c.next_review_at ASC`,
+      params
+    );
+
+    // Assign each card to a time bucket
+    const now   = new Date();
+    const eod   = new Date(now); eod.setHours(23, 59, 59, 999);
+    const eotom = new Date(now); eotom.setDate(eotom.getDate() + 1); eotom.setHours(23, 59, 59, 999);
+    const eow   = new Date(now); eow.setDate(eow.getDate() + 7);
+    const eo2w  = new Date(now); eo2w.setDate(eo2w.getDate() + 14);
+
+    const buckets = {
+      overdue:    [],
+      today:      [],
+      tomorrow:   [],
+      this_week:  [],
+      two_weeks:  [],
+      later:      []
+    };
+
+    for (const card of cards) {
+      card.micro_cards = card.micro_cards ?? [];
+      const due = new Date(card.next_review_at);
+      if      (due < now)    buckets.overdue.push(card);
+      else if (due <= eod)   buckets.today.push(card);
+      else if (due <= eotom) buckets.tomorrow.push(card);
+      else if (due <= eow)   buckets.this_week.push(card);
+      else if (due <= eo2w)  buckets.two_weeks.push(card);
+      else                   buckets.later.push(card);
+    }
+
+    return res.status(200).json({
+      generated_at: now.toISOString(),
+      summary: {
+        total_cards:      cards.length,
+        overdue:          buckets.overdue.length,
+        due_today:        buckets.today.length,
+        due_tomorrow:     buckets.tomorrow.length,
+        due_this_week:    buckets.this_week.length,
+        due_two_weeks:    buckets.two_weeks.length,
+        due_later:        buckets.later.length,
+        active_micro_cards: cards.reduce((n, c) => n + (c.micro_cards?.length ?? 0), 0)
+      },
+      buckets
+    });
+  } catch (err) {
+    console.error('scheduler GET /agenda', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
 export default schedulerRouter;

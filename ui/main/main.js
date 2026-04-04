@@ -922,6 +922,11 @@ function initStudyTab() {
 
   document.querySelector('#study-add-card-btn').addEventListener('click', () => {
     document.querySelector('#study-add-form').classList.remove('hidden');
+    document.querySelector('#study-agenda').classList.add('hidden');
+  });
+  document.querySelector('#study-agenda-btn').addEventListener('click', loadAgenda);
+  document.querySelector('#agenda-close-btn').addEventListener('click', () => {
+    document.querySelector('#study-agenda').classList.add('hidden');
   });
   document.querySelector('#card-cancel-btn').addEventListener('click', () => {
     document.querySelector('#study-add-form').classList.add('hidden');
@@ -1187,4 +1192,109 @@ async function getJson(url) {
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
   return resp.json();
+}
+
+// ─── Agenda view ──────────────────────────────────────────────────────────────
+
+const BUCKET_LABELS = {
+  overdue:   '⚠ Vencidas',
+  today:     'Hoy',
+  tomorrow:  'Mañana',
+  this_week: 'Esta semana',
+  two_weeks: 'Próximas 2 semanas',
+  later:     'Más adelante'
+};
+
+async function loadAgenda() {
+  const agendaEl  = document.querySelector('#study-agenda');
+  const summaryEl = document.querySelector('#agenda-summary');
+  const bucketsEl = document.querySelector('#agenda-buckets');
+
+  document.querySelector('#study-add-form').classList.add('hidden');
+  agendaEl.classList.remove('hidden');
+  summaryEl.innerHTML = '<span style="color:#888">Cargando...</span>';
+  bucketsEl.innerHTML = '';
+
+  try {
+    const data = await getJson('/scheduler/agenda');
+    const s = data.summary;
+
+    summaryEl.innerHTML = `
+      <div class="agenda-pills">
+        ${s.overdue      ? `<span class="agenda-pill overdue">${s.overdue} vencida${s.overdue !== 1 ? 's' : ''}</span>` : ''}
+        ${s.due_today    ? `<span class="agenda-pill today">${s.due_today} hoy</span>` : ''}
+        ${s.due_tomorrow ? `<span class="agenda-pill soon">${s.due_tomorrow} mañana</span>` : ''}
+        <span class="agenda-pill neutral">${s.total_cards} tarjeta${s.total_cards !== 1 ? 's' : ''} total</span>
+        ${s.active_micro_cards ? `<span class="agenda-pill micro">${s.active_micro_cards} micro-concepto${s.active_micro_cards !== 1 ? 's' : ''} activo${s.active_micro_cards !== 1 ? 's' : ''}</span>` : ''}
+      </div>
+    `;
+
+    bucketsEl.innerHTML = '';
+
+    for (const [key, label] of Object.entries(BUCKET_LABELS)) {
+      const cards = data.buckets[key] ?? [];
+      if (!cards.length) continue;
+
+      const section = document.createElement('div');
+      section.className = 'agenda-bucket';
+      section.innerHTML = `<h4 class="agenda-bucket-title ${key}">${label} <span class="agenda-bucket-count">${cards.length}</span></h4>`;
+
+      for (const card of cards) {
+        const micros = card.micro_cards ?? [];
+        const due = new Date(card.next_review_at);
+        const dueStr = formatDue(due);
+        const intervalStr = card.interval_days >= 1
+          ? `cada ${Math.round(card.interval_days)} día${Math.round(card.interval_days) !== 1 ? 's' : ''}`
+          : 'mañana';
+
+        const cardEl = document.createElement('div');
+        cardEl.className = 'agenda-card';
+        cardEl.innerHTML = `
+          <div class="agenda-card-header">
+            ${card.subject ? `<span class="agenda-subject-badge">${card.subject}</span>` : ''}
+            <span class="agenda-due ${key}">${dueStr}</span>
+            <span class="agenda-interval">${intervalStr} · ${card.review_count} revis. · ${card.pass_count} ✓</span>
+          </div>
+          <p class="agenda-card-prompt">${truncate(card.prompt_text, 120)}</p>
+          ${micros.length ? `
+            <div class="agenda-micros">
+              ${micros.map((m) => `
+                <div class="agenda-micro-item">
+                  <span class="concept-tag">${m.concept}</span>
+                  <span class="agenda-micro-due">${formatDue(new Date(m.next_review_at))}</span>
+                  <span class="agenda-micro-q">${truncate(m.question, 80)}</span>
+                </div>
+              `).join('')}
+            </div>
+          ` : ''}
+        `;
+        section.appendChild(cardEl);
+      }
+
+      bucketsEl.appendChild(section);
+    }
+
+    if (!bucketsEl.children.length) {
+      bucketsEl.innerHTML = '<p style="color:#888;padding:12px 0">No hay tarjetas registradas aún.</p>';
+    }
+  } catch (err) {
+    summaryEl.innerHTML = `<span style="color:#c00">Error: ${err.message}</span>`;
+  }
+}
+
+function formatDue(date) {
+  const now    = new Date();
+  const diffMs = date - now;
+  const diffD  = Math.round(diffMs / 86400000);
+
+  if (diffD < 0)  return `hace ${Math.abs(diffD)} día${Math.abs(diffD) !== 1 ? 's' : ''}`;
+  if (diffD === 0) return 'hoy';
+  if (diffD === 1) return 'mañana';
+  if (diffD < 7)  return `en ${diffD} días`;
+  if (diffD < 14) return `en ${Math.round(diffD / 7)} semana`;
+  return `en ${diffD} días`;
+}
+
+function truncate(str, max) {
+  return str && str.length > max ? str.slice(0, max) + '…' : str;
 }

@@ -117,7 +117,18 @@
           <div class="study-overview-actions hidden" id="study-overview-actions">
             <button type="button" id="study-start-btn" class="study-start-btn">Iniciar sesión</button>
             <button type="button" id="study-add-card-btn" class="study-add-btn">+ Agregar tarjeta</button>
+            <button type="button" id="study-agenda-btn" class="study-add-btn">📅 Ver agenda</button>
           </div>
+        </div>
+
+        <!-- Agenda view -->
+        <div id="study-agenda" class="hidden">
+          <div class="agenda-header">
+            <h3 style="margin:0">Agenda de revisiones</h3>
+            <button type="button" id="agenda-close-btn" class="btn-secondary">Cerrar</button>
+          </div>
+          <div id="agenda-summary" class="agenda-summary"></div>
+          <div id="agenda-buckets"></div>
         </div>
 
         <!-- Add card form -->
