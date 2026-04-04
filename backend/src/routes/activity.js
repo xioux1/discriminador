@@ -39,7 +39,7 @@ activityRouter.get('/stats/activity', async (req, res) => {
          GROUP BY logged_date
        ),
        merged AS (
-         SELECT day,
+         SELECT ds.d AS day,
                 COALESCE(e.cnt, 0) + COALESCE(s.cnt, 0) AS total,
                 COALESCE(e.pass_cnt, 0) + COALESCE(s.pass_cnt, 0) AS pass_total
          FROM date_series ds
