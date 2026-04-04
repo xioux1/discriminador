@@ -3,32 +3,135 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Discriminador — UI principal</title>
+    <title>Discriminador</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
+    <header class="app-header">
+      <span class="app-logo">discriminador</span>
+    </header>
+
+    <nav class="tab-nav" id="main-nav">
+      <button class="tab-btn active" data-tab="dashboard">Inicio</button>
+      <button class="tab-btn" data-tab="study">Estudiar</button>
+      <button class="tab-btn" data-tab="evaluate">Evaluar</button>
+      <button class="tab-btn" data-tab="explore">Explorar</button>
+      <button class="tab-btn" data-tab="progress">Progreso</button>
+    </nav>
+
     <main class="container">
-      <h1>Evaluación teórica escrita</h1>
 
-      <nav class="tab-nav">
-        <button class="tab-btn active" data-tab="evaluate">Evaluar</button>
-        <button class="tab-btn" data-tab="history">Historial</button>
-        <button class="tab-btn" data-tab="study">Estudiar</button>
-      </nav>
+      <!-- ═══ TAB: INICIO (Dashboard) ═══════════════════════════════════════ -->
+      <section id="tab-dashboard">
+        <div id="dashboard-loading" class="loading-hint">Cargando...</div>
+        <div id="dashboard-content"></div>
+      </section>
 
-      <!-- TAB: Evaluar -->
-      <section id="tab-evaluate">
+      <!-- ═══ TAB: ESTUDIAR ════════════════════════════════════════════════ -->
+      <section id="tab-study" class="hidden">
+
+        <!-- Overview -->
+        <div id="study-overview" class="card">
+          <h2>Sesión de estudio</h2>
+          <div id="study-queue-summary" class="study-queue-summary">
+            <span style="color:var(--text-muted)">Cargando cola...</span>
+          </div>
+          <div class="study-overview-actions hidden" id="study-overview-actions">
+            <button type="button" id="study-start-btn" class="btn-primary">Iniciar sesión</button>
+            <button type="button" id="study-add-card-btn" class="btn-secondary">+ Agregar tarjeta</button>
+            <button type="button" id="study-agenda-btn" class="btn-secondary">📅 Agenda</button>
+          </div>
+        </div>
+
+        <!-- Agenda -->
+        <div id="study-agenda" class="hidden">
+          <div class="agenda-header">
+            <h3 style="margin:0">Agenda de revisiones</h3>
+            <button type="button" id="agenda-close-btn" class="btn-secondary">Cerrar</button>
+          </div>
+          <div id="agenda-summary" class="agenda-summary"></div>
+          <div id="agenda-buckets"></div>
+        </div>
+
+        <!-- Add card form -->
+        <div id="study-add-form" class="card hidden">
+          <h3>Nueva tarjeta</h3>
+          <label for="card-subject">Materia</label>
+          <input id="card-subject" type="text" list="subjects-list" autocomplete="off" />
+          <label for="card-prompt">Pregunta / consigna</label>
+          <textarea id="card-prompt" rows="3"></textarea>
+          <label for="card-expected">Respuesta esperada</label>
+          <textarea id="card-expected" rows="3"></textarea>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button type="button" id="card-save-btn" class="btn-primary">Guardar tarjeta</button>
+            <button type="button" id="card-cancel-btn" class="btn-secondary">Cancelar</button>
+          </div>
+          <p id="card-save-feedback" class="feedback"></p>
+        </div>
+
+        <!-- Active session (full-screen overlay) -->
+        <div id="study-session" class="hidden study-session-overlay">
+          <div class="study-session-header">
+            <button type="button" id="study-exit-btn" class="btn-ghost">✕ Salir</button>
+            <div id="study-progress-bar" class="study-progress-bar">
+              <div id="study-progress-fill" class="study-progress-fill"></div>
+            </div>
+            <span id="study-progress-text" class="study-progress-label"></span>
+          </div>
+
+          <div id="study-card" class="study-card-panel">
+            <div id="study-card-badge" class="study-card-badge hidden"></div>
+            <p id="study-card-prompt" class="study-card-prompt"></p>
+
+            <div id="study-answer-block">
+              <div class="field-header">
+                <label for="study-answer-input">Tu respuesta</label>
+                <div class="study-answer-actions">
+                  <span id="study-timer" class="study-timer">0s</span>
+                  <button type="button" id="study-dictation-btn" class="dictation-btn hidden">🎤 Dictar</button>
+                </div>
+              </div>
+              <textarea id="study-answer-input" rows="5"></textarea>
+              <button type="button" id="study-eval-btn" class="btn-primary study-eval-btn">Evaluar respuesta</button>
+            </div>
+
+            <div id="study-result-block" class="study-result-block hidden">
+              <div class="study-result-header">
+                <span id="study-result-grade" class="study-grade-inline"></span>
+                <span id="study-result-time" class="study-result-time"></span>
+              </div>
+              <p id="study-result-justification" class="study-result-justification"></p>
+              <p id="study-result-missing" class="hidden" style="font-size:0.88rem;margin-top:4px"></p>
+              <div id="study-result-expected" class="study-result-expected hidden"></div>
+              <div class="study-result-actions">
+                <button type="button" id="study-next-btn" class="btn-primary study-next-btn">Siguiente →</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Session complete -->
+        <div id="study-complete" class="card hidden">
+          <h3>Sesión completa</h3>
+          <div id="study-complete-summary"></div>
+          <button type="button" id="study-again-btn" class="btn-primary" style="margin-top:12px">Ver cola</button>
+        </div>
+
+      </section>
+
+      <!-- ═══ TAB: EVALUAR ═════════════════════════════════════════════════ -->
+      <section id="tab-evaluate" class="hidden">
 
         <section class="card">
-          <h2>Entrada</h2>
+          <h2>Evaluación manual</h2>
           <form id="evaluation-form" novalidate>
             <label for="prompt_text">Consigna</label>
             <textarea id="prompt_text" name="prompt_text" rows="4" required></textarea>
             <p class="field-error" data-error-for="prompt_text"></p>
 
             <div class="field-header">
-              <label for="user_answer_text">Respuesta del usuario</label>
-              <button type="button" id="dictation-btn" class="dictation-btn" hidden>Dictar respuesta</button>
+              <label for="user_answer_text">Respuesta</label>
+              <button type="button" id="dictation-btn" class="dictation-btn" hidden>🎤 Dictar</button>
             </div>
             <textarea id="user_answer_text" name="user_answer_text" rows="4" required></textarea>
             <p class="field-error" data-error-for="user_answer_text"></p>
@@ -45,14 +148,14 @@
             <datalist id="subjects-list"></datalist>
             <p class="field-error" data-error-for="subject"></p>
 
-            <button id="evaluate-btn" type="submit">Evaluar</button>
+            <button id="evaluate-btn" type="submit" class="btn-primary">Evaluar</button>
           </form>
           <p id="form-feedback" class="feedback"></p>
         </section>
 
         <section id="result-card" class="card hidden" aria-live="polite">
           <h2>Resultado</h2>
-          <div id="result-loading" class="hidden">Evaluando...</div>
+          <div id="result-loading" class="hidden loading-hint">Evaluando...</div>
 
           <div id="result-content" class="hidden">
             <p><strong>Calificación sugerida:</strong> <span id="suggested-grade"></span></p>
@@ -96,97 +199,49 @@
         </section>
 
       </section>
-      <!-- /TAB: Evaluar -->
 
-      <!-- TAB: Historial -->
-      <section id="tab-history" class="hidden">
-        <div id="history-loading" class="hidden" style="padding:16px;color:#888">Cargando historial...</div>
+      <!-- ═══ TAB: EXPLORAR ════════════════════════════════════════════════ -->
+      <section id="tab-explore" class="hidden">
+        <div id="history-loading" class="hidden loading-hint">Cargando historial...</div>
         <div id="history-content"></div>
       </section>
-      <!-- /TAB: Historial -->
 
-      <!-- TAB: Estudiar -->
-      <section id="tab-study" class="hidden">
+      <!-- ═══ TAB: PROGRESO ════════════════════════════════════════════════ -->
+      <section id="tab-progress" class="hidden">
+        <div id="progress-loading" class="loading-hint">Cargando estadísticas...</div>
+        <div id="progress-content" class="hidden">
 
-        <!-- Overview: queue summary + start -->
-        <div id="study-overview" class="card">
-          <h2>Sesión de estudio</h2>
-          <div id="study-queue-summary" class="study-queue-summary">
-            <span id="study-loading-hint" style="color:#888">Cargando cola...</span>
-          </div>
-          <div class="study-overview-actions hidden" id="study-overview-actions">
-            <button type="button" id="study-start-btn" class="study-start-btn">Iniciar sesión</button>
-            <button type="button" id="study-add-card-btn" class="study-add-btn">+ Agregar tarjeta</button>
-            <button type="button" id="study-agenda-btn" class="study-add-btn">📅 Ver agenda</button>
-          </div>
-        </div>
-
-        <!-- Agenda view -->
-        <div id="study-agenda" class="hidden">
-          <div class="agenda-header">
-            <h3 style="margin:0">Agenda de revisiones</h3>
-            <button type="button" id="agenda-close-btn" class="btn-secondary">Cerrar</button>
-          </div>
-          <div id="agenda-summary" class="agenda-summary"></div>
-          <div id="agenda-buckets"></div>
-        </div>
-
-        <!-- Add card form -->
-        <div id="study-add-form" class="card hidden">
-          <h3>Nueva tarjeta</h3>
-          <label for="card-subject">Materia</label>
-          <input id="card-subject" type="text" list="subjects-list" autocomplete="off" />
-          <label for="card-prompt">Pregunta / consigna</label>
-          <textarea id="card-prompt" rows="3"></textarea>
-          <label for="card-expected">Respuesta esperada</label>
-          <textarea id="card-expected" rows="3"></textarea>
-          <div style="display:flex;gap:8px;margin-top:8px">
-            <button type="button" id="card-save-btn">Guardar tarjeta</button>
-            <button type="button" id="card-cancel-btn" class="btn-secondary">Cancelar</button>
-          </div>
-          <p id="card-save-feedback" class="feedback"></p>
-        </div>
-
-        <!-- Active session -->
-        <div id="study-session" class="hidden">
-          <div id="study-progress-bar" class="study-progress-bar">
-            <span id="study-progress-text"></span>
+          <!-- Streak + summary pills -->
+          <div class="card">
+            <h2>Actividad general</h2>
+            <div id="progress-pills" class="progress-pills"></div>
           </div>
 
-          <div id="study-card" class="card study-card-panel">
-            <div id="study-card-badge" class="study-card-badge hidden"></div>
-            <p id="study-card-prompt" class="study-card-prompt"></p>
-
-            <div id="study-answer-block">
-              <div class="field-header">
-                <label for="study-answer-input">Tu respuesta</label>
-                <button type="button" id="study-dictation-btn" class="dictation-btn hidden">Dictar</button>
-              </div>
-              <textarea id="study-answer-input" rows="4"></textarea>
-              <button type="button" id="study-eval-btn" class="study-eval-btn">Evaluar</button>
-            </div>
-
-            <div id="study-result-block" class="study-result-block hidden">
-              <p><strong>Resultado:</strong> <span id="study-result-grade"></span></p>
-              <p id="study-result-justification" class="study-result-justification"></p>
-              <p id="study-result-missing" class="hidden" style="margin-top:4px;font-size:0.88rem"></p>
-              <div id="study-result-expected" class="study-result-expected hidden"></div>
-              <div class="study-result-actions">
-                <button type="button" id="study-next-btn" class="study-next-btn">Siguiente →</button>
+          <!-- Heatmap -->
+          <div class="card">
+            <h3>Actividad (último año)</h3>
+            <div id="heatmap-container" class="heatmap-container">
+              <div id="heatmap-grid" class="heatmap-grid"></div>
+              <div id="heatmap-legend" class="heatmap-legend">
+                <span>Menos</span>
+                <span class="heatmap-cell" style="--lvl:0"></span>
+                <span class="heatmap-cell" style="--lvl:1"></span>
+                <span class="heatmap-cell" style="--lvl:2"></span>
+                <span class="heatmap-cell" style="--lvl:3"></span>
+                <span class="heatmap-cell" style="--lvl:4"></span>
+                <span>Más</span>
               </div>
             </div>
           </div>
-        </div>
 
-        <!-- Session complete -->
-        <div id="study-complete" class="card hidden">
-          <h3>Sesión completa</h3>
-          <div id="study-complete-summary"></div>
-          <button type="button" id="study-again-btn" class="study-start-btn" style="margin-top:12px">Ver cola</button>
-        </div>
+          <!-- Per-subject stats -->
+          <div class="card">
+            <h3>Por materia</h3>
+            <div id="progress-subjects"></div>
+          </div>
 
+        </div>
       </section>
-      <!-- /TAB: Estudiar -->
 
     </main>
 

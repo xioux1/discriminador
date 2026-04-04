@@ -4,34 +4,44 @@ const DECISION_ENDPOINT = '/decision';
 // --- Tab navigation ---
 
 (function initTabs() {
-  const tabs       = document.querySelectorAll('.tab-btn');
-  const tabEval    = document.querySelector('#tab-evaluate');
-  const tabHistory = document.querySelector('#tab-history');
-  const tabStudy   = document.querySelector('#tab-study');
-  let historyLoaded = false;
-  let studyLoaded   = false;
+  const tabs          = document.querySelectorAll('.tab-btn');
+  const tabSections   = {
+    dashboard: document.querySelector('#tab-dashboard'),
+    study:     document.querySelector('#tab-study'),
+    evaluate:  document.querySelector('#tab-evaluate'),
+    explore:   document.querySelector('#tab-explore'),
+    progress:  document.querySelector('#tab-progress'),
+  };
+  let loaded = { dashboard: false, study: false, explore: false, progress: false };
+
+  function showTab(tab) {
+    Object.values(tabSections).forEach((s) => s.classList.add('hidden'));
+    if (tabSections[tab]) tabSections[tab].classList.remove('hidden');
+  }
 
   tabs.forEach((btn) => {
     btn.addEventListener('click', () => {
       tabs.forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
       const tab = btn.dataset.tab;
+      showTab(tab);
 
-      tabEval.classList.add('hidden');
-      tabHistory.classList.add('hidden');
-      tabStudy.classList.add('hidden');
-
-      if (tab === 'evaluate') {
-        tabEval.classList.remove('hidden');
-      } else if (tab === 'history') {
-        tabHistory.classList.remove('hidden');
-        if (!historyLoaded) { historyLoaded = true; loadHistoryOverview(); }
-      } else if (tab === 'study') {
-        tabStudy.classList.remove('hidden');
-        if (!studyLoaded) { studyLoaded = true; initStudyTab(); }
+      if (tab === 'explore' && !loaded.explore) {
+        loaded.explore = true; loadHistoryOverview();
+      } else if (tab === 'study' && !loaded.study) {
+        loaded.study = true; initStudyTab();
+      } else if (tab === 'dashboard' && !loaded.dashboard) {
+        loaded.dashboard = true; loadDashboard();
+      } else if (tab === 'progress' && !loaded.progress) {
+        loaded.progress = true; loadProgress();
       }
     });
   });
+
+  // Show dashboard on load
+  showTab('dashboard');
+  loaded.dashboard = true;
+  loadDashboard();
 })();
 
 const DIM_LABELS_OVERVIEW = {
@@ -153,6 +163,176 @@ async function loadHistoryOverview() {
   } catch (err) {
     loading.classList.add('hidden');
     content.innerHTML = `<p style="padding:16px;color:#a40000">Error al cargar historial: ${err.message}</p>`;
+  }
+}
+
+// --- Dashboard ---
+
+async function loadDashboard() {
+  const loading = document.querySelector('#dashboard-loading');
+  const content = document.querySelector('#dashboard-content');
+  loading.classList.remove('hidden');
+  content.innerHTML = '';
+
+  try {
+    const [overview, session] = await Promise.all([
+      getJson('/stats/overview').catch(() => ({ subjects: [] })),
+      getJson('/scheduler/session').catch(() => ({ cards: [], micro_cards: [] }))
+    ]);
+
+    loading.classList.add('hidden');
+
+    const subjects = overview.subjects || [];
+    if (!subjects.length) {
+      content.innerHTML = '<p style="color:var(--text-muted);padding:16px">Aún no hay evaluaciones registradas. Empezá evaluando en la pestaña Evaluar.</p>';
+      return;
+    }
+
+    // Build due count per subject from session
+    const dueBySubject = {};
+    for (const card of session.cards ?? []) {
+      const s = card.subject || '(sin materia)';
+      dueBySubject[s] = (dueBySubject[s] || 0) + 1;
+    }
+    for (const mc of session.micro_cards ?? []) {
+      const s = mc.parent_subject || '(sin materia)';
+      dueBySubject[s] = (dueBySubject[s] || 0) + 1;
+    }
+    const totalDue = Object.values(dueBySubject).reduce((a, b) => a + b, 0);
+
+    if (totalDue > 0) {
+      const banner = document.createElement('div');
+      banner.className = 'card';
+      banner.style.cssText = 'background:var(--primary-light,#e8f0fe);margin-bottom:12px';
+      banner.innerHTML = `<strong>${totalDue}</strong> tarjeta${totalDue !== 1 ? 's' : ''} para revisar hoy.`;
+      content.appendChild(banner);
+    }
+
+    const grid = document.createElement('div');
+    grid.className = 'deck-grid';
+
+    for (const subj of subjects) {
+      const passRatePct = Math.round(subj.pass_rate * 100);
+      const dueCount = dueBySubject[subj.subject] || 0;
+
+      const card = document.createElement('div');
+      card.className = 'deck-card';
+      card.innerHTML = `
+        <div class="deck-name">${subj.subject}</div>
+        <div class="deck-due${dueCount > 0 ? ' overdue' : ''}">${dueCount > 0 ? dueCount : '✓'}</div>
+        <div class="deck-due-label">${dueCount > 0 ? 'para hoy' : 'al día'}</div>
+        <div class="deck-pass-bar-track"><div class="deck-pass-bar-fill" style="width:${passRatePct}%"></div></div>
+        <div class="deck-pass-label">${subj.total_questions} pregunta${subj.total_questions !== 1 ? 's' : ''} · ${passRatePct}% PASS</div>
+        <button type="button" class="btn-primary deck-study-btn" style="margin-top:10px;width:100%" data-subject="${subj.subject}">Estudiar →</button>
+      `;
+      grid.appendChild(card);
+    }
+
+    content.appendChild(grid);
+
+    grid.addEventListener('click', (e) => {
+      if (e.target.classList.contains('deck-study-btn')) {
+        document.querySelector('[data-tab="study"]').click();
+      }
+    });
+  } catch (err) {
+    loading.classList.add('hidden');
+    content.innerHTML = `<p style="color:var(--fail-fg);padding:16px">Error al cargar: ${err.message}</p>`;
+  }
+}
+
+// --- Progress tab ---
+
+async function loadProgress() {
+  const loading = document.querySelector('#progress-loading');
+  const content = document.querySelector('#progress-content');
+  loading.classList.remove('hidden');
+  content.classList.add('hidden');
+
+  try {
+    const [actData, overview] = await Promise.all([
+      getJson('/stats/activity?days=365'),
+      getJson('/stats/overview').catch(() => ({ subjects: [] }))
+    ]);
+
+    loading.classList.add('hidden');
+    content.classList.remove('hidden');
+
+    // Streak pills
+    const pills = document.querySelector('#progress-pills');
+    pills.innerHTML = '';
+    [
+      { label: `🔥 Racha: ${actData.streak_current} día${actData.streak_current !== 1 ? 's' : ''}`, cls: actData.streak_current > 0 ? 'pass' : '' },
+      { label: `Mejor racha: ${actData.streak_best} días`, cls: '' },
+      { label: `Total revisiones: ${actData.total_reviews}`, cls: '' }
+    ].forEach(({ label, cls }) => {
+      const span = document.createElement('span');
+      span.className = `progress-pill${cls ? ' ' + cls : ''}`;
+      span.textContent = label;
+      pills.appendChild(span);
+    });
+
+    // Heatmap — 52 weeks × 7 days
+    const grid = document.querySelector('#heatmap-grid');
+    grid.innerHTML = '';
+
+    const dayMap = {};
+    let maxCount = 0;
+    for (const d of actData.days || []) {
+      const key = typeof d.date === 'string' ? d.date.slice(0, 10) : new Date(d.date).toISOString().slice(0, 10);
+      dayMap[key] = d.count;
+      if (d.count > maxCount) maxCount = d.count;
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const startDate = new Date(today);
+    startDate.setDate(startDate.getDate() - 363);
+    // Align to Sunday of that week
+    startDate.setDate(startDate.getDate() - startDate.getDay());
+
+    const totalCells = 52 * 7;
+    for (let i = 0; i < totalCells; i++) {
+      const date = new Date(startDate);
+      date.setDate(startDate.getDate() + i);
+      const dateStr = date.toISOString().slice(0, 10);
+      const count = dayMap[dateStr] || 0;
+      const lvl = count === 0 ? 0 : Math.min(4, Math.ceil((count / Math.max(maxCount, 1)) * 4));
+
+      const cell = document.createElement('div');
+      cell.className = 'heatmap-cell';
+      cell.setAttribute('data-lvl', lvl);
+      cell.title = `${dateStr}: ${count} revisiones`;
+      grid.appendChild(cell);
+    }
+
+    // Per-subject stats
+    const subjEl = document.querySelector('#progress-subjects');
+    subjEl.innerHTML = '';
+    const subjects = (overview.subjects || []).filter((s) => s.total_questions > 0);
+    if (subjects.length > 0) {
+      for (const s of subjects) {
+        const pct = Math.round(s.pass_rate * 100);
+        const row = document.createElement('div');
+        row.className = 'progress-subject-row';
+        row.innerHTML = `
+          <span class="progress-subject-name">${s.subject}</span>
+          <div class="dimension-bar-track" style="flex:1;margin:0 8px">
+            <div class="dimension-bar-fill${pct < 40 ? ' weak' : pct < 70 ? ' mid' : ''}" style="width:${pct}%"></div>
+          </div>
+          <span style="font-size:0.85rem;color:${pct >= 60 ? 'var(--pass-fg)' : 'var(--fail-fg)'}">${pct}%</span>
+          <span style="font-size:0.8rem;color:var(--text-muted);margin-left:8px">${s.total_questions}q</span>
+        `;
+        subjEl.appendChild(row);
+      }
+    } else {
+      subjEl.innerHTML = '<p style="color:var(--text-muted)">Aún no hay datos por materia.</p>';
+    }
+  } catch (err) {
+    loading.classList.add('hidden');
+    document.querySelector('#progress-content').innerHTML =
+      `<p style="color:var(--fail-fg);padding:16px">Error al cargar progreso: ${err.message}</p>`;
+    document.querySelector('#progress-content').classList.remove('hidden');
   }
 }
 
@@ -933,10 +1113,20 @@ function initStudyTab() {
   });
   document.querySelector('#card-save-btn').addEventListener('click', saveNewCard);
   document.querySelector('#study-start-btn').addEventListener('click', startStudySession);
+  document.querySelector('#study-exit-btn').addEventListener('click', exitStudySession);
   document.querySelector('#study-again-btn').addEventListener('click', () => {
     document.querySelector('#study-complete').classList.add('hidden');
     loadStudyOverview();
   });
+}
+
+function exitStudySession() {
+  if (studyState.timerInterval) {
+    clearInterval(studyState.timerInterval);
+    studyState.timerInterval = null;
+  }
+  document.querySelector('#study-session').classList.add('hidden');
+  document.querySelector('#study-overview').classList.remove('hidden');
 }
 
 async function loadStudyOverview() {
@@ -996,10 +1186,13 @@ async function saveNewCard() {
 
 // ─── Active session state ─────────────────────────────────────────────────────
 const studyState = {
-  queue: [],        // [{type:'card'|'micro', data:{...}}]
+  queue: [],            // [{type:'card'|'micro', data:{...}}]
   index: 0,
-  results: [],      // {grade, type, concept?}
-  currentEvalResult: null
+  results: [],          // {grade, type, concept?}
+  currentEvalResult: null,
+  cardStartTime: 0,
+  responseTimeMs: 0,
+  timerInterval: null
 };
 
 async function startStudySession() {
@@ -1032,6 +1225,8 @@ function showStudyCard() {
   const current = studyState.index + 1;
 
   document.querySelector('#study-progress-text').textContent = `${current} / ${total}`;
+  const pct = Math.round(((current - 1) / total) * 100);
+  document.querySelector('#study-progress-fill').style.width = `${pct}%`;
 
   const badge = document.querySelector('#study-card-badge');
   const promptEl = document.querySelector('#study-card-prompt');
@@ -1055,6 +1250,17 @@ function showStudyCard() {
   document.querySelector('#study-eval-btn').disabled = false;
   studyState.currentEvalResult = null;
 
+  // Start timer
+  if (studyState.timerInterval) clearInterval(studyState.timerInterval);
+  studyState.cardStartTime = Date.now();
+  studyState.responseTimeMs = 0;
+  const timerEl = document.querySelector('#study-timer');
+  timerEl.textContent = '0s';
+  studyState.timerInterval = setInterval(() => {
+    const elapsed = Math.round((Date.now() - studyState.cardStartTime) / 1000);
+    timerEl.textContent = `${elapsed}s`;
+  }, 1000);
+
   // Attach dictation to study textarea
   const dictBtn = document.querySelector('#study-dictation-btn');
   const textarea = document.querySelector('#study-answer-input');
@@ -1068,6 +1274,13 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
   const evalBtn  = document.querySelector('#study-eval-btn');
 
   if (!answer) return;
+
+  // Stop timer and record response time
+  if (studyState.timerInterval) {
+    clearInterval(studyState.timerInterval);
+    studyState.timerInterval = null;
+  }
+  studyState.responseTimeMs = Date.now() - studyState.cardStartTime;
 
   evalBtn.disabled = true;
   evalBtn.textContent = 'Evaluando...';
@@ -1104,6 +1317,12 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
     gradeEl.textContent = getSuggestedGradeLabel(result.suggested_grade);
     gradeEl.className   = `study-grade-inline ${grade.toLowerCase()}`;
     justEl.textContent  = result.justification_short;
+
+    const timeEl = document.querySelector('#study-result-time');
+    if (timeEl) {
+      const elapsed = Math.round((studyState.responseTimeMs || 0) / 1000);
+      timeEl.textContent = `${elapsed}s`;
+    }
 
     const concepts = result.missing_concepts ?? [];
     if (concepts.length > 0) {
@@ -1144,13 +1363,15 @@ document.querySelector('#study-next-btn').addEventListener('click', async () => 
     if (item.type === 'micro') {
       await postJson('/scheduler/review', {
         micro_card_id: item.data.id,
-        grade
+        grade,
+        response_time_ms: studyState.responseTimeMs || undefined
       });
     } else {
       const reviewResp = await postJson('/scheduler/review', {
         card_id: item.data.id,
         grade,
-        concept_gaps: gaps
+        concept_gaps: gaps,
+        response_time_ms: studyState.responseTimeMs || undefined
       });
 
       // Insert new micro-cards at the front of the remaining queue (study them now)
@@ -1182,6 +1403,13 @@ function advanceStudyCard() {
 }
 
 function finishStudySession() {
+  if (studyState.timerInterval) {
+    clearInterval(studyState.timerInterval);
+    studyState.timerInterval = null;
+  }
+  // Update progress bar to 100%
+  document.querySelector('#study-progress-fill').style.width = '100%';
+
   document.querySelector('#study-session').classList.add('hidden');
   document.querySelector('#study-overview').classList.remove('hidden');
   document.querySelector('#study-complete').classList.remove('hidden');

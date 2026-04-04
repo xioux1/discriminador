@@ -7,6 +7,7 @@ import socraticRouter from './socratic.js';
 import statsRouter from './stats.js';
 import overviewRouter from './overview.js';
 import schedulerRouter from './scheduler.js';
+import activityRouter from './activity.js';
 
 const router = Router();
 
@@ -22,5 +23,6 @@ router.use(socraticRouter);
 router.use(statsRouter);
 router.use(overviewRouter);
 router.use(schedulerRouter);
+router.use(activityRouter);
 
 export default router;

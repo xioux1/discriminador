@@ -251,6 +251,12 @@ decisionRouter.post('/decision', async (req, res) => {
 
     const decision = insertResult.rows[0];
 
+    // Log to activity_log for heatmap (best-effort)
+    dbPool.query(
+      `INSERT INTO activity_log (activity_type, subject, grade) VALUES ('evaluate', $1, $2)`,
+      [inputSubject || null, finalGrade]
+    ).catch((e) => console.warn('[activity log]', e.message));
+
     // Bridge: keep scheduler in sync (best-effort, non-blocking)
     if (action !== 'uncertain' && inputPrompt && inputExpectedAnswer && ['pass', 'fail'].includes(finalGrade)) {
       syncSchedulerCard(dbPool, {

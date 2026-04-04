@@ -106,10 +106,10 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
 });
 
 // ─── Record a review result ───────────────────────────────────────────────────
-// Body: { card_id?, micro_card_id?, grade: 'pass'|'fail'|'review', concept_gaps?: string[] }
+// Body: { card_id?, micro_card_id?, grade, concept_gaps?, response_time_ms? }
 // grade='review' is treated as 'fail' for scheduling purposes.
 schedulerRouter.post('/scheduler/review', async (req, res) => {
-  const { card_id, micro_card_id, grade, concept_gaps = [] } = req.body || {};
+  const { card_id, micro_card_id, grade, concept_gaps = [], response_time_ms } = req.body || {};
 
   if (!grade || !['pass', 'fail', 'review'].includes(grade.toLowerCase())) {
     return res.status(422).json({
@@ -120,11 +120,14 @@ schedulerRouter.post('/scheduler/review', async (req, res) => {
 
   const effectiveGrade = grade.toLowerCase() === 'review' ? 'fail' : grade.toLowerCase();
 
+  // Log activity (best-effort)
+  const rtMs = Number.isFinite(Number(response_time_ms)) ? Number(response_time_ms) : null;
+
   try {
     if (micro_card_id) {
-      return await reviewMicroCard(res, Number(micro_card_id), effectiveGrade);
+      return await reviewMicroCard(res, Number(micro_card_id), effectiveGrade, rtMs);
     } else if (card_id) {
-      return await reviewCard(res, Number(card_id), effectiveGrade, concept_gaps);
+      return await reviewCard(res, Number(card_id), effectiveGrade, concept_gaps, rtMs);
     }
     return res.status(422).json({
       error: 'validation_error',
@@ -137,7 +140,7 @@ schedulerRouter.post('/scheduler/review', async (req, res) => {
 });
 
 // ─── Internal: review a full card ────────────────────────────────────────────
-async function reviewCard(res, cardId, grade, conceptGaps) {
+async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs) {
   const { rows } = await dbPool.query('SELECT * FROM cards WHERE id = $1', [cardId]);
   if (!rows.length) {
     return res.status(404).json({ error: 'not_found', message: 'Card not found.' });
@@ -155,13 +158,23 @@ async function reviewCard(res, cardId, grade, conceptGaps) {
      SET interval_days = $1, ease_factor = $2, next_review_at = $3,
          review_count = review_count + 1,
          pass_count   = pass_count + $4,
+         avg_response_time_ms = CASE WHEN $5::int IS NOT NULL THEN
+           COALESCE(ROUND((COALESCE(avg_response_time_ms, $5::int) + $5::int) / 2.0), $5::int)
+           ELSE avg_response_time_ms END,
          last_reviewed_at = now(),
          updated_at = now()
-     WHERE id = $5
+     WHERE id = $6
      RETURNING *`,
     [schedule.interval_days, schedule.ease_factor, schedule.next_review_at,
-     grade === 'pass' ? 1 : 0, cardId]
+     grade === 'pass' ? 1 : 0, responseTimeMs, cardId]
   );
+
+  // Log activity
+  dbPool.query(
+    `INSERT INTO activity_log (activity_type, subject, grade, response_time_ms)
+     VALUES ('study', $1, $2, $3)`,
+    [updated.rows[0]?.subject || null, grade, responseTimeMs]
+  ).catch((e) => console.warn('[activity log]', e.message));
 
   let newMicroCards = [];
 
@@ -210,7 +223,7 @@ async function reviewCard(res, cardId, grade, conceptGaps) {
 }
 
 // ─── Internal: review a micro-card ───────────────────────────────────────────
-async function reviewMicroCard(res, microCardId, grade) {
+async function reviewMicroCard(res, microCardId, grade, responseTimeMs) {
   const { rows } = await dbPool.query('SELECT * FROM micro_cards WHERE id = $1', [microCardId]);
   if (!rows.length) {
     return res.status(404).json({ error: 'not_found', message: 'Micro-card not found.' });
@@ -261,6 +274,13 @@ async function reviewMicroCard(res, microCardId, grade) {
       parentUnblocked = true;
     }
   }
+
+  // Log activity
+  dbPool.query(
+    `INSERT INTO activity_log (activity_type, subject, grade, response_time_ms)
+     VALUES ('study', $1, $2, $3)`,
+    [micro.parent_subject || null, grade, responseTimeMs]
+  ).catch((e) => console.warn('[activity log]', e.message));
 
   return res.status(200).json({
     micro_card: updated.rows[0],
