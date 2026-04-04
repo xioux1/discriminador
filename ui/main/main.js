@@ -382,6 +382,22 @@ function renderResult(result) {
     dimensionsList.appendChild(li);
   });
 
+  // Render missing concepts if present
+  let missingEl = document.querySelector('#missing-concepts');
+  if (!missingEl) {
+    missingEl = document.createElement('p');
+    missingEl.id = 'missing-concepts';
+    document.querySelector('#justification-short').parentElement.after(missingEl);
+  }
+  const concepts = result.missing_concepts;
+  if (concepts && concepts.length > 0) {
+    missingEl.innerHTML = `<strong>Conceptos ausentes:</strong> ${concepts.map((c) => `<span class="concept-tag">${c}</span>`).join(' ')}`;
+    missingEl.classList.remove('hidden');
+  } else {
+    missingEl.textContent = '';
+    missingEl.classList.add('hidden');
+  }
+
   const socraticTrigger = document.querySelector('#socratic-trigger-btn');
   const socraticSection = document.querySelector('#socratic-section');
   const socraticSubmit = document.querySelector('#socratic-submit-btn');

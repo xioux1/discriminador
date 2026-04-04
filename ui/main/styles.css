@@ -329,3 +329,17 @@ button {
 
 .grade-badge.pass { background: #e6f4e6; color: #1a6e1a; }
 .grade-badge.fail { background: #fde8e8; color: #a40000; }
+
+.concept-tag {
+  display: inline-block;
+  background: #fff3cd;
+  color: #7a5200;
+  border: 1px solid #f0c840;
+  border-radius: 3px;
+  padding: 1px 7px;
+  font-size: 0.82rem;
+  margin: 2px 2px 0 0;
+}
+
+#missing-concepts { margin-top: 6px; font-size: 0.88rem; }
+#missing-concepts.hidden { display: none; }
