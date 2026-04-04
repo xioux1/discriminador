@@ -994,7 +994,9 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = 
 
       try {
         const base64 = await blobToBase64(blob);
-        const subject = subjectOverride ?? document.querySelector('#subject')?.value?.trim() ?? '';
+        const subject = typeof subjectOverride === 'function'
+        ? subjectOverride()
+        : (subjectOverride ?? document.querySelector('#subject')?.value?.trim() ?? '');
         const response = await fetch('/transcribe', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1114,6 +1116,15 @@ function initStudyTab() {
   document.querySelector('#card-save-btn').addEventListener('click', saveNewCard);
   document.querySelector('#study-start-btn').addEventListener('click', startStudySession);
   document.querySelector('#study-exit-btn').addEventListener('click', exitStudySession);
+
+  // Attach dictation once — subject is read dynamically from data-subject on the button
+  const studyDictBtn = document.querySelector('#study-dictation-btn');
+  attachDictation(
+    studyDictBtn,
+    document.querySelector('#study-answer-input'),
+    '🎤 Dictar',
+    () => studyDictBtn.dataset.subject || ''
+  );
   document.querySelector('#study-again-btn').addEventListener('click', () => {
     document.querySelector('#study-complete').classList.add('hidden');
     loadStudyOverview();
@@ -1271,11 +1282,9 @@ function showStudyCard() {
     timerEl.textContent = `${elapsed}s`;
   }, 1000);
 
-  // Attach dictation to study textarea
-  const dictBtn = document.querySelector('#study-dictation-btn');
-  const textarea = document.querySelector('#study-answer-input');
+  // Update subject for dictation (attached once in initStudyTab)
   const subject = item.type === 'micro' ? item.data.parent_subject : item.data.subject;
-  attachDictation(dictBtn, textarea, 'Dictar', subject);
+  document.querySelector('#study-dictation-btn').dataset.subject = subject || '';
 }
 
 document.querySelector('#study-eval-btn').addEventListener('click', async () => {
