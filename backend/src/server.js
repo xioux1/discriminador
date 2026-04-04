@@ -1,7 +1,11 @@
 import { createApp } from './app.js';
 import { assertRequiredEnv, env } from './config/env.js';
+import { dbPool } from './db/client.js';
+import { runMigrations } from './db/migrate.js';
 
 assertRequiredEnv();
+
+await runMigrations(dbPool);
 
 const app = createApp();
 
