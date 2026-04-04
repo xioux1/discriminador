@@ -29,7 +29,8 @@ lookupRouter.get('/expected-answer', async (req, res) => {
 
   try {
     const { rows } = await dbPool.query(`
-      SELECT input_payload->>'expected_answer_text' AS expected_answer_text
+      SELECT input_payload->>'expected_answer_text' AS expected_answer_text,
+             input_payload->>'subject'              AS subject
       FROM evaluation_items
       WHERE source_system = 'evaluate_api'
         AND trim(input_payload->>'prompt_text') = $1
@@ -43,7 +44,11 @@ lookupRouter.get('/expected-answer', async (req, res) => {
       return res.status(404).json({ found: false });
     }
 
-    return res.status(200).json({ found: true, expected_answer_text: rows[0].expected_answer_text });
+    return res.status(200).json({
+      found: true,
+      expected_answer_text: rows[0].expected_answer_text,
+      subject: rows[0].subject || null
+    });
   } catch (error) {
     console.error('Failed to fetch expected answer', { message: error.message });
     return res.status(500).json({ error: 'server_error', message: 'Failed to fetch expected answer.' });
