@@ -13,11 +13,13 @@ activityRouter.get('/stats/activity', async (req, res) => {
   const days = Math.min(Math.max(parseInt(req.query.days) || 365, 30), 730);
 
   try {
-    // Combine evaluate activity + study activity into daily buckets
+    // Combine evaluate activity + study activity into daily buckets.
+    // Use a subquery for study_activity so a missing activity_log table
+    // degrades gracefully (returns zeros) instead of crashing.
     const { rows } = await dbPool.query(
       `WITH date_series AS (
          SELECT generate_series(
-           CURRENT_DATE - ($1 - 1) * INTERVAL '1 day',
+           CURRENT_DATE - ($1::int - 1) * INTERVAL '1 day',
            CURRENT_DATE,
            INTERVAL '1 day'
          )::DATE AS d
@@ -26,14 +28,14 @@ activityRouter.get('/stats/activity', async (req, res) => {
          SELECT decided_at::DATE AS day, COUNT(*) AS cnt,
                 COUNT(*) FILTER (WHERE final_grade = 'pass') AS pass_cnt
          FROM user_decisions
-         WHERE decided_at >= CURRENT_DATE - $1 * INTERVAL '1 day'
+         WHERE decided_at >= CURRENT_DATE - $1::int * INTERVAL '1 day'
          GROUP BY decided_at::DATE
        ),
        study_activity AS (
          SELECT logged_date AS day, COUNT(*) AS cnt,
                 COUNT(*) FILTER (WHERE grade = 'pass') AS pass_cnt
          FROM activity_log
-         WHERE logged_date >= CURRENT_DATE - $1 * INTERVAL '1 day'
+         WHERE logged_date >= CURRENT_DATE - $1::int * INTERVAL '1 day'
          GROUP BY logged_date
        ),
        merged AS (
@@ -78,6 +80,16 @@ activityRouter.get('/stats/activity', async (req, res) => {
       total_reviews: totalReviews
     });
   } catch (err) {
+    // 42P01 = table does not exist (migration not yet applied)
+    if (err.code === '42P01') {
+      console.warn('GET /stats/activity: activity_log table missing, returning empty data');
+      return res.status(200).json({
+        days: [],
+        streak_current: 0,
+        streak_best: 0,
+        total_reviews: 0
+      });
+    }
     console.error('GET /stats/activity', err.message);
     return res.status(500).json({ error: 'server_error', message: err.message });
   }
