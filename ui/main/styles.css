@@ -488,3 +488,131 @@ button {
   padding: 8px 14px;
   cursor: pointer;
 }
+
+/* ─── Agenda view ────────────────────────────────────────────────────────────── */
+
+.agenda-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.agenda-summary { margin-bottom: 14px; }
+
+.agenda-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.agenda-pill {
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 12px;
+}
+
+.agenda-pill.overdue  { background: #fde8e8; color: #a40000; }
+.agenda-pill.today    { background: #e6f0ff; color: #1a4da8; }
+.agenda-pill.soon     { background: #fff3cd; color: #7a5200; }
+.agenda-pill.neutral  { background: #f0f0f0; color: #444; }
+.agenda-pill.micro    { background: #fff3cd; color: #7a5200; border: 1px solid #f0c840; }
+
+.agenda-bucket { margin-bottom: 20px; }
+
+.agenda-bucket-title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 8px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.agenda-bucket-title.overdue   { background: #fde8e8; color: #a40000; }
+.agenda-bucket-title.today     { background: #e6f0ff; color: #1a4da8; }
+.agenda-bucket-title.tomorrow  { background: #f0f7ff; color: #2a5fc8; }
+.agenda-bucket-title.this_week { background: #f4f4ff; color: #444; }
+.agenda-bucket-title.two_weeks,
+.agenda-bucket-title.later     { background: #f8f8f8; color: #666; }
+
+.agenda-bucket-count {
+  background: rgba(0,0,0,0.12);
+  border-radius: 10px;
+  padding: 0 7px;
+  font-size: 0.78rem;
+}
+
+.agenda-card {
+  border: 1px solid #e4e4e4;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: #fff;
+}
+
+.agenda-card-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+
+.agenda-subject-badge {
+  background: #e8eef8;
+  color: #2a5fc8;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 1px 8px;
+  border-radius: 10px;
+}
+
+.agenda-due {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+.agenda-due.overdue   { color: #a40000; }
+.agenda-due.today     { color: #1a4da8; }
+.agenda-due.tomorrow  { color: #2a5fc8; }
+.agenda-due.this_week,
+.agenda-due.two_weeks,
+.agenda-due.later     { color: #666; }
+
+.agenda-interval {
+  font-size: 0.78rem;
+  color: #888;
+  margin-left: auto;
+}
+
+.agenda-card-prompt {
+  font-size: 0.88rem;
+  color: #333;
+  margin: 0 0 6px;
+  line-height: 1.4;
+}
+
+.agenda-micros {
+  border-top: 1px dashed #e0e0e0;
+  padding-top: 6px;
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.agenda-micro-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.82rem;
+  flex-wrap: wrap;
+}
+
+.agenda-micro-due { color: #888; font-size: 0.78rem; }
+.agenda-micro-q   { color: #555; }
