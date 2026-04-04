@@ -412,6 +412,26 @@ fillExpectedBtn.addEventListener('click', () => {
   }
 });
 
+// --- Math Palette + SQL Editor (Evaluate tab) ---
+
+MathPalette.init();
+
+const _evalAnswerTextarea = document.querySelector('#user_answer_text');
+
+_evalAnswerTextarea.addEventListener('focus', function () {
+  MathPalette.setActiveTextarea(_evalAnswerTextarea);
+});
+
+document.querySelector('#subject').addEventListener('input', function (e) {
+  const subjectVal = e.target.value;
+  MathPalette.updateSubject(subjectVal);
+  if (SqlEditor.matchesSubject(subjectVal)) {
+    SqlEditor.activate(_evalAnswerTextarea);
+  } else {
+    SqlEditor.deactivate();
+  }
+});
+
 // --- Reset form after decision ---
 function resetForm() {
   const subject = form.subject.value;
@@ -632,6 +652,15 @@ async function postJson(url, body) {
   return data;
 }
 
+// --- SQL clause checklist renderer (shared by Evaluate + Study tabs) ---
+function renderClauseChecklist(clauses) {
+  const statusIcon = { present: '✓', missing: '✗', extra: '~' };
+  const items = clauses.map((c) =>
+    `<span class="sql-clause-item ${c.status}"><span class="sql-clause-label">${statusIcon[c.status]}</span>${c.name}</span>`
+  ).join('');
+  return `<div class="sql-clause-checklist">${items}</div>`;
+}
+
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
   if (uiState.evaluating) {
@@ -675,6 +704,25 @@ form.addEventListener('submit', async (event) => {
     loadQuestionStats(payload.prompt_text);
     resultLoading.classList.add('hidden');
     resultContent.classList.remove('hidden');
+
+    // SQL clause checklist — insert between dimensions list and action buttons
+    let sqlChecklistEl = document.querySelector('#sql-clause-checklist');
+    if (sqlChecklistEl) sqlChecklistEl.remove();
+    if (SqlEditor.isActive() && payload.expected_answer_text) {
+      const clauses = SqlEditor.checkClauses(payload.user_answer_text, payload.expected_answer_text);
+      if (clauses.length > 0) {
+        sqlChecklistEl = document.createElement('div');
+        sqlChecklistEl.id = 'sql-clause-checklist';
+        sqlChecklistEl.innerHTML = renderClauseChecklist(clauses);
+        const actionsEl = resultContent.querySelector('.actions');
+        if (actionsEl) {
+          actionsEl.parentNode.insertBefore(sqlChecklistEl, actionsEl);
+        } else {
+          resultContent.appendChild(sqlChecklistEl);
+        }
+      }
+    }
+
     const normalizedSuggestedGrade = normalizeSuggestedGrade(result.suggested_grade);
     const reviewHint = normalizedSuggestedGrade === 'REVIEW'
       ? ` Caso priorizado en cola manual (#${manualQueueStatus.position} de ${manualQueueStatus.size}).`
@@ -1285,6 +1333,16 @@ function showStudyCard() {
   // Update subject for dictation (attached once in initStudyTab)
   const subject = item.type === 'micro' ? item.data.parent_subject : item.data.subject;
   document.querySelector('#study-dictation-btn').dataset.subject = subject || '';
+
+  // Math Palette + SQL Editor integration for study session
+  MathPalette.updateSubject(subject || '');
+  const studyAnswerInput = document.querySelector('#study-answer-input');
+  MathPalette.setActiveTextarea(studyAnswerInput);
+  if (SqlEditor.matchesSubject(subject || '')) {
+    SqlEditor.activate(studyAnswerInput);
+  } else {
+    SqlEditor.deactivate();
+  }
 }
 
 document.querySelector('#study-eval-btn').addEventListener('click', async () => {
@@ -1359,6 +1417,25 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
     } else {
       expectedEl.textContent = '';
       expectedEl.classList.add('hidden');
+    }
+
+    // SQL clause checklist in study result block
+    let studySqlChecklist = document.querySelector('#study-sql-clause-checklist');
+    if (studySqlChecklist) studySqlChecklist.remove();
+    if (SqlEditor.isActive() && studyState.currentExpectedAnswer) {
+      const clauses = SqlEditor.checkClauses(answer, studyState.currentExpectedAnswer);
+      if (clauses.length > 0) {
+        studySqlChecklist = document.createElement('div');
+        studySqlChecklist.id = 'study-sql-clause-checklist';
+        studySqlChecklist.innerHTML = renderClauseChecklist(clauses);
+        const resultBlock = document.querySelector('#study-result-block');
+        const actionsEl = resultBlock.querySelector('.study-result-actions');
+        if (actionsEl) {
+          resultBlock.insertBefore(studySqlChecklist, actionsEl);
+        } else {
+          resultBlock.appendChild(studySqlChecklist);
+        }
+      }
     }
 
     document.querySelector('#study-answer-block').classList.add('hidden');
