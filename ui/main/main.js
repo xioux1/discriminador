@@ -185,7 +185,7 @@ async function loadSubjects() {
 loadSubjects();
 
 // --- Expected answer lookup ---
-let _expectedAnswerCache = null;
+let _expectedAnswerCache = null; // { expected_answer_text, subject }
 let _lookupDebounce = null;
 
 function clearExpectedHint() {
@@ -203,7 +203,7 @@ async function lookupExpectedAnswer(promptText) {
     if (!res.ok) { clearExpectedHint(); return; }
     const data = await res.json();
     if (data.found && data.expected_answer_text) {
-      _expectedAnswerCache = data.expected_answer_text;
+      _expectedAnswerCache = { expected_answer_text: data.expected_answer_text, subject: data.subject };
       fillExpectedBtn.classList.remove('hidden');
     } else {
       clearExpectedHint();
@@ -222,7 +222,12 @@ document.querySelector('#prompt_text').addEventListener('input', (e) => {
 
 fillExpectedBtn.addEventListener('click', () => {
   if (_expectedAnswerCache) {
-    document.querySelector('#expected_answer_text').value = _expectedAnswerCache;
+    document.querySelector('#expected_answer_text').value = _expectedAnswerCache.expected_answer_text;
+    // Auto-fill subject only if the field is currently empty
+    const subjectInput = document.querySelector('#subject');
+    if (_expectedAnswerCache.subject && !subjectInput.value.trim()) {
+      subjectInput.value = _expectedAnswerCache.subject;
+    }
     fillExpectedBtn.classList.add('hidden');
   }
 });
