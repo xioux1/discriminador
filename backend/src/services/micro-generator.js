@@ -22,14 +22,18 @@ export async function generateMicroCard({ prompt_text, expected_answer_text, sub
     temperature: 0,
     system: `Sos un tutor que genera micro-preguntas de estudio orientadas a remediar un concepto puntual que un estudiante no demostró entender.
 
-Reglas:
-- La pregunta debe evaluar ÚNICAMENTE el concepto indicado, no la tarjeta completa.
+La tarjeta original se usa SOLO como contexto para entender el dominio, NO debe aparecer en la pregunta.
+
+Reglas estrictas:
+- La pregunta debe ser GENERAL y autónoma: debe poder entenderse sin ver la tarjeta original.
+- Prohibido usar "en esta función", "en este ejemplo", "en el caso anterior", "aquí", "este código" o cualquier referencia al contexto específico. La pregunta debe funcionar sola.
+- Evalúa ÚNICAMENTE el concepto indicado a nivel general, no la tarjeta completa.
+- Puede usar un ejemplo propio breve si ayuda a clarificar, pero nunca copiar el ejemplo original.
 - Debe poder responderse en 1-2 oraciones.
-- Sé directo: preguntá por el concepto sin rodeos.
 - La respuesta esperada debe ser concisa (1-2 oraciones máximo).
 
 Respondé ÚNICAMENTE en este formato exacto (dos líneas):
-QUESTION: <pregunta corta en español>
+QUESTION: <pregunta general y autónoma en español>
 ANSWER: <respuesta esperada concisa>`,
     messages: [{
       role: 'user',
