@@ -1489,11 +1489,11 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       }
     }
 
-    // Show "Guardar variante" only on PASS for non-micro cards
+    // Show "Guardar variante" for any regular card (not micro), regardless of grade
     const variantBtn      = document.querySelector('#study-variant-btn');
     const variantFeedback = document.querySelector('#study-variant-feedback');
-    const item = studyState.queue[studyState.index];
-    if (grade === 'PASS' && item.type === 'card') {
+    const currentItem = studyState.queue[studyState.index];
+    if (currentItem && currentItem.type === 'card') {
       variantBtn.classList.remove('hidden');
       variantBtn.disabled = false;
       variantBtn.textContent = '+ Guardar variante';
@@ -1513,7 +1513,7 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
 });
 
 document.querySelector('#study-variant-btn').addEventListener('click', async () => {
-  const item        = studyState.queue[studyState.index];
+  const item = studyState.queue[studyState.index];
   const variantBtn  = document.querySelector('#study-variant-btn');
   const variantFb   = document.querySelector('#study-variant-feedback');
   if (!item || item.type !== 'card') return;
