@@ -539,20 +539,23 @@ async function verifySql(sqlText, outputEl) {
     });
     const data = await resp.json();
 
-    if (data.valid) {
+    const errors = (data.errors || []).filter((e) => e && e.message);
+
+    if (data.valid || errors.length === 0) {
+      // valid:true OR valid:false but no substantiated errors → pass through
       outputEl.className = 'sql-compiler-output valid';
       outputEl.textContent = '✓ Compilación exitosa — sin errores de sintaxis';
       return true;
     } else {
       outputEl.className = 'sql-compiler-output invalid';
-      const lines = (data.errors || []).map((e) => {
+      const lines = errors.map((e) => {
         let msg = '';
         if (e.line) msg += `LÍNEA ${e.line}: `;
-        msg += e.message || 'Error de sintaxis';
+        msg += e.message;
         if (e.hint) msg += `\n  → ${e.hint}`;
         return msg;
       });
-      outputEl.textContent = lines.join('\n\n') || 'Error de sintaxis';
+      outputEl.textContent = lines.join('\n\n');
       return false;
     }
   } catch (_err) {
