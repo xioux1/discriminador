@@ -541,16 +541,18 @@ async function verifySql(sqlText, outputEl) {
 
     if (data.valid) {
       outputEl.className = 'sql-compiler-output valid';
-      outputEl.textContent = '✓ Sintaxis válida';
+      outputEl.textContent = '✓ Compilación exitosa — sin errores de sintaxis';
       return true;
     } else {
       outputEl.className = 'sql-compiler-output invalid';
       const lines = (data.errors || []).map((e) => {
-        let line = e.message || 'Error desconocido';
-        if (e.hint) line += `\n  HINT: ${e.hint}`;
-        return line;
+        let msg = '';
+        if (e.line) msg += `LÍNEA ${e.line}: `;
+        msg += e.message || 'Error de sintaxis';
+        if (e.hint) msg += `\n  → ${e.hint}`;
+        return msg;
       });
-      outputEl.textContent = lines.join('\n') || 'Error de sintaxis';
+      outputEl.textContent = lines.join('\n\n') || 'Error de sintaxis';
       return false;
     }
   } catch (_err) {
