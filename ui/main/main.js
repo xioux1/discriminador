@@ -499,6 +499,7 @@ function resetForm() {
   const subject = form.subject.value;
   form.reset();
   form.subject.value = subject;
+  SqlEditor.refresh(); // clear ghost text from highlight layer
   clearExpectedHint();
   resultCard.classList.add('hidden');
   resultContent.classList.add('hidden');
@@ -1534,8 +1535,10 @@ function showStudyCard() {
     promptEl.textContent = item.data.prompt_text;
   }
 
-  // Reset answer + result blocks
-  document.querySelector('#study-answer-input').value = '';
+  // Reset answer + result blocks (refresh SQL layer to clear ghost text)
+  const _studyInput = document.querySelector('#study-answer-input');
+  _studyInput.value = '';
+  SqlEditor.refresh();
   document.querySelector('#study-answer-block').classList.remove('hidden');
   document.querySelector('#study-result-block').classList.add('hidden');
   document.querySelector('#study-eval-btn').disabled = false;
