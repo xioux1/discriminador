@@ -954,7 +954,55 @@ textarea:focus, input[type="text"]:focus {
   font-size: 0.78rem;
   margin-top: 2px;
 }
-.sql-textarea-active { font-family: 'Courier New', monospace; font-size: 0.9rem; }
+/* sql-textarea-active: applied to the textarea when SQL mode is on */
+.sql-textarea-active {
+  font-family: 'Courier New', monospace;
+  font-size: 0.9rem;
+  border: none !important;
+  border-radius: 0 !important;
+  margin-bottom: 0 !important;
+  resize: none !important;   /* vertical resize breaks gutter alignment */
+  flex: 1;
+}
+
+/* Wrapper added dynamically by SqlEditor.activate() */
+.sql-editor-wrap {
+  display: flex;
+  align-items: stretch;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+.sql-editor-wrap:focus-within {
+  border-color: var(--primary);
+  outline: none;
+}
+
+/* Line-number gutter */
+.sql-line-numbers {
+  display: flex;
+  flex-direction: column;
+  min-width: 38px;
+  padding: 9px 6px 9px 0;
+  background: #f0f2f5;
+  border-right: 1px solid var(--border);
+  font-family: 'Courier New', monospace;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+  text-align: right;
+  user-select: none;
+  overflow: hidden;
+  pointer-events: none;
+  flex-shrink: 0;
+}
+.sql-line-numbers span {
+  display: block;
+  line-height: 1.5;
+  padding-right: 6px;
+}
 
 /* Editor mode selector (next to subject field) */
 .editor-mode-label {
