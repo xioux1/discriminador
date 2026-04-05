@@ -1209,8 +1209,19 @@ resultContent.addEventListener('click', async (event) => {
 
 // ─── Study tab ────────────────────────────────────────────────────────────────
 
+// Briefing state
+const briefingState = {
+  selectedTime:     null,   // number of minutes
+  selectedEnergy:   null,   // 'tired'|'normal'|'focused'
+  plan:             null,   // response from server
+  fullCards:        [],     // full cards from server
+  fullMicroCards:   []      // full micro_cards from server
+};
+
 function initStudyTab() {
-  loadStudyOverview();
+  // Show briefing first, hide overview
+  document.querySelector('#study-briefing').classList.remove('hidden');
+  document.querySelector('#study-overview').classList.add('hidden');
 
   document.querySelector('#study-add-card-btn').addEventListener('click', () => {
     document.querySelector('#study-add-form').classList.remove('hidden');
@@ -1227,6 +1238,13 @@ function initStudyTab() {
   document.querySelector('#study-start-btn').addEventListener('click', startStudySession);
   document.querySelector('#study-exit-btn').addEventListener('click', exitStudySession);
 
+  // Link to show overview/add-card from briefing
+  document.querySelector('#briefing-overview-link').addEventListener('click', () => {
+    document.querySelector('#study-briefing').classList.add('hidden');
+    document.querySelector('#study-overview').classList.remove('hidden');
+    loadStudyOverview();
+  });
+
   // Attach dictation once — subject is read dynamically from data-subject on the button
   const studyDictBtn = document.querySelector('#study-dictation-btn');
   attachDictation(
@@ -1235,10 +1253,152 @@ function initStudyTab() {
     '🎤 Dictar',
     () => studyDictBtn.dataset.subject || ''
   );
+
   document.querySelector('#study-again-btn').addEventListener('click', () => {
     document.querySelector('#study-complete').classList.add('hidden');
-    loadStudyOverview();
+    document.querySelector('#study-overview').classList.add('hidden');
+    // Reset briefing state
+    briefingState.selectedTime   = null;
+    briefingState.selectedEnergy = null;
+    briefingState.plan           = null;
+    briefingState.fullCards      = [];
+    briefingState.fullMicroCards = [];
+    document.querySelectorAll('.briefing-opt').forEach((b) => b.classList.remove('selected'));
+    document.querySelector('#briefing-plan-area').classList.add('hidden');
+    document.querySelector('#briefing-start-btn').classList.add('hidden');
+    document.querySelector('#briefing-plan-btn').disabled = true;
+    document.querySelector('#study-briefing').classList.remove('hidden');
   });
+
+  initBriefing();
+}
+
+(function initBriefing() {
+  // Time options
+  document.querySelectorAll('#briefing-time-options .briefing-opt').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#briefing-time-options .briefing-opt').forEach((b) => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      briefingState.selectedTime = parseInt(btn.dataset.value);
+      checkBriefingReady();
+    });
+  });
+
+  // Energy options
+  document.querySelectorAll('#briefing-energy-options .briefing-opt').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#briefing-energy-options .briefing-opt').forEach((b) => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      briefingState.selectedEnergy = btn.dataset.value;
+      checkBriefingReady();
+    });
+  });
+
+  document.querySelector('#briefing-plan-btn').addEventListener('click', fetchSessionPlan);
+  document.querySelector('#briefing-start-btn').addEventListener('click', startPlannedSession);
+})();
+
+function checkBriefingReady() {
+  const btn = document.querySelector('#briefing-plan-btn');
+  btn.disabled = !(briefingState.selectedTime && briefingState.selectedEnergy);
+}
+
+async function fetchSessionPlan() {
+  const loadingEl = document.querySelector('#briefing-loading');
+  const planBtn   = document.querySelector('#briefing-plan-btn');
+  const startBtn  = document.querySelector('#briefing-start-btn');
+  const planArea  = document.querySelector('#briefing-plan-area');
+
+  loadingEl.classList.remove('hidden');
+  planBtn.disabled = true;
+  startBtn.classList.add('hidden');
+
+  try {
+    const data = await postJson('/session/plan', {
+      available_minutes: briefingState.selectedTime,
+      energy_level:      briefingState.selectedEnergy
+    });
+
+    briefingState.plan           = data.plan;
+    briefingState.fullCards      = data.cards;
+    briefingState.fullMicroCards = data.micro_cards;
+
+    // Render tip
+    document.querySelector('#briefing-tip').textContent = data.plan.session_tip || '';
+
+    // Render warnings
+    const warnEl = document.querySelector('#briefing-warnings');
+    warnEl.innerHTML = (data.plan.warnings || []).map((w) =>
+      `<div style="color:var(--fail-fg);font-size:0.85rem;margin-bottom:6px">⚠ ${w}</div>`
+    ).join('');
+
+    // Render plan summary
+    const planned  = data.plan.planned  || [];
+    const deferred = data.plan.deferred || [];
+    const summaryEl = document.querySelector('#briefing-plan-summary');
+
+    if (planned.length === 0) {
+      summaryEl.innerHTML = '<p style="color:var(--text-muted)">No hay tarjetas pendientes para hoy. ¡Al día!</p>';
+      startBtn.classList.add('hidden');
+    } else {
+      summaryEl.innerHTML = `
+        <div style="font-weight:600;margin-bottom:8px">${planned.length} tarjeta${planned.length !== 1 ? 's' : ''} · ~${data.plan.total_estimated_minutes} min</div>
+        ${planned.map((p) => `
+          <div class="briefing-plan-row">
+            <span>${p.type === 'micro' ? '📌 ' : ''}${p.subject}</span>
+            <span style="color:var(--text-muted);font-size:0.8rem">~${Math.round(p.estimated_ms / 1000)}s</span>
+          </div>`).join('')}
+        ${deferred.length > 0 ? `<div class="briefing-deferred">+ ${deferred.length} tarjeta${deferred.length !== 1 ? 's' : ''} postergada${deferred.length !== 1 ? 's' : ''} para otra sesión</div>` : ''}
+      `;
+      startBtn.classList.remove('hidden');
+    }
+
+    planArea.classList.remove('hidden');
+  } catch (err) {
+    document.querySelector('#briefing-tip').textContent = `Error: ${err.message}`;
+    document.querySelector('#briefing-warnings').innerHTML = '';
+    document.querySelector('#briefing-plan-summary').innerHTML = '';
+    planArea.classList.remove('hidden');
+  } finally {
+    loadingEl.classList.add('hidden');
+    planBtn.disabled = false;
+  }
+}
+
+function startPlannedSession() {
+  const plan = briefingState.plan;
+  if (!plan || !plan.planned?.length) return;
+
+  // Build lookup maps
+  const microById = {};
+  briefingState.fullMicroCards.forEach((m) => { microById[m.id] = m; });
+  const cardById = {};
+  briefingState.fullCards.forEach((c) => { cardById[c.id] = c; });
+
+  const queue = [];
+  for (const item of plan.planned) {
+    if (item.type === 'micro' && microById[item.id]) {
+      queue.push({ type: 'micro', data: microById[item.id] });
+    } else if (item.type === 'card' && cardById[item.id]) {
+      queue.push({ type: 'card', data: cardById[item.id] });
+    }
+  }
+
+  if (queue.length === 0) return;
+
+  studyState.queue                 = queue;
+  studyState.index                 = 0;
+  studyState.results               = [];
+  studyState.sessionStartTime      = Date.now();
+  studyState.sessionLimitMs        = briefingState.selectedTime * 60 * 1000;
+  studyState.sessionEnergyLevel    = briefingState.selectedEnergy;
+
+  document.querySelector('#study-briefing').classList.add('hidden');
+  document.querySelector('#study-overview').classList.add('hidden');
+  document.querySelector('#study-complete').classList.add('hidden');
+  document.querySelector('#study-session').classList.remove('hidden');
+
+  showStudyCard();
 }
 
 function exitStudySession() {

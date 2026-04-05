@@ -989,3 +989,36 @@ textarea:focus, input[type="text"]:focus {
 }
 .advisor-tag.covered { background: var(--pass-bg); color: var(--pass-fg); }
 .advisor-tag.missing { background: var(--fail-bg); color: var(--fail-fg); }
+
+/* ─── Session briefing ───────────────────────────────────────────────────────── */
+.briefing-row { }
+.briefing-label {
+  display: block; font-size: 0.85rem; font-weight: 600;
+  color: var(--text-muted); margin-bottom: 8px;
+}
+.briefing-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.briefing-opt {
+  padding: 8px 16px; border: 2px solid var(--border);
+  border-radius: var(--radius); background: var(--surface);
+  font-family: var(--font); font-size: 0.9rem; cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.briefing-opt:hover { border-color: var(--primary); }
+.briefing-opt.selected { border-color: var(--primary); background: var(--primary-light); font-weight: 600; }
+.briefing-tip {
+  background: var(--primary-light); border-left: 3px solid var(--primary);
+  padding: 8px 12px; border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: 0.88rem; margin-bottom: 10px;
+}
+.briefing-plan-summary {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 12px 16px; font-size: 0.88rem;
+}
+.briefing-plan-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 4px 0; border-bottom: 1px solid var(--border);
+}
+.briefing-plan-row:last-child { border-bottom: none; }
+.briefing-deferred {
+  margin-top: 8px; font-size: 0.8rem; color: var(--text-muted);
+}
