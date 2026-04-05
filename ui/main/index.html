@@ -70,8 +70,49 @@
       <!-- ═══ TAB: ESTUDIAR ════════════════════════════════════════════════ -->
       <section id="tab-study" class="hidden">
 
+        <!-- Session briefing — shown before starting -->
+        <div id="study-briefing" class="card hidden">
+          <h3 style="margin:0 0 16px">¿Listo para estudiar?</h3>
+
+          <div class="briefing-row">
+            <label class="briefing-label">¿Cuánto tiempo tenés?</label>
+            <div class="briefing-options" id="briefing-time-options">
+              <button type="button" class="briefing-opt" data-value="15">15 min</button>
+              <button type="button" class="briefing-opt" data-value="30">30 min</button>
+              <button type="button" class="briefing-opt" data-value="45">45 min</button>
+              <button type="button" class="briefing-opt" data-value="60">1 hora</button>
+              <button type="button" class="briefing-opt" data-value="90">+</button>
+            </div>
+          </div>
+
+          <div class="briefing-row" style="margin-top:16px">
+            <label class="briefing-label">¿Cómo estás?</label>
+            <div class="briefing-options" id="briefing-energy-options">
+              <button type="button" class="briefing-opt" data-value="tired">😴 Cansado</button>
+              <button type="button" class="briefing-opt" data-value="normal">😐 Normal</button>
+              <button type="button" class="briefing-opt" data-value="focused">⚡ Concentrado</button>
+            </div>
+          </div>
+
+          <div id="briefing-plan-area" class="hidden" style="margin-top:20px">
+            <div id="briefing-tip" class="briefing-tip"></div>
+            <div id="briefing-warnings"></div>
+            <div id="briefing-plan-summary" class="briefing-plan-summary"></div>
+          </div>
+
+          <div style="margin-top:20px;display:flex;gap:10px;align-items:center">
+            <button type="button" id="briefing-plan-btn" class="btn-secondary" disabled>Planificar sesión</button>
+            <button type="button" id="briefing-start-btn" class="btn-primary hidden">Iniciar sesión →</button>
+            <span id="briefing-loading" class="hidden" style="color:var(--text-muted);font-size:0.9rem">Armando plan...</span>
+          </div>
+
+          <div style="margin-top:12px">
+            <button type="button" id="briefing-overview-link" class="btn-ghost" style="font-size:0.82rem;padding:4px 8px">Ver overview / agregar tarjeta</button>
+          </div>
+        </div>
+
         <!-- Overview -->
-        <div id="study-overview" class="card">
+        <div id="study-overview" class="card hidden">
           <h2>Sesión de estudio</h2>
           <div id="study-queue-summary" class="study-queue-summary">
             <span style="color:var(--text-muted)">Cargando cola...</span>
@@ -160,7 +201,7 @@
         <div id="study-complete" class="card hidden">
           <h3>Sesión completa</h3>
           <div id="study-complete-summary"></div>
-          <button type="button" id="study-again-btn" class="btn-primary" style="margin-top:12px">Ver cola</button>
+          <button type="button" id="study-again-btn" class="btn-primary" style="margin-top:12px">Estudiar de nuevo</button>
         </div>
 
       </section>

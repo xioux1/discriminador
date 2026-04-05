@@ -10,6 +10,7 @@ import schedulerRouter from './scheduler.js';
 import activityRouter from './activity.js';
 import curriculumRouter from './curriculum.js';
 import advisorRouter from './advisor.js';
+import sessionPlannerRouter from './session-planner.js';
 
 const router = Router();
 
@@ -28,5 +29,6 @@ router.use(schedulerRouter);
 router.use(activityRouter);
 router.use(curriculumRouter);
 router.use(advisorRouter);
+router.use(sessionPlannerRouter);
 
 export default router;
