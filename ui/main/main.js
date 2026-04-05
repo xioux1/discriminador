@@ -224,6 +224,7 @@ async function loadDashboard() {
         <div class="deck-pass-bar-track"><div class="deck-pass-bar-fill" style="width:${passRatePct}%"></div></div>
         <div class="deck-pass-label">${subj.total_questions} pregunta${subj.total_questions !== 1 ? 's' : ''} · ${passRatePct}% PASS</div>
         <button type="button" class="btn-primary deck-study-btn" style="margin-top:10px;width:100%" data-subject="${subj.subject}">Estudiar →</button>
+        <button type="button" class="btn-ghost deck-config-btn" data-subject="${subj.subject}" style="margin-top:4px;width:100%;font-size:0.8rem">⚙ Configurar</button>
       `;
       grid.appendChild(card);
     }
@@ -233,6 +234,9 @@ async function loadDashboard() {
     grid.addEventListener('click', (e) => {
       if (e.target.classList.contains('deck-study-btn')) {
         document.querySelector('[data-tab="study"]').click();
+      }
+      if (e.target.classList.contains('deck-config-btn')) {
+        openCurriculumModal(e.target.dataset.subject);
       }
     });
   } catch (err) {
@@ -328,6 +332,22 @@ async function loadProgress() {
     } else {
       subjEl.innerHTML = '<p style="color:var(--text-muted)">Aún no hay datos por materia.</p>';
     }
+    // Populate advisor subject select
+    const advisorPanel = document.querySelector('#progress-advisor');
+    const advisorSelect = document.querySelector('#advisor-subject-select');
+    advisorSelect.innerHTML = '<option value="">Seleccioná una materia</option>';
+    (overview.subjects || []).forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s.subject;
+      opt.textContent = s.subject;
+      advisorSelect.appendChild(opt);
+    });
+    advisorPanel.classList.remove('hidden');
+
+    advisorSelect.addEventListener('change', () => {
+      if (advisorSelect.value) loadAdvisorAnalysis(advisorSelect.value);
+      else document.querySelector('#advisor-content').innerHTML = '';
+    });
   } catch (err) {
     loading.classList.add('hidden');
     document.querySelector('#progress-content').innerHTML =
@@ -670,9 +690,9 @@ function renderResult(result) {
   }
 }
 
-async function postJson(url, body) {
+async function postJson(url, body, method = 'POST') {
   const response = await fetch(url, {
-    method: 'POST',
+    method,
     headers: {
       'Content-Type': 'application/json',
     },
@@ -1722,4 +1742,170 @@ function formatDue(date) {
 
 function truncate(str, max) {
   return str && str.length > max ? str.slice(0, max) + '…' : str;
+}
+
+// ─── Curriculum modal ─────────────────────────────────────────────────────────
+
+async function openCurriculumModal(subject) {
+  document.querySelector('#curriculum-modal-title').textContent = `Configurar: ${subject}`;
+  document.querySelector('#curriculum-modal').classList.remove('hidden');
+  document.querySelector('#curriculum-save-feedback').textContent = '';
+  document.querySelector('#exam-add-feedback').textContent = '';
+
+  // Load existing config
+  try {
+    const data = await getJson(`/curriculum/${encodeURIComponent(subject)}`);
+    if (data.config) {
+      document.querySelector('#curriculum-exam-date').value = data.config.exam_date?.slice(0,10) || '';
+      document.querySelector('#curriculum-exam-type').value = data.config.exam_type || 'parcial';
+      document.querySelector('#curriculum-syllabus').value = data.config.syllabus_text || '';
+    } else {
+      document.querySelector('#curriculum-exam-date').value = '';
+      document.querySelector('#curriculum-exam-type').value = 'parcial';
+      document.querySelector('#curriculum-syllabus').value = '';
+    }
+    renderExamsList(data.exams || [], subject);
+  } catch (_e) {}
+
+  // Store current subject in modal
+  document.querySelector('#curriculum-modal').dataset.subject = subject;
+}
+
+document.querySelector('#curriculum-modal-close').addEventListener('click', () => {
+  document.querySelector('#curriculum-modal').classList.add('hidden');
+});
+
+document.querySelector('.curriculum-modal-backdrop').addEventListener('click', () => {
+  document.querySelector('#curriculum-modal').classList.add('hidden');
+});
+
+document.querySelector('#curriculum-save-btn').addEventListener('click', async () => {
+  const subject = document.querySelector('#curriculum-modal').dataset.subject;
+  const fb = document.querySelector('#curriculum-save-feedback');
+  try {
+    await postJson(`/curriculum/${encodeURIComponent(subject)}`, {
+      syllabus_text: document.querySelector('#curriculum-syllabus').value,
+      exam_date: document.querySelector('#curriculum-exam-date').value || null,
+      exam_type: document.querySelector('#curriculum-exam-type').value
+    }, 'PUT');
+    fb.textContent = 'Guardado.';
+    fb.style.color = 'var(--pass-fg)';
+  } catch (err) {
+    fb.textContent = `Error: ${err.message}`;
+    fb.style.color = 'var(--fail-fg)';
+  }
+});
+
+document.querySelector('#exam-add-btn').addEventListener('click', async () => {
+  const subject = document.querySelector('#curriculum-modal').dataset.subject;
+  const fb = document.querySelector('#exam-add-feedback');
+  const content = document.querySelector('#exam-content').value.trim();
+  if (!content) { fb.textContent = 'El contenido es obligatorio.'; fb.style.color = 'var(--fail-fg)'; return; }
+  try {
+    const data = await postJson(`/curriculum/${encodeURIComponent(subject)}/exams`, {
+      year: parseInt(document.querySelector('#exam-year').value) || null,
+      label: document.querySelector('#exam-label').value.trim() || null,
+      exam_type: document.querySelector('#exam-type-select').value,
+      content_text: content
+    });
+    fb.textContent = 'Examen agregado.';
+    fb.style.color = 'var(--pass-fg)';
+    document.querySelector('#exam-content').value = '';
+    document.querySelector('#exam-year').value = '';
+    document.querySelector('#exam-label').value = '';
+    renderExamsList(data.exams, subject);
+  } catch (err) {
+    fb.textContent = `Error: ${err.message}`;
+    fb.style.color = 'var(--fail-fg)';
+  }
+});
+
+function renderExamsList(exams, subject) {
+  const el = document.querySelector('#curriculum-exams-list');
+  if (!exams.length) { el.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem">Sin exámenes de referencia.</p>'; return; }
+  el.innerHTML = exams.map(e => `
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
+      <span style="flex:1;font-size:0.85rem">${e.label || e.exam_type} ${e.year || ''}</span>
+      <button type="button" class="btn-ghost exam-delete-btn" data-id="${e.id}" data-subject="${subject}" style="font-size:0.75rem;padding:2px 8px">✕</button>
+    </div>`).join('');
+
+  el.querySelectorAll('.exam-delete-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      const subj = btn.dataset.subject;
+      try {
+        await fetch(`/curriculum/${encodeURIComponent(subj)}/exams/${id}`, { method: 'DELETE' });
+        const data = await getJson(`/curriculum/${encodeURIComponent(subj)}`);
+        renderExamsList(data.exams || [], subj);
+      } catch (_e) {}
+    });
+  });
+}
+
+// ─── Advisor analysis ─────────────────────────────────────────────────────────
+
+async function loadAdvisorAnalysis(subject) {
+  const loading = document.querySelector('#advisor-loading');
+  const content = document.querySelector('#advisor-content');
+  loading.classList.remove('hidden');
+  content.innerHTML = '';
+
+  try {
+    const data = await getJson(`/advisor/analysis/${encodeURIComponent(subject)}`);
+    loading.classList.add('hidden');
+
+    if (data.error === 'no_config') {
+      content.innerHTML = `<p style="color:var(--text-muted)">Esta materia no tiene plan de estudios. Configurala desde el Dashboard (⚙ Configurar).</p>`;
+      return;
+    }
+
+    const paceColor = data.pace_ok ? 'var(--pass-fg)' : 'var(--fail-fg)';
+    const coveragePct = Math.round(data.coverage_pct || 0);
+
+    content.innerHTML = `
+      <div class="advisor-summary">${data.summary}</div>
+
+      <div class="advisor-section">
+        <div class="advisor-label">Cobertura del programa</div>
+        <div class="dimension-bar-track" style="margin:6px 0">
+          <div class="dimension-bar-fill${coveragePct < 40 ? ' weak' : coveragePct < 70 ? ' mid' : ''}" style="width:${coveragePct}%"></div>
+        </div>
+        <span style="font-size:0.85rem">${coveragePct}%</span>
+      </div>
+
+      ${data.days_until_exam != null ? `
+      <div class="advisor-section">
+        <div class="advisor-label">Examen</div>
+        <div style="font-size:1.1rem;font-weight:700;color:${paceColor}">${data.days_until_exam} días</div>
+        <div style="font-size:0.85rem;color:var(--text-muted);margin-top:2px">${data.pace_message}</div>
+      </div>` : ''}
+
+      ${data.priorities?.length ? `
+      <div class="advisor-section">
+        <div class="advisor-label">Prioridades</div>
+        <ol class="advisor-list">${data.priorities.map(p => `<li>${p}</li>`).join('')}</ol>
+      </div>` : ''}
+
+      ${data.exam_gaps?.length ? `
+      <div class="advisor-section">
+        <div class="advisor-label">Gaps detectados en exámenes anteriores</div>
+        <ul class="advisor-list">${data.exam_gaps.map(g => `<li>${g}</li>`).join('')}</ul>
+      </div>` : ''}
+
+      ${data.missing_topics?.length ? `
+      <div class="advisor-section">
+        <div class="advisor-label">Temas sin cubrir</div>
+        <div class="advisor-tags">${data.missing_topics.map(t => `<span class="advisor-tag missing">${t}</span>`).join('')}</div>
+      </div>` : ''}
+
+      ${data.covered_topics?.length ? `
+      <div class="advisor-section">
+        <div class="advisor-label">Temas cubiertos</div>
+        <div class="advisor-tags">${data.covered_topics.map(t => `<span class="advisor-tag covered">${t}</span>`).join('')}</div>
+      </div>` : ''}
+    `;
+  } catch (err) {
+    loading.classList.add('hidden');
+    content.innerHTML = `<p style="color:var(--fail-fg)">Error al analizar: ${err.message}</p>`;
+  }
 }

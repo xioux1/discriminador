@@ -945,3 +945,47 @@ textarea:focus, input[type="text"]:focus {
   cursor: pointer;
 }
 .editor-mode-select:focus { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+/* ─── Curriculum modal ───────────────────────────────────────────────────────── */
+.curriculum-modal {
+  position: fixed; inset: 0; z-index: 200; display: flex; align-items: center; justify-content: center;
+}
+.curriculum-modal.hidden { display: none; }
+.curriculum-modal-backdrop {
+  position: absolute; inset: 0; background: rgba(0,0,0,0.4);
+}
+.curriculum-modal-box {
+  position: relative; background: var(--surface); border-radius: var(--radius);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18); width: min(640px, 95vw);
+  max-height: 90vh; overflow-y: auto; z-index: 1;
+}
+.curriculum-modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px; border-bottom: 1px solid var(--border); position: sticky; top: 0;
+  background: var(--surface); z-index: 1;
+}
+.curriculum-modal-header h3 { margin: 0; font-size: 1rem; }
+.curriculum-modal-body { padding: 20px; display: flex; flex-direction: column; gap: 4px; }
+.curriculum-modal-body label { font-size: 0.85rem; font-weight: 600; color: var(--text-muted); margin-bottom: 2px; }
+.curriculum-modal-body textarea, .curriculum-modal-body input, .curriculum-modal-body select {
+  width: 100%; box-sizing: border-box;
+}
+
+/* ─── Advisor analysis ───────────────────────────────────────────────────────── */
+.advisor-summary {
+  background: var(--primary-light); border-left: 3px solid var(--primary);
+  padding: 10px 14px; border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: 0.9rem; line-height: 1.5; margin-bottom: 16px;
+}
+.advisor-section { margin-bottom: 16px; }
+.advisor-label {
+  font-size: 0.75rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 6px;
+}
+.advisor-list { margin: 0; padding-left: 18px; font-size: 0.88rem; line-height: 1.7; }
+.advisor-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.advisor-tag {
+  padding: 3px 10px; border-radius: 12px; font-size: 0.8rem; font-weight: 500;
+}
+.advisor-tag.covered { background: var(--pass-bg); color: var(--pass-fg); }
+.advisor-tag.missing { background: var(--fail-bg); color: var(--fail-fg); }
