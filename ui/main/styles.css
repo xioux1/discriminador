@@ -926,6 +926,36 @@ textarea:focus, input[type="text"]:focus {
   margin: 10px 0;
 }
 
+/* ─── SQL Compiler UI ────────────────────────────────────────────────────────── */
+.sql-compiler { margin: 8px 0 4px; display: flex; flex-direction: column; gap: 6px; }
+.sql-verify-btn { align-self: flex-start; }
+.sql-compiler-output {
+  font-family: 'Courier New', monospace;
+  font-size: 0.83rem;
+  line-height: 1.6;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.sql-compiler-output.valid {
+  background: var(--pass-bg);
+  color: var(--pass-fg);
+  border: 1px solid #a3d9a5;
+}
+.sql-compiler-output.invalid {
+  background: var(--fail-bg);
+  color: var(--fail-fg);
+  border: 1px solid #f5a5a5;
+}
+.sql-compiler-hint {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  margin-top: 2px;
+}
+.sql-textarea-active { font-family: 'Courier New', monospace; font-size: 0.9rem; }
+
 /* Editor mode selector (next to subject field) */
 .editor-mode-label {
   font-size: 0.8rem;

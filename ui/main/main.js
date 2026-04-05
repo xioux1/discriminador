@@ -458,20 +458,38 @@ function saveSubjectMode(subject, mode) {
   }
 }
 
+function setEvalSqlCompilerVisible(visible) {
+  const panel = document.querySelector('#eval-sql-compiler');
+  if (!panel) return;
+  if (visible) {
+    panel.classList.remove('hidden');
+  } else {
+    panel.classList.add('hidden');
+    // Hide output and re-enable submit button
+    const out = document.querySelector('#eval-compiler-output');
+    if (out) { out.classList.add('hidden'); out.className = 'sql-compiler-output hidden'; out.textContent = ''; }
+  }
+}
+
 function applyEditorMode(mode, subject) {
+  const isSql = mode === 'sql' || (mode !== 'math' && SqlEditor.matchesSubject(subject || ''));
   if (mode === 'math') {
     MathPalette.show();
     SqlEditor.deactivate();
+    setEvalSqlCompilerVisible(false);
   } else if (mode === 'sql') {
     MathPalette.hide();
     SqlEditor.activate(_evalAnswerTextarea);
+    setEvalSqlCompilerVisible(true);
   } else {
     // Auto-detect from subject name
     MathPalette.updateSubject(subject || '');
     if (SqlEditor.matchesSubject(subject || '')) {
       SqlEditor.activate(_evalAnswerTextarea);
+      setEvalSqlCompilerVisible(true);
     } else {
       SqlEditor.deactivate();
+      setEvalSqlCompilerVisible(false);
     }
   }
 }
@@ -494,6 +512,54 @@ if (_editorModeSelect) {
   });
 }
 
+// Evaluar-tab SQL verify button
+const _evalVerifyBtn = document.querySelector('#eval-verify-btn');
+if (_evalVerifyBtn) {
+  _evalVerifyBtn.addEventListener('click', async function () {
+    const sql = (_evalAnswerTextarea && _evalAnswerTextarea.value.trim()) || '';
+    if (!sql) return;
+    const out = document.querySelector('#eval-compiler-output');
+    _evalVerifyBtn.disabled = true;
+    await verifySql(sql, out);
+    _evalVerifyBtn.disabled = false;
+  });
+}
+
+// --- SQL compiler shared helper ---
+async function verifySql(sqlText, outputEl) {
+  outputEl.classList.remove('hidden');
+  outputEl.className = 'sql-compiler-output';
+  outputEl.textContent = 'Verificando…';
+
+  try {
+    const resp = await fetch('/api/sql/validate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sql: sqlText }),
+    });
+    const data = await resp.json();
+
+    if (data.valid) {
+      outputEl.className = 'sql-compiler-output valid';
+      outputEl.textContent = '✓ Sintaxis válida';
+      return true;
+    } else {
+      outputEl.className = 'sql-compiler-output invalid';
+      const lines = (data.errors || []).map((e) => {
+        let line = e.message || 'Error desconocido';
+        if (e.hint) line += `\n  HINT: ${e.hint}`;
+        return line;
+      });
+      outputEl.textContent = lines.join('\n') || 'Error de sintaxis';
+      return false;
+    }
+  } catch (_err) {
+    outputEl.className = 'sql-compiler-output valid';
+    outputEl.textContent = '✓ Verificación no disponible — podés continuar';
+    return true;
+  }
+}
+
 // --- Reset form after decision ---
 function resetForm() {
   const subject = form.subject.value;
@@ -506,6 +572,9 @@ function resetForm() {
   resultLoading.classList.add('hidden');
   uiState.lastRequest = null;
   uiState.lastResult = null;
+  // Reset compiler output (but keep panel visible if SQL mode)
+  const evalOut = document.querySelector('#eval-compiler-output');
+  if (evalOut) { evalOut.className = 'sql-compiler-output hidden'; evalOut.textContent = ''; }
 }
 
 const uiState = {
@@ -1541,8 +1610,13 @@ function showStudyCard() {
   SqlEditor.refresh();
   document.querySelector('#study-answer-block').classList.remove('hidden');
   document.querySelector('#study-result-block').classList.add('hidden');
-  document.querySelector('#study-eval-btn').disabled = false;
+  const studyEvalBtn = document.querySelector('#study-eval-btn');
+  studyEvalBtn.disabled = false;
   studyState.currentEvalResult = null;
+  // Reset SQL compiler panel for study session
+  const studyCompilerPanel = document.querySelector('#study-sql-compiler');
+  const studyCompilerOut   = document.querySelector('#study-compiler-output');
+  if (studyCompilerOut) { studyCompilerOut.className = 'sql-compiler-output hidden'; studyCompilerOut.textContent = ''; }
 
   // Start timer
   if (studyState.timerInterval) clearInterval(studyState.timerInterval);
@@ -1563,20 +1637,49 @@ function showStudyCard() {
   const studyAnswerInput = document.querySelector('#study-answer-input');
   MathPalette.setActiveTextarea(studyAnswerInput);
   const savedMode = getSubjectMode(subject);
+  let studySqlMode = false;
   if (savedMode === 'math') {
     MathPalette.show();
     SqlEditor.deactivate();
   } else if (savedMode === 'sql') {
     MathPalette.hide();
     SqlEditor.activate(studyAnswerInput);
+    studySqlMode = true;
   } else {
     MathPalette.updateSubject(subject || '');
     if (SqlEditor.matchesSubject(subject || '')) {
       SqlEditor.activate(studyAnswerInput);
+      studySqlMode = true;
     } else {
       SqlEditor.deactivate();
     }
   }
+
+  // Show/hide SQL compiler panel and gate eval button
+  if (studyCompilerPanel) {
+    if (studySqlMode) {
+      studyCompilerPanel.classList.remove('hidden');
+      studyEvalBtn.disabled = true; // require verification first
+    } else {
+      studyCompilerPanel.classList.add('hidden');
+      studyEvalBtn.disabled = false;
+    }
+  }
+}
+
+// Study-session SQL verify button
+const _studyVerifyBtn = document.querySelector('#study-verify-btn');
+if (_studyVerifyBtn) {
+  _studyVerifyBtn.addEventListener('click', async function () {
+    const sql = (document.querySelector('#study-answer-input').value || '').trim();
+    if (!sql) return;
+    const out = document.querySelector('#study-compiler-output');
+    const evalBtn = document.querySelector('#study-eval-btn');
+    _studyVerifyBtn.disabled = true;
+    const valid = await verifySql(sql, out);
+    _studyVerifyBtn.disabled = false;
+    if (valid) evalBtn.disabled = false;
+  });
 }
 
 document.querySelector('#study-eval-btn').addEventListener('click', async () => {
