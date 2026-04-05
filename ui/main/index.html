@@ -147,7 +147,15 @@
             <textarea id="expected_answer_text" name="expected_answer_text" rows="4" required></textarea>
             <p class="field-error" data-error-for="expected_answer_text"></p>
 
-            <label for="subject">Materia (opcional)</label>
+            <div class="field-header">
+              <label for="subject">Materia (opcional)</label>
+              <label for="editor-mode-select" class="editor-mode-label">Editor:</label>
+              <select id="editor-mode-select" class="editor-mode-select">
+                <option value="">Auto</option>
+                <option value="math">∑ Matemática</option>
+                <option value="sql">SQL</option>
+              </select>
+            </div>
             <input id="subject" name="subject" type="text" list="subjects-list" autocomplete="off" />
             <datalist id="subjects-list"></datalist>
             <p class="field-error" data-error-for="subject"></p>

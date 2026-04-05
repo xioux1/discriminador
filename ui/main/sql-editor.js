@@ -214,7 +214,21 @@
     textarea.style.position   = 'relative';
     textarea.style.zIndex     = '1';
 
+    // Tab key → insert 2 spaces instead of jumping focus
+    function onTab(e) {
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        var start = textarea.selectionStart;
+        var end   = textarea.selectionEnd;
+        textarea.value = textarea.value.slice(0, start) + '  ' + textarea.value.slice(end);
+        textarea.selectionStart = textarea.selectionEnd = start + 2;
+        textarea.dispatchEvent(new Event('input'));
+      }
+    }
+    textarea._sqlTabHandler = onTab;
+
     // Attach listeners
+    textarea.addEventListener('keydown', onTab);
     textarea.addEventListener('input', onInput);
     textarea.addEventListener('scroll', syncScroll);
 
@@ -236,6 +250,10 @@
       ta.style.zIndex     = _savedStyle.zIndex;
       ta.style.caretColor = _savedStyle.caretColor;
 
+      if (ta._sqlTabHandler) {
+        ta.removeEventListener('keydown', ta._sqlTabHandler);
+        delete ta._sqlTabHandler;
+      }
       ta.removeEventListener('input', onInput);
       ta.removeEventListener('scroll', syncScroll);
     }

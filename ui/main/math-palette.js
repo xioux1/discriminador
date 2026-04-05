@@ -186,9 +186,19 @@
     }
   }
 
+  function show() {
+    if (_trigger) _trigger.classList.remove('hidden');
+  }
+
+  function hide() {
+    if (_trigger) { _trigger.classList.add('hidden'); hidePanel(); }
+  }
+
   window.MathPalette = {
     init: init,
     setActiveTextarea: setActiveTextarea,
-    updateSubject: updateSubject
+    updateSubject: updateSubject,
+    show: show,
+    hide: hide
   };
 })();
