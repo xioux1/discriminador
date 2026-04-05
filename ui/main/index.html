@@ -25,6 +25,46 @@
       <section id="tab-dashboard">
         <div id="dashboard-loading" class="loading-hint">Cargando...</div>
         <div id="dashboard-content"></div>
+
+        <!-- Curriculum config modal -->
+        <div id="curriculum-modal" class="curriculum-modal hidden">
+          <div class="curriculum-modal-backdrop"></div>
+          <div class="curriculum-modal-box">
+            <div class="curriculum-modal-header">
+              <h3 id="curriculum-modal-title">Configurar materia</h3>
+              <button type="button" id="curriculum-modal-close" class="btn-ghost">✕</button>
+            </div>
+            <div class="curriculum-modal-body">
+              <label>Fecha del próximo examen</label>
+              <div style="display:flex;gap:8px;margin-bottom:12px">
+                <input type="date" id="curriculum-exam-date" style="flex:1">
+                <select id="curriculum-exam-type">
+                  <option value="parcial">Parcial</option>
+                  <option value="final">Final</option>
+                </select>
+              </div>
+              <label>Plan de estudios</label>
+              <textarea id="curriculum-syllabus" rows="8" placeholder="Pegá el plan de estudios, índice del libro, o listado de temas..."></textarea>
+              <button type="button" id="curriculum-save-btn" class="btn-primary" style="margin-top:8px">Guardar</button>
+              <p id="curriculum-save-feedback" style="font-size:0.82rem;margin-top:6px"></p>
+
+              <hr style="margin:16px 0">
+              <h4 style="margin:0 0 8px">Exámenes de referencia</h4>
+              <div id="curriculum-exams-list"></div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+                <input type="number" id="exam-year" placeholder="Año (ej: 2023)" min="2000" max="2030">
+                <input type="text" id="exam-label" placeholder="Ej: 2do Parcial 2023">
+              </div>
+              <select id="exam-type-select" style="margin-top:8px;width:100%">
+                <option value="parcial">Parcial</option>
+                <option value="final">Final</option>
+              </select>
+              <textarea id="exam-content" rows="5" placeholder="Pegá las preguntas del examen..." style="margin-top:8px"></textarea>
+              <button type="button" id="exam-add-btn" class="btn-secondary" style="margin-top:8px">Agregar examen</button>
+              <p id="exam-add-feedback" style="font-size:0.82rem;margin-top:6px"></p>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- ═══ TAB: ESTUDIAR ════════════════════════════════════════════════ -->
@@ -254,6 +294,17 @@
             <div id="progress-subjects"></div>
           </div>
 
+        </div>
+
+        <div id="progress-advisor" class="card hidden" style="margin-top:16px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+            <h3 style="margin:0">Análisis de curriculum</h3>
+            <select id="advisor-subject-select" class="editor-mode-select">
+              <option value="">Seleccioná una materia</option>
+            </select>
+          </div>
+          <div id="advisor-loading" class="hidden" style="color:var(--text-muted);padding:12px 0">Analizando...</div>
+          <div id="advisor-content"></div>
         </div>
       </section>
 

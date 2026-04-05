@@ -8,6 +8,8 @@ import statsRouter from './stats.js';
 import overviewRouter from './overview.js';
 import schedulerRouter from './scheduler.js';
 import activityRouter from './activity.js';
+import curriculumRouter from './curriculum.js';
+import advisorRouter from './advisor.js';
 
 const router = Router();
 
@@ -24,5 +26,7 @@ router.use(statsRouter);
 router.use(overviewRouter);
 router.use(schedulerRouter);
 router.use(activityRouter);
+router.use(curriculumRouter);
+router.use(advisorRouter);
 
 export default router;
