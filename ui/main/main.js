@@ -1489,12 +1489,51 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       }
     }
 
+    // Show "Guardar variante" only on PASS for non-micro cards
+    const variantBtn      = document.querySelector('#study-variant-btn');
+    const variantFeedback = document.querySelector('#study-variant-feedback');
+    const item = studyState.queue[studyState.index];
+    if (grade === 'PASS' && item.type === 'card') {
+      variantBtn.classList.remove('hidden');
+      variantBtn.disabled = false;
+      variantBtn.textContent = '+ Guardar variante';
+    } else {
+      variantBtn.classList.add('hidden');
+    }
+    variantFeedback.classList.add('hidden');
+    variantFeedback.textContent = '';
+
     document.querySelector('#study-answer-block').classList.add('hidden');
     document.querySelector('#study-result-block').classList.remove('hidden');
   } catch (err) {
     evalBtn.disabled = false;
     evalBtn.textContent = 'Evaluar';
     alert(`Error al evaluar: ${err.message}`);
+  }
+});
+
+document.querySelector('#study-variant-btn').addEventListener('click', async () => {
+  const item        = studyState.queue[studyState.index];
+  const variantBtn  = document.querySelector('#study-variant-btn');
+  const variantFb   = document.querySelector('#study-variant-feedback');
+  if (!item || item.type !== 'card') return;
+
+  variantBtn.disabled = true;
+  variantBtn.textContent = 'Generando...';
+  variantFb.classList.add('hidden');
+
+  try {
+    await postJson(`/scheduler/cards/${item.data.id}/variant`, {});
+    variantBtn.classList.add('hidden');
+    variantFb.textContent = 'Variante guardada. Aparecerá en futuras revisiones.';
+    variantFb.style.color = 'var(--pass-fg)';
+    variantFb.classList.remove('hidden');
+  } catch (err) {
+    variantBtn.disabled = false;
+    variantBtn.textContent = '+ Guardar variante';
+    variantFb.textContent = `Error: ${err.message}`;
+    variantFb.style.color = 'var(--fail-fg)';
+    variantFb.classList.remove('hidden');
   }
 });
 

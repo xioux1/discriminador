@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { dbPool } from '../db/client.js';
 import { computeNextReview, MICRO_MASTERY_THRESHOLD_DAYS } from '../services/scheduler.js';
 import { generateMicroCard } from '../services/micro-generator.js';
+import { generateVariant } from '../services/variant-generator.js';
 
 const schedulerRouter = Router();
 
@@ -79,25 +80,48 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
 
     const cardsResult = await dbPool.query(
       `SELECT c.*,
-         COUNT(mc.id) FILTER (WHERE mc.status = 'active') AS active_micro_count
+         COUNT(mc.id) FILTER (WHERE mc.status = 'active') AS active_micro_count,
+         COUNT(cv.id) AS variant_count
        FROM cards c
        LEFT JOIN micro_cards mc ON mc.parent_card_id = c.id
+       LEFT JOIN card_variants cv ON cv.card_id = c.id
        WHERE c.next_review_at <= now()
          ${subjectFilter}
        GROUP BY c.id
        ORDER BY
-         COUNT(mc.id) FILTER (WHERE mc.status = 'active') ASC,  -- unblocked first
+         COUNT(mc.id) FILTER (WHERE mc.status = 'active') ASC,
          c.next_review_at ASC
        LIMIT 30`,
       params
     );
 
-    const totalDue = microResult.rows.length + cardsResult.rows.length;
+    // For each card that has variants, randomly pick one to show
+    // (50% chance to use a variant; always use original if no variants exist)
+    const cards = await Promise.all(cardsResult.rows.map(async (card) => {
+      if (parseInt(card.variant_count) > 0 && Math.random() < 0.5) {
+        const vRes = await dbPool.query(
+          `SELECT * FROM card_variants WHERE card_id = $1 ORDER BY random() LIMIT 1`,
+          [card.id]
+        );
+        if (vRes.rows.length > 0) {
+          const v = vRes.rows[0];
+          return {
+            ...card,
+            prompt_text: v.prompt_text,
+            expected_answer_text: v.expected_answer_text,
+            variant_id: v.id
+          };
+        }
+      }
+      return card;
+    }));
+
+    const totalDue = microResult.rows.length + cards.length;
 
     return res.status(200).json({
       total_due: totalDue,
       micro_cards: microResult.rows,
-      cards: cardsResult.rows
+      cards
     });
   } catch (err) {
     console.error('scheduler GET /session', err.message);
@@ -361,6 +385,44 @@ schedulerRouter.get('/scheduler/agenda', async (req, res) => {
     });
   } catch (err) {
     console.error('scheduler GET /agenda', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+// ─── Generate a conservative variant for a card ───────────────────────────────
+// POST /scheduler/cards/:id/variant
+// Generates one variant via LLM and stores it in card_variants.
+// The original card slot in the scheduler is unchanged.
+schedulerRouter.post('/scheduler/cards/:id/variant', async (req, res) => {
+  const cardId = parseInt(req.params.id);
+  if (!cardId) return res.status(422).json({ error: 'validation_error', message: 'Invalid card id.' });
+
+  try {
+    const cardRes = await dbPool.query(
+      `SELECT id, subject, prompt_text, expected_answer_text FROM cards WHERE id = $1`,
+      [cardId]
+    );
+    if (!cardRes.rows.length) return res.status(404).json({ error: 'not_found', message: 'Card not found.' });
+
+    const card = cardRes.rows[0];
+    const variant = await generateVariant({
+      prompt_text:          card.prompt_text,
+      expected_answer_text: card.expected_answer_text,
+      subject:              card.subject
+    });
+
+    const insertRes = await dbPool.query(
+      `INSERT INTO card_variants (card_id, prompt_text, expected_answer_text)
+       VALUES ($1, $2, $3) RETURNING *`,
+      [cardId, variant.prompt_text, variant.expected_answer_text]
+    );
+
+    return res.status(200).json({
+      variant: insertRes.rows[0],
+      card_id: cardId
+    });
+  } catch (err) {
+    console.error('POST /scheduler/cards/:id/variant', err.message);
     return res.status(500).json({ error: 'server_error', message: err.message });
   }
 });
