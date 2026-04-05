@@ -52,6 +52,7 @@ textarea, input[type="text"] {
   border-radius: var(--radius-sm);
   font-family: var(--font);
   font-size: 0.93rem;
+  line-height: 1.5;
   background: var(--surface);
   color: var(--text);
   transition: border-color 0.15s;

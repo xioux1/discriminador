@@ -313,12 +313,20 @@
     return results;
   }
 
+  // Force re-render the highlight layer (call after programmatically clearing the textarea)
+  function refresh() {
+    if (_active && _highlightLayer && _textarea) {
+      _highlightLayer.innerHTML = highlightSql(_textarea.value);
+    }
+  }
+
   window.SqlEditor = {
     activate: activate,
     deactivate: deactivate,
     isActive: isActive,
     matchesSubject: matchesSubject,
     checkClauses: checkClauses,
-    _highlightSql: highlightSql  // exposed for testing
+    refresh: refresh,
+    _highlightSql: highlightSql
   };
 })();
