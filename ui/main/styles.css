@@ -924,3 +924,24 @@ textarea:focus, input[type="text"]:focus {
 #study-sql-clause-checklist {
   margin: 10px 0;
 }
+
+/* Editor mode selector (next to subject field) */
+.editor-mode-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-weight: 400;
+  margin-left: auto;
+  margin-right: 4px;
+  align-self: center;
+}
+.editor-mode-select {
+  font-family: var(--font);
+  font-size: 0.8rem;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.editor-mode-select:focus { outline: 2px solid var(--primary); outline-offset: 1px; }

@@ -417,20 +417,62 @@ fillExpectedBtn.addEventListener('click', () => {
 MathPalette.init();
 
 const _evalAnswerTextarea = document.querySelector('#user_answer_text');
+const _editorModeSelect   = document.querySelector('#editor-mode-select');
 
 _evalAnswerTextarea.addEventListener('focus', function () {
   MathPalette.setActiveTextarea(_evalAnswerTextarea);
 });
 
-document.querySelector('#subject').addEventListener('input', function (e) {
-  const subjectVal = e.target.value;
-  MathPalette.updateSubject(subjectVal);
-  if (SqlEditor.matchesSubject(subjectVal)) {
+function _subjectModeKey(subject) {
+  return 'editor-mode:' + (subject || '').trim().toLowerCase();
+}
+function getSubjectMode(subject) {
+  return localStorage.getItem(_subjectModeKey(subject)) || '';
+}
+function saveSubjectMode(subject, mode) {
+  if (!subject || !subject.trim()) return;
+  if (mode) {
+    localStorage.setItem(_subjectModeKey(subject), mode);
+  } else {
+    localStorage.removeItem(_subjectModeKey(subject));
+  }
+}
+
+function applyEditorMode(mode, subject) {
+  if (mode === 'math') {
+    MathPalette.show();
+    SqlEditor.deactivate();
+  } else if (mode === 'sql') {
+    MathPalette.hide();
     SqlEditor.activate(_evalAnswerTextarea);
   } else {
-    SqlEditor.deactivate();
+    // Auto-detect from subject name
+    MathPalette.updateSubject(subject || '');
+    if (SqlEditor.matchesSubject(subject || '')) {
+      SqlEditor.activate(_evalAnswerTextarea);
+    } else {
+      SqlEditor.deactivate();
+    }
   }
+}
+
+// When subject changes: load saved mode for that subject
+document.querySelector('#subject').addEventListener('input', function (e) {
+  const subjectVal = e.target.value;
+  const savedMode  = getSubjectMode(subjectVal);
+  if (_editorModeSelect) _editorModeSelect.value = savedMode;
+  applyEditorMode(savedMode, subjectVal);
 });
+
+// When mode selector changes: save and apply
+if (_editorModeSelect) {
+  _editorModeSelect.addEventListener('change', function () {
+    const subject = document.querySelector('#subject').value;
+    const mode    = _editorModeSelect.value;
+    saveSubjectMode(subject, mode);
+    applyEditorMode(mode, subject);
+  });
+}
 
 // --- Reset form after decision ---
 function resetForm() {
@@ -1334,14 +1376,23 @@ function showStudyCard() {
   const subject = item.type === 'micro' ? item.data.parent_subject : item.data.subject;
   document.querySelector('#study-dictation-btn').dataset.subject = subject || '';
 
-  // Math Palette + SQL Editor integration for study session
-  MathPalette.updateSubject(subject || '');
+  // Math Palette + SQL Editor — use saved mode for this subject, fallback to auto-detect
   const studyAnswerInput = document.querySelector('#study-answer-input');
   MathPalette.setActiveTextarea(studyAnswerInput);
-  if (SqlEditor.matchesSubject(subject || '')) {
+  const savedMode = getSubjectMode(subject);
+  if (savedMode === 'math') {
+    MathPalette.show();
+    SqlEditor.deactivate();
+  } else if (savedMode === 'sql') {
+    MathPalette.hide();
     SqlEditor.activate(studyAnswerInput);
   } else {
-    SqlEditor.deactivate();
+    MathPalette.updateSubject(subject || '');
+    if (SqlEditor.matchesSubject(subject || '')) {
+      SqlEditor.activate(studyAnswerInput);
+    } else {
+      SqlEditor.deactivate();
+    }
   }
 }
 
