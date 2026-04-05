@@ -11,6 +11,7 @@ import activityRouter from './activity.js';
 import curriculumRouter from './curriculum.js';
 import advisorRouter from './advisor.js';
 import sessionPlannerRouter from './session-planner.js';
+import sqlValidateRouter from './sql-validate.js';
 
 const router = Router();
 
@@ -30,5 +31,6 @@ router.use(activityRouter);
 router.use(curriculumRouter);
 router.use(advisorRouter);
 router.use(sessionPlannerRouter);
+router.use(sqlValidateRouter);
 
 export default router;

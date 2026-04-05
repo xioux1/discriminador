@@ -177,6 +177,11 @@
                 </div>
               </div>
               <textarea id="study-answer-input" rows="5"></textarea>
+              <!-- SQL compiler — shown only in SQL mode -->
+              <div id="study-sql-compiler" class="sql-compiler hidden">
+                <button type="button" id="study-verify-btn" class="btn-secondary sql-verify-btn">🔍 Verificar SQL</button>
+                <div id="study-compiler-output" class="sql-compiler-output hidden"></div>
+              </div>
               <button type="button" id="study-eval-btn" class="btn-primary study-eval-btn">Evaluar respuesta</button>
             </div>
 
@@ -221,6 +226,11 @@
               <button type="button" id="dictation-btn" class="dictation-btn" hidden>🎤 Dictar</button>
             </div>
             <textarea id="user_answer_text" name="user_answer_text" rows="4" required></textarea>
+            <!-- SQL compiler — shown only in SQL mode -->
+            <div id="eval-sql-compiler" class="sql-compiler hidden">
+              <button type="button" id="eval-verify-btn" class="btn-secondary sql-verify-btn">🔍 Verificar SQL</button>
+              <div id="eval-compiler-output" class="sql-compiler-output hidden"></div>
+            </div>
             <p class="field-error" data-error-for="user_answer_text"></p>
 
             <div class="field-header">
