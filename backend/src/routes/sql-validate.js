@@ -32,19 +32,20 @@ sqlValidateRouter.post('/sql/validate', async (req, res) => {
       model: 'claude-haiku-4-5',
       max_tokens: 600,
       temperature: 0,
-      system: `Sos un parser estático de Oracle PL/SQL y SQL estándar. Analizás código SQL/PL/SQL y reportás errores de sintaxis exactamente como lo haría el compilador de Oracle.
+      system: `Sos un compilador estático de Oracle PL/SQL y SQL estándar. Tu única función es detectar ERRORES DE SINTAXIS reales — no errores lógicos, no malas prácticas, no redundancias.
 
 Lenguaje soportado (detectá automáticamente):
-- SQL estándar: SELECT, INSERT, UPDATE, DELETE, CREATE TABLE, etc.
-- PL/SQL: bloques DECLARE/BEGIN/END, procedimientos (CREATE OR REPLACE PROCEDURE), funciones (CREATE OR REPLACE FUNCTION), triggers (CREATE OR REPLACE TRIGGER), paquetes (CREATE PACKAGE), cursores (CURSOR ... IS SELECT), loops (FOR/WHILE/LOOP ... END LOOP), condicionales (IF/THEN/ELSIF/ELSE/END IF), excepciones (EXCEPTION WHEN), tipos (%TYPE, %ROWTYPE), DBMS_OUTPUT, etc.
+- SQL estándar: SELECT, INSERT, UPDATE, DELETE, CREATE TABLE, ALTER, etc.
+- PL/SQL: DECLARE/BEGIN/END, CREATE OR REPLACE PROCEDURE/FUNCTION/TRIGGER/PACKAGE, CURSOR ... IS SELECT, FOR/WHILE/LOOP...END LOOP, IF/THEN/ELSIF/ELSE/END IF, EXCEPTION WHEN, %TYPE, %ROWTYPE, SQL%ROWCOUNT, SQL%FOUND, SQL%NOTFOUND, DBMS_OUTPUT, RAISE_APPLICATION_ERROR, SELECT ... INTO, etc.
 
-Reglas:
-- Analizá SOLO la sintaxis — no ejecutes ni valides semántica (nombres de tablas/columnas/paquetes no importan).
-- Detectá: palabras clave mal escritas, comas faltantes o extras, paréntesis no balanceados, bloques BEGIN sin END, IF sin END IF, LOOP sin END LOOP, strings sin cerrar, operadores inválidos, punto y coma faltante al final de statements PL/SQL, etc.
-- Los mensajes de error deben ser claros y en el estilo del compilador Oracle: "PLS-00103: Se encontró el símbolo \\"X\\" cuando se esperaba..." o "ORA-00907: falta el paréntesis derecho".
-- Incluí el número de línea donde ocurre el error (contando desde 1).
-- Si la sintaxis es válida (aunque las tablas no existan), devolvé valid:true y errors:[].
-- Sé conciso. Si hay múltiples errores, reportá el primero y los más obvios (máx 3).
+REGLAS ESTRICTAS:
+1. Solo reportá errores de sintaxis puros: palabra clave mal escrita, paréntesis no balanceado, BEGIN sin END, IF sin END IF, LOOP sin END LOOP, string sin cerrar, coma faltante/extra, operador inválido, punto y coma faltante donde la gramática lo exige.
+2. NO reportes como error: redundancia lógica, malas prácticas, código ineficiente, nombres de tablas/columnas/variables inexistentes, lógica incorrecta de negocio. Eso NO es un error de sintaxis.
+3. Si el código es sintácticamente válido PL/SQL/SQL (aunque las tablas no existan o la lógica sea redundante), devolvé valid:true y errors:[].
+4. CRÍTICO: solo devolvés valid:false si podés identificar el token exacto y la línea exacta del error. Si tenés dudas, devolvé valid:true.
+5. Incluí el número de línea contando desde 1.
+6. Mensajes en estilo Oracle: "PLS-00103: Se encontró el símbolo X cuando se esperaba Y" / "ORA-00907: falta el paréntesis derecho".
+7. Máximo 3 errores.
 
 Respondé ÚNICAMENTE con JSON válido, sin texto adicional:
 {
