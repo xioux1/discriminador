@@ -526,11 +526,90 @@ if (_evalVerifyBtn) {
 }
 
 // --- SQL compiler shared helper ---
+
+/**
+ * Client-side static checks for unambiguous syntax errors.
+ * These are deterministic — no LLM variability.
+ */
+function sqlClientSideErrors(sql) {
+  const errors = [];
+  const lines = sql.split('\n');
+  const MAJOR_CLAUSE = /^(FROM|WHERE|GROUP\s+BY|HAVING|ORDER\s+BY|UNION|INTERSECT|MINUS|EXCEPT|JOIN|INNER\s+JOIN|LEFT|RIGHT|FULL|CROSS)\b/i;
+
+  // 1. Trailing comma before a major SQL clause
+  for (let i = 0; i < lines.length; i++) {
+    if (/,\s*$/.test(lines[i])) {
+      for (let j = i + 1; j < lines.length; j++) {
+        const next = lines[j].trim();
+        if (!next) continue;
+        const m = next.match(MAJOR_CLAUSE);
+        if (m) {
+          errors.push({
+            line: i + 1,
+            message: `ORA-00936: expresión faltante — coma extra antes de ${m[0].toUpperCase().trim()}`,
+            hint: `Eliminá la coma al final de la línea ${i + 1}`,
+          });
+        }
+        break;
+      }
+    }
+  }
+
+  // 2. Stray END / END; in plain SQL context (no PL/SQL block)
+  const hasPLSQL = /\bBEGIN\b|\bDECLARE\b|\bCREATE\s+(OR\s+REPLACE\s+)?(PROCEDURE|FUNCTION|TRIGGER|PACKAGE)\b/i.test(sql);
+  if (!hasPLSQL) {
+    lines.forEach((line, i) => {
+      if (/^\s*END\s*;?\s*$/.test(line.trim())) {
+        errors.push({
+          line: i + 1,
+          message: `ORA-00900: instrucción SQL no válida — END sin bloque BEGIN/PL/SQL`,
+          hint: `Eliminá el END; — no corresponde a una consulta SQL estándar`,
+        });
+      }
+    });
+  }
+
+  // 3. Unbalanced parentheses
+  let depth = 0;
+  let lastOpen = -1;
+  for (let i = 0; i < lines.length; i++) {
+    for (const ch of lines[i]) {
+      if (ch === '(') { depth++; lastOpen = i + 1; }
+      else if (ch === ')') { depth--; }
+    }
+  }
+  if (depth > 0) {
+    errors.push({ line: lastOpen, message: `ORA-00907: falta el paréntesis derecho`, hint: `Revisá que cada ( tenga su ) correspondiente` });
+  } else if (depth < 0) {
+    errors.push({ line: lines.length, message: `ORA-00907: paréntesis de cierre sin apertura`, hint: `Hay un ) de más` });
+  }
+
+  return errors;
+}
+
+function _renderErrors(errors, outputEl) {
+  outputEl.className = 'sql-compiler-output invalid';
+  outputEl.textContent = errors.map((e) => {
+    let msg = e.line ? `LÍNEA ${e.line}: ` : '';
+    msg += e.message;
+    if (e.hint) msg += `\n  → ${e.hint}`;
+    return msg;
+  }).join('\n\n');
+}
+
 async function verifySql(sqlText, outputEl) {
   outputEl.classList.remove('hidden');
   outputEl.className = 'sql-compiler-output';
   outputEl.textContent = 'Verificando…';
 
+  // Phase 1: deterministic client-side checks (no LLM variability)
+  const staticErrors = sqlClientSideErrors(sqlText);
+  if (staticErrors.length > 0) {
+    _renderErrors(staticErrors, outputEl);
+    return false;
+  }
+
+  // Phase 2: LLM deep analysis
   try {
     const resp = await fetch('/api/sql/validate', {
       method: 'POST',
@@ -538,24 +617,14 @@ async function verifySql(sqlText, outputEl) {
       body: JSON.stringify({ sql: sqlText }),
     });
     const data = await resp.json();
+    const llmErrors = (data.errors || []).filter((e) => e && e.message);
 
-    const errors = (data.errors || []).filter((e) => e && e.message);
-
-    if (data.valid || errors.length === 0) {
-      // valid:true OR valid:false but no substantiated errors → pass through
+    if (data.valid || llmErrors.length === 0) {
       outputEl.className = 'sql-compiler-output valid';
       outputEl.textContent = '✓ Compilación exitosa — sin errores de sintaxis';
       return true;
     } else {
-      outputEl.className = 'sql-compiler-output invalid';
-      const lines = errors.map((e) => {
-        let msg = '';
-        if (e.line) msg += `LÍNEA ${e.line}: `;
-        msg += e.message;
-        if (e.hint) msg += `\n  → ${e.hint}`;
-        return msg;
-      });
-      outputEl.textContent = lines.join('\n\n');
+      _renderErrors(llmErrors, outputEl);
       return false;
     }
   } catch (_err) {
