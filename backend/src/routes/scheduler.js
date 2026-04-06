@@ -57,6 +57,7 @@ async function computeNewCardReleaseAt(userId, subject, dailyLimit) {
       WHERE user_id = $1
         AND subject = $2
         AND archived_at IS NULL
+        AND suspended_at IS NULL
         AND review_count = 0
         AND next_review_at::date >= current_date
       GROUP BY 1`,
@@ -94,6 +95,7 @@ schedulerRouter.get('/scheduler/cards', async (req, res) => {
        LEFT JOIN micro_cards mc ON mc.parent_card_id = c.id
        WHERE c.user_id = $1
        AND c.archived_at IS NULL
+       AND c.suspended_at IS NULL
        ${subject ? 'AND c.subject = $2' : ''}
        GROUP BY c.id
        ORDER BY c.next_review_at ASC`,
@@ -127,6 +129,7 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
        JOIN cards c ON mc.parent_card_id = c.id
        WHERE mc.status = 'active'
          AND c.archived_at IS NULL
+         AND c.suspended_at IS NULL
          AND mc.next_review_at <= now()
          AND mc.user_id = $1
          ${subjectFilter}
@@ -144,6 +147,7 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
        LEFT JOIN card_variants cv ON cv.card_id = c.id
        WHERE c.next_review_at <= now()
          AND c.archived_at IS NULL
+         AND c.suspended_at IS NULL
          AND c.user_id = $1
          ${subjectFilter}
        GROUP BY c.id
@@ -226,7 +230,7 @@ schedulerRouter.post('/scheduler/review', async (req, res) => {
 // ─── Internal: review a full card ────────────────────────────────────────────
 async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, userId) {
   const { rows } = await dbPool.query(
-    'SELECT * FROM cards WHERE id = $1 AND user_id = $2 AND archived_at IS NULL',
+    'SELECT * FROM cards WHERE id = $1 AND user_id = $2 AND archived_at IS NULL AND suspended_at IS NULL',
     [cardId, userId]
   );
   if (!rows.length) {
@@ -403,6 +407,7 @@ schedulerRouter.get('/scheduler/agenda', async (req, res) => {
        LEFT JOIN micro_cards mc ON mc.parent_card_id = c.id AND mc.status = 'active'
        WHERE c.user_id = $1
        AND c.archived_at IS NULL
+       AND c.suspended_at IS NULL
        ${subjectFilter}
        GROUP BY c.id
        ORDER BY c.next_review_at ASC`,
@@ -469,7 +474,7 @@ schedulerRouter.post('/scheduler/cards/:id/variant', async (req, res) => {
     const cardRes = await dbPool.query(
       `SELECT id, subject, prompt_text, expected_answer_text
        FROM cards
-       WHERE id = $1 AND user_id = $2 AND archived_at IS NULL`,
+       WHERE id = $1 AND user_id = $2 AND archived_at IS NULL AND suspended_at IS NULL`,
       [cardId, userId]
     );
     if (!cardRes.rows.length) return res.status(404).json({ error: 'not_found', message: 'Card not found.' });

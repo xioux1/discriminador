@@ -44,7 +44,7 @@ h3 { font-size: 1rem; }
 
 label { display: block; font-size: 0.85rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; }
 
-textarea, input[type="text"] {
+textarea, input[type="text"], select {
   display: block;
   width: 100%;
   padding: 9px 12px;
@@ -60,7 +60,7 @@ textarea, input[type="text"] {
   resize: vertical;
 }
 
-textarea:focus, input[type="text"]:focus {
+textarea:focus, input[type="text"]:focus, select:focus {
   outline: none;
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(42,95,200,0.12);
@@ -283,6 +283,34 @@ textarea:focus, input[type="text"]:focus {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+
+/* ─── Browser tab ───────────────────────────────────────────────────────────── */
+.browser-toolbar { display: flex; flex-direction: column; gap: 10px; }
+.browser-filters { display: grid; grid-template-columns: 1.4fr 1fr 180px; gap: 8px; }
+.browser-filters input, .browser-filters select { margin-bottom: 0; }
+.browser-bulk-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.browser-table-wrap { overflow-x: auto; }
+.browser-table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+.browser-table th, .browser-table td {
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  padding: 8px 6px;
+  vertical-align: top;
+}
+.browser-table th { color: var(--text-muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; }
+.browser-prompt { max-width: 360px; }
+.browser-status-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.browser-status-pill.due { background: #ffe9d8; color: #9a4200; }
+.browser-status-pill.new { background: #e7f0ff; color: #0d4aa8; }
+.browser-status-pill.suspended { background: #efefef; color: #666; }
+.browser-status-pill.flagged { background: #ffe7e7; color: #a40000; }
 
 .dimension-bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; font-size: 0.85rem; }
 .dimension-bar-label { width: 160px; flex-shrink: 0; color: var(--text-muted); }

@@ -36,6 +36,7 @@
       <button class="tab-btn" data-tab="study">Estudiar</button>
       <button class="tab-btn" data-tab="evaluate">Evaluar</button>
       <button class="tab-btn" data-tab="explore">Explorar</button>
+      <button class="tab-btn" data-tab="browser">Navegador</button>
       <button class="tab-btn" data-tab="progress">Progreso</button>
       <button id="logout-btn" class="btn-ghost logout-btn" title="Cerrar sesión">Salir</button>
     </nav>
@@ -376,6 +377,47 @@
       <section id="tab-explore" class="hidden">
         <div id="history-loading" class="hidden loading-hint">Cargando historial...</div>
         <div id="history-content"></div>
+      </section>
+
+      <!-- ═══ TAB: NAVEGADOR ═══════════════════════════════════════════════ -->
+      <section id="tab-browser" class="hidden">
+        <div class="card browser-toolbar">
+          <div class="browser-filters">
+            <input type="text" id="browser-filter-text" placeholder="Buscar por prompt..." />
+            <input type="text" id="browser-filter-subject" list="subjects-list" placeholder="Filtrar materia..." />
+            <select id="browser-filter-status">
+              <option value="">Todos los estados</option>
+              <option value="due">Due</option>
+              <option value="new">New</option>
+              <option value="suspended">Suspended</option>
+              <option value="flagged">Flagged</option>
+            </select>
+          </div>
+          <div class="browser-bulk-actions">
+            <button type="button" id="browser-archive-btn" class="btn-secondary">Archivar</button>
+            <button type="button" id="browser-suspend-btn" class="btn-secondary">Suspender</button>
+            <button type="button" id="browser-reactivate-btn" class="btn-secondary">Reactivar</button>
+            <button type="button" id="browser-edit-btn" class="btn-secondary">Editar</button>
+          </div>
+          <p id="browser-feedback" class="feedback"></p>
+        </div>
+
+        <div class="card browser-table-wrap">
+          <table class="browser-table">
+            <thead>
+              <tr>
+                <th><input type="checkbox" id="browser-select-all" aria-label="Seleccionar todo"></th>
+                <th>Materia</th>
+                <th>Prompt</th>
+                <th>Próximo repaso</th>
+                <th>Estado</th>
+                <th>Lapses</th>
+                <th>Flags</th>
+              </tr>
+            </thead>
+            <tbody id="browser-table-body"></tbody>
+          </table>
+        </div>
       </section>
 
       <!-- ═══ TAB: PROGRESO ════════════════════════════════════════════════ -->
