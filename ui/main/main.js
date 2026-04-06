@@ -1,6 +1,52 @@
 const EVALUATE_ENDPOINT = '/evaluate';
 const DECISION_ENDPOINT = '/decision';
 
+// ─── Auth gate ────────────────────────────────────────────────────────────────
+
+if (!Auth.isLoggedIn()) {
+  document.getElementById('auth-screen').classList.remove('hidden');
+  document.querySelector('.app-shell')?.classList.add('hidden');
+  initAuthScreen();
+} else {
+  document.getElementById('auth-screen').classList.add('hidden');
+  const user = Auth.getUser();
+  if (user) {
+    const el = document.getElementById('current-username');
+    if (el) el.textContent = user.username;
+  }
+}
+
+function initAuthScreen() {
+  let mode = 'login';
+  const tabs = document.querySelectorAll('.auth-tab');
+  tabs.forEach(t => t.addEventListener('click', () => {
+    mode = t.dataset.tab;
+    tabs.forEach(x => x.classList.toggle('active', x.dataset.tab === mode));
+    document.getElementById('auth-error').classList.add('hidden');
+  }));
+
+  document.getElementById('auth-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const username = document.getElementById('auth-username').value.trim();
+    const password = document.getElementById('auth-password').value;
+    const errEl = document.getElementById('auth-error');
+    const submitBtn = document.querySelector('.auth-submit');
+    submitBtn.disabled = true;
+    errEl.classList.add('hidden');
+    try {
+      if (mode === 'login') await Auth.login(username, password);
+      else await Auth.register(username, password);
+      location.reload();
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.classList.remove('hidden');
+      submitBtn.disabled = false;
+    }
+  });
+}
+
+document.getElementById('logout-btn')?.addEventListener('click', () => Auth.logout());
+
 // --- Tab navigation ---
 
 (function initTabs() {
@@ -57,7 +103,9 @@ async function loadHistoryOverview() {
   content.innerHTML = '';
 
   try {
-    const res = await fetch('/stats/overview');
+    const res = await fetch('/stats/overview', {
+      headers: Auth.getToken() ? { 'Authorization': 'Bearer ' + Auth.getToken() } : {}
+    });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const { subjects } = await res.json();
     loading.classList.add('hidden');
@@ -103,7 +151,9 @@ async function loadHistoryOverview() {
           const isOpen = detail.classList.toggle('open');
           if (isOpen && detail.innerHTML.includes('Cargando')) {
             try {
-              const r = await fetch(`/stats/question?prompt=${encodeURIComponent(q.prompt_text)}`);
+              const r = await fetch(`/stats/question?prompt=${encodeURIComponent(q.prompt_text)}`, {
+                headers: Auth.getToken() ? { 'Authorization': 'Bearer ' + Auth.getToken() } : {}
+              });
               const data = await r.json();
               detail.innerHTML = '';
               renderQuestionStats(data);
@@ -371,7 +421,9 @@ const subjectsDatalist = document.querySelector('#subjects-list');
 // --- Subject datalist ---
 async function loadSubjects() {
   try {
-    const res = await fetch('/subjects');
+    const res = await fetch('/subjects', {
+      headers: Auth.getToken() ? { 'Authorization': 'Bearer ' + Auth.getToken() } : {}
+    });
     if (!res.ok) return;
     const { subjects } = await res.json();
     subjectsDatalist.innerHTML = '';
@@ -399,7 +451,9 @@ async function lookupExpectedAnswer(promptText) {
     return;
   }
   try {
-    const res = await fetch(`/expected-answer?prompt=${encodeURIComponent(promptText.trim())}`);
+    const res = await fetch(`/expected-answer?prompt=${encodeURIComponent(promptText.trim())}`, {
+      headers: Auth.getToken() ? { 'Authorization': 'Bearer ' + Auth.getToken() } : {}
+    });
     if (!res.ok) { clearExpectedHint(); return; }
     const data = await res.json();
     if (data.found && data.expected_answer_text) {
@@ -605,9 +659,11 @@ async function verifySql(sqlText, outputEl) {
 
   // Phase 2: LLM deep analysis
   try {
+    const sqlHeaders = { 'Content-Type': 'application/json' };
+    if (Auth.getToken()) sqlHeaders['Authorization'] = 'Bearer ' + Auth.getToken();
     const resp = await fetch('/api/sql/validate', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: sqlHeaders,
       body: JSON.stringify({ sql: sqlText }),
     });
     const data = await resp.json();
@@ -829,13 +885,16 @@ function renderResult(result) {
 }
 
 async function postJson(url, body, method = 'POST') {
+  const headers = { 'Content-Type': 'application/json' };
+  if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
   const response = await fetch(url, {
     method,
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify(body),
   });
+
+  Auth.handleRefreshToken(response);
+  if (response.status === 401) { Auth.logout(); return; }
 
   let data;
   try {
@@ -964,7 +1023,9 @@ async function loadQuestionStats(promptText) {
   if (!promptText || promptText.trim().length < 10) return;
 
   try {
-    const res = await fetch(`/stats/question?prompt=${encodeURIComponent(promptText.trim())}`);
+    const res = await fetch(`/stats/question?prompt=${encodeURIComponent(promptText.trim())}`, {
+      headers: Auth.getToken() ? { 'Authorization': 'Bearer ' + Auth.getToken() } : {}
+    });
     if (!res.ok) return;
     const data = await res.json();
     if (!data.total || data.total === 0) return;
@@ -1245,9 +1306,11 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = 
         const subject = typeof subjectOverride === 'function'
         ? subjectOverride()
         : (subjectOverride ?? document.querySelector('#subject')?.value?.trim() ?? '');
+        const transcribeHeaders = { 'Content-Type': 'application/json' };
+        if (Auth.getToken()) transcribeHeaders['Authorization'] = 'Bearer ' + Auth.getToken();
         const response = await fetch('/transcribe', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: transcribeHeaders,
           body: JSON.stringify({ audio: base64, mime_type: mimeType, subject })
         });
 
@@ -1964,9 +2027,13 @@ function finishStudySession() {
 }
 
 async function getJson(url) {
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
-  return resp.json();
+  const res = await fetch(url, {
+    headers: Auth.getToken() ? { 'Authorization': 'Bearer ' + Auth.getToken() } : {}
+  });
+  Auth.handleRefreshToken(res);
+  if (res.status === 401) { Auth.logout(); return; }
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
 }
 
 // ─── Agenda view ──────────────────────────────────────────────────────────────
@@ -2164,7 +2231,9 @@ function renderExamsList(exams, subject) {
       const id = btn.dataset.id;
       const subj = btn.dataset.subject;
       try {
-        await fetch(`/curriculum/${encodeURIComponent(subj)}/exams/${id}`, { method: 'DELETE' });
+        const delHeaders = {};
+        if (Auth.getToken()) delHeaders['Authorization'] = 'Bearer ' + Auth.getToken();
+        await fetch(`/curriculum/${encodeURIComponent(subj)}/exams/${id}`, { method: 'DELETE', headers: delHeaders });
         const data = await getJson(`/curriculum/${encodeURIComponent(subj)}`);
         renderExamsList(data.exams || [], subj);
       } catch (_e) {}

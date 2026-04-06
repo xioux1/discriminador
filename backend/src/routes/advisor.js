@@ -8,16 +8,25 @@ const advisorRouter = Router();
 const _cache = new Map();
 const CACHE_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
 
-export function invalidateAdvisorCache(subject) {
-  _cache.delete(subject);
+export function invalidateAdvisorCache(subject, userId) {
+  if (userId) {
+    _cache.delete(`${userId}:${subject}`);
+  } else {
+    // Fallback: clear all entries for the subject
+    for (const key of _cache.keys()) {
+      if (key.endsWith(`:${subject}`)) _cache.delete(key);
+    }
+  }
 }
 
 // GET /advisor/analysis/:subject
 advisorRouter.get('/advisor/analysis/:subject', async (req, res) => {
   const { subject } = req.params;
+  const userId = req.user.id;
+  const cacheKey = `${userId}:${subject}`;
 
   // Check cache
-  const cached = _cache.get(subject);
+  const cached = _cache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
     return res.json(cached.result);
   }
@@ -25,8 +34,8 @@ advisorRouter.get('/advisor/analysis/:subject', async (req, res) => {
   try {
     // 1. Read subject_configs
     const { rows: configRows } = await dbPool.query(
-      'SELECT * FROM subject_configs WHERE subject = $1',
-      [subject]
+      'SELECT * FROM subject_configs WHERE subject = $1 AND user_id = $2',
+      [subject, userId]
     );
     const config = configRows[0] || null;
 
@@ -39,14 +48,14 @@ advisorRouter.get('/advisor/analysis/:subject', async (req, res) => {
 
     // 2. Read reference_exams
     const { rows: referenceExams } = await dbPool.query(
-      'SELECT * FROM reference_exams WHERE subject = $1 ORDER BY created_at DESC',
-      [subject]
+      'SELECT * FROM reference_exams WHERE subject = $1 AND user_id = $2 ORDER BY created_at DESC',
+      [subject, userId]
     );
 
     // 3. Read cards
     const { rows: cards } = await dbPool.query(
-      'SELECT prompt_text, pass_count, review_count FROM cards WHERE subject = $1',
-      [subject]
+      'SELECT prompt_text, pass_count, review_count FROM cards WHERE subject = $1 AND user_id = $2',
+      [subject, userId]
     );
 
     // 4. Read last 50 user_decisions joined with evaluation_items
@@ -58,10 +67,11 @@ advisorRouter.get('/advisor/analysis/:subject', async (req, res) => {
        FROM user_decisions ud
        JOIN evaluation_items ei ON ud.evaluation_item_id = ei.id
        WHERE COALESCE(NULLIF(trim(ei.input_payload->>'subject'), ''), '(sin materia)') = $1
+         AND ud.user_id = $2
          AND ud.final_grade IS NOT NULL
        ORDER BY ud.decided_at DESC
        LIMIT 50`,
-      [subject]
+      [subject, userId]
     );
 
     // 5. Calculate activity stats for last 4 weeks
@@ -72,9 +82,10 @@ advisorRouter.get('/advisor/analysis/:subject', async (req, res) => {
        FROM user_decisions ud
        JOIN evaluation_items ei ON ud.evaluation_item_id = ei.id
        WHERE COALESCE(NULLIF(trim(ei.input_payload->>'subject'), ''), '(sin materia)') = $1
+         AND ud.user_id = $2
          AND ud.decided_at >= now() - interval '4 weeks'
          AND ud.final_grade IS NOT NULL`,
-      [subject]
+      [subject, userId]
     );
 
     const statsRow = statsRows[0] || {};
@@ -97,7 +108,7 @@ advisorRouter.get('/advisor/analysis/:subject', async (req, res) => {
     });
 
     // Store in cache
-    _cache.set(subject, { result, timestamp: Date.now() });
+    _cache.set(cacheKey, { result, timestamp: Date.now() });
 
     return res.json(result);
   } catch (err) {

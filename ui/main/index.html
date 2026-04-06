@@ -7,6 +7,30 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
+    <!-- Auth screen — shown when not logged in -->
+    <div id="auth-screen" class="hidden">
+      <div class="auth-card">
+        <h1 class="auth-title">Discriminador</h1>
+        <div class="auth-tabs">
+          <button class="auth-tab active" data-tab="login">Iniciar sesión</button>
+          <button class="auth-tab" data-tab="register">Registrarse</button>
+        </div>
+        <form id="auth-form" autocomplete="on">
+          <div class="auth-field">
+            <label for="auth-username">Usuario</label>
+            <input type="text" id="auth-username" name="username" autocomplete="username" required placeholder="tu nombre de usuario">
+          </div>
+          <div class="auth-field">
+            <label for="auth-password">Contraseña</label>
+            <input type="password" id="auth-password" name="password" autocomplete="current-password" required placeholder="••••••••">
+          </div>
+          <p id="auth-error" class="auth-error hidden"></p>
+          <button type="submit" class="btn-primary auth-submit">Entrar</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="app-shell">
     <header class="app-header">
       <span class="app-logo">discriminador</span>
     </header>
@@ -17,6 +41,7 @@
       <button class="tab-btn" data-tab="evaluate">Evaluar</button>
       <button class="tab-btn" data-tab="explore">Explorar</button>
       <button class="tab-btn" data-tab="progress">Progreso</button>
+      <button id="logout-btn" class="btn-ghost logout-btn" title="Cerrar sesión">⏻ Salir</button>
     </nav>
 
     <main class="container">
@@ -361,8 +386,11 @@
 
     </main>
 
+    </div><!-- /.app-shell -->
+
     <script src="./math-palette.js"></script>
     <script src="./sql-editor.js"></script>
+    <script src="./auth.js"></script>
     <script src="./main.js"></script>
   </body>
 </html>

@@ -1,0 +1,27 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: discriminador
+      POSTGRES_USER: discriminador
+      POSTGRES_PASSWORD: discriminador
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U discriminador"]
+      interval: 5s
+      retries: 10
+
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env.docker
+    environment:
+      DATABASE_URL: postgres://discriminador:discriminador@db:5432/discriminador
+
+volumes:
+  pgdata:
