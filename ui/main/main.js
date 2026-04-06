@@ -1491,6 +1491,8 @@ function initStudyTab() {
   document.querySelector('#card-save-btn').addEventListener('click', saveNewCard);
   document.querySelector('#study-start-btn').addEventListener('click', startStudySession);
   document.querySelector('#study-exit-btn').addEventListener('click', exitStudySession);
+  document.querySelector('#study-edit-prompt-btn').addEventListener('click', toggleStudyPromptEdit);
+  document.querySelector('#study-clarify-prompt-btn').addEventListener('click', clarifyStudyPrompt);
 
   // Link to show overview/add-card from briefing
   document.querySelector('#briefing-overview-link').addEventListener('click', () => {
@@ -1735,6 +1737,22 @@ const studyState = {
   timerInterval: null
 };
 
+function getStudyPromptText(item) {
+  if (!item) return '';
+  if (item.type === 'micro') {
+    return item.data.session_question || item.data.question;
+  }
+  return item.data.session_prompt_text || item.data.prompt_text;
+}
+
+function setStudyPromptFeedback(message, type = 'info') {
+  const feedbackEl = document.querySelector('#study-prompt-feedback');
+  if (!feedbackEl) return;
+  feedbackEl.textContent = message || '';
+  feedbackEl.classList.toggle('hidden', !message);
+  feedbackEl.style.color = type === 'error' ? '#c00' : type === 'success' ? '#2f7d32' : '';
+}
+
 async function startStudySession() {
   const data = await getJson('/scheduler/session');
   const micros = (data.micro_cards ?? []).map((m) => ({ type: 'micro', data: m }));
@@ -1776,7 +1794,7 @@ function showStudyCard() {
   if (item.type === 'micro') {
     badge.textContent = `Micro-concepto: ${item.data.concept}`;
     badge.classList.remove('hidden');
-    promptEl.textContent = item.data.question;
+    promptEl.textContent = getStudyPromptText(item);
     // Show parent card as context so student knows what topic this stems from
     if (item.data.parent_prompt) {
       parentPromptEl.textContent = item.data.parent_prompt;
@@ -1790,8 +1808,14 @@ function showStudyCard() {
     const hasMicros = parseInt(item.data.active_micro_count) > 0;
     badge.textContent = hasMicros ? `⚠ Conceptos pendientes (${item.data.active_micro_count})` : '';
     if (hasMicros) badge.classList.remove('hidden');
-    promptEl.textContent = item.data.prompt_text;
+    promptEl.textContent = getStudyPromptText(item);
   }
+  setStudyPromptFeedback('');
+
+  const editPromptBtn = document.querySelector('#study-edit-prompt-btn');
+  const clarifyPromptBtn = document.querySelector('#study-clarify-prompt-btn');
+  if (editPromptBtn) editPromptBtn.textContent = '✏️ Editar';
+  if (clarifyPromptBtn) clarifyPromptBtn.disabled = false;
 
   // Reset answer + result blocks (refresh SQL layer to clear ghost text)
   const _studyInput = document.querySelector('#study-answer-input');
@@ -1912,6 +1936,73 @@ function showStudyCard() {
   }
 }
 
+function toggleStudyPromptEdit() {
+  const item = studyState.queue[studyState.index];
+  if (!item) return;
+
+  const promptEl = document.querySelector('#study-card-prompt');
+  const editBtn = document.querySelector('#study-edit-prompt-btn');
+  const isEditing = promptEl?.getAttribute('contenteditable') === 'true';
+  if (!promptEl || !editBtn) return;
+
+  if (!isEditing) {
+    promptEl.setAttribute('contenteditable', 'true');
+    promptEl.focus();
+    editBtn.textContent = '💾 Guardar edición';
+    setStudyPromptFeedback('Editá el texto de la consigna y guardá.', 'info');
+    return;
+  }
+
+  promptEl.removeAttribute('contenteditable');
+  const editedPrompt = (promptEl.textContent || '').trim();
+  if (editedPrompt.length < 10) {
+    setStudyPromptFeedback('La consigna editada debe tener al menos 10 caracteres.', 'error');
+    return;
+  }
+
+  if (item.type === 'micro') item.data.session_question = editedPrompt;
+  else item.data.session_prompt_text = editedPrompt;
+
+  promptEl.textContent = editedPrompt;
+  editBtn.textContent = '✏️ Editar';
+  setStudyPromptFeedback('Consigna actualizada para esta sesión.', 'success');
+}
+
+async function clarifyStudyPrompt() {
+  const item = studyState.queue[studyState.index];
+  if (!item) return;
+
+  const clarifyBtn = document.querySelector('#study-clarify-prompt-btn');
+  const promptEl = document.querySelector('#study-card-prompt');
+  const promptText = getStudyPromptText(item).trim();
+  if (!clarifyBtn || !promptEl || promptText.length < 10) return;
+
+  clarifyBtn.disabled = true;
+  const previousText = clarifyBtn.textContent;
+  clarifyBtn.textContent = 'Aclarando...';
+  setStudyPromptFeedback('Generando versión más clara...', 'info');
+
+  try {
+    const data = await postJson('/prompts/clarify', { prompt_text: promptText });
+    const clarifiedPrompt = (data.clarified_prompt || '').trim();
+    if (clarifiedPrompt.length < 10) throw new Error('No se pudo generar una versión clara de la consigna.');
+
+    if (item.type === 'micro') item.data.session_question = clarifiedPrompt;
+    else item.data.session_prompt_text = clarifiedPrompt;
+
+    promptEl.removeAttribute('contenteditable');
+    promptEl.textContent = clarifiedPrompt;
+    const editBtn = document.querySelector('#study-edit-prompt-btn');
+    if (editBtn) editBtn.textContent = '✏️ Editar';
+    setStudyPromptFeedback('Consigna aclarada con IA para esta sesión.', 'success');
+  } catch (err) {
+    setStudyPromptFeedback(`No se pudo aclarar: ${err.message}`, 'error');
+  } finally {
+    clarifyBtn.disabled = false;
+    clarifyBtn.textContent = previousText;
+  }
+}
+
 // Study-session SQL verify button
 const _studyVerifyBtn = document.querySelector('#study-verify-btn');
 if (_studyVerifyBtn) {
@@ -1947,11 +2038,11 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
   let prompt_text, expected_answer_text, subject;
 
   if (item.type === 'micro') {
-    prompt_text          = item.data.question;
+    prompt_text          = getStudyPromptText(item);
     expected_answer_text = item.data.expected_answer;
     subject              = item.data.parent_subject;
   } else {
-    prompt_text          = item.data.prompt_text;
+    prompt_text          = getStudyPromptText(item);
     expected_answer_text = item.data.expected_answer_text;
     subject              = item.data.subject;
   }

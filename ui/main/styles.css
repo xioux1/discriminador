@@ -537,6 +537,12 @@ textarea:focus, input[type="text"]:focus {
   line-height: 1.5;
   color: var(--text);
 }
+.study-card-prompt[contenteditable="true"] {
+  padding: 8px;
+  border: 1px dashed var(--primary);
+  border-radius: var(--radius-sm);
+  background: #fff;
+}
 
 .study-answer-actions {
   display: flex;
@@ -554,9 +560,12 @@ textarea:focus, input[type="text"]:focus {
 .study-eval-btn { margin-top: 10px; width: 100%; }
 
 .study-card-actions { display: flex; gap: 8px; margin-bottom: 6px; }
+.study-edit-prompt-btn,
+.study-clarify-prompt-btn { font-size: 0.78rem; padding: 2px 8px; }
 .study-flag-btn { font-size: 0.78rem; padding: 2px 8px; color: var(--text-muted); opacity: 0.6; }
 .study-flag-btn:hover { opacity: 1; color: #c0392b; }
 .study-mode-toggle { font-size: 0.78rem; padding: 2px 8px; }
+.study-prompt-feedback { margin: 0 0 10px; font-size: 0.82rem; color: var(--text-muted); }
 
 .study-result-block {
   border-top: 1px solid var(--border);
