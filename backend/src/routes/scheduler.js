@@ -10,6 +10,7 @@ const schedulerRouter = Router();
 schedulerRouter.post('/scheduler/cards', async (req, res) => {
   const { subject, prompt_text, expected_answer_text } = req.body || {};
   const userId = req.user.id;
+  const normalizedSubject = subject?.trim() || null;
 
   if (!prompt_text?.trim() || !expected_answer_text?.trim()) {
     return res.status(422).json({
@@ -19,11 +20,26 @@ schedulerRouter.post('/scheduler/cards', async (req, res) => {
   }
 
   try {
+    let releaseAt = null;
+    if (normalizedSubject) {
+      const configResult = await dbPool.query(
+        `SELECT daily_new_cards_limit
+         FROM subject_configs
+         WHERE subject = $1 AND user_id = $2
+         LIMIT 1`,
+        [normalizedSubject, userId]
+      );
+      const dailyLimit = Number(configResult.rows[0]?.daily_new_cards_limit);
+      if (Number.isFinite(dailyLimit) && dailyLimit > 0) {
+        releaseAt = await computeNewCardReleaseAt(userId, normalizedSubject, dailyLimit);
+      }
+    }
+
     const result = await dbPool.query(
-      `INSERT INTO cards (subject, prompt_text, expected_answer_text, user_id)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO cards (subject, prompt_text, expected_answer_text, user_id, next_review_at)
+       VALUES ($1, $2, $3, $4, COALESCE($5, now()))
        RETURNING *`,
-      [subject?.trim() || null, prompt_text.trim(), expected_answer_text.trim(), userId]
+      [normalizedSubject, prompt_text.trim(), expected_answer_text.trim(), userId, releaseAt]
     );
     return res.status(200).json(result.rows[0]);
   } catch (err) {
@@ -31,6 +47,37 @@ schedulerRouter.post('/scheduler/cards', async (req, res) => {
     return res.status(500).json({ error: 'server_error', message: err.message });
   }
 });
+
+
+async function computeNewCardReleaseAt(userId, subject, dailyLimit) {
+  const { rows } = await dbPool.query(
+    `SELECT (next_review_at AT TIME ZONE 'UTC')::date AS release_day,
+            COUNT(*)::int AS total
+       FROM cards
+      WHERE user_id = $1
+        AND subject = $2
+        AND archived_at IS NULL
+        AND review_count = 0
+        AND next_review_at::date >= current_date
+      GROUP BY 1`,
+    [userId, subject]
+  );
+
+  const byDay = new Map(rows.map((r) => [String(r.release_day).slice(0, 10), Number(r.total)]));
+  for (let offset = 0; offset < 3650; offset++) {
+    const slot = new Date();
+    slot.setUTCHours(0, 0, 0, 0);
+    slot.setUTCDate(slot.getUTCDate() + offset);
+    const key = slot.toISOString().slice(0, 10);
+    const used = byDay.get(key) || 0;
+    if (used < dailyLimit) {
+      if (offset === 0) return new Date();
+      return slot;
+    }
+  }
+
+  return null;
+}
 
 // ─── List all cards ───────────────────────────────────────────────────────────
 schedulerRouter.get('/scheduler/cards', async (req, res) => {

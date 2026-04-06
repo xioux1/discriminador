@@ -1802,8 +1802,13 @@ async function saveNewCard() {
   }
 
   try {
-    await postJson('/scheduler/cards', { subject, prompt_text: prompt, expected_answer_text: expected });
-    feedback.textContent = 'Tarjeta guardada.';
+    const createdCard = await postJson('/scheduler/cards', { subject, prompt_text: prompt, expected_answer_text: expected });
+    const nextReview = createdCard?.next_review_at ? new Date(createdCard.next_review_at) : null;
+    const now = new Date();
+    const releaseDay = nextReview ? nextReview.toDateString() : now.toDateString();
+    feedback.textContent = releaseDay !== now.toDateString()
+      ? `Tarjeta guardada. Se libera el ${nextReview.toLocaleDateString('es-AR')}.`
+      : 'Tarjeta guardada.';
     feedback.style.color = '#4a7';
     document.querySelector('#card-prompt').value = '';
     document.querySelector('#card-expected').value = '';
@@ -2604,9 +2609,12 @@ async function openCurriculumModal(subject) {
   try {
     const data = await getJson(`/curriculum/${encodeURIComponent(subject)}`);
     document.querySelector('#curriculum-syllabus').value = data.config?.syllabus_text || '';
+    document.querySelector('#curriculum-daily-new-limit').value = data.config?.daily_new_cards_limit ?? '';
     renderExamDatesList(data.exam_dates || [], subject);
     renderExamsList(data.exams || [], subject);
-  } catch (_e) {}
+  } catch (_e) {
+    document.querySelector('#curriculum-daily-new-limit').value = '';
+  }
 
   // Store current subject in modal
   document.querySelector('#curriculum-modal').dataset.subject = subject;
@@ -2623,11 +2631,23 @@ document.querySelector('.curriculum-modal-backdrop').addEventListener('click', (
 document.querySelector('#curriculum-save-btn').addEventListener('click', async () => {
   const subject = document.querySelector('#curriculum-modal').dataset.subject;
   const fb = document.querySelector('#curriculum-save-feedback');
+  const rawDailyLimit = document.querySelector('#curriculum-daily-new-limit').value.trim();
+  const parsedDailyLimit = rawDailyLimit === '' ? null : parseInt(rawDailyLimit, 10);
+
+  if (rawDailyLimit !== '' && (!Number.isFinite(parsedDailyLimit) || parsedDailyLimit < 0)) {
+    fb.textContent = 'El límite diario debe ser un entero mayor o igual a 0.';
+    fb.style.color = 'var(--fail-fg)';
+    return;
+  }
+
   try {
     await postJson(`/curriculum/${encodeURIComponent(subject)}`, {
-      syllabus_text: document.querySelector('#curriculum-syllabus').value
+      syllabus_text: document.querySelector('#curriculum-syllabus').value,
+      daily_new_cards_limit: parsedDailyLimit
     }, 'PUT');
-    fb.textContent = 'Guardado.';
+    fb.textContent = parsedDailyLimit === null
+      ? 'Guardado. Sin límite de nuevas por día.'
+      : `Guardado. Máximo ${parsedDailyLimit} nuevas por día.`;
     fb.style.color = 'var(--pass-fg)';
   } catch (err) {
     fb.textContent = `Error: ${err.message}`;
@@ -2697,7 +2717,9 @@ function renderExamDatesList(examDates, subject) {
       try {
         const data = await deleteJson(`/curriculum/${encodeURIComponent(subj)}/exam-dates/${btn.dataset.id}`);
         renderExamDatesList(data.exam_dates || [], subj);
-      } catch (_e) {}
+      } catch (_e) {
+    document.querySelector('#curriculum-daily-new-limit').value = '';
+  }
     });
   });
 }
@@ -2744,7 +2766,9 @@ function renderExamsList(exams, subject) {
         await deleteJson(`/curriculum/${encodeURIComponent(subj)}/exams/${btn.dataset.id}`);
         const data = await getJson(`/curriculum/${encodeURIComponent(subj)}`);
         renderExamsList(data.exams || [], subj);
-      } catch (_e) {}
+      } catch (_e) {
+    document.querySelector('#curriculum-daily-new-limit').value = '';
+  }
     });
   });
 }
