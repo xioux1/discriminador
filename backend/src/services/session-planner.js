@@ -1,7 +1,14 @@
 import Anthropic from '@anthropic-ai/sdk';
 
 const LLM_MODEL = 'claude-haiku-4-5';
-const DEFAULT_RESPONSE_TIME_MS = 45000;
+const DEFAULT_RESPONSE_TIME_MS = 45000; // 45s default if no history
+
+// Energy level parameters
+const ENERGY = {
+  tired:    { speedMultiplier: 1.4,  budgetMultiplier: 0.75 },
+  normal:   { speedMultiplier: 1.0,  budgetMultiplier: 1.0  },
+  focused:  { speedMultiplier: 0.85, budgetMultiplier: 1.1  },
+};
 
 let _client = null;
 function getClient() {
@@ -10,16 +17,18 @@ function getClient() {
 }
 
 /**
- * Plans an optimal study session using an LLM agent.
+ * Plans an optimal study session.
+ *
+ * Architecture: LLM handles prioritization only (no math).
+ * JS handles all time-budget arithmetic deterministically.
  *
  * @param {object} params
  * @param {number} params.availableMinutes
  * @param {string} params.energyLevel - 'tired' | 'normal' | 'focused'
- * @param {Array}  params.cards - overdue cards with metadata
- * @param {Array}  params.microCards - overdue micro-cards
- * @param {Array}  params.subjectConfigs - [{ subject, exam_date, exam_type }]
+ * @param {Array}  params.cards
+ * @param {Array}  params.microCards
+ * @param {Array}  params.subjectConfigs
  * @param {number|null} params.avgResponseTimeMs
- * @returns {Promise<object>} plan with planned, deferred, total_estimated_minutes, session_tip, warnings
  */
 export async function planSession({
   availableMinutes,
@@ -29,115 +38,161 @@ export async function planSession({
   subjectConfigs,
   avgResponseTimeMs
 }) {
-  const baseResponseMs = avgResponseTimeMs ?? DEFAULT_RESPONSE_TIME_MS;
+  const energy = ENERGY[energyLevel] ?? ENERGY.normal;
+  const baseMs  = avgResponseTimeMs ?? DEFAULT_RESPONSE_TIME_MS;
 
-  const userContent = buildUserMessage({
+  // Deterministic time per card (JS, not LLM)
+  const msPerCard    = Math.round(baseMs * energy.speedMultiplier);
+  const budgetMs     = availableMinutes * 60 * 1000 * energy.budgetMultiplier;
+
+  // Ask LLM only to prioritize — no math involved
+  const prioritized = await getPrioritizedOrder({
     availableMinutes,
     energyLevel,
     cards,
     microCards,
     subjectConfigs,
-    baseResponseMs
+    msPerCard,
   });
+
+  // JS greedily fills the time budget from the prioritized list
+  const allItems = buildItemMap(cards, microCards);
+  const planned  = [];
+  const deferred = [];
+  let accumulatedMs = 0;
+
+  for (const ref of prioritized) {
+    const item = allItems.get(`${ref.type}:${ref.id}`);
+    if (!item) continue;
+
+    if (accumulatedMs + msPerCard <= budgetMs) {
+      accumulatedMs += msPerCard;
+      planned.push({
+        type:         ref.type,
+        id:           ref.id,
+        subject:      item.subject || item.parent_subject,
+        estimated_ms: msPerCard,
+        reason:       ref.reason || '',
+      });
+    } else {
+      deferred.push({ type: ref.type, id: ref.id, subject: item.subject || item.parent_subject });
+    }
+  }
+
+  const totalEstimatedMinutes = parseFloat((accumulatedMs / 60000).toFixed(1));
+
+  return {
+    planned,
+    deferred,
+    total_estimated_minutes: totalEstimatedMinutes,
+    session_tip:  prioritized._tip  || '',
+    warnings:     prioritized._warnings || [],
+  };
+}
+
+/**
+ * Asks the LLM to return cards in priority order + tip + warnings.
+ * No arithmetic — purely ordering logic.
+ */
+async function getPrioritizedOrder({ availableMinutes, energyLevel, cards, microCards, subjectConfigs, msPerCard }) {
+  const userContent = buildUserMessage({ availableMinutes, energyLevel, cards, microCards, subjectConfigs, msPerCard });
 
   const response = await getClient().messages.create({
     model: LLM_MODEL,
-    max_tokens: 1000,
+    max_tokens: 1200,
     temperature: 0,
-    system: `Sos un tutor que organiza sesiones de estudio óptimas.
-Dado el tiempo disponible, el estado del estudiante y las tarjetas pendientes, armás un plan realista.
+    system: `Sos un tutor que organiza sesiones de estudio. Tu única tarea es ORDENAR las tarjetas por prioridad — no calculés cuántas entran ni tiempos, eso lo hace el sistema.
 
-Reglas:
-- Tiempo por tarjeta estimado: usa avg_response_time_ms como base. Si energyLevel='tired' multiplicá por 1.4. Si 'focused' multiplicá por 0.85.
-- Siempre incluí primero las micro-tarjetas (son remediales, alta prioridad).
-- Luego tarjetas con examen próximo (< 7 días) ordenadas por urgencia.
-- Luego tarjetas con active_micro_count > 0 (tienen conceptos pendientes).
-- Luego el resto por fecha de vencimiento.
-- Si no entran todas, cortá la lista y marcá las descartadas.
-- Si energyLevel='tired': máximo 60% del tiempo disponible en material nuevo.
-- Si energyLevel='focused': podés incluir hasta 110% del tiempo (el estudiante puede rendir más).
+Criterios de orden (de mayor a menor prioridad):
+1. Micro-tarjetas vencidas (remediales — siempre primero).
+2. Tarjetas con examen en ≤ 7 días, ordenadas por urgencia.
+3. Tarjetas con active_micro_count > 0 (tienen conceptos pendientes).
+4. Resto por fecha de vencimiento (más atrasadas primero).
+
+Si energyLevel='tired': preferí tarjetas con higher pass_count (más familiares) sobre tarjetas nuevas.
+Si energyLevel='focused': podés incluir tarjetas más desafiantes primero.
 
 Respondé ÚNICAMENTE con JSON válido:
 {
-  "planned": [
-    { "type": "micro"|"card", "id": <number>, "subject": "...", "estimated_ms": <number>, "reason": "..." },
+  "priority_order": [
+    { "type": "micro"|"card", "id": <number>, "reason": "<frase corta>" },
     ...
   ],
-  "deferred": [
-    { "type": "micro"|"card", "id": <number>, "subject": "..." },
-    ...
-  ],
-  "total_estimated_minutes": <number>,
-  "session_tip": "<consejo corto para esta sesión según el estado de ánimo>",
-  "warnings": ["<advertencia si hay examen muy próximo>", ...]
+  "session_tip": "<consejo corto según estado de ánimo, máx 15 palabras>",
+  "warnings": ["<advertencia si hay examen muy próximo>"]
 }`,
-    messages: [{
-      role: 'user',
-      content: userContent
-    }]
+    messages: [{ role: 'user', content: userContent }],
   });
 
-  const text = response.content.find((b) => b.type === 'text')?.text ?? '';
-
-  // Strip markdown code fences if present
+  const text     = response.content.find((b) => b.type === 'text')?.text ?? '';
   const jsonText = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
 
+  let parsed;
   try {
-    return JSON.parse(jsonText);
-  } catch (err) {
-    console.error('[session-planner] Failed to parse LLM response:', text);
-    throw new Error('El agente devolvió una respuesta inválida. Intentá de nuevo.');
+    parsed = JSON.parse(jsonText);
+  } catch (_e) {
+    // Fallback: micro-cards first, then cards by date — LLM failed gracefully
+    parsed = { priority_order: buildFallbackOrder({ cards, microCards }), session_tip: '', warnings: [] };
   }
+
+  const order = Array.isArray(parsed.priority_order) ? parsed.priority_order : buildFallbackOrder({ cards, microCards });
+  order._tip      = parsed.session_tip || '';
+  order._warnings = Array.isArray(parsed.warnings) ? parsed.warnings : [];
+  return order;
 }
 
-function buildUserMessage({ availableMinutes, energyLevel, cards, microCards, subjectConfigs, baseResponseMs }) {
+function buildFallbackOrder({ cards, microCards }) {
+  const order = [];
+  for (const m of microCards) order.push({ type: 'micro', id: m.id, reason: 'vencida' });
+  for (const c of cards)      order.push({ type: 'card',  id: c.id, reason: 'vencida' });
+  return order;
+}
+
+function buildItemMap(cards, microCards) {
+  const map = new Map();
+  for (const c of cards)  map.set(`card:${c.id}`,  c);
+  for (const m of microCards) map.set(`micro:${m.id}`, m);
+  return map;
+}
+
+function buildUserMessage({ availableMinutes, energyLevel, cards, microCards, subjectConfigs, msPerCard }) {
   const now = new Date();
-
-  // Build a lookup for subject configs
   const configBySubject = {};
-  for (const cfg of subjectConfigs) {
-    configBySubject[cfg.subject] = cfg;
-  }
+  for (const cfg of subjectConfigs) configBySubject[cfg.subject] = cfg;
 
-  // Compute days until exam for each subject
   function daysUntilExam(subject) {
     const cfg = configBySubject[subject];
     if (!cfg?.exam_date) return null;
-    const examDate = new Date(cfg.exam_date);
-    const diffMs = examDate - now;
-    return Math.ceil(diffMs / 86400000);
+    return Math.ceil((new Date(cfg.exam_date) - now) / 86400000);
   }
 
   const microSummary = microCards.map((m) => ({
-    id: m.id,
-    type: 'micro',
+    id: m.id, type: 'micro',
     concept: m.concept,
     parent_subject: m.parent_subject,
-    days_until_exam: daysUntilExam(m.parent_subject)
+    days_until_exam: daysUntilExam(m.parent_subject),
   }));
 
   const cardSummary = cards.map((c) => ({
-    id: c.id,
-    type: 'card',
+    id: c.id, type: 'card',
     subject: c.subject,
-    interval_days: c.interval_days,
     pass_count: c.pass_count,
     review_count: c.review_count,
     active_micro_count: parseInt(c.active_micro_count) || 0,
-    days_until_exam: daysUntilExam(c.subject)
+    days_until_exam: daysUntilExam(c.subject),
   }));
 
-  return `Planificá una sesión de estudio con los siguientes datos:
+  return `Ordenar por prioridad para una sesión de estudio:
 
 available_minutes: ${availableMinutes}
 energy_level: ${energyLevel}
-avg_response_time_ms: ${baseResponseMs}
+estimated_ms_per_card: ${msPerCard} (ya calculado por el sistema, no lo uses para contar)
 
-micro_cards pendientes (${microSummary.length}):
+micro_cards vencidas (${microSummary.length}):
 ${JSON.stringify(microSummary, null, 2)}
 
-cards pendientes (${cardSummary.length}):
+cards vencidas (${cardSummary.length}):
 ${JSON.stringify(cardSummary, null, 2)}
 
-Devolvé únicamente el JSON del plan.`;
+Devolvé únicamente el JSON con priority_order, session_tip y warnings.`;
 }
