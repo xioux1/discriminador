@@ -26,16 +26,44 @@
   var _inputHandler  = null;
   var _scrollHandler = null;
 
-  /* ── Tab key: insert 2 spaces ─────────────────────────────────────────────── */
+  /* ── Tab key: indent (single cursor = 2 spaces, selection = indent all lines) ─ */
   function onTab(e) {
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      var start = e.target.selectionStart;
-      var end   = e.target.selectionEnd;
-      e.target.value = e.target.value.slice(0, start) + '  ' + e.target.value.slice(end);
-      e.target.selectionStart = e.target.selectionEnd = start + 2;
-      e.target.dispatchEvent(new Event('input'));
+    if (e.key !== 'Tab') return;
+    e.preventDefault();
+
+    var ta    = e.target;
+    var start = ta.selectionStart;
+    var end   = ta.selectionEnd;
+    var val   = ta.value;
+
+    if (start === end) {
+      // No selection — insert 2 spaces at cursor
+      ta.value = val.slice(0, start) + '  ' + val.slice(end);
+      ta.selectionStart = ta.selectionEnd = start + 2;
+    } else {
+      // Multi-char selection — indent every line that overlaps the selection
+      var lineStart = val.lastIndexOf('\n', start - 1) + 1; // start of first selected line
+      var block     = val.slice(lineStart, end);
+      var shift     = e.shiftKey;
+
+      if (shift) {
+        // Shift+Tab: remove up to 2 leading spaces per line
+        var dedented = block.replace(/^(  |\t)/gm, '');
+        var removed  = block.length - dedented.length;
+        ta.value = val.slice(0, lineStart) + dedented + val.slice(end);
+        ta.selectionStart = Math.max(lineStart, start - Math.min(2, val.slice(lineStart, start).replace(/[^\n]/g, '').length || 2));
+        ta.selectionEnd   = lineStart + dedented.length;
+      } else {
+        // Tab: add 2 spaces at the start of every line
+        var indented = block.replace(/^/gm, '  ');
+        var added    = indented.length - block.length;
+        ta.value = val.slice(0, lineStart) + indented + val.slice(end);
+        ta.selectionStart = start + 2; // keep selection start on same line, shifted right
+        ta.selectionEnd   = lineStart + indented.length;
+      }
     }
+
+    ta.dispatchEvent(new Event('input'));
   }
 
   /* ── Line-number gutter ───────────────────────────────────────────────────── */
