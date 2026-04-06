@@ -244,6 +244,18 @@
               <p id="study-result-justification" class="study-result-justification"></p>
               <p id="study-result-missing" class="hidden" style="font-size:0.88rem;margin-top:4px"></p>
               <div id="study-result-expected" class="study-result-expected hidden"></div>
+              <div id="study-decision-block" class="study-result-micro hidden">
+                <strong>Firma de evaluación (obligatoria)</strong>
+                <div class="actions" style="margin-top:8px">
+                  <button type="button" data-study-action="accept">Aceptar sugerencia</button>
+                  <button type="button" data-study-action="correct-pass">Corregir a PASS</button>
+                  <button type="button" data-study-action="correct-fail">Corregir a FAIL</button>
+                  <button type="button" data-study-action="uncertain">Marcar duda</button>
+                </div>
+                <label for="study-correction-reason" style="display:block;margin-top:8px;font-size:0.82rem;color:var(--text-muted)">Motivo (obligatorio si corriges o marcas duda)</label>
+                <textarea id="study-correction-reason" rows="2"></textarea>
+                <p id="study-decision-feedback" class="feedback" style="margin-top:6px"></p>
+              </div>
               <div class="study-result-actions">
                 <button type="button" id="study-next-btn" class="btn-primary study-next-btn">Siguiente →</button>
                 <button type="button" id="study-variant-btn" class="btn-ghost study-variant-btn hidden">+ Guardar variante</button>
