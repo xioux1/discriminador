@@ -32,12 +32,29 @@ advisorRouter.get('/advisor/analysis/:subject', async (req, res) => {
   }
 
   try {
-    // 1. Read subject_configs
-    const { rows: configRows } = await dbPool.query(
-      'SELECT * FROM subject_configs WHERE subject = $1 AND user_id = $2',
-      [subject, userId]
-    );
-    const config = configRows[0] || null;
+    // 1. Read subject_configs + all upcoming exam dates for this subject
+    const [configResult, examDatesResult] = await Promise.all([
+      dbPool.query('SELECT * FROM subject_configs WHERE subject = $1 AND user_id = $2', [subject, userId]),
+      dbPool.query(
+        `SELECT * FROM subject_exam_dates
+         WHERE subject = $1 AND user_id = $2
+         ORDER BY exam_date ASC`,
+        [subject, userId]
+      )
+    ]);
+    const config = configResult.rows[0] || null;
+    // Merge upcoming exam dates into config so analyzeSubject can use them
+    if (config) {
+      config.exam_dates = examDatesResult.rows;
+      // Next upcoming exam (for backward compat fields)
+      const next = examDatesResult.rows.find(e => new Date(e.exam_date) >= new Date());
+      if (next) {
+        config.exam_date  = next.exam_date;
+        config.exam_type  = next.exam_type;
+        config.exam_label = next.label;
+        config.scope_pct  = next.scope_pct;
+      }
+    }
 
     if (!config || !config.syllabus_text || !config.syllabus_text.trim()) {
       return res.status(200).json({

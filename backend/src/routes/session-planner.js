@@ -47,6 +47,7 @@ sessionPlannerRouter.post('/session/plan', async (req, res) => {
        WHERE mc.status = 'active'
          AND mc.next_review_at <= now()
          AND mc.user_id = $1
+         AND mc.flagged = FALSE
        ORDER BY mc.next_review_at ASC
        LIMIT 30`,
       [userId]
@@ -62,6 +63,7 @@ sessionPlannerRouter.post('/session/plan', async (req, res) => {
        LEFT JOIN micro_cards mc ON mc.parent_card_id = c.id
        WHERE c.next_review_at <= now()
          AND c.user_id = $1
+         AND c.flagged = FALSE
        GROUP BY c.id
        ORDER BY c.next_review_at ASC
        LIMIT 30`,
@@ -79,13 +81,35 @@ sessionPlannerRouter.post('/session/plan', async (req, res) => {
     let subjectConfigs = [];
     if (subjects.size > 0) {
       const subjectList = Array.from(subjects);
-      const cfgResult = await dbPool.query(
-        `SELECT subject, exam_date, exam_type
-         FROM subject_configs
-         WHERE subject = ANY($1::text[])`,
-        [subjectList]
+
+      // Prefer subject_exam_dates (next upcoming per subject) over legacy subject_configs
+      const examDatesResult = await dbPool.query(
+        `SELECT DISTINCT ON (subject)
+                subject, exam_date, exam_type, scope_pct, label
+         FROM subject_exam_dates
+         WHERE subject = ANY($1::text[])
+           AND user_id = $2
+           AND exam_date >= CURRENT_DATE
+         ORDER BY subject, exam_date ASC`,
+        [subjectList, userId]
       );
-      subjectConfigs = cfgResult.rows;
+
+      // For subjects not in new table, fall back to legacy subject_configs
+      const coveredSubjects = new Set(examDatesResult.rows.map(r => r.subject));
+      const legacySubjects  = subjectList.filter(s => !coveredSubjects.has(s));
+
+      let legacyRows = [];
+      if (legacySubjects.length > 0) {
+        const cfgResult = await dbPool.query(
+          `SELECT subject, exam_date, exam_type, 50 AS scope_pct
+           FROM subject_configs
+           WHERE subject = ANY($1::text[])`,
+          [legacySubjects]
+        );
+        legacyRows = cfgResult.rows;
+      }
+
+      subjectConfigs = [...examDatesResult.rows, ...legacyRows];
     }
 
     // 4. Calculate avg_response_time_ms
