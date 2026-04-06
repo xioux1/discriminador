@@ -20,6 +20,8 @@ Reglas:
 - No inventes tablas, campos ni requisitos nuevos.
 - Corregí redacción ambigua y separá requisitos en lista cuando ayude.
 - Mantené el idioma original.
+- No uses LaTeX, Markdown ni símbolos de formato (por ejemplo $$, \\, \`).
+- Si hay fórmulas, escribilas en texto plano legible.
 - Devolvé SOLO el texto final, sin prefacios.`,
     messages: [{
       role: 'user',
