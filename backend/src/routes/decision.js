@@ -363,36 +363,39 @@ async function syncSchedulerCard(pool, { prompt_text, expected_answer_text, subj
        WHERE parent_card_id = $1 AND status = 'active'`,
       [card.id]
     );
-  } else {
-    // Fetch concept gaps stored at evaluation time
-    const { rows: gaps } = await pool.query(
-      'SELECT concept FROM concept_gaps WHERE evaluation_item_id = $1',
-      [evaluation_item_id]
+  }
+
+  // Fetch concept gaps stored at evaluation time.
+  const { rows: gaps } = await pool.query(
+    'SELECT concept FROM concept_gaps WHERE evaluation_item_id = $1',
+    [evaluation_item_id]
+  );
+  const targetGaps = final_grade === 'pass' ? gaps.slice(0, 1) : gaps;
+
+  for (const { concept } of targetGaps) {
+    if (!concept) continue;
+
+    const already = await pool.query(
+      `SELECT id FROM micro_cards WHERE parent_card_id = $1 AND concept = $2 AND status = 'active'`,
+      [card.id, concept]
     );
+    if (already.rows.length) continue;
 
-    for (const { concept } of gaps) {
-      const already = await pool.query(
-        `SELECT id FROM micro_cards WHERE parent_card_id = $1 AND concept = $2 AND status = 'active'`,
-        [card.id, concept]
+    try {
+      const micro = await generateMicroCard({
+        prompt_text: card.prompt_text,
+        expected_answer_text: card.expected_answer_text,
+        subject: card.subject,
+        concept
+      });
+      await pool.query(
+        `INSERT INTO micro_cards (parent_card_id, concept, question, expected_answer)
+         VALUES ($1, $2, $3, $4)`,
+        [card.id, concept, micro.question, micro.expected_answer]
       );
-      if (already.rows.length) continue;
-
-      try {
-        const micro = await generateMicroCard({
-          prompt_text: card.prompt_text,
-          expected_answer_text: card.expected_answer_text,
-          subject: card.subject,
-          concept
-        });
-        await pool.query(
-          `INSERT INTO micro_cards (parent_card_id, concept, question, expected_answer)
-           VALUES ($1, $2, $3, $4)`,
-          [card.id, concept, micro.question, micro.expected_answer]
-        );
-        console.info(`[scheduler sync] micro-card created for concept "${concept}" (card ${card.id})`);
-      } catch (e) {
-        console.warn(`[scheduler sync] micro-card gen failed for "${concept}":`, e.message);
-      }
+      console.info(`[scheduler sync] micro-card created for concept "${concept}" (card ${card.id})`);
+    } catch (e) {
+      console.warn(`[scheduler sync] micro-card gen failed for "${concept}":`, e.message);
     }
   }
 }
