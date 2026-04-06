@@ -472,7 +472,6 @@ function setEvalSqlCompilerVisible(visible) {
 }
 
 function applyEditorMode(mode, subject) {
-  const isSql = mode === 'sql' || (mode !== 'math' && SqlEditor.matchesSubject(subject || ''));
   if (mode === 'math') {
     MathPalette.show();
     SqlEditor.deactivate();
@@ -482,15 +481,10 @@ function applyEditorMode(mode, subject) {
     SqlEditor.activate(_evalAnswerTextarea);
     setEvalSqlCompilerVisible(true);
   } else {
-    // Auto-detect from subject name
+    // No auto-detection — plain text unless explicitly set
     MathPalette.updateSubject(subject || '');
-    if (SqlEditor.matchesSubject(subject || '')) {
-      SqlEditor.activate(_evalAnswerTextarea);
-      setEvalSqlCompilerVisible(true);
-    } else {
-      SqlEditor.deactivate();
-      setEvalSqlCompilerVisible(false);
-    }
+    SqlEditor.deactivate();
+    setEvalSqlCompilerVisible(false);
   }
 }
 
@@ -1707,38 +1701,34 @@ function showStudyCard() {
   const subject = item.type === 'micro' ? item.data.parent_subject : item.data.subject;
   document.querySelector('#study-dictation-btn').dataset.subject = subject || '';
 
-  // Math Palette + SQL Editor — use saved mode for this subject, fallback to auto-detect
+  // Math Palette + SQL Editor — use saved mode, explicit only (no auto-detect)
+  // Micro-cards are always plain text regardless of subject mode
   const studyAnswerInput = document.querySelector('#study-answer-input');
   MathPalette.setActiveTextarea(studyAnswerInput);
-  const savedMode = getSubjectMode(subject);
-  let studySqlMode = false;
-  if (savedMode === 'math') {
+  const savedMode   = getSubjectMode(subject);
+  const isMicro     = item.type === 'micro';
+  const studySqlMode = !isMicro && savedMode === 'sql';
+
+  if (!isMicro && savedMode === 'math') {
     MathPalette.show();
     SqlEditor.deactivate();
-  } else if (savedMode === 'sql') {
+  } else if (studySqlMode) {
     MathPalette.hide();
     SqlEditor.activate(studyAnswerInput);
-    studySqlMode = true;
   } else {
     MathPalette.updateSubject(subject || '');
-    if (SqlEditor.matchesSubject(subject || '')) {
-      SqlEditor.activate(studyAnswerInput);
-      studySqlMode = true;
-    } else {
-      SqlEditor.deactivate();
-    }
+    SqlEditor.deactivate();
   }
 
-  // Show/hide SQL compiler panel and gate eval button
+  // Show SQL compiler panel (optional, never blocks eval button)
   if (studyCompilerPanel) {
     if (studySqlMode) {
       studyCompilerPanel.classList.remove('hidden');
-      studyEvalBtn.disabled = true; // require verification first
     } else {
       studyCompilerPanel.classList.add('hidden');
-      studyEvalBtn.disabled = false;
     }
   }
+  studyEvalBtn.disabled = false; // verification is always optional
 }
 
 // Study-session SQL verify button
@@ -1750,9 +1740,9 @@ if (_studyVerifyBtn) {
     const out = document.querySelector('#study-compiler-output');
     const evalBtn = document.querySelector('#study-eval-btn');
     _studyVerifyBtn.disabled = true;
-    const valid = await verifySql(sql, out);
+    await verifySql(sql, out);
     _studyVerifyBtn.disabled = false;
-    if (valid) evalBtn.disabled = false;
+    // eval button is never blocked — verification is informational only
   });
 }
 

@@ -4,7 +4,10 @@
 (function () {
   'use strict';
 
-  var SQL_SUBJECT_RE = /sql|pl[\s\/\-]?sql|base\s+de\s+datos|bd|database|query|labo\s*[0-9]/i;
+  // matchesSubject is no longer used for auto-detection.
+  // SQL mode is only activated when the user explicitly selects it in the mode selector.
+  // Kept as a no-op for API compatibility.
+  var SQL_SUBJECT_RE = /(?!)/; // never matches
 
   var CHECK_CLAUSES = [
     { name: 'SELECT',   re: /\bSELECT\b/i },
