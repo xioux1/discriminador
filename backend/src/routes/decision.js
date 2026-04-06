@@ -316,7 +316,7 @@ decisionRouter.post('/decision', async (req, res) => {
 async function syncSchedulerCard(pool, { prompt_text, expected_answer_text, subject, final_grade, evaluation_item_id }) {
   // Find or create the card
   const existing = await pool.query(
-    'SELECT * FROM cards WHERE prompt_text = $1 LIMIT 1',
+    'SELECT * FROM cards WHERE prompt_text = $1 AND archived_at IS NULL LIMIT 1',
     [prompt_text]
   );
 
