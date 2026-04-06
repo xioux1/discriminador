@@ -2231,14 +2231,7 @@ async function archiveCurrentStudyCard(reason) {
     throw new Error('Indicá un motivo de al menos 5 caracteres para archivar.');
   }
 
-  await fetchJson(`/cards/${currentItem.data.id}/archive`, {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(Auth.getToken() ? { Authorization: `Bearer ${Auth.getToken()}` } : {})
-    },
-    body: JSON.stringify({ reason })
-  });
+  await postJson(`/cards/${currentItem.data.id}/archive`, { reason }, 'PATCH');
 }
 
 const studyDecisionBlock = document.querySelector('#study-decision-block');
