@@ -1,5 +1,6 @@
 const EVALUATE_ENDPOINT = '/evaluate';
 const DECISION_ENDPOINT = '/decision';
+let pendingStudySubject = null;
 
 // ─── Auth gate ────────────────────────────────────────────────────────────────
 
@@ -77,6 +78,12 @@ if (!Auth.isLoggedIn()) {
       tabs.forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
       const tab = btn.dataset.tab;
+      if (tab === 'study' && btn.dataset.subjectFromDashboard !== undefined) {
+        pendingStudySubject = btn.dataset.subjectFromDashboard || '';
+        delete btn.dataset.subjectFromDashboard;
+      } else if (tab === 'study') {
+        pendingStudySubject = null;
+      }
       showTab(tab);
 
       if (tab === 'explore' && !loaded.explore) {
@@ -85,6 +92,9 @@ if (!Auth.isLoggedIn()) {
         loaded.browser = true; initBrowserTab();
       } else if (tab === 'study' && !loaded.study) {
         loaded.study = true; initStudyTab();
+        applyStudySubjectFilter(pendingStudySubject);
+      } else if (tab === 'study') {
+        applyStudySubjectFilter(pendingStudySubject);
       } else if (tab === 'dashboard' && !loaded.dashboard) {
         loaded.dashboard = true; loadDashboard();
       } else if (tab === 'progress' && !loaded.progress) {
@@ -459,7 +469,9 @@ async function loadDashboard() {
 
     list.addEventListener('click', (e) => {
       if (e.target.classList.contains('deck-study-btn')) {
-        document.querySelector('[data-tab="study"]').click();
+        const studyTabBtn = document.querySelector('[data-tab="study"]');
+        studyTabBtn.dataset.subjectFromDashboard = e.target.dataset.subject || '';
+        studyTabBtn.click();
       }
       if (e.target.classList.contains('deck-config-btn')) {
         openCurriculumModal(e.target.dataset.subject);
@@ -1721,10 +1733,30 @@ resultContent.addEventListener('click', async (event) => {
 const briefingState = {
   selectedTime:     null,   // number of minutes
   selectedEnergy:   null,   // 'tired'|'normal'|'focused'
+  selectedSubject:  null,   // null | specific subject filter
   plan:             null,   // response from server
   fullCards:        [],     // full cards from server
   fullMicroCards:   []      // full micro_cards from server
 };
+
+function normalizeStudySubjectFilter(subject) {
+  const normalized = typeof subject === 'string' ? subject.trim() : '';
+  if (!normalized || normalized === '(sin materia)') return null;
+  return normalized;
+}
+
+function applyStudySubjectFilter(subject) {
+  briefingState.selectedSubject = normalizeStudySubjectFilter(subject);
+  const labelEl = document.querySelector('#study-subject-filter-label');
+  if (!labelEl) return;
+  if (briefingState.selectedSubject) {
+    labelEl.textContent = `Sesión enfocada en: ${briefingState.selectedSubject}`;
+    labelEl.classList.remove('hidden');
+  } else {
+    labelEl.textContent = '';
+    labelEl.classList.add('hidden');
+  }
+}
 
 function initStudyTab() {
   // Show briefing first, hide overview
@@ -1830,7 +1862,8 @@ async function fetchSessionPlan() {
   try {
     const data = await postJson('/session/plan', {
       available_minutes: briefingState.selectedTime,
-      energy_level:      briefingState.selectedEnergy
+      energy_level:      briefingState.selectedEnergy,
+      ...(briefingState.selectedSubject ? { subject: briefingState.selectedSubject } : {})
     });
 
     briefingState.plan           = data.plan;
@@ -1931,7 +1964,10 @@ async function loadStudyOverview() {
   actions.classList.add('hidden');
 
   try {
-    const data = await getJson('/scheduler/session');
+    const subjectQuery = briefingState.selectedSubject
+      ? `?subject=${encodeURIComponent(briefingState.selectedSubject)}`
+      : '';
+    const data = await getJson(`/scheduler/session${subjectQuery}`);
     const microCount = data.micro_cards?.length ?? 0;
     const cardCount  = data.cards?.length ?? 0;
     const total      = microCount + cardCount;
@@ -2015,7 +2051,10 @@ function setStudyPromptFeedback(message, type = 'info') {
 }
 
 async function startStudySession() {
-  const data = await getJson('/scheduler/session');
+  const subjectQuery = briefingState.selectedSubject
+    ? `?subject=${encodeURIComponent(briefingState.selectedSubject)}`
+    : '';
+  const data = await getJson(`/scheduler/session${subjectQuery}`);
   const micros = (data.micro_cards ?? []).map((m) => ({ type: 'micro', data: m }));
   const cards  = (data.cards ?? []).map((c) => ({ type: 'card', data: c }));
 

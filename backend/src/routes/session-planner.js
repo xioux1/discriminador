@@ -7,6 +7,8 @@ const sessionPlannerRouter = Router();
 // POST /session/plan
 sessionPlannerRouter.post('/session/plan', async (req, res) => {
   const { available_minutes, energy_level } = req.body || {};
+  const normalizedSubject = typeof req.body?.subject === 'string' ? req.body.subject.trim() : '';
+  const subjectFilter = normalizedSubject || null;
 
   // Validate available_minutes
   if (
@@ -35,6 +37,10 @@ sessionPlannerRouter.post('/session/plan', async (req, res) => {
 
   try {
     // 1. Fetch overdue micro-cards
+    const microParams = [userId];
+    if (subjectFilter) microParams.push(subjectFilter);
+    const microSubjectSql = subjectFilter ? `AND c.subject = $${microParams.length}` : '';
+
     const microResult = await dbPool.query(
       `SELECT mc.id, mc.concept, mc.parent_card_id, mc.question, mc.expected_answer,
               mc.interval_days, mc.ease_factor, mc.next_review_at, mc.review_count,
@@ -48,12 +54,17 @@ sessionPlannerRouter.post('/session/plan', async (req, res) => {
          AND mc.next_review_at <= now()
          AND mc.user_id = $1
          AND mc.flagged = FALSE
+         ${microSubjectSql}
        ORDER BY mc.next_review_at ASC
        LIMIT 30`,
-      [userId]
+      microParams
     );
 
     // 2. Fetch overdue cards
+    const cardsParams = [userId];
+    if (subjectFilter) cardsParams.push(subjectFilter);
+    const cardsSubjectSql = subjectFilter ? `AND c.subject = $${cardsParams.length}` : '';
+
     const cardsResult = await dbPool.query(
       `SELECT c.id, c.subject, c.prompt_text, c.expected_answer_text,
               c.interval_days, c.ease_factor, c.next_review_at,
@@ -64,10 +75,11 @@ sessionPlannerRouter.post('/session/plan', async (req, res) => {
        WHERE c.next_review_at <= now()
          AND c.user_id = $1
          AND c.flagged = FALSE
+         ${cardsSubjectSql}
        GROUP BY c.id
        ORDER BY c.next_review_at ASC
        LIMIT 30`,
-      [userId]
+      cardsParams
     );
 
     const cards = cardsResult.rows;
