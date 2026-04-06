@@ -1222,3 +1222,111 @@ textarea:focus, input[type="text"]:focus {
 .auth-error.hidden { display: none; }
 .auth-submit { width: 100%; margin-top: 8px; padding: 12px; font-size: 1rem; }
 .logout-btn { font-size: 0.8rem; padding: 4px 10px; margin-left: auto; }
+
+/* ─── Minimal monochrome console theme overrides ───────────────────────────── */
+:root {
+  --primary: #000;
+  --primary-dark: #000;
+  --primary-light: #fff;
+  --pass-bg: #fff;
+  --pass-fg: #000;
+  --fail-bg: #fff;
+  --fail-fg: #000;
+  --review-bg: #fff;
+  --review-fg: #000;
+  --bg: #fff;
+  --surface: #fff;
+  --border: #000;
+  --shadow: none;
+  --shadow-md: none;
+  --text: #000;
+  --text-muted: #000;
+  --text-light: #000;
+  --font: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --radius: 0;
+  --radius-sm: 0;
+  --radius-lg: 0;
+}
+
+body { letter-spacing: 0.01em; }
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.tab-nav {
+  justify-content: center;
+  border-top: 1px solid var(--border);
+}
+.container {
+  max-width: 980px;
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  padding-top: 28px;
+}
+#tab-dashboard,
+#tab-study,
+#tab-evaluate,
+#tab-explore,
+#tab-progress {
+  width: 100%;
+  max-width: 860px;
+}
+
+.btn-primary,
+.btn-secondary,
+.btn-ghost,
+.actions button {
+  background: #fff;
+  color: #000;
+  border: 1px solid #000;
+  font-weight: 600;
+}
+.btn-primary:hover,
+.btn-secondary:hover,
+.btn-ghost:hover,
+.actions button:hover,
+.tab-btn:hover,
+.tab-btn.active {
+  background: #000;
+  color: #fff;
+  border-color: #000;
+}
+
+.subjects-panel {
+  margin: 0 auto;
+  max-width: 760px;
+}
+.subjects-panel-title {
+  margin-bottom: 14px;
+  text-align: center;
+  text-transform: uppercase;
+  font-size: 0.95rem;
+}
+.subjects-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+}
+.subjects-list-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.subjects-list-item:last-child { border-bottom: none; }
+.subjects-list-main { min-width: 0; }
+.subjects-list-name { font-weight: 700; margin-bottom: 4px; }
+.subjects-list-meta { font-size: 0.8rem; }
+.subjects-list-actions { display: flex; gap: 8px; }
+
+@media (max-width: 720px) {
+  .subjects-list-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

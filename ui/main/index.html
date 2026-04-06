@@ -31,17 +31,13 @@
     </div>
 
     <div class="app-shell">
-    <header class="app-header">
-      <span class="app-logo">discriminador</span>
-    </header>
-
-    <nav class="tab-nav" id="main-nav">
+        <nav class="tab-nav" id="main-nav">
       <button class="tab-btn active" data-tab="dashboard">Inicio</button>
       <button class="tab-btn" data-tab="study">Estudiar</button>
       <button class="tab-btn" data-tab="evaluate">Evaluar</button>
       <button class="tab-btn" data-tab="explore">Explorar</button>
       <button class="tab-btn" data-tab="progress">Progreso</button>
-      <button id="logout-btn" class="btn-ghost logout-btn" title="Cerrar sesión">⏻ Salir</button>
+      <button id="logout-btn" class="btn-ghost logout-btn" title="Cerrar sesión">Salir</button>
     </nav>
 
     <main class="container">
@@ -57,7 +53,7 @@
           <div class="curriculum-modal-box">
             <div class="curriculum-modal-header">
               <h3 id="curriculum-modal-title">Configurar materia</h3>
-              <button type="button" id="curriculum-modal-close" class="btn-ghost">✕</button>
+              <button type="button" id="curriculum-modal-close" class="btn-ghost">Cerrar</button>
             </div>
             <div class="curriculum-modal-body">
 
@@ -132,9 +128,9 @@
           <div class="briefing-row" style="margin-top:16px">
             <label class="briefing-label">¿Cómo estás?</label>
             <div class="briefing-options" id="briefing-energy-options">
-              <button type="button" class="briefing-opt" data-value="tired">😴 Cansado</button>
-              <button type="button" class="briefing-opt" data-value="normal">😐 Normal</button>
-              <button type="button" class="briefing-opt" data-value="focused">⚡ Concentrado</button>
+              <button type="button" class="briefing-opt" data-value="tired">Cansado</button>
+              <button type="button" class="briefing-opt" data-value="normal">Normal</button>
+              <button type="button" class="briefing-opt" data-value="focused">Concentrado</button>
             </div>
           </div>
 
@@ -146,7 +142,7 @@
 
           <div style="margin-top:20px;display:flex;gap:10px;align-items:center">
             <button type="button" id="briefing-plan-btn" class="btn-secondary" disabled>Planificar sesión</button>
-            <button type="button" id="briefing-start-btn" class="btn-primary hidden">Iniciar sesión →</button>
+            <button type="button" id="briefing-start-btn" class="btn-primary hidden">Iniciar sesión</button>
             <span id="briefing-loading" class="hidden" style="color:var(--text-muted);font-size:0.9rem">Armando plan...</span>
           </div>
 
@@ -164,7 +160,7 @@
           <div class="study-overview-actions hidden" id="study-overview-actions">
             <button type="button" id="study-start-btn" class="btn-primary">Iniciar sesión</button>
             <button type="button" id="study-add-card-btn" class="btn-secondary">+ Agregar tarjeta</button>
-            <button type="button" id="study-agenda-btn" class="btn-secondary">📅 Agenda</button>
+            <button type="button" id="study-agenda-btn" class="btn-secondary">Agenda</button>
           </div>
         </div>
 
@@ -197,7 +193,7 @@
         <!-- Active session (full-screen overlay) -->
         <div id="study-session" class="hidden study-session-overlay">
           <div class="study-session-header">
-            <button type="button" id="study-exit-btn" class="btn-ghost">✕ Salir</button>
+            <button type="button" id="study-exit-btn" class="btn-ghost">Cerrar sesión</button>
             <div id="study-progress-bar" class="study-progress-bar">
               <div id="study-progress-fill" class="study-progress-fill"></div>
             </div>
@@ -212,9 +208,9 @@
             </div>
             <p id="study-card-prompt" class="study-card-prompt"></p>
             <div id="study-card-actions" class="study-card-actions">
-              <button type="button" id="study-edit-prompt-btn" class="btn-ghost study-edit-prompt-btn">✏️ Editar</button>
-              <button type="button" id="study-clarify-prompt-btn" class="btn-ghost study-clarify-prompt-btn">✨ Aclarar con IA</button>
-              <button type="button" id="study-flag-btn" class="btn-ghost study-flag-btn" title="Reportar tarjeta como duplicada o con error" hidden>⚠ Reportar</button>
+              <button type="button" id="study-edit-prompt-btn" class="btn-ghost study-edit-prompt-btn">Editar</button>
+              <button type="button" id="study-clarify-prompt-btn" class="btn-ghost study-clarify-prompt-btn">Aclarar con IA</button>
+              <button type="button" id="study-flag-btn" class="btn-ghost study-flag-btn" title="Reportar tarjeta como duplicada o con error" hidden>Reportar</button>
             </div>
             <p id="study-prompt-feedback" class="study-prompt-feedback hidden"></p>
 
@@ -224,13 +220,13 @@
                 <div class="study-answer-actions">
                   <span id="study-timer" class="study-timer">0s</span>
                   <button type="button" id="study-mode-toggle" class="btn-ghost study-mode-toggle" title="Cambiar modo de entrada" hidden></button>
-                  <button type="button" id="study-dictation-btn" class="dictation-btn" hidden>🎤 Dictar</button>
+                  <button type="button" id="study-dictation-btn" class="dictation-btn" hidden>Dictar</button>
                 </div>
               </div>
               <textarea id="study-answer-input" rows="5"></textarea>
               <!-- SQL compiler — shown only in SQL mode -->
               <div id="study-sql-compiler" class="sql-compiler hidden">
-                <button type="button" id="study-verify-btn" class="btn-secondary sql-verify-btn">🔍 Verificar SQL</button>
+                <button type="button" id="study-verify-btn" class="btn-secondary sql-verify-btn">Verificar SQL</button>
                 <div id="study-compiler-output" class="sql-compiler-output hidden"></div>
               </div>
               <button type="button" id="study-eval-btn" class="btn-primary study-eval-btn">Evaluar respuesta</button>
@@ -257,7 +253,7 @@
                 <p id="study-decision-feedback" class="feedback" style="margin-top:6px"></p>
               </div>
               <div class="study-result-actions">
-                <button type="button" id="study-next-btn" class="btn-primary study-next-btn">Siguiente →</button>
+                <button type="button" id="study-next-btn" class="btn-primary study-next-btn">Siguiente</button>
                 <button type="button" id="study-variant-btn" class="btn-ghost study-variant-btn hidden">+ Guardar variante</button>
               </div>
               <p id="study-variant-feedback" class="hidden" style="font-size:0.82rem;margin-top:6px"></p>
@@ -286,12 +282,12 @@
 
             <div class="field-header">
               <label for="user_answer_text">Respuesta</label>
-              <button type="button" id="dictation-btn" class="dictation-btn" hidden>🎤 Dictar</button>
+              <button type="button" id="dictation-btn" class="dictation-btn" hidden>Dictar</button>
             </div>
             <textarea id="user_answer_text" name="user_answer_text" rows="4" required></textarea>
             <!-- SQL compiler — shown only in SQL mode -->
             <div id="eval-sql-compiler" class="sql-compiler hidden">
-              <button type="button" id="eval-verify-btn" class="btn-secondary sql-verify-btn">🔍 Verificar SQL</button>
+              <button type="button" id="eval-verify-btn" class="btn-secondary sql-verify-btn">Verificar SQL</button>
               <div id="eval-compiler-output" class="sql-compiler-output hidden"></div>
             </div>
             <p class="field-error" data-error-for="user_answer_text"></p>
