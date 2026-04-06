@@ -244,23 +244,26 @@ async function loadDashboard() {
       return;
     }
 
-    // Build due count per subject from session
-    const dueBySubject = {};
+    // Build pending cards and active micro-consignas per subject from session
+    const pendingCardsBySubject = {};
+    const activeMicrosBySubject = {};
     for (const card of session.cards ?? []) {
       const s = card.subject || '(sin materia)';
-      dueBySubject[s] = (dueBySubject[s] || 0) + 1;
+      pendingCardsBySubject[s] = (pendingCardsBySubject[s] || 0) + 1;
     }
     for (const mc of session.micro_cards ?? []) {
       const s = mc.parent_subject || '(sin materia)';
-      dueBySubject[s] = (dueBySubject[s] || 0) + 1;
+      activeMicrosBySubject[s] = (activeMicrosBySubject[s] || 0) + 1;
     }
-    const totalDue = Object.values(dueBySubject).reduce((a, b) => a + b, 0);
+    const totalPendingCards = Object.values(pendingCardsBySubject).reduce((a, b) => a + b, 0);
+    const totalActiveMicros = Object.values(activeMicrosBySubject).reduce((a, b) => a + b, 0);
+    const totalDue = totalPendingCards + totalActiveMicros;
 
     if (totalDue > 0) {
       const banner = document.createElement('div');
       banner.className = 'card';
       banner.style.cssText = 'background:var(--primary-light,#e8f0fe);margin-bottom:12px';
-      banner.innerHTML = `<strong>${totalDue}</strong> tarjeta${totalDue !== 1 ? 's' : ''} para revisar hoy.`;
+      banner.innerHTML = `<strong>${totalDue}</strong> pendiente${totalDue !== 1 ? 's' : ''} hoy (<strong>${totalPendingCards}</strong> tarjeta${totalPendingCards !== 1 ? 's' : ''} principal${totalPendingCards !== 1 ? 'es' : ''} + <strong>${totalActiveMicros}</strong> microconsigna${totalActiveMicros !== 1 ? 's' : ''}).`;
       content.appendChild(banner);
     }
 
@@ -272,15 +275,15 @@ async function loadDashboard() {
     list.className = 'subjects-list';
 
     for (const subj of subjects) {
-      const passRatePct = Math.round(subj.pass_rate * 100);
-      const dueCount = dueBySubject[subj.subject] || 0;
+      const pendingMainCards = pendingCardsBySubject[subj.subject] || 0;
+      const activeMicros = activeMicrosBySubject[subj.subject] || 0;
 
       const row = document.createElement('li');
       row.className = 'subjects-list-item';
       row.innerHTML = `
         <div class="subjects-list-main">
           <div class="subjects-list-name">${subj.subject}</div>
-          <div class="subjects-list-meta">pendientes: ${dueCount} · ${subj.total_questions} pregunta${subj.total_questions !== 1 ? 's' : ''} · ${passRatePct}% PASS</div>
+          <div class="subjects-list-meta">Tarjetas principales pendientes: ${pendingMainCards} · Microconsignas activas: ${activeMicros}</div>
         </div>
         <div class="subjects-list-actions">
           <button type="button" class="btn-primary deck-study-btn" data-subject="${subj.subject}">Estudiar</button>
