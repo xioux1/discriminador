@@ -13,10 +13,12 @@ import advisorRouter from './advisor.js';
 import sessionPlannerRouter from './session-planner.js';
 import sqlValidateRouter from './sql-validate.js';
 import cardsRouter from './cards.js';
+import promptToolsRouter from './prompt-tools.js';
 
 const router = Router();
 
 router.use(cardsRouter);
+router.use(promptToolsRouter);
 router.use(evaluateRouter);
 router.use(decisionRouter);
 router.use(transcribeRouter);
