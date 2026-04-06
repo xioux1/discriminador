@@ -276,10 +276,16 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, userI
        WHERE parent_card_id = $1 AND status = 'active'`,
       [cardId]
     );
-  } else if (conceptGaps.length > 0) {
-    // LLM already ranked the gaps by importance (index 0 = root concept).
-    // Only generate one micro-card per concept that isn't already active.
-    for (const concept of conceptGaps) {
+  }
+
+  if (conceptGaps.length > 0) {
+    // In PASS we generate only one reinforcement micro-card (highest-priority gap).
+    // In FAIL/REVIEW we generate one per missing concept.
+    const targetConcepts = grade === 'pass' ? [conceptGaps[0]] : conceptGaps;
+
+    for (const concept of targetConcepts) {
+      if (!concept) continue;
+
       const existing = await dbPool.query(
         `SELECT id FROM micro_cards
          WHERE parent_card_id = $1 AND concept = $2 AND status = 'active'`,
