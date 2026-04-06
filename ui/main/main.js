@@ -47,6 +47,12 @@ function initAuthScreen() {
 
 document.getElementById('logout-btn')?.addEventListener('click', () => Auth.logout());
 
+// If not logged in, stop here — don't run any initialization that makes API calls
+if (!Auth.isLoggedIn()) {
+  // Auth screen is already shown above; nothing else to do
+  throw new Error('__auth_gate__'); // halts script execution cleanly
+}
+
 // --- Tab navigation ---
 
 (function initTabs() {
@@ -894,7 +900,7 @@ async function postJson(url, body, method = 'POST') {
   });
 
   Auth.handleRefreshToken(response);
-  if (response.status === 401) { Auth.logout(); return; }
+  if (response.status === 401) { if (Auth.isLoggedIn()) Auth.logout(); return; }
 
   let data;
   try {
@@ -2031,7 +2037,7 @@ async function getJson(url) {
     headers: Auth.getToken() ? { 'Authorization': 'Bearer ' + Auth.getToken() } : {}
   });
   Auth.handleRefreshToken(res);
-  if (res.status === 401) { Auth.logout(); return; }
+  if (res.status === 401) { if (Auth.isLoggedIn()) Auth.logout(); return null; }
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
