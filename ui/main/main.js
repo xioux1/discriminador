@@ -2037,9 +2037,14 @@ function showStudyCard() {
   document.querySelector('#study-progress-fill').style.width = `${pct}%`;
 
   const badge = document.querySelector('#study-card-badge');
+  const subjectEl = document.querySelector('#study-card-subject');
   const promptEl = document.querySelector('#study-card-prompt');
   const parentContextEl = document.querySelector('#study-card-parent-context');
   const parentPromptEl  = document.querySelector('#study-card-parent-prompt');
+  const subject = item.type === 'micro' ? item.data.parent_subject : item.data.subject;
+  const subjectLabel = subject || '(sin materia)';
+
+  subjectEl.textContent = `Materia: ${subjectLabel}`;
 
   if (item.type === 'micro') {
     badge.textContent = `Micro-concepto: ${item.data.concept}`;
@@ -2095,7 +2100,6 @@ function showStudyCard() {
   }, 1000);
 
   // Update subject for dictation (attached once in initStudyTab)
-  const subject = item.type === 'micro' ? item.data.parent_subject : item.data.subject;
   document.querySelector('#study-dictation-btn').dataset.subject = subject || '';
 
   // Math Palette + SQL Editor — use saved mode, explicit only (no auto-detect)
