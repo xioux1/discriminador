@@ -1152,6 +1152,20 @@ function escapePreserve(text) {
   return escHtml(text).replace(/\n/g, '<br>');
 }
 
+function formatPromptForDisplay(text) {
+  const normalized = String(text ?? '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/:\s+([•●▪◦])/g, ':\n$1')
+    .replace(/\s+([•●▪◦])\s+/g, '\n$1 ')
+    .trim();
+  return escapePreserve(normalized);
+}
+
+function renderStudyPrompt(promptEl, promptText) {
+  if (!promptEl) return;
+  promptEl.innerHTML = formatPromptForDisplay(promptText);
+}
+
 function looksLikeCodeBlock(text = '') {
   if (!text) return false;
   return /(^|\n)\s*(SELECT|WITH|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|BEGIN|DECLARE)\b/i.test(text)
@@ -2044,7 +2058,7 @@ function showStudyCard() {
   if (item.type === 'micro') {
     badge.textContent = `Micro-concepto: ${item.data.concept}`;
     badge.classList.remove('hidden');
-    promptEl.textContent = getStudyPromptText(item);
+    renderStudyPrompt(promptEl, getStudyPromptText(item));
     // Show parent card as context so student knows what topic this stems from
     if (item.data.parent_prompt) {
       parentPromptEl.textContent = item.data.parent_prompt;
@@ -2058,7 +2072,7 @@ function showStudyCard() {
     const hasMicros = parseInt(item.data.active_micro_count) > 0;
     badge.textContent = hasMicros ? `Advertencia: Conceptos pendientes (${item.data.active_micro_count})` : '';
     if (hasMicros) badge.classList.remove('hidden');
-    promptEl.textContent = getStudyPromptText(item);
+    renderStudyPrompt(promptEl, getStudyPromptText(item));
   }
   setStudyPromptFeedback('');
 
@@ -2215,7 +2229,7 @@ function toggleStudyPromptEdit() {
   if (item.type === 'micro') item.data.session_question = editedPrompt;
   else item.data.session_prompt_text = editedPrompt;
 
-  promptEl.textContent = editedPrompt;
+  renderStudyPrompt(promptEl, editedPrompt);
   editBtn.textContent = 'Editar';
   setStudyPromptFeedback('Consigna actualizada para esta sesión.', 'success');
 }
@@ -2243,7 +2257,7 @@ async function clarifyStudyPrompt() {
     else item.data.session_prompt_text = clarifiedPrompt;
 
     promptEl.removeAttribute('contenteditable');
-    promptEl.textContent = clarifiedPrompt;
+    renderStudyPrompt(promptEl, clarifiedPrompt);
     const editBtn = document.querySelector('#study-edit-prompt-btn');
     if (editBtn) editBtn.textContent = 'Editar';
     setStudyPromptFeedback('Consigna aclarada con IA para esta sesión.', 'success');
