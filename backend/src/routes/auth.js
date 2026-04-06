@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import { dbPool } from '../db/client.js';
 import { signToken } from '../middleware/auth.js';
 
