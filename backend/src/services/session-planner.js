@@ -60,9 +60,13 @@ export async function planSession({
   const planned  = [];
   const deferred = [];
   let accumulatedMs = 0;
+  const seen = new Set(); // dedup: LLM may return the same id twice
 
   for (const ref of prioritized) {
-    const item = allItems.get(`${ref.type}:${ref.id}`);
+    const key = `${ref.type}:${ref.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const item = allItems.get(key);
     if (!item) continue;
 
     if (accumulatedMs + msPerCard <= budgetMs) {

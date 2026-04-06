@@ -1798,6 +1798,62 @@ function showStudyCard() {
     }
   }
   studyEvalBtn.disabled = false; // verification is always optional
+
+  // ── Mode toggle button (non-micro cards only) ──────────────────────────────
+  const modeToggleBtn = document.querySelector('#study-mode-toggle');
+  if (modeToggleBtn) {
+    const MODE_CYCLE  = ['', 'sql', 'math'];
+    const MODE_LABELS = { '': '📝 Texto', 'sql': '💻 SQL/PL', 'math': '∑ Math' };
+    if (isMicro) {
+      modeToggleBtn.hidden = true;
+    } else {
+      modeToggleBtn.hidden = false;
+      modeToggleBtn.textContent = MODE_LABELS[savedMode] || MODE_LABELS[''];
+      modeToggleBtn.onclick = () => {
+        const cur  = getSubjectMode(subject);
+        const idx  = MODE_CYCLE.indexOf(cur);
+        const next = MODE_CYCLE[(idx + 1) % MODE_CYCLE.length];
+        saveSubjectMode(subject, next);
+        modeToggleBtn.textContent = MODE_LABELS[next];
+        const input = document.querySelector('#study-answer-input');
+        const panel = document.querySelector('#study-sql-compiler');
+        MathPalette.setActiveTextarea(input);
+        if (next === 'sql') {
+          MathPalette.hide();
+          SqlEditor.activate(input);
+          panel?.classList.remove('hidden');
+        } else if (next === 'math') {
+          SqlEditor.deactivate();
+          MathPalette.show();
+          panel?.classList.add('hidden');
+        } else {
+          SqlEditor.deactivate();
+          MathPalette.updateSubject(subject || '');
+          panel?.classList.add('hidden');
+        }
+      };
+    }
+  }
+
+  // ── Flag / report button ───────────────────────────────────────────────────
+  const flagBtn = document.querySelector('#study-flag-btn');
+  if (flagBtn) {
+    flagBtn.hidden = false;
+    flagBtn.onclick = () => {
+      const note = prompt('Comentario (opcional):') ?? '';
+      const cardId   = item.type === 'card'  ? item.data.id : null;
+      const microId  = item.type === 'micro' ? item.data.id : null;
+      if (cardId || microId) {
+        const path = cardId ? `/cards/${cardId}/flag` : `/micro-cards/${microId}/flag`;
+        postJson(path, { notes: note || 'duplicada' }).catch(() => {});
+      }
+      // Skip this card immediately in the current session
+      studyState.queue.splice(studyState.index, 1);
+      const total = studyState.queue.length;
+      if (studyState.index >= total) studyState.index = Math.max(0, total - 1);
+      showStudyCard();
+    };
+  }
 }
 
 // Study-session SQL verify button

@@ -47,6 +47,7 @@ sessionPlannerRouter.post('/session/plan', async (req, res) => {
        WHERE mc.status = 'active'
          AND mc.next_review_at <= now()
          AND mc.user_id = $1
+         AND mc.flagged = FALSE
        ORDER BY mc.next_review_at ASC
        LIMIT 30`,
       [userId]
@@ -62,6 +63,7 @@ sessionPlannerRouter.post('/session/plan', async (req, res) => {
        LEFT JOIN micro_cards mc ON mc.parent_card_id = c.id
        WHERE c.next_review_at <= now()
          AND c.user_id = $1
+         AND c.flagged = FALSE
        GROUP BY c.id
        ORDER BY c.next_review_at ASC
        LIMIT 30`,

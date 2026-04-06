@@ -12,9 +12,11 @@ import curriculumRouter from './curriculum.js';
 import advisorRouter from './advisor.js';
 import sessionPlannerRouter from './session-planner.js';
 import sqlValidateRouter from './sql-validate.js';
+import cardsRouter from './cards.js';
 
 const router = Router();
 
+router.use(cardsRouter);
 router.use(evaluateRouter);
 router.use(decisionRouter);
 router.use(transcribeRouter);
