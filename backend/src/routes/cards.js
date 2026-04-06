@@ -3,6 +3,10 @@ import { dbPool } from '../db/client.js';
 
 const cardsRouter = Router();
 
+function normalizeReason(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 // PATCH /cards/:id/flag  — mark a card as flagged with optional note
 cardsRouter.patch('/cards/:id/flag', async (req, res) => {
   const userId = req.user.id;
@@ -35,6 +39,32 @@ cardsRouter.patch('/micro-cards/:id/flag', async (req, res) => {
   );
   if (rowCount === 0) return res.status(404).json({ error: 'not_found' });
   return res.json({ flagged: true });
+});
+
+// PATCH /cards/:id/archive  — archive card with mandatory reason
+cardsRouter.patch('/cards/:id/archive', async (req, res) => {
+  const userId = req.user.id;
+  const cardId = parseInt(req.params.id, 10);
+  if (!Number.isFinite(cardId)) return res.status(400).json({ error: 'invalid_id' });
+
+  const reason = normalizeReason(req.body?.reason);
+  if (reason.length < 5) {
+    return res.status(422).json({
+      error: 'validation_error',
+      message: 'reason must contain at least 5 characters.'
+    });
+  }
+
+  const { rowCount } = await dbPool.query(
+    `UPDATE cards
+     SET archived_at = now(),
+         archived_reason = $1,
+         updated_at = now()
+     WHERE id = $2 AND user_id = $3 AND archived_at IS NULL`,
+    [reason.slice(0, 500), cardId, userId]
+  );
+  if (rowCount === 0) return res.status(404).json({ error: 'not_found' });
+  return res.json({ archived: true });
 });
 
 export default cardsRouter;

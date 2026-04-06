@@ -2201,6 +2201,8 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
     if (decisionBlock) {
       decisionBlock.classList.remove('hidden');
       decisionBlock.querySelectorAll('button').forEach((btn) => { btn.disabled = false; });
+      const archiveBtn = decisionBlock.querySelector('#study-archive-card-btn');
+      if (archiveBtn) archiveBtn.hidden = !currentItem || currentItem.type !== 'card';
     }
 
     document.querySelector('#study-answer-block').classList.add('hidden');
@@ -2220,6 +2222,25 @@ function resolveStudyFinalGrade(action, suggestedGrade) {
   return null;
 }
 
+async function archiveCurrentStudyCard(reason) {
+  const currentItem = studyState.queue[studyState.index];
+  if (!currentItem || currentItem.type !== 'card') {
+    throw new Error('Solo se pueden archivar tarjetas principales.');
+  }
+  if (!reason || reason.length < 5) {
+    throw new Error('Indicá un motivo de al menos 5 caracteres para archivar.');
+  }
+
+  await fetchJson(`/cards/${currentItem.data.id}/archive`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(Auth.getToken() ? { Authorization: `Bearer ${Auth.getToken()}` } : {})
+    },
+    body: JSON.stringify({ reason })
+  });
+}
+
 const studyDecisionBlock = document.querySelector('#study-decision-block');
 if (studyDecisionBlock) {
   studyDecisionBlock.addEventListener('click', async (event) => {
@@ -2231,6 +2252,7 @@ if (studyDecisionBlock) {
     const nextBtn = document.querySelector('#study-next-btn');
     const reason = normalize(reasonEl?.value || '');
     const finalGrade = resolveStudyFinalGrade(action, studyState.currentEvalResult.suggested_grade);
+    const isArchiveAction = action === 'archive-card';
 
     const payload = {
       ...studyState.currentEvalContext,
@@ -2244,26 +2266,34 @@ if (studyDecisionBlock) {
 
     studyDecisionBlock.querySelectorAll('button').forEach((btn) => { btn.disabled = true; });
     if (feedbackEl) {
-      feedbackEl.textContent = 'Guardando firma...';
+      feedbackEl.textContent = isArchiveAction ? 'Archivando tarjeta...' : 'Guardando firma...';
       feedbackEl.className = 'feedback';
     }
 
     try {
-      await postJson(DECISION_ENDPOINT, payload);
+      if (isArchiveAction) {
+        await archiveCurrentStudyCard(reason);
+      } else {
+        await postJson(DECISION_ENDPOINT, payload);
+      }
       studyState.currentDecision = {
         action,
         finalGrade: finalGrade ? finalGrade.toLowerCase() : null
       };
       if (feedbackEl) {
-        feedbackEl.textContent = finalGrade
-          ? `Firma guardada (${finalGrade}). Ya podés continuar.`
-          : 'Firma guardada como duda. Ya podés continuar.';
+        feedbackEl.textContent = isArchiveAction
+          ? 'Tarjeta archivada. Ya podés continuar.'
+          : (finalGrade
+            ? `Firma guardada (${finalGrade}). Ya podés continuar.`
+            : 'Firma guardada como duda. Ya podés continuar.');
         feedbackEl.className = 'feedback success';
       }
       nextBtn.disabled = false;
     } catch (err) {
       if (feedbackEl) {
-        feedbackEl.textContent = `No se pudo guardar la firma: ${err.message}`;
+        feedbackEl.textContent = isArchiveAction
+          ? `No se pudo archivar la tarjeta: ${err.message}`
+          : `No se pudo guardar la firma: ${err.message}`;
         feedbackEl.className = 'feedback error';
       }
       studyDecisionBlock.querySelectorAll('button').forEach((btn) => { btn.disabled = false; });
