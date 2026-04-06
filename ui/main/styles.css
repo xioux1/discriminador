@@ -670,14 +670,39 @@ textarea:focus, input[type="text"]:focus {
 .progress-pill-label { font-size: 0.75rem; color: var(--text-muted); margin-top: 3px; }
 
 /* Heatmap */
-.heatmap-container { overflow-x: auto; }
+.heatmap-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.heatmap-header h3 {
+  margin: 0;
+}
+
+.heatmap-year-nav {
+  display: flex;
+  gap: 6px;
+}
+
+.heatmap-year-nav button {
+  white-space: nowrap;
+}
+
+.heatmap-container {
+  --heatmap-cell: 13px;
+  --heatmap-gap: 3px;
+  overflow-x: hidden;
+}
 
 .heatmap-year-labels,
 .heatmap-month-labels {
   display: grid;
   grid-auto-flow: column;
-  gap: 3px;
-  min-width: max-content;
+  gap: var(--heatmap-gap);
+  width: 100%;
 }
 
 .heatmap-year-labels {
@@ -700,16 +725,16 @@ textarea:focus, input[type="text"]:focus {
 
 .heatmap-grid {
   display: grid;
-  grid-template-rows: repeat(7, 13px);
+  grid-template-rows: repeat(7, var(--heatmap-cell));
   grid-auto-flow: column;
-  gap: 3px;
-  min-width: max-content;
+  gap: var(--heatmap-gap);
+  width: 100%;
   margin-bottom: 8px;
 }
 
 .heatmap-cell {
-  width: 13px;
-  height: 13px;
+  width: var(--heatmap-cell);
+  height: var(--heatmap-cell);
   border-radius: 2px;
   background: var(--heatmap-color, #ebedf0);
 }
@@ -731,6 +756,13 @@ textarea:focus, input[type="text"]:focus {
 }
 .heatmap-legend .heatmap-cell { width: 13px; height: 13px; flex-shrink: 0; }
 .heatmap-legend span:not(.heatmap-cell) { margin: 0 2px; }
+
+@media (max-width: 700px) {
+  .heatmap-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
 
 .progress-subject-row {
   display: grid;

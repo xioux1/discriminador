@@ -334,7 +334,7 @@ async function loadProgress() {
 
   try {
     const [actData, overview] = await Promise.all([
-      getJson('/stats/activity?days=365'),
+      getJson('/stats/activity?days=3650'),
       getJson('/stats/overview').catch(() => ({ subjects: [] }))
     ]);
 
@@ -355,10 +355,14 @@ async function loadProgress() {
       pills.appendChild(span);
     });
 
-    // Heatmap — último año calendario, alineado por semanas completas
+    // Heatmap — año calendario completo, navegable por año
     const grid = document.querySelector('#heatmap-grid');
     const monthLabels = document.querySelector('#heatmap-month-labels');
     const yearLabels = document.querySelector('#heatmap-year-labels');
+    const heatmapContainer = document.querySelector('#heatmap-container');
+    const heatmapTitle = document.querySelector('#heatmap-title');
+    const prevYearBtn = document.querySelector('#heatmap-prev-year');
+    const nextYearBtn = document.querySelector('#heatmap-next-year');
     grid.innerHTML = '';
     monthLabels.innerHTML = '';
     yearLabels.innerHTML = '';
@@ -373,75 +377,87 @@ async function loadProgress() {
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const startDate = new Date(today);
-    // 365 días incluyendo hoy (si hay año bisiesto, cruza dos años sin cortar semanas)
-    startDate.setDate(startDate.getDate() - 364);
-
-    const alignedStart = new Date(startDate);
-    alignedStart.setDate(alignedStart.getDate() - alignedStart.getDay());
-    const alignedEnd = new Date(today);
-    alignedEnd.setDate(alignedEnd.getDate() + (6 - alignedEnd.getDay()));
-
-    const MS_PER_DAY = 24 * 60 * 60 * 1000;
-    const totalDays = Math.floor((alignedEnd - alignedStart) / MS_PER_DAY) + 1;
-    const weekCount = Math.ceil(totalDays / 7);
-
-    grid.style.gridTemplateColumns = `repeat(${weekCount}, 13px)`;
-    monthLabels.style.gridTemplateColumns = `repeat(${weekCount}, 13px)`;
-    yearLabels.style.gridTemplateColumns = `repeat(${weekCount}, 13px)`;
+    const todayYear = today.getFullYear();
+    const availableYears = (actData.days || [])
+      .map((d) => Number(String(typeof d.date === 'string' ? d.date : new Date(d.date).toISOString()).slice(0, 4)))
+      .filter((y) => Number.isFinite(y));
+    const minYearFromData = availableYears.length ? Math.min(...availableYears) : todayYear;
+    const minYear = Math.min(minYearFromData, todayYear);
+    let selectedYear = Math.max(minYear, todayYear);
 
     const monthFmt = new Intl.DateTimeFormat('es-AR', { month: 'short' });
-    const yearFmt = new Intl.DateTimeFormat('es-AR', { year: 'numeric' });
-    const renderedMonths = new Set();
-    const renderedYears = new Set();
 
-    for (let i = 0; i < totalDays; i++) {
-      const date = new Date(alignedStart);
-      date.setDate(alignedStart.getDate() + i);
-      const dateStr = date.toISOString().slice(0, 10);
-      const inRange = date >= startDate && date <= today;
-      const count = inRange ? (dayMap[dateStr] || 0) : 0;
-      const lvl = count === 0 ? 0 : Math.min(4, Math.ceil((count / Math.max(maxCount, 1)) * 4));
-      const weekIndex = Math.floor(i / 7);
+    const renderYearHeatmap = (year) => {
+      selectedYear = year;
+      grid.innerHTML = '';
+      monthLabels.innerHTML = '';
+      yearLabels.innerHTML = '';
+      heatmapTitle.textContent = `Actividad (año ${year})`;
 
-      if (date.getDay() === 0 && date.getDate() <= 7) {
-        const monthKey = `${date.getFullYear()}-${date.getMonth()}`;
-        if (!renderedMonths.has(monthKey)) {
-          renderedMonths.add(monthKey);
+      const startDate = new Date(year, 0, 1);
+      const endDate = new Date(year, 11, 31);
+
+      const alignedStart = new Date(startDate);
+      alignedStart.setDate(alignedStart.getDate() - alignedStart.getDay());
+      const alignedEnd = new Date(endDate);
+      alignedEnd.setDate(alignedEnd.getDate() + (6 - alignedEnd.getDay()));
+
+      const MS_PER_DAY = 24 * 60 * 60 * 1000;
+      const totalDays = Math.floor((alignedEnd - alignedStart) / MS_PER_DAY) + 1;
+      const weekCount = Math.ceil(totalDays / 7);
+
+      const containerWidth = heatmapContainer.clientWidth || 800;
+      const paddingForScroll = 8;
+      const gap = 3;
+      const computedCell = Math.floor((containerWidth - paddingForScroll - ((weekCount - 1) * gap)) / weekCount);
+      const cellSize = Math.max(8, Math.min(13, computedCell));
+      heatmapContainer.style.setProperty('--heatmap-cell', `${cellSize}px`);
+      heatmapContainer.style.setProperty('--heatmap-gap', `${gap}px`);
+
+      grid.style.gridTemplateColumns = `repeat(${weekCount}, ${cellSize}px)`;
+      monthLabels.style.gridTemplateColumns = `repeat(${weekCount}, ${cellSize}px)`;
+      yearLabels.style.gridTemplateColumns = `repeat(${weekCount}, ${cellSize}px)`;
+
+      for (let i = 0; i < totalDays; i++) {
+        const date = new Date(alignedStart);
+        date.setDate(alignedStart.getDate() + i);
+        const dateStr = date.toISOString().slice(0, 10);
+        const inSelectedYear = date >= startDate && date <= endDate;
+        const count = inSelectedYear ? (dayMap[dateStr] || 0) : 0;
+        const lvl = count === 0 ? 0 : Math.min(4, Math.ceil((count / Math.max(maxCount, 1)) * 4));
+        const weekIndex = Math.floor(i / 7);
+
+        if (date.getDay() === 0 && date.getDate() <= 7 && inSelectedYear) {
           const monthEl = document.createElement('span');
           monthEl.className = 'heatmap-label';
           monthEl.style.gridColumn = `${weekIndex + 1} / span 4`;
           monthEl.textContent = monthFmt.format(date);
           monthLabels.appendChild(monthEl);
         }
+
+        const cell = document.createElement('div');
+        cell.className = `heatmap-cell${inSelectedYear ? '' : ' is-padding'}`;
+        cell.setAttribute('data-lvl', lvl);
+        cell.title = inSelectedYear ? `${dateStr}: ${count} revisiones` : `${dateStr}: fuera del año`;
+        grid.appendChild(cell);
       }
 
-      if (date.getDay() === 0 && date.getMonth() === 0 && date.getDate() <= 7) {
-        const yearKey = String(date.getFullYear());
-        if (!renderedYears.has(yearKey)) {
-          renderedYears.add(yearKey);
-          const yearEl = document.createElement('span');
-          yearEl.className = 'heatmap-label';
-          yearEl.style.gridColumn = `${weekIndex + 1} / span 6`;
-          yearEl.textContent = yearFmt.format(date);
-          yearLabels.appendChild(yearEl);
-        }
-      }
-
-      const cell = document.createElement('div');
-      cell.className = `heatmap-cell${inRange ? '' : ' is-padding'}`;
-      cell.setAttribute('data-lvl', lvl);
-      cell.title = inRange ? `${dateStr}: ${count} revisiones` : `${dateStr}: fuera del rango`;
-      grid.appendChild(cell);
-    }
-
-    if (renderedYears.size === 0) {
       const yearEl = document.createElement('span');
       yearEl.className = 'heatmap-label';
-      yearEl.style.gridColumn = '1 / span 6';
-      yearEl.textContent = yearFmt.format(startDate);
+      yearEl.style.gridColumn = '1 / span 8';
+      yearEl.textContent = String(year);
       yearLabels.appendChild(yearEl);
-    }
+
+      prevYearBtn.disabled = selectedYear <= minYear;
+      nextYearBtn.disabled = selectedYear >= todayYear;
+    };
+
+    prevYearBtn.onclick = () => renderYearHeatmap(Math.max(minYear, selectedYear - 1));
+    nextYearBtn.onclick = () => renderYearHeatmap(Math.min(todayYear, selectedYear + 1));
+    if (window.__heatmapResizeHandler) window.removeEventListener('resize', window.__heatmapResizeHandler);
+    window.__heatmapResizeHandler = () => renderYearHeatmap(selectedYear);
+    window.addEventListener('resize', window.__heatmapResizeHandler);
+    renderYearHeatmap(selectedYear);
 
     // Per-subject stats
     const subjEl = document.querySelector('#progress-subjects');
