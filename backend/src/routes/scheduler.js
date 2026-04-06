@@ -9,6 +9,7 @@ const schedulerRouter = Router();
 // ─── Register / upsert a card ─────────────────────────────────────────────────
 schedulerRouter.post('/scheduler/cards', async (req, res) => {
   const { subject, prompt_text, expected_answer_text } = req.body || {};
+  const userId = req.user.id;
 
   if (!prompt_text?.trim() || !expected_answer_text?.trim()) {
     return res.status(422).json({
@@ -19,10 +20,10 @@ schedulerRouter.post('/scheduler/cards', async (req, res) => {
 
   try {
     const result = await dbPool.query(
-      `INSERT INTO cards (subject, prompt_text, expected_answer_text)
-       VALUES ($1, $2, $3)
+      `INSERT INTO cards (subject, prompt_text, expected_answer_text, user_id)
+       VALUES ($1, $2, $3, $4)
        RETURNING *`,
-      [subject?.trim() || null, prompt_text.trim(), expected_answer_text.trim()]
+      [subject?.trim() || null, prompt_text.trim(), expected_answer_text.trim(), userId]
     );
     return res.status(200).json(result.rows[0]);
   } catch (err) {
@@ -34,17 +35,21 @@ schedulerRouter.post('/scheduler/cards', async (req, res) => {
 // ─── List all cards ───────────────────────────────────────────────────────────
 schedulerRouter.get('/scheduler/cards', async (req, res) => {
   const { subject } = req.query;
+  const userId = req.user.id;
 
   try {
+    const params = [userId];
+    if (subject) params.push(subject);
     const result = await dbPool.query(
       `SELECT c.*,
          COUNT(mc.id) FILTER (WHERE mc.status = 'active') AS active_micro_count
        FROM cards c
        LEFT JOIN micro_cards mc ON mc.parent_card_id = c.id
-       ${subject ? 'WHERE c.subject = $1' : ''}
+       WHERE c.user_id = $1
+       ${subject ? 'AND c.subject = $2' : ''}
        GROUP BY c.id
        ORDER BY c.next_review_at ASC`,
-      subject ? [subject] : []
+      params
     );
     return res.status(200).json({ cards: result.rows });
   } catch (err) {
@@ -59,8 +64,10 @@ schedulerRouter.get('/scheduler/cards', async (req, res) => {
 // (soft block: they appear but with a warning).
 schedulerRouter.get('/scheduler/session', async (req, res) => {
   const { subject } = req.query;
-  const subjectFilter = subject ? 'AND c.subject = $1' : '';
-  const params = subject ? [subject] : [];
+  const userId = req.user.id;
+  const params = [userId];
+  if (subject) params.push(subject);
+  const subjectFilter = subject ? `AND c.subject = $${params.length}` : '';
 
   try {
     const microResult = await dbPool.query(
@@ -72,6 +79,7 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
        JOIN cards c ON mc.parent_card_id = c.id
        WHERE mc.status = 'active'
          AND mc.next_review_at <= now()
+         AND mc.user_id = $1
          ${subjectFilter}
        ORDER BY mc.next_review_at ASC
        LIMIT 30`,
@@ -86,6 +94,7 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
        LEFT JOIN micro_cards mc ON mc.parent_card_id = c.id
        LEFT JOIN card_variants cv ON cv.card_id = c.id
        WHERE c.next_review_at <= now()
+         AND c.user_id = $1
          ${subjectFilter}
        GROUP BY c.id
        ORDER BY

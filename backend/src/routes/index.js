@@ -15,10 +15,6 @@ import sqlValidateRouter from './sql-validate.js';
 
 const router = Router();
 
-router.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok' });
-});
-
 router.use(evaluateRouter);
 router.use(decisionRouter);
 router.use(transcribeRouter);
