@@ -890,6 +890,19 @@ function renderResult(result) {
   }
 }
 
+function escHtml(str) {
+  return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+async function deleteJson(url) {
+  const headers = {};
+  if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
+  const response = await fetch(url, { method: 'DELETE', headers });
+  Auth.handleRefreshToken(response);
+  if (response.status === 401) { if (Auth.isLoggedIn()) Auth.logout(); return {}; }
+  try { return await response.json(); } catch (_e) { return {}; }
+}
+
 async function postJson(url, body, method = 'POST') {
   const headers = { 'Content-Type': 'application/json' };
   if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
@@ -2210,19 +2223,13 @@ async function openCurriculumModal(subject) {
   document.querySelector('#curriculum-modal').classList.remove('hidden');
   document.querySelector('#curriculum-save-feedback').textContent = '';
   document.querySelector('#exam-add-feedback').textContent = '';
+  document.querySelector('#exam-date-feedback').textContent = '';
 
   // Load existing config
   try {
     const data = await getJson(`/curriculum/${encodeURIComponent(subject)}`);
-    if (data.config) {
-      document.querySelector('#curriculum-exam-date').value = data.config.exam_date?.slice(0,10) || '';
-      document.querySelector('#curriculum-exam-type').value = data.config.exam_type || 'parcial';
-      document.querySelector('#curriculum-syllabus').value = data.config.syllabus_text || '';
-    } else {
-      document.querySelector('#curriculum-exam-date').value = '';
-      document.querySelector('#curriculum-exam-type').value = 'parcial';
-      document.querySelector('#curriculum-syllabus').value = '';
-    }
+    document.querySelector('#curriculum-syllabus').value = data.config?.syllabus_text || '';
+    renderExamDatesList(data.exam_dates || [], subject);
     renderExamsList(data.exams || [], subject);
   } catch (_e) {}
 
@@ -2243,9 +2250,7 @@ document.querySelector('#curriculum-save-btn').addEventListener('click', async (
   const fb = document.querySelector('#curriculum-save-feedback');
   try {
     await postJson(`/curriculum/${encodeURIComponent(subject)}`, {
-      syllabus_text: document.querySelector('#curriculum-syllabus').value,
-      exam_date: document.querySelector('#curriculum-exam-date').value || null,
-      exam_type: document.querySelector('#curriculum-exam-type').value
+      syllabus_text: document.querySelector('#curriculum-syllabus').value
     }, 'PUT');
     fb.textContent = 'Guardado.';
     fb.style.color = 'var(--pass-fg)';
@@ -2254,6 +2259,75 @@ document.querySelector('#curriculum-save-btn').addEventListener('click', async (
     fb.style.color = 'var(--fail-fg)';
   }
 });
+
+// ── Exam dates (múltiples por materia) ────────────────────────────────────────
+
+document.querySelector('#exam-date-add-btn').addEventListener('click', async () => {
+  const subject = document.querySelector('#curriculum-modal').dataset.subject;
+  const fb    = document.querySelector('#exam-date-feedback');
+  const label = document.querySelector('#new-exam-label').value.trim();
+  const date  = document.querySelector('#new-exam-date').value;
+  const type  = document.querySelector('#new-exam-type').value;
+  const scope = parseInt(document.querySelector('#new-exam-scope').value, 10);
+
+  if (!label) { fb.textContent = 'El nombre del examen es obligatorio.'; fb.style.color = 'var(--fail-fg)'; return; }
+  if (!date)  { fb.textContent = 'La fecha es obligatoria.'; fb.style.color = 'var(--fail-fg)'; return; }
+  if (!scope || scope < 1 || scope > 100) { fb.textContent = 'El % debe ser entre 1 y 100.'; fb.style.color = 'var(--fail-fg)'; return; }
+
+  try {
+    const data = await postJson(`/curriculum/${encodeURIComponent(subject)}/exam-dates`, {
+      label, exam_date: date, exam_type: type, scope_pct: scope
+    });
+    fb.textContent = 'Fecha agregada.';
+    fb.style.color = 'var(--pass-fg)';
+    document.querySelector('#new-exam-label').value = '';
+    document.querySelector('#new-exam-date').value  = '';
+    document.querySelector('#new-exam-scope').value = '50';
+    renderExamDatesList(data.exam_dates, subject);
+  } catch (err) {
+    fb.textContent = `Error: ${err.message}`;
+    fb.style.color = 'var(--fail-fg)';
+  }
+});
+
+function renderExamDatesList(examDates, subject) {
+  const el = document.querySelector('#exam-dates-list');
+  if (!examDates.length) {
+    el.innerHTML = '<p style="color:var(--text-muted);font-size:0.82rem;margin:0 0 4px">Sin fechas cargadas.</p>';
+    return;
+  }
+  const now = new Date();
+  el.innerHTML = examDates.map(e => {
+    const dDate = new Date(e.exam_date + 'T00:00:00');
+    const days  = Math.ceil((dDate - now) / 86400000);
+    const past  = days < 0;
+    const badge = past
+      ? `<span class="exam-date-badge">pasado</span>`
+      : days <= 7
+        ? `<span class="exam-date-badge urgent">${days}d</span>`
+        : `<span class="exam-date-badge far">${days}d</span>`;
+    const scopeTag = `<span style="font-size:0.75rem;color:var(--text-muted)">${e.scope_pct}% temario</span>`;
+    return `
+      <div class="exam-date-item">
+        <span class="exam-date-label">${escHtml(e.label)}</span>
+        <span class="exam-date-meta">${e.exam_date?.slice(0,10)} · ${e.exam_type} · ${scopeTag}</span>
+        ${badge}
+        <button type="button" class="btn-ghost exam-date-delete-btn" data-id="${e.id}" data-subject="${escHtml(subject)}" style="font-size:0.72rem;padding:1px 7px">✕</button>
+      </div>`;
+  }).join('');
+
+  el.querySelectorAll('.exam-date-delete-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const subj = btn.dataset.subject;
+      try {
+        const data = await deleteJson(`/curriculum/${encodeURIComponent(subj)}/exam-dates/${btn.dataset.id}`);
+        renderExamDatesList(data.exam_dates || [], subj);
+      } catch (_e) {}
+    });
+  });
+}
+
+// ── Reference exams (historial) ───────────────────────────────────────────────
 
 document.querySelector('#exam-add-btn').addEventListener('click', async () => {
   const subject = document.querySelector('#curriculum-modal').dataset.subject;
@@ -2284,18 +2358,15 @@ function renderExamsList(exams, subject) {
   if (!exams.length) { el.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem">Sin exámenes de referencia.</p>'; return; }
   el.innerHTML = exams.map(e => `
     <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
-      <span style="flex:1;font-size:0.85rem">${e.label || e.exam_type} ${e.year || ''}</span>
-      <button type="button" class="btn-ghost exam-delete-btn" data-id="${e.id}" data-subject="${subject}" style="font-size:0.75rem;padding:2px 8px">✕</button>
+      <span style="flex:1;font-size:0.85rem">${escHtml(e.label || e.exam_type)} ${e.year || ''}</span>
+      <button type="button" class="btn-ghost exam-delete-btn" data-id="${e.id}" data-subject="${escHtml(subject)}" style="font-size:0.75rem;padding:2px 8px">✕</button>
     </div>`).join('');
 
   el.querySelectorAll('.exam-delete-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
-      const id = btn.dataset.id;
       const subj = btn.dataset.subject;
       try {
-        const delHeaders = {};
-        if (Auth.getToken()) delHeaders['Authorization'] = 'Bearer ' + Auth.getToken();
-        await fetch(`/curriculum/${encodeURIComponent(subj)}/exams/${id}`, { method: 'DELETE', headers: delHeaders });
+        await deleteJson(`/curriculum/${encodeURIComponent(subj)}/exams/${btn.dataset.id}`);
         const data = await getJson(`/curriculum/${encodeURIComponent(subj)}`);
         renderExamsList(data.exams || [], subj);
       } catch (_e) {}

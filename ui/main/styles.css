@@ -1055,6 +1055,34 @@ textarea:focus, input[type="text"]:focus {
   width: 100%; box-sizing: border-box;
 }
 
+.curriculum-section-title { margin: 8px 0 6px; font-size: 0.88rem; font-weight: 700; color: var(--text); }
+
+/* Exam dates list */
+.exam-dates-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.exam-date-item {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 6px 10px; font-size: 0.85rem;
+}
+.exam-date-item .exam-date-label { font-weight: 600; min-width: 90px; }
+.exam-date-item .exam-date-meta { flex: 1; color: var(--text-muted); font-size: 0.8rem; }
+.exam-date-item .exam-date-badge {
+  font-size: 0.72rem; padding: 1px 6px; border-radius: 10px;
+  background: var(--review-bg); color: var(--review-fg);
+}
+.exam-date-item .exam-date-badge.urgent { background: var(--fail-bg); color: var(--fail-fg); }
+.exam-date-item .exam-date-badge.far { background: var(--pass-bg); color: var(--pass-fg); }
+
+/* Add exam date form */
+.exam-date-form { margin-top: 4px; }
+.exam-date-row {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+}
+.exam-date-row input, .exam-date-row select { flex: 1; min-width: 80px; width: auto !important; }
+.scope-field { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.scope-field input { width: 56px !important; flex: none !important; }
+.scope-label { font-size: 0.78rem; color: var(--text-muted); }
+
 /* ─── Advisor analysis ───────────────────────────────────────────────────────── */
 .advisor-summary {
   background: var(--primary-light); border-left: 3px solid var(--primary);

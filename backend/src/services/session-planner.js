@@ -164,17 +164,22 @@ function buildUserMessage({ availableMinutes, energyLevel, cards, microCards, su
   const configBySubject = {};
   for (const cfg of subjectConfigs) configBySubject[cfg.subject] = cfg;
 
-  function daysUntilExam(subject) {
+  function examInfo(subject) {
     const cfg = configBySubject[subject];
     if (!cfg?.exam_date) return null;
-    return Math.ceil((new Date(cfg.exam_date) - now) / 86400000);
+    const days = Math.ceil((new Date(cfg.exam_date) - now) / 86400000);
+    return {
+      days_until_exam: days,
+      exam_label: cfg.label || cfg.exam_type || 'examen',
+      scope_pct: cfg.scope_pct ?? 50,
+    };
   }
 
   const microSummary = microCards.map((m) => ({
     id: m.id, type: 'micro',
     concept: m.concept,
     parent_subject: m.parent_subject,
-    days_until_exam: daysUntilExam(m.parent_subject),
+    ...examInfo(m.parent_subject),
   }));
 
   const cardSummary = cards.map((c) => ({
@@ -183,7 +188,7 @@ function buildUserMessage({ availableMinutes, energyLevel, cards, microCards, su
     pass_count: c.pass_count,
     review_count: c.review_count,
     active_micro_count: parseInt(c.active_micro_count) || 0,
-    days_until_exam: daysUntilExam(c.subject),
+    ...examInfo(c.subject),
   }));
 
   return `Ordenar por prioridad para una sesión de estudio:
@@ -191,6 +196,11 @@ function buildUserMessage({ availableMinutes, energyLevel, cards, microCards, su
 available_minutes: ${availableMinutes}
 energy_level: ${energyLevel}
 estimated_ms_per_card: ${msPerCard} (ya calculado por el sistema, no lo uses para contar)
+
+Nota: cada tarjeta puede tener "exam_label" (nombre del próximo parcial/final),
+"days_until_exam" (días hasta ese examen) y "scope_pct" (% del temario que cubre ese examen).
+Usá esta info para priorizar: si hay un parcial en ≤7 días con scope_pct alto, las tarjetas
+de esa materia tienen más urgencia.
 
 micro_cards vencidas (${microSummary.length}):
 ${JSON.stringify(microSummary, null, 2)}

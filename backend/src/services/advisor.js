@@ -27,18 +27,28 @@ export async function analyzeSubject({ subject, config, referenceExams, cards, d
   const client = getClient();
 
   const today = new Date().toISOString().slice(0, 10);
-  let daysUntilExam = null;
-  if (config?.exam_date) {
-    const examDate = new Date(config.exam_date);
-    const todayDate = new Date(today);
-    daysUntilExam = Math.ceil((examDate - todayDate) / (1000 * 60 * 60 * 24));
-  }
+  const todayDate = new Date(today);
+
+  // Build a rich exam schedule from subject_exam_dates (all exams, not just next)
+  const examSchedule = (config?.exam_dates || []).map(e => {
+    const d = new Date(e.exam_date);
+    return {
+      label:     e.label,
+      exam_type: e.exam_type,
+      exam_date: e.exam_date,
+      scope_pct: e.scope_pct,
+      days_until: Math.ceil((d - todayDate) / 86400000)
+    };
+  });
+
+  // Next upcoming exam (for quick access)
+  const nextExam = examSchedule.find(e => e.days_until >= 0) || null;
 
   const userContent = JSON.stringify({
     subject,
     today,
-    days_until_exam: daysUntilExam,
-    exam_type: config?.exam_type || null,
+    next_exam: nextExam,
+    exam_schedule: examSchedule,   // all parciales + final
     syllabus: config?.syllabus_text || '',
     reference_exams: referenceExams.map(e => ({
       label: e.label,
@@ -67,17 +77,24 @@ export async function analyzeSubject({ subject, config, referenceExams, cards, d
 Tenés acceso al plan de estudios, exámenes anteriores y el historial de estudio del alumno.
 Tu análisis debe ser concreto, accionable y en español.
 
+El input puede incluir "exam_schedule": lista de todos los parciales y final con su fecha,
+días restantes y scope_pct (% del temario que cubre ese examen).
+Usá esto para dar contexto preciso: "tenés el 1er Parcial en 10 días que cubre el 50% del temario",
+no "tenés un examen en 10 días y cubriste el 40% del total" si el primer parcial es solo el 50%.
+
 Respondé ÚNICAMENTE con un JSON válido con esta estructura exacta:
 {
-  "coverage_pct": <número 0-100>,
+  "coverage_pct": <número 0-100, cobertura respecto al scope del PRÓXIMO examen, no el temario total>,
   "covered_topics": ["tema 1", "tema 2", ...],
   "missing_topics": ["tema A", "tema B", ...],
   "exam_gaps": ["concepto X aparece frecuentemente en exámenes pero no fue practicado", ...],
-  "days_until_exam": <número o null>,
+  "days_until_exam": <número o null, días hasta el próximo examen>,
+  "next_exam_label": "<nombre del próximo examen, ej: '1er Parcial'>",
+  "next_exam_scope_pct": <scope_pct del próximo examen o null>,
   "pace_ok": <true|false>,
-  "pace_message": "<evaluación del ritmo actual dado la fecha del examen>",
+  "pace_message": "<evaluación del ritmo actual dado la fecha del próximo examen y su scope>",
   "priorities": ["1. ...", "2. ...", "3. ..."],
-  "summary": "<resumen ejecutivo de 2-3 oraciones>"
+  "summary": "<resumen ejecutivo de 2-3 oraciones usando el contexto correcto del examen>"
 }`,
     messages: [
       {
@@ -99,8 +116,10 @@ Respondé ÚNICAMENTE con un JSON válido con esta estructura exacta:
     parsed = { summary: raw, coverage_pct: 0, covered_topics: [], missing_topics: [], exam_gaps: [], priorities: [], pace_ok: true, pace_message: '' };
   }
 
-  // Always set days_until_exam from our calculation (more reliable)
-  parsed.days_until_exam = daysUntilExam;
+  // Always set days_until_exam from our calculation (more reliable than LLM arithmetic)
+  parsed.days_until_exam     = nextExam?.days_until ?? null;
+  parsed.next_exam_label     = parsed.next_exam_label     || nextExam?.label     || null;
+  parsed.next_exam_scope_pct = parsed.next_exam_scope_pct || nextExam?.scope_pct || null;
 
   return parsed;
 }
