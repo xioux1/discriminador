@@ -35,6 +35,7 @@ function validationError(res, details) {
 }
 
 evaluateRouter.post('/evaluate', async (req, res) => {
+  const userId = req.user?.id ?? null;
   if (!req.is('application/json')) {
     return badRequest(res, [
       {
@@ -180,9 +181,10 @@ evaluateRouter.post('/evaluate', async (req, res) => {
         source_system,
         source_record_id,
         input_payload,
-        evaluator_context
+        evaluator_context,
+        user_id
       )
-      VALUES ($1, $2, $3::jsonb, $4::jsonb)
+      VALUES ($1, $2, $3::jsonb, $4::jsonb, $5)
       RETURNING id, created_at, updated_at
     `;
 
@@ -190,7 +192,8 @@ evaluateRouter.post('/evaluate', async (req, res) => {
       'evaluate_api',
       sourceRecordId,
       JSON.stringify(inputPayload),
-      JSON.stringify(evaluatorContext)
+      JSON.stringify(evaluatorContext),
+      userId
     ];
 
     const evaluationItemInsertResult = await client.query(

@@ -5,6 +5,7 @@ const statsRouter = Router();
 
 statsRouter.get('/stats/question', async (req, res) => {
   const prompt = typeof req.query.prompt === 'string' ? req.query.prompt.trim() : '';
+  const userId = req.user.id;
 
   if (prompt.length < 10) {
     return res.status(422).json({ error: 'validation_error', message: 'prompt must be at least 10 characters.' });
@@ -31,11 +32,12 @@ statsRouter.get('/stats/question', async (req, res) => {
         LIMIT 1
       ) ud ON true
       WHERE ei.source_system = 'evaluate_api'
+        AND ei.user_id = $2
         AND trim(ei.input_payload->>'prompt_text') = $1
         AND ud.final_grade IS NOT NULL
       ORDER BY COALESCE(ud.decided_at, ei.created_at) DESC
       LIMIT 20
-    `, [prompt]);
+    `, [prompt, userId]);
 
     if (rows.length === 0) {
       return res.status(200).json({ total: 0, history: [] });

@@ -11,6 +11,7 @@ const activityRouter = Router();
  */
 activityRouter.get('/stats/activity', async (req, res) => {
   const days = Math.min(Math.max(parseInt(req.query.days) || 365, 30), 730);
+  const userId = req.user.id;
 
   try {
     // Combine evaluate activity + study activity into daily buckets.
@@ -29,6 +30,7 @@ activityRouter.get('/stats/activity', async (req, res) => {
                 COUNT(*) FILTER (WHERE final_grade = 'pass') AS pass_cnt
          FROM user_decisions
          WHERE decided_at >= CURRENT_DATE - $1::int * INTERVAL '1 day'
+           AND user_id = $2
          GROUP BY decided_at::DATE
        ),
        study_activity AS (
@@ -36,6 +38,7 @@ activityRouter.get('/stats/activity', async (req, res) => {
                 COUNT(*) FILTER (WHERE grade = 'pass') AS pass_cnt
          FROM activity_log
          WHERE logged_date >= CURRENT_DATE - $1::int * INTERVAL '1 day'
+           AND user_id = $2
          GROUP BY logged_date
        ),
        merged AS (
@@ -47,7 +50,7 @@ activityRouter.get('/stats/activity', async (req, res) => {
          LEFT JOIN study_activity s    ON s.day = ds.d
        )
        SELECT day, total, pass_total FROM merged ORDER BY day ASC`,
-      [days]
+      [days, userId]
     );
 
     // Compute streaks

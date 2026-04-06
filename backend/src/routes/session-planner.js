@@ -31,6 +31,8 @@ sessionPlannerRouter.post('/session/plan', async (req, res) => {
     });
   }
 
+  const userId = req.user.id;
+
   try {
     // 1. Fetch overdue micro-cards
     const microResult = await dbPool.query(
@@ -44,8 +46,10 @@ sessionPlannerRouter.post('/session/plan', async (req, res) => {
        JOIN cards c ON mc.parent_card_id = c.id
        WHERE mc.status = 'active'
          AND mc.next_review_at <= now()
+         AND mc.user_id = $1
        ORDER BY mc.next_review_at ASC
-       LIMIT 30`
+       LIMIT 30`,
+      [userId]
     );
 
     // 2. Fetch overdue cards
@@ -57,9 +61,11 @@ sessionPlannerRouter.post('/session/plan', async (req, res) => {
        FROM cards c
        LEFT JOIN micro_cards mc ON mc.parent_card_id = c.id
        WHERE c.next_review_at <= now()
+         AND c.user_id = $1
        GROUP BY c.id
        ORDER BY c.next_review_at ASC
-       LIMIT 30`
+       LIMIT 30`,
+      [userId]
     );
 
     const cards = cardsResult.rows;

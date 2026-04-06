@@ -53,6 +53,7 @@ function resolveFinalGrade(action, finalGrade, suggestedGrade) {
 }
 
 decisionRouter.post('/decision', async (req, res) => {
+  const userId = req.user?.id ?? null;
   if (!req.is('application/json')) {
     return res.status(400).json({
       error: 'bad_request',
@@ -233,9 +234,10 @@ decisionRouter.post('/decision', async (req, res) => {
         final_grade,
         decision_type,
         reason,
-        decided_at
+        decided_at,
+        user_id
       )
-      VALUES ($1, $2, $3, $4, NOW())
+      VALUES ($1, $2, $3, $4, NOW(), $5)
       RETURNING id, evaluation_item_id, final_grade, decision_type, reason, decided_at
     `;
 
@@ -243,7 +245,8 @@ decisionRouter.post('/decision', async (req, res) => {
       evaluationItemId,
       finalGrade,
       toDecisionType(action),
-      correctionReason || null
+      correctionReason || null,
+      userId
     ];
 
     const insertResult = await client.query(insertQuery, insertValues);
@@ -253,8 +256,8 @@ decisionRouter.post('/decision', async (req, res) => {
 
     // Log to activity_log for heatmap (best-effort)
     dbPool.query(
-      `INSERT INTO activity_log (activity_type, subject, grade) VALUES ('evaluate', $1, $2)`,
-      [inputSubject || null, finalGrade]
+      `INSERT INTO activity_log (activity_type, subject, grade, user_id) VALUES ('evaluate', $1, $2, $3)`,
+      [inputSubject || null, finalGrade, userId]
     ).catch((e) => console.warn('[activity log]', e.message));
 
     // Bridge: keep scheduler in sync (best-effort, non-blocking)
@@ -397,6 +400,7 @@ async function syncSchedulerCard(pool, { prompt_text, expected_answer_text, subj
 decisionRouter.get('/decision/audit/latest', async (req, res) => {
   const rawLimit = Number.parseInt(normalizeString(req.query.limit), 10);
   const limit = Number.isNaN(rawLimit) ? 100 : Math.min(Math.max(rawLimit, 1), 100);
+  const userId = req.user.id;
 
   const latestSignalsQuery = `
     SELECT
@@ -422,12 +426,13 @@ decisionRouter.get('/decision/audit/latest', async (req, res) => {
       ORDER BY decided_at DESC
       LIMIT 1
     ) ud ON true
+    WHERE ei.user_id = $2
     ORDER BY es.created_at DESC
     LIMIT $1
   `;
 
   try {
-    const { rows } = await dbPool.query(latestSignalsQuery, [limit]);
+    const { rows } = await dbPool.query(latestSignalsQuery, [limit, userId]);
 
     return res.status(200).json({
       count: rows.length,

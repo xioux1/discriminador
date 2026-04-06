@@ -9,6 +9,7 @@ const schedulerRouter = Router();
 // ─── Register / upsert a card ─────────────────────────────────────────────────
 schedulerRouter.post('/scheduler/cards', async (req, res) => {
   const { subject, prompt_text, expected_answer_text } = req.body || {};
+  const userId = req.user.id;
 
   if (!prompt_text?.trim() || !expected_answer_text?.trim()) {
     return res.status(422).json({
@@ -19,10 +20,10 @@ schedulerRouter.post('/scheduler/cards', async (req, res) => {
 
   try {
     const result = await dbPool.query(
-      `INSERT INTO cards (subject, prompt_text, expected_answer_text)
-       VALUES ($1, $2, $3)
+      `INSERT INTO cards (subject, prompt_text, expected_answer_text, user_id)
+       VALUES ($1, $2, $3, $4)
        RETURNING *`,
-      [subject?.trim() || null, prompt_text.trim(), expected_answer_text.trim()]
+      [subject?.trim() || null, prompt_text.trim(), expected_answer_text.trim(), userId]
     );
     return res.status(200).json(result.rows[0]);
   } catch (err) {
@@ -34,17 +35,21 @@ schedulerRouter.post('/scheduler/cards', async (req, res) => {
 // ─── List all cards ───────────────────────────────────────────────────────────
 schedulerRouter.get('/scheduler/cards', async (req, res) => {
   const { subject } = req.query;
+  const userId = req.user.id;
 
   try {
+    const params = [userId];
+    if (subject) params.push(subject);
     const result = await dbPool.query(
       `SELECT c.*,
          COUNT(mc.id) FILTER (WHERE mc.status = 'active') AS active_micro_count
        FROM cards c
        LEFT JOIN micro_cards mc ON mc.parent_card_id = c.id
-       ${subject ? 'WHERE c.subject = $1' : ''}
+       WHERE c.user_id = $1
+       ${subject ? 'AND c.subject = $2' : ''}
        GROUP BY c.id
        ORDER BY c.next_review_at ASC`,
-      subject ? [subject] : []
+      params
     );
     return res.status(200).json({ cards: result.rows });
   } catch (err) {
@@ -59,8 +64,10 @@ schedulerRouter.get('/scheduler/cards', async (req, res) => {
 // (soft block: they appear but with a warning).
 schedulerRouter.get('/scheduler/session', async (req, res) => {
   const { subject } = req.query;
-  const subjectFilter = subject ? 'AND c.subject = $1' : '';
-  const params = subject ? [subject] : [];
+  const userId = req.user.id;
+  const params = [userId];
+  if (subject) params.push(subject);
+  const subjectFilter = subject ? `AND c.subject = $${params.length}` : '';
 
   try {
     const microResult = await dbPool.query(
@@ -72,6 +79,7 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
        JOIN cards c ON mc.parent_card_id = c.id
        WHERE mc.status = 'active'
          AND mc.next_review_at <= now()
+         AND mc.user_id = $1
          ${subjectFilter}
        ORDER BY mc.next_review_at ASC
        LIMIT 30`,
@@ -86,6 +94,7 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
        LEFT JOIN micro_cards mc ON mc.parent_card_id = c.id
        LEFT JOIN card_variants cv ON cv.card_id = c.id
        WHERE c.next_review_at <= now()
+         AND c.user_id = $1
          ${subjectFilter}
        GROUP BY c.id
        ORDER BY
@@ -134,6 +143,7 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
 // grade='review' is treated as 'fail' for scheduling purposes.
 schedulerRouter.post('/scheduler/review', async (req, res) => {
   const { card_id, micro_card_id, grade, concept_gaps = [], response_time_ms } = req.body || {};
+  const userId = req.user.id;
 
   if (!grade || !['pass', 'fail', 'review'].includes(grade.toLowerCase())) {
     return res.status(422).json({
@@ -149,9 +159,9 @@ schedulerRouter.post('/scheduler/review', async (req, res) => {
 
   try {
     if (micro_card_id) {
-      return await reviewMicroCard(res, Number(micro_card_id), effectiveGrade, rtMs);
+      return await reviewMicroCard(res, Number(micro_card_id), effectiveGrade, rtMs, userId);
     } else if (card_id) {
-      return await reviewCard(res, Number(card_id), effectiveGrade, concept_gaps, rtMs);
+      return await reviewCard(res, Number(card_id), effectiveGrade, concept_gaps, rtMs, userId);
     }
     return res.status(422).json({
       error: 'validation_error',
@@ -164,8 +174,8 @@ schedulerRouter.post('/scheduler/review', async (req, res) => {
 });
 
 // ─── Internal: review a full card ────────────────────────────────────────────
-async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs) {
-  const { rows } = await dbPool.query('SELECT * FROM cards WHERE id = $1', [cardId]);
+async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, userId) {
+  const { rows } = await dbPool.query('SELECT * FROM cards WHERE id = $1 AND user_id = $2', [cardId, userId]);
   if (!rows.length) {
     return res.status(404).json({ error: 'not_found', message: 'Card not found.' });
   }
@@ -195,9 +205,9 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs) {
 
   // Log activity
   dbPool.query(
-    `INSERT INTO activity_log (activity_type, subject, grade, response_time_ms)
-     VALUES ('study', $1, $2, $3)`,
-    [updated.rows[0]?.subject || null, grade, responseTimeMs]
+    `INSERT INTO activity_log (activity_type, subject, grade, response_time_ms, user_id)
+     VALUES ('study', $1, $2, $3, $4)`,
+    [updated.rows[0]?.subject || null, grade, responseTimeMs, userId]
   ).catch((e) => console.warn('[activity log]', e.message));
 
   let newMicroCards = [];
@@ -229,9 +239,9 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs) {
         });
 
         const inserted = await dbPool.query(
-          `INSERT INTO micro_cards (parent_card_id, concept, question, expected_answer)
-           VALUES ($1, $2, $3, $4) RETURNING *`,
-          [cardId, concept, micro.question, micro.expected_answer]
+          `INSERT INTO micro_cards (parent_card_id, concept, question, expected_answer, user_id)
+           VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+          [cardId, concept, micro.question, micro.expected_answer, userId]
         );
         newMicroCards.push(inserted.rows[0]);
       } catch (microErr) {
@@ -247,8 +257,8 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs) {
 }
 
 // ─── Internal: review a micro-card ───────────────────────────────────────────
-async function reviewMicroCard(res, microCardId, grade, responseTimeMs) {
-  const { rows } = await dbPool.query('SELECT * FROM micro_cards WHERE id = $1', [microCardId]);
+async function reviewMicroCard(res, microCardId, grade, responseTimeMs, userId) {
+  const { rows } = await dbPool.query('SELECT * FROM micro_cards WHERE id = $1 AND user_id = $2', [microCardId, userId]);
   if (!rows.length) {
     return res.status(404).json({ error: 'not_found', message: 'Micro-card not found.' });
   }
@@ -301,9 +311,9 @@ async function reviewMicroCard(res, microCardId, grade, responseTimeMs) {
 
   // Log activity
   dbPool.query(
-    `INSERT INTO activity_log (activity_type, subject, grade, response_time_ms)
-     VALUES ('study', $1, $2, $3)`,
-    [micro.parent_subject || null, grade, responseTimeMs]
+    `INSERT INTO activity_log (activity_type, subject, grade, response_time_ms, user_id)
+     VALUES ('study', $1, $2, $3, $4)`,
+    [micro.parent_subject || null, grade, responseTimeMs, userId]
   ).catch((e) => console.warn('[activity log]', e.message));
 
   return res.status(200).json({
@@ -316,8 +326,10 @@ async function reviewMicroCard(res, microCardId, grade, responseTimeMs) {
 // Returns all cards + their micro-cards, grouped into time buckets.
 schedulerRouter.get('/scheduler/agenda', async (req, res) => {
   const { subject } = req.query;
-  const subjectFilter = subject ? 'WHERE c.subject = $1' : '';
-  const params = subject ? [subject] : [];
+  const userId = req.user.id;
+  const params = [userId];
+  if (subject) params.push(subject);
+  const subjectFilter = subject ? `AND c.subject = $${params.length}` : '';
 
   try {
     const { rows: cards } = await dbPool.query(
@@ -336,6 +348,7 @@ schedulerRouter.get('/scheduler/agenda', async (req, res) => {
          ) FILTER (WHERE mc.id IS NOT NULL AND mc.status = 'active') AS micro_cards
        FROM cards c
        LEFT JOIN micro_cards mc ON mc.parent_card_id = c.id AND mc.status = 'active'
+       WHERE c.user_id = $1
        ${subjectFilter}
        GROUP BY c.id
        ORDER BY c.next_review_at ASC`,
@@ -395,12 +408,13 @@ schedulerRouter.get('/scheduler/agenda', async (req, res) => {
 // The original card slot in the scheduler is unchanged.
 schedulerRouter.post('/scheduler/cards/:id/variant', async (req, res) => {
   const cardId = parseInt(req.params.id);
+  const userId = req.user.id;
   if (!cardId) return res.status(422).json({ error: 'validation_error', message: 'Invalid card id.' });
 
   try {
     const cardRes = await dbPool.query(
-      `SELECT id, subject, prompt_text, expected_answer_text FROM cards WHERE id = $1`,
-      [cardId]
+      `SELECT id, subject, prompt_text, expected_answer_text FROM cards WHERE id = $1 AND user_id = $2`,
+      [cardId, userId]
     );
     if (!cardRes.rows.length) return res.status(404).json({ error: 'not_found', message: 'Card not found.' });
 

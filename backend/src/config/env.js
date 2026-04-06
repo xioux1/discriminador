@@ -59,7 +59,9 @@ export function assertRequiredEnv() {
   if (!env.databaseUrl) {
     throw new Error('DATABASE_URL is required.');
   }
-
+  if (!process.env.JWT_SECRET) {
+    throw new Error('JWT_SECRET is required.');
+  }
   if (isLLMJudgeEnabled() && !process.env.ANTHROPIC_API_KEY) {
     throw new Error('ANTHROPIC_API_KEY is required when ENABLE_LLM_JUDGE=true.');
   }

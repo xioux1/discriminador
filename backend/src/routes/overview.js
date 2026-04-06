@@ -3,7 +3,8 @@ import { dbPool } from '../db/client.js';
 
 const overviewRouter = Router();
 
-overviewRouter.get('/stats/overview', async (_req, res) => {
+overviewRouter.get('/stats/overview', async (req, res) => {
+  const userId = req.user.id;
   try {
     const { rows } = await dbPool.query(`
       SELECT
@@ -26,10 +27,11 @@ overviewRouter.get('/stats/overview', async (_req, res) => {
         LIMIT 1
       ) ud ON true
       WHERE ei.source_system = 'evaluate_api'
+        AND ei.user_id = $1
         AND ud.final_grade IS NOT NULL
       GROUP BY subject, trim(ei.input_payload->>'prompt_text')
       ORDER BY subject ASC, last_evaluated_at DESC
-    `);
+    `, [userId]);
 
     // Group by subject
     const bySubject = {};

@@ -2,6 +2,8 @@ import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import routes from './routes/index.js';
+import authRouter from './routes/auth.js';
+import { requireAuth } from './middleware/auth.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
@@ -22,19 +24,20 @@ export function createApp() {
       return res.status(400).json({
         error: 'bad_request',
         message: 'Invalid JSON payload or unsupported Content-Type.',
-        details: [
-          {
-            field: 'body',
-            issue: 'Malformed JSON'
-          }
-        ]
+        details: [{ field: 'body', issue: 'Malformed JSON' }]
       });
     }
-
     return next(err);
   });
 
+  // Public routes (no auth)
+  app.use(authRouter);
+  app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+
+  // All other routes require authentication
+  app.use(requireAuth);
   app.use(routes);
+
   app.use(notFoundHandler);
   app.use(errorHandler);
 
