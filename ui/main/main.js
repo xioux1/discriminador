@@ -238,7 +238,15 @@ async function loadDashboard() {
 
     loading.classList.add('hidden');
 
-    const subjects = overview.subjects || [];
+    const normalizeSubject = (subject) => {
+      const normalized = typeof subject === 'string' ? subject.trim() : '';
+      return normalized || '(sin materia)';
+    };
+
+    const subjects = (overview.subjects || []).map((subj) => ({
+      ...subj,
+      subject: normalizeSubject(subj.subject)
+    }));
     if (!subjects.length) {
       content.innerHTML = '<p style="color:var(--text-muted);padding:16px">Aún no hay evaluaciones registradas. Empezá evaluando en la pestaña Evaluar.</p>';
       return;
@@ -248,11 +256,11 @@ async function loadDashboard() {
     const pendingCardsBySubject = {};
     const activeMicrosBySubject = {};
     for (const card of session.cards ?? []) {
-      const s = card.subject || '(sin materia)';
+      const s = normalizeSubject(card.subject);
       pendingCardsBySubject[s] = (pendingCardsBySubject[s] || 0) + 1;
     }
     for (const mc of session.micro_cards ?? []) {
-      const s = mc.parent_subject || '(sin materia)';
+      const s = normalizeSubject(mc.parent_subject);
       activeMicrosBySubject[s] = (activeMicrosBySubject[s] || 0) + 1;
     }
     const totalPendingCards = Object.values(pendingCardsBySubject).reduce((a, b) => a + b, 0);
@@ -274,20 +282,26 @@ async function loadDashboard() {
     const list = document.createElement('ul');
     list.className = 'subjects-list';
 
-    for (const subj of subjects) {
-      const pendingMainCards = pendingCardsBySubject[subj.subject] || 0;
-      const activeMicros = activeMicrosBySubject[subj.subject] || 0;
+    const subjectNames = [...new Set([
+      ...subjects.map((subj) => subj.subject),
+      ...Object.keys(pendingCardsBySubject),
+      ...Object.keys(activeMicrosBySubject)
+    ])].sort((a, b) => a.localeCompare(b, 'es'));
+
+    for (const subjectName of subjectNames) {
+      const pendingMainCards = pendingCardsBySubject[subjectName] || 0;
+      const activeMicros = activeMicrosBySubject[subjectName] || 0;
 
       const row = document.createElement('li');
       row.className = 'subjects-list-item';
       row.innerHTML = `
         <div class="subjects-list-main">
-          <div class="subjects-list-name">${subj.subject}</div>
+          <div class="subjects-list-name">${subjectName}</div>
           <div class="subjects-list-meta">Tarjetas principales pendientes: ${pendingMainCards} · Microconsignas activas: ${activeMicros}</div>
         </div>
         <div class="subjects-list-actions">
-          <button type="button" class="btn-primary deck-study-btn" data-subject="${subj.subject}">Estudiar</button>
-          <button type="button" class="btn-secondary deck-config-btn" data-subject="${subj.subject}">Configurar</button>
+          <button type="button" class="btn-primary deck-study-btn" data-subject="${subjectName}">Estudiar</button>
+          <button type="button" class="btn-secondary deck-config-btn" data-subject="${subjectName}">Configurar</button>
         </div>
       `;
       list.appendChild(row);
