@@ -400,11 +400,11 @@ async function loadProgress() {
         row.className = 'progress-subject-row';
         row.innerHTML = `
           <span class="progress-subject-name">${s.subject}</span>
-          <div class="dimension-bar-track" style="flex:1;margin:0 8px">
+          <div class="progress-subject-bar-track">
             <div class="dimension-bar-fill${pct < 40 ? ' weak' : pct < 70 ? ' mid' : ''}" style="width:${pct}%"></div>
           </div>
-          <span style="font-size:0.85rem;color:${pct >= 60 ? 'var(--pass-fg)' : 'var(--fail-fg)'}">${pct}%</span>
-          <span style="font-size:0.8rem;color:var(--text-muted);margin-left:8px">${s.total_questions}q</span>
+          <span class="progress-subject-pct" style="color:${pct >= 60 ? 'var(--pass-fg)' : 'var(--fail-fg)'}">${pct}%</span>
+          <span class="progress-subject-count">${s.total_questions}q</span>
         `;
         subjEl.appendChild(row);
       }
