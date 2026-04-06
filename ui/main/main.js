@@ -2097,7 +2097,7 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       timeEl.textContent = `${elapsed}s`;
     }
 
-    // Replicate Evaluate-style dimension feedback + micro-consignas in Study
+    // Replicate Evaluate-style dimension feedback in Study
     let dimsEl = document.querySelector('#study-result-dimensions');
     if (!dimsEl) {
       dimsEl = document.createElement('div');
@@ -2118,27 +2118,6 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
     } else {
       dimsEl.innerHTML = '<span class="study-dimension-chip ok">Buen dominio general en esta respuesta.</span>';
       dimsEl.classList.remove('hidden');
-    }
-
-    let microEl = document.querySelector('#study-result-micro');
-    if (!microEl) {
-      microEl = document.createElement('div');
-      microEl.id = 'study-result-micro';
-      microEl.className = 'study-result-micro hidden';
-      dimsEl.insertAdjacentElement('afterend', microEl);
-    }
-    if (weakDimensions.length > 0) {
-      const topWeak = weakDimensions.slice(0, 2).map(([dim]) => DIM_LABELS[dim] || dim);
-      microEl.innerHTML = `
-        <strong>Micro-consignas sugeridas:</strong>
-        <ul>
-          ${topWeak.map((label) => `<li>Reescribí tu respuesta enfocándote en <em>${label}</em>.</li>`).join('')}
-          <li>Compará tu respuesta contra la esperada y marcá 1 diferencia concreta.</li>
-        </ul>`;
-      microEl.classList.remove('hidden');
-    } else {
-      microEl.innerHTML = '';
-      microEl.classList.add('hidden');
     }
 
     const concepts = result.missing_concepts ?? [];
