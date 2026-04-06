@@ -503,6 +503,20 @@ _evalAnswerTextarea.addEventListener('focus', function () {
   MathPalette.setActiveTextarea(_evalAnswerTextarea);
 });
 
+function attachMathTabInsertion(textarea, isMathModeFn) {
+  if (!textarea) return;
+  textarea.addEventListener('keydown', (event) => {
+    if (event.key !== 'Tab' || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (!isMathModeFn()) return;
+    event.preventDefault();
+    const start = textarea.selectionStart ?? textarea.value.length;
+    const end = textarea.selectionEnd ?? textarea.value.length;
+    textarea.setRangeText('  ', start, end, 'end');
+  });
+}
+
+attachMathTabInsertion(_evalAnswerTextarea, () => (_editorModeSelect?.value || '') === 'math');
+
 function _subjectModeKey(subject) {
   return 'editor-mode:' + (subject || '').trim().toLowerCase();
 }
@@ -892,6 +906,26 @@ function renderResult(result) {
 
 function escHtml(str) {
   return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function escapePreserve(text) {
+  return escHtml(text).replace(/\n/g, '<br>');
+}
+
+function looksLikeCodeBlock(text = '') {
+  if (!text) return false;
+  return /(^|\n)\s*(SELECT|WITH|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|BEGIN|DECLARE)\b/i.test(text)
+    || /[{};]/.test(text)
+    || /(^|\n)\s{2,}\S/.test(text);
+}
+
+function formatAnswerBlock(label, text) {
+  const raw = String(text ?? '').trim();
+  if (!raw) return '';
+  if (looksLikeCodeBlock(raw)) {
+    return `<div class="study-answer-compare-block"><strong>${label}:</strong><pre><code>${escHtml(raw)}</code></pre></div>`;
+  }
+  return `<div class="study-answer-compare-block"><strong>${label}:</strong><div class="study-answer-compare-text">${escapePreserve(raw)}</div></div>`;
 }
 
 async function deleteJson(url) {
@@ -1473,6 +1507,10 @@ function initStudyTab() {
     '🎤 Dictar',
     () => studyDictBtn.dataset.subject || ''
   );
+  attachMathTabInsertion(
+    document.querySelector('#study-answer-input'),
+    () => studyState.currentInputMode === 'math'
+  );
 
   document.querySelector('#study-again-btn').addEventListener('click', () => {
     document.querySelector('#study-complete').classList.add('hidden');
@@ -1691,6 +1729,7 @@ const studyState = {
   index: 0,
   results: [],          // {grade, type, concept?}
   currentEvalResult: null,
+  currentInputMode: '',
   cardStartTime: 0,
   responseTimeMs: 0,
   timerInterval: null
@@ -1790,6 +1829,7 @@ function showStudyCard() {
   const savedMode   = getSubjectMode(subject);
   const isMicro     = item.type === 'micro';
   const studySqlMode = !isMicro && savedMode === 'sql';
+  studyState.currentInputMode = !isMicro && savedMode === 'math' ? 'math' : studySqlMode ? 'sql' : '';
 
   if (!isMicro && savedMode === 'math') {
     MathPalette.show();
@@ -1832,14 +1872,17 @@ function showStudyCard() {
         const panel = document.querySelector('#study-sql-compiler');
         MathPalette.setActiveTextarea(input);
         if (next === 'sql') {
+          studyState.currentInputMode = 'sql';
           MathPalette.hide();
           SqlEditor.activate(input);
           panel?.classList.remove('hidden');
         } else if (next === 'math') {
+          studyState.currentInputMode = 'math';
           SqlEditor.deactivate();
           MathPalette.show();
           panel?.classList.add('hidden');
         } else {
+          studyState.currentInputMode = '';
           SqlEditor.deactivate();
           MathPalette.updateSubject(subject || '');
           panel?.classList.add('hidden');
@@ -1940,6 +1983,50 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       timeEl.textContent = `${elapsed}s`;
     }
 
+    // Replicate Evaluate-style dimension feedback + micro-consignas in Study
+    let dimsEl = document.querySelector('#study-result-dimensions');
+    if (!dimsEl) {
+      dimsEl = document.createElement('div');
+      dimsEl.id = 'study-result-dimensions';
+      dimsEl.className = 'study-result-dimensions';
+      justEl.insertAdjacentElement('afterend', dimsEl);
+    }
+    const weakDimensions = Object.entries(result.dimensions || {})
+      .filter(([, value]) => Number(value) < 0.7)
+      .sort((a, b) => Number(a[1]) - Number(b[1]));
+    if (weakDimensions.length > 0) {
+      dimsEl.innerHTML = weakDimensions.map(([dimension, value]) => {
+        const pct = Math.round(Number(value) * 100);
+        const label = DIM_LABELS[dimension] || dimension;
+        return `<span class="study-dimension-chip weak">${label}: ${pct}%</span>`;
+      }).join('');
+      dimsEl.classList.remove('hidden');
+    } else {
+      dimsEl.innerHTML = '<span class="study-dimension-chip ok">Buen dominio general en esta respuesta.</span>';
+      dimsEl.classList.remove('hidden');
+    }
+
+    let microEl = document.querySelector('#study-result-micro');
+    if (!microEl) {
+      microEl = document.createElement('div');
+      microEl.id = 'study-result-micro';
+      microEl.className = 'study-result-micro hidden';
+      dimsEl.insertAdjacentElement('afterend', microEl);
+    }
+    if (weakDimensions.length > 0) {
+      const topWeak = weakDimensions.slice(0, 2).map(([dim]) => DIM_LABELS[dim] || dim);
+      microEl.innerHTML = `
+        <strong>Micro-consignas sugeridas:</strong>
+        <ul>
+          ${topWeak.map((label) => `<li>Reescribí tu respuesta enfocándote en <em>${label}</em>.</li>`).join('')}
+          <li>Compará tu respuesta contra la esperada y marcá 1 diferencia concreta.</li>
+        </ul>`;
+      microEl.classList.remove('hidden');
+    } else {
+      microEl.innerHTML = '';
+      microEl.classList.add('hidden');
+    }
+
     const concepts = result.missing_concepts ?? [];
     if (concepts.length > 0) {
       missingEl.innerHTML = `<strong>Faltó:</strong> ${concepts.map((c) => `<span class="concept-tag">${c}</span>`).join(' ')}`;
@@ -1949,9 +2036,12 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       missingEl.classList.add('hidden');
     }
 
-    // Show expected answer on FAIL or REVIEW so the student can learn
-    if (grade === 'FAIL' || grade === 'REVIEW') {
-      expectedEl.innerHTML = `<strong>Respuesta esperada:</strong> ${expected_answer_text}`;
+    // Always show answer comparison so the user can contrast their response with the expected one.
+    if (grade === 'FAIL' || grade === 'REVIEW' || grade === 'PASS') {
+      expectedEl.innerHTML = `
+        ${formatAnswerBlock('Tu respuesta', answer)}
+        ${formatAnswerBlock('Respuesta esperada', expected_answer_text)}
+      `;
       expectedEl.classList.remove('hidden');
     } else {
       expectedEl.textContent = '';
