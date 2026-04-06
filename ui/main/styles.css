@@ -672,6 +672,32 @@ textarea:focus, input[type="text"]:focus {
 /* Heatmap */
 .heatmap-container { overflow-x: auto; }
 
+.heatmap-year-labels,
+.heatmap-month-labels {
+  display: grid;
+  grid-auto-flow: column;
+  gap: 3px;
+  min-width: max-content;
+}
+
+.heatmap-year-labels {
+  margin-bottom: 4px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.heatmap-month-labels {
+  margin-bottom: 6px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.heatmap-label {
+  white-space: nowrap;
+  line-height: 1;
+}
+
 .heatmap-grid {
   display: grid;
   grid-template-rows: repeat(7, 13px);
@@ -686,6 +712,9 @@ textarea:focus, input[type="text"]:focus {
   height: 13px;
   border-radius: 2px;
   background: var(--heatmap-color, #ebedf0);
+}
+.heatmap-cell.is-padding {
+  opacity: 0.2;
 }
 .heatmap-cell[data-lvl="0"] { background: #ebedf0; }
 .heatmap-cell[data-lvl="1"] { background: #c6e48b; }

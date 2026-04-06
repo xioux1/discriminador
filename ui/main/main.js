@@ -355,9 +355,13 @@ async function loadProgress() {
       pills.appendChild(span);
     });
 
-    // Heatmap — 52 weeks × 7 days
+    // Heatmap — último año calendario, alineado por semanas completas
     const grid = document.querySelector('#heatmap-grid');
+    const monthLabels = document.querySelector('#heatmap-month-labels');
+    const yearLabels = document.querySelector('#heatmap-year-labels');
     grid.innerHTML = '';
+    monthLabels.innerHTML = '';
+    yearLabels.innerHTML = '';
 
     const dayMap = {};
     let maxCount = 0;
@@ -370,23 +374,73 @@ async function loadProgress() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const startDate = new Date(today);
-    startDate.setDate(startDate.getDate() - 363);
-    // Align to Sunday of that week
-    startDate.setDate(startDate.getDate() - startDate.getDay());
+    // 365 días incluyendo hoy (si hay año bisiesto, cruza dos años sin cortar semanas)
+    startDate.setDate(startDate.getDate() - 364);
 
-    const totalCells = 52 * 7;
-    for (let i = 0; i < totalCells; i++) {
-      const date = new Date(startDate);
-      date.setDate(startDate.getDate() + i);
+    const alignedStart = new Date(startDate);
+    alignedStart.setDate(alignedStart.getDate() - alignedStart.getDay());
+    const alignedEnd = new Date(today);
+    alignedEnd.setDate(alignedEnd.getDate() + (6 - alignedEnd.getDay()));
+
+    const MS_PER_DAY = 24 * 60 * 60 * 1000;
+    const totalDays = Math.floor((alignedEnd - alignedStart) / MS_PER_DAY) + 1;
+    const weekCount = Math.ceil(totalDays / 7);
+
+    grid.style.gridTemplateColumns = `repeat(${weekCount}, 13px)`;
+    monthLabels.style.gridTemplateColumns = `repeat(${weekCount}, 13px)`;
+    yearLabels.style.gridTemplateColumns = `repeat(${weekCount}, 13px)`;
+
+    const monthFmt = new Intl.DateTimeFormat('es-AR', { month: 'short' });
+    const yearFmt = new Intl.DateTimeFormat('es-AR', { year: 'numeric' });
+    const renderedMonths = new Set();
+    const renderedYears = new Set();
+
+    for (let i = 0; i < totalDays; i++) {
+      const date = new Date(alignedStart);
+      date.setDate(alignedStart.getDate() + i);
       const dateStr = date.toISOString().slice(0, 10);
-      const count = dayMap[dateStr] || 0;
+      const inRange = date >= startDate && date <= today;
+      const count = inRange ? (dayMap[dateStr] || 0) : 0;
       const lvl = count === 0 ? 0 : Math.min(4, Math.ceil((count / Math.max(maxCount, 1)) * 4));
+      const weekIndex = Math.floor(i / 7);
+
+      if (date.getDay() === 0 && date.getDate() <= 7) {
+        const monthKey = `${date.getFullYear()}-${date.getMonth()}`;
+        if (!renderedMonths.has(monthKey)) {
+          renderedMonths.add(monthKey);
+          const monthEl = document.createElement('span');
+          monthEl.className = 'heatmap-label';
+          monthEl.style.gridColumn = `${weekIndex + 1} / span 4`;
+          monthEl.textContent = monthFmt.format(date);
+          monthLabels.appendChild(monthEl);
+        }
+      }
+
+      if (date.getDay() === 0 && date.getMonth() === 0 && date.getDate() <= 7) {
+        const yearKey = String(date.getFullYear());
+        if (!renderedYears.has(yearKey)) {
+          renderedYears.add(yearKey);
+          const yearEl = document.createElement('span');
+          yearEl.className = 'heatmap-label';
+          yearEl.style.gridColumn = `${weekIndex + 1} / span 6`;
+          yearEl.textContent = yearFmt.format(date);
+          yearLabels.appendChild(yearEl);
+        }
+      }
 
       const cell = document.createElement('div');
-      cell.className = 'heatmap-cell';
+      cell.className = `heatmap-cell${inRange ? '' : ' is-padding'}`;
       cell.setAttribute('data-lvl', lvl);
-      cell.title = `${dateStr}: ${count} revisiones`;
+      cell.title = inRange ? `${dateStr}: ${count} revisiones` : `${dateStr}: fuera del rango`;
       grid.appendChild(cell);
+    }
+
+    if (renderedYears.size === 0) {
+      const yearEl = document.createElement('span');
+      yearEl.className = 'heatmap-label';
+      yearEl.style.gridColumn = '1 / span 6';
+      yearEl.textContent = yearFmt.format(startDate);
+      yearLabels.appendChild(yearEl);
     }
 
     // Per-subject stats
