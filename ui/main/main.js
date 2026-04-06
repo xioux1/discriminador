@@ -264,30 +264,36 @@ async function loadDashboard() {
       content.appendChild(banner);
     }
 
-    const grid = document.createElement('div');
-    grid.className = 'deck-grid';
+    const panel = document.createElement('div');
+    panel.className = 'subjects-panel card';
+    panel.innerHTML = '<h3 class="subjects-panel-title">Materias</h3>';
+
+    const list = document.createElement('ul');
+    list.className = 'subjects-list';
 
     for (const subj of subjects) {
       const passRatePct = Math.round(subj.pass_rate * 100);
       const dueCount = dueBySubject[subj.subject] || 0;
 
-      const card = document.createElement('div');
-      card.className = 'deck-card';
-      card.innerHTML = `
-        <div class="deck-name">${subj.subject}</div>
-        <div class="deck-due${dueCount > 0 ? ' overdue' : ''}">${dueCount > 0 ? dueCount : '✓'}</div>
-        <div class="deck-due-label">${dueCount > 0 ? 'para hoy' : 'al día'}</div>
-        <div class="deck-pass-bar-track"><div class="deck-pass-bar-fill" style="width:${passRatePct}%"></div></div>
-        <div class="deck-pass-label">${subj.total_questions} pregunta${subj.total_questions !== 1 ? 's' : ''} · ${passRatePct}% PASS</div>
-        <button type="button" class="btn-primary deck-study-btn" style="margin-top:10px;width:100%" data-subject="${subj.subject}">Estudiar →</button>
-        <button type="button" class="btn-ghost deck-config-btn" data-subject="${subj.subject}" style="margin-top:4px;width:100%;font-size:0.8rem">⚙ Configurar</button>
+      const row = document.createElement('li');
+      row.className = 'subjects-list-item';
+      row.innerHTML = `
+        <div class="subjects-list-main">
+          <div class="subjects-list-name">${subj.subject}</div>
+          <div class="subjects-list-meta">pendientes: ${dueCount} · ${subj.total_questions} pregunta${subj.total_questions !== 1 ? 's' : ''} · ${passRatePct}% PASS</div>
+        </div>
+        <div class="subjects-list-actions">
+          <button type="button" class="btn-primary deck-study-btn" data-subject="${subj.subject}">Estudiar</button>
+          <button type="button" class="btn-secondary deck-config-btn" data-subject="${subj.subject}">Configurar</button>
+        </div>
       `;
-      grid.appendChild(card);
+      list.appendChild(row);
     }
 
-    content.appendChild(grid);
+    panel.appendChild(list);
+    content.appendChild(panel);
 
-    grid.addEventListener('click', (e) => {
+    list.addEventListener('click', (e) => {
       if (e.target.classList.contains('deck-study-btn')) {
         document.querySelector('[data-tab="study"]').click();
       }
@@ -322,7 +328,7 @@ async function loadProgress() {
     const pills = document.querySelector('#progress-pills');
     pills.innerHTML = '';
     [
-      { label: `🔥 Racha: ${actData.streak_current} día${actData.streak_current !== 1 ? 's' : ''}`, cls: actData.streak_current > 0 ? 'pass' : '' },
+      { label: `Racha: ${actData.streak_current} día${actData.streak_current !== 1 ? 's' : ''}`, cls: actData.streak_current > 0 ? 'pass' : '' },
       { label: `Mejor racha: ${actData.streak_best} días`, cls: '' },
       { label: `Total revisiones: ${actData.total_reviews}`, cls: '' }
     ].forEach(({ label, cls }) => {
@@ -660,7 +666,7 @@ function _renderErrors(errors, outputEl) {
   outputEl.textContent = errors.map((e) => {
     let msg = e.line ? `LÍNEA ${e.line}: ` : '';
     msg += e.message;
-    if (e.hint) msg += `\n  → ${e.hint}`;
+    if (e.hint) msg += `\n  > ${e.hint}`;
     return msg;
   }).join('\n\n');
 }
@@ -691,7 +697,7 @@ async function verifySql(sqlText, outputEl) {
 
     if (data.valid || llmErrors.length === 0) {
       outputEl.className = 'sql-compiler-output valid';
-      outputEl.textContent = '✓ Compilación exitosa — sin errores de sintaxis';
+      outputEl.textContent = 'Compilación exitosa - sin errores de sintaxis';
       return true;
     } else {
       _renderErrors(llmErrors, outputEl);
@@ -699,7 +705,7 @@ async function verifySql(sqlText, outputEl) {
     }
   } catch (_err) {
     outputEl.className = 'sql-compiler-output valid';
-    outputEl.textContent = '✓ Verificación no disponible — podés continuar';
+    outputEl.textContent = 'Verificación no disponible - podés continuar';
     return true;
   }
 }
@@ -966,7 +972,7 @@ async function postJson(url, body, method = 'POST') {
 
 // --- SQL clause checklist renderer (shared by Evaluate + Study tabs) ---
 function renderClauseChecklist(clauses) {
-  const statusIcon = { present: '✓', missing: '✗', extra: '~' };
+  const statusIcon = { present: 'ok', missing: 'x', extra: '~' };
   const items = clauses.map((c) =>
     `<span class="sql-clause-item ${c.status}"><span class="sql-clause-label">${statusIcon[c.status]}</span>${c.name}</span>`
   ).join('');
@@ -1122,7 +1128,7 @@ function renderQuestionStats(data) {
       const row = document.createElement('div');
       row.className = 'dimension-bar-row';
       row.innerHTML = `
-        <span class="dimension-bar-label">${DIM_LABELS[dimension] || dimension}${fail_count > 0 ? ` <small>(${fail_count}✗)</small>` : ''}</span>
+        <span class="dimension-bar-label">${DIM_LABELS[dimension] || dimension}${fail_count > 0 ? ` <small>(${fail_count}x)</small>` : ''}</span>
         <div class="dimension-bar-track"><div class="dimension-bar-fill${colorCls ? ' ' + colorCls : ''}" style="width:${pct}%"></div></div>
         <span>${pct}%</span>`;
       dimEl.appendChild(row);
@@ -1506,7 +1512,7 @@ function initStudyTab() {
   attachDictation(
     studyDictBtn,
     document.querySelector('#study-answer-input'),
-    '🎤 Dictar',
+    'Dictar',
     () => studyDictBtn.dataset.subject || ''
   );
   attachMathTabInsertion(
@@ -1589,7 +1595,7 @@ async function fetchSessionPlan() {
     // Render warnings
     const warnEl = document.querySelector('#briefing-warnings');
     warnEl.innerHTML = (data.plan.warnings || []).map((w) =>
-      `<div style="color:var(--fail-fg);font-size:0.85rem;margin-bottom:6px">⚠ ${w}</div>`
+      `<div style="color:var(--fail-fg);font-size:0.85rem;margin-bottom:6px">Advertencia: ${w}</div>`
     ).join('');
 
     // Render plan summary
@@ -1605,7 +1611,7 @@ async function fetchSessionPlan() {
         <div style="font-weight:600;margin-bottom:8px">${planned.length} tarjeta${planned.length !== 1 ? 's' : ''} · ~${data.plan.total_estimated_minutes} min</div>
         ${planned.map((p) => `
           <div class="briefing-plan-row">
-            <span>${p.type === 'micro' ? '📌 ' : ''}${p.subject}</span>
+            <span>${p.subject}</span>
             <span style="color:var(--text-muted);font-size:0.8rem">~${Math.round(p.estimated_ms / 1000)}s</span>
           </div>`).join('')}
         ${deferred.length > 0 ? `<div class="briefing-deferred">+ ${deferred.length} tarjeta${deferred.length !== 1 ? 's' : ''} postergada${deferred.length !== 1 ? 's' : ''} para otra sesión</div>` : ''}
@@ -1811,7 +1817,7 @@ function showStudyCard() {
     badge.classList.add('hidden');
     parentContextEl.classList.add('hidden');
     const hasMicros = parseInt(item.data.active_micro_count) > 0;
-    badge.textContent = hasMicros ? `⚠ Conceptos pendientes (${item.data.active_micro_count})` : '';
+    badge.textContent = hasMicros ? `Advertencia: Conceptos pendientes (${item.data.active_micro_count})` : '';
     if (hasMicros) badge.classList.remove('hidden');
     promptEl.textContent = getStudyPromptText(item);
   }
@@ -1819,7 +1825,7 @@ function showStudyCard() {
 
   const editPromptBtn = document.querySelector('#study-edit-prompt-btn');
   const clarifyPromptBtn = document.querySelector('#study-clarify-prompt-btn');
-  if (editPromptBtn) editPromptBtn.textContent = '✏️ Editar';
+  if (editPromptBtn) editPromptBtn.textContent = 'Editar';
   if (clarifyPromptBtn) clarifyPromptBtn.disabled = false;
 
   // Reset answer + result blocks (refresh SQL layer to clear ghost text)
@@ -1887,7 +1893,7 @@ function showStudyCard() {
   const modeToggleBtn = document.querySelector('#study-mode-toggle');
   if (modeToggleBtn) {
     const MODE_CYCLE  = ['', 'sql', 'math'];
-    const MODE_LABELS = { '': '📝 Texto', 'sql': '💻 SQL/PL', 'math': '∑ Math' };
+    const MODE_LABELS = { '': 'Texto', 'sql': 'SQL/PL', 'math': 'Math' };
     if (isMicro) {
       modeToggleBtn.hidden = true;
     } else {
@@ -1955,7 +1961,7 @@ function toggleStudyPromptEdit() {
   if (!isEditing) {
     promptEl.setAttribute('contenteditable', 'true');
     promptEl.focus();
-    editBtn.textContent = '💾 Guardar edición';
+    editBtn.textContent = 'Guardar edición';
     setStudyPromptFeedback('Editá el texto de la consigna y guardá.', 'info');
     return;
   }
@@ -1971,7 +1977,7 @@ function toggleStudyPromptEdit() {
   else item.data.session_prompt_text = editedPrompt;
 
   promptEl.textContent = editedPrompt;
-  editBtn.textContent = '✏️ Editar';
+  editBtn.textContent = 'Editar';
   setStudyPromptFeedback('Consigna actualizada para esta sesión.', 'success');
 }
 
@@ -2000,7 +2006,7 @@ async function clarifyStudyPrompt() {
     promptEl.removeAttribute('contenteditable');
     promptEl.textContent = clarifiedPrompt;
     const editBtn = document.querySelector('#study-edit-prompt-btn');
-    if (editBtn) editBtn.textContent = '✏️ Editar';
+    if (editBtn) editBtn.textContent = 'Editar';
     setStudyPromptFeedback('Consigna aclarada con IA para esta sesión.', 'success');
   } catch (err) {
     setStudyPromptFeedback(`No se pudo aclarar: ${err.message}`, 'error');
@@ -2394,7 +2400,7 @@ async function getJson(url) {
 // ─── Agenda view ──────────────────────────────────────────────────────────────
 
 const BUCKET_LABELS = {
-  overdue:   '⚠ Vencidas',
+  overdue:   'Advertencia: Vencidas',
   today:     'Hoy',
   tomorrow:  'Mañana',
   this_week: 'Esta semana',
@@ -2450,7 +2456,7 @@ async function loadAgenda() {
           <div class="agenda-card-header">
             ${card.subject ? `<span class="agenda-subject-badge">${card.subject}</span>` : ''}
             <span class="agenda-due ${key}">${dueStr}</span>
-            <span class="agenda-interval">${intervalStr} · ${card.review_count} revis. · ${card.pass_count} ✓</span>
+            <span class="agenda-interval">${intervalStr} · ${card.review_count} revis. · ${card.pass_count} ok</span>
           </div>
           <p class="agenda-card-prompt">${truncate(card.prompt_text, 120)}</p>
           ${micros.length ? `
@@ -2592,7 +2598,7 @@ function renderExamDatesList(examDates, subject) {
         <span class="exam-date-label">${escHtml(e.label)}</span>
         <span class="exam-date-meta">${e.exam_date?.slice(0,10)} · ${e.exam_type} · ${scopeTag}</span>
         ${badge}
-        <button type="button" class="btn-ghost exam-date-delete-btn" data-id="${e.id}" data-subject="${escHtml(subject)}" style="font-size:0.72rem;padding:1px 7px">✕</button>
+        <button type="button" class="btn-ghost exam-date-delete-btn" data-id="${e.id}" data-subject="${escHtml(subject)}" style="font-size:0.72rem;padding:1px 7px">Eliminar</button>
       </div>`;
   }).join('');
 
@@ -2639,7 +2645,7 @@ function renderExamsList(exams, subject) {
   el.innerHTML = exams.map(e => `
     <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
       <span style="flex:1;font-size:0.85rem">${escHtml(e.label || e.exam_type)} ${e.year || ''}</span>
-      <button type="button" class="btn-ghost exam-delete-btn" data-id="${e.id}" data-subject="${escHtml(subject)}" style="font-size:0.75rem;padding:2px 8px">✕</button>
+      <button type="button" class="btn-ghost exam-delete-btn" data-id="${e.id}" data-subject="${escHtml(subject)}" style="font-size:0.75rem;padding:2px 8px">Eliminar</button>
     </div>`).join('');
 
   el.querySelectorAll('.exam-delete-btn').forEach(btn => {
