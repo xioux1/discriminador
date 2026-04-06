@@ -1729,6 +1729,8 @@ const studyState = {
   index: 0,
   results: [],          // {grade, type, concept?}
   currentEvalResult: null,
+  currentEvalContext: null,
+  currentDecision: null,
   currentInputMode: '',
   cardStartTime: 0,
   responseTimeMs: 0,
@@ -1743,6 +1745,9 @@ async function startStudySession() {
   studyState.queue   = [...micros, ...cards];
   studyState.index   = 0;
   studyState.results = [];
+  studyState.currentEvalResult = null;
+  studyState.currentEvalContext = null;
+  studyState.currentDecision = null;
 
   if (studyState.queue.length === 0) {
     loadStudyOverview();
@@ -1802,6 +1807,8 @@ function showStudyCard() {
   const studyEvalBtn = document.querySelector('#study-eval-btn');
   studyEvalBtn.disabled = false;
   studyState.currentEvalResult = null;
+  studyState.currentEvalContext = null;
+  studyState.currentDecision = null;
   // Reset SQL compiler panel for study session
   const studyCompilerPanel = document.querySelector('#study-sql-compiler');
   const studyCompilerOut   = document.querySelector('#study-compiler-output');
@@ -1966,6 +1973,13 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
 
     studyState.currentEvalResult = result;
     studyState.currentExpectedAnswer = expected_answer_text;
+    studyState.currentEvalContext = {
+      prompt_text,
+      user_answer_text: answer,
+      expected_answer_text,
+      subject: subject || ''
+    };
+    studyState.currentDecision = null;
 
     const gradeEl    = document.querySelector('#study-result-grade');
     const justEl     = document.querySelector('#study-result-justification');
@@ -2070,6 +2084,10 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
     // Show "Guardar variante" for any regular card (not micro), regardless of grade
     const variantBtn      = document.querySelector('#study-variant-btn');
     const variantFeedback = document.querySelector('#study-variant-feedback');
+    const nextBtn         = document.querySelector('#study-next-btn');
+    const decisionBlock   = document.querySelector('#study-decision-block');
+    const decisionFb      = document.querySelector('#study-decision-feedback');
+    const decisionReason  = document.querySelector('#study-correction-reason');
     const currentItem = studyState.queue[studyState.index];
     if (currentItem && currentItem.type === 'card') {
       variantBtn.classList.remove('hidden');
@@ -2080,6 +2098,17 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
     }
     variantFeedback.classList.add('hidden');
     variantFeedback.textContent = '';
+    nextBtn.disabled = true;
+
+    if (decisionReason) decisionReason.value = '';
+    if (decisionFb) {
+      decisionFb.textContent = 'Firmá esta evaluación para continuar.';
+      decisionFb.className = 'feedback';
+    }
+    if (decisionBlock) {
+      decisionBlock.classList.remove('hidden');
+      decisionBlock.querySelectorAll('button').forEach((btn) => { btn.disabled = false; });
+    }
 
     document.querySelector('#study-answer-block').classList.add('hidden');
     document.querySelector('#study-result-block').classList.remove('hidden');
@@ -2089,6 +2118,65 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
     alert(`Error al evaluar: ${err.message}`);
   }
 });
+
+function resolveStudyFinalGrade(action, suggestedGrade) {
+  const normalizedSuggested = normalizeSuggestedGrade(suggestedGrade);
+  if (action === 'correct-pass') return 'PASS';
+  if (action === 'correct-fail') return 'FAIL';
+  if (action === 'accept') return normalizedSuggested;
+  return null;
+}
+
+const studyDecisionBlock = document.querySelector('#study-decision-block');
+if (studyDecisionBlock) {
+  studyDecisionBlock.addEventListener('click', async (event) => {
+    const action = event.target?.dataset?.studyAction;
+    if (!action || !studyState.currentEvalResult || !studyState.currentEvalContext) return;
+
+    const feedbackEl = document.querySelector('#study-decision-feedback');
+    const reasonEl = document.querySelector('#study-correction-reason');
+    const nextBtn = document.querySelector('#study-next-btn');
+    const reason = normalize(reasonEl?.value || '');
+    const finalGrade = resolveStudyFinalGrade(action, studyState.currentEvalResult.suggested_grade);
+
+    const payload = {
+      ...studyState.currentEvalContext,
+      evaluation_id: studyState.currentEvalResult.evaluation_id,
+      evaluation_result: studyState.currentEvalResult,
+      action,
+      final_grade: finalGrade,
+      accepted_suggestion: action === 'accept',
+      correction_reason: reason || undefined
+    };
+
+    studyDecisionBlock.querySelectorAll('button').forEach((btn) => { btn.disabled = true; });
+    if (feedbackEl) {
+      feedbackEl.textContent = 'Guardando firma...';
+      feedbackEl.className = 'feedback';
+    }
+
+    try {
+      await postJson(DECISION_ENDPOINT, payload);
+      studyState.currentDecision = {
+        action,
+        finalGrade: finalGrade ? finalGrade.toLowerCase() : null
+      };
+      if (feedbackEl) {
+        feedbackEl.textContent = finalGrade
+          ? `Firma guardada (${finalGrade}). Ya podés continuar.`
+          : 'Firma guardada como duda. Ya podés continuar.';
+        feedbackEl.className = 'feedback success';
+      }
+      nextBtn.disabled = false;
+    } catch (err) {
+      if (feedbackEl) {
+        feedbackEl.textContent = `No se pudo guardar la firma: ${err.message}`;
+        feedbackEl.className = 'feedback error';
+      }
+      studyDecisionBlock.querySelectorAll('button').forEach((btn) => { btn.disabled = false; });
+    }
+  });
+}
 
 document.querySelector('#study-variant-btn').addEventListener('click', async () => {
   const item = studyState.queue[studyState.index];
@@ -2118,13 +2206,24 @@ document.querySelector('#study-variant-btn').addEventListener('click', async () 
 document.querySelector('#study-next-btn').addEventListener('click', async () => {
   const item   = studyState.queue[studyState.index];
   const evalResult = studyState.currentEvalResult;
+  const decision = studyState.currentDecision;
   if (!evalResult) { advanceStudyCard(); return; }
+  if (!decision) {
+    const feedbackEl = document.querySelector('#study-decision-feedback');
+    if (feedbackEl) {
+      feedbackEl.textContent = 'Firmá esta evaluación antes de pasar a la siguiente.';
+      feedbackEl.className = 'feedback error';
+    }
+    return;
+  }
 
-  const grade  = normalizeSuggestedGrade(evalResult.suggested_grade).toLowerCase();
+  const grade  = decision.finalGrade;
   const gaps   = evalResult.missing_concepts ?? [];
 
   try {
-    if (item.type === 'micro') {
+    if (!grade) {
+      // uncertain: skip scheduler update for this response
+    } else if (item.type === 'micro') {
       await postJson('/scheduler/review', {
         micro_card_id: item.data.id,
         grade,
@@ -2149,7 +2248,7 @@ document.querySelector('#study-next-btn').addEventListener('click', async () => 
   }
 
   studyState.results.push({
-    grade,
+    grade: grade || 'uncertain',
     type: item.type,
     concept: item.type === 'micro' ? item.data.concept : null
   });
