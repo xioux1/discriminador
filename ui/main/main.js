@@ -62,9 +62,10 @@ if (!Auth.isLoggedIn()) {
     study:     document.querySelector('#tab-study'),
     evaluate:  document.querySelector('#tab-evaluate'),
     explore:   document.querySelector('#tab-explore'),
+    browser:   document.querySelector('#tab-browser'),
     progress:  document.querySelector('#tab-progress'),
   };
-  let loaded = { dashboard: false, study: false, explore: false, progress: false };
+  let loaded = { dashboard: false, study: false, explore: false, browser: false, progress: false };
 
   function showTab(tab) {
     Object.values(tabSections).forEach((s) => s.classList.add('hidden'));
@@ -80,6 +81,8 @@ if (!Auth.isLoggedIn()) {
 
       if (tab === 'explore' && !loaded.explore) {
         loaded.explore = true; loadHistoryOverview();
+      } else if (tab === 'browser' && !loaded.browser) {
+        loaded.browser = true; initBrowserTab();
       } else if (tab === 'study' && !loaded.study) {
         loaded.study = true; initStudyTab();
       } else if (tab === 'dashboard' && !loaded.dashboard) {
@@ -220,6 +223,150 @@ async function loadHistoryOverview() {
     loading.classList.add('hidden');
     content.innerHTML = `<p style="padding:16px;color:#a40000">Error al cargar historial: ${err.message}</p>`;
   }
+}
+
+const browserState = {
+  cards: [],
+  selected: new Set()
+};
+
+function getCardStatus(card) {
+  if (card.suspended_at) return 'suspended';
+  if (card.flagged) return 'flagged';
+  if (Number(card.review_count) === 0) return 'new';
+  const dueAt = card.next_review_at ? new Date(card.next_review_at) : null;
+  return dueAt && dueAt <= new Date() ? 'due' : 'new';
+}
+
+function formatNextReview(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' });
+}
+
+function getBrowserFilters() {
+  return {
+    text: document.querySelector('#browser-filter-text')?.value.trim().toLowerCase() || '',
+    subject: document.querySelector('#browser-filter-subject')?.value.trim().toLowerCase() || '',
+    status: document.querySelector('#browser-filter-status')?.value || ''
+  };
+}
+
+function getFilteredBrowserCards() {
+  const filters = getBrowserFilters();
+  return browserState.cards.filter((card) => {
+    const status = getCardStatus(card);
+    if (filters.status && status !== filters.status) return false;
+    if (filters.text && !String(card.prompt_text || '').toLowerCase().includes(filters.text)) return false;
+    if (filters.subject && !String(card.subject || '').toLowerCase().includes(filters.subject)) return false;
+    return true;
+  });
+}
+
+function renderBrowserTable() {
+  const body = document.querySelector('#browser-table-body');
+  if (!body) return;
+  const rows = getFilteredBrowserCards();
+
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="7" style="color:var(--text-muted)">No hay tarjetas para este filtro.</td></tr>';
+    return;
+  }
+
+  body.innerHTML = rows.map((card) => {
+    const status = getCardStatus(card);
+    const lapses = Math.max(0, Number(card.review_count || 0) - Number(card.pass_count || 0));
+    return `
+      <tr>
+        <td><input type="checkbox" class="browser-row-check" data-id="${card.id}" ${browserState.selected.has(card.id) ? 'checked' : ''}></td>
+        <td>${escHtml(card.subject || '(sin materia)')}</td>
+        <td class="browser-prompt">${escHtml(card.prompt_text || '')}</td>
+        <td>${formatNextReview(card.next_review_at)}</td>
+        <td><span class="browser-status-pill ${status}">${status}</span></td>
+        <td>${lapses}</td>
+        <td>${card.flagged ? '⚑' : ''}</td>
+      </tr>
+    `;
+  }).join('');
+
+  body.querySelectorAll('.browser-row-check').forEach((el) => {
+    el.addEventListener('change', () => {
+      const id = Number(el.dataset.id);
+      if (el.checked) browserState.selected.add(id);
+      else browserState.selected.delete(id);
+    });
+  });
+}
+
+async function loadBrowserCards() {
+  const response = await getJson('/cards/browser');
+  browserState.cards = response?.cards || [];
+  browserState.selected.clear();
+  renderBrowserTable();
+}
+
+async function runBrowserBatchAction(action) {
+  const feedback = document.querySelector('#browser-feedback');
+  const ids = [...browserState.selected];
+  if (!ids.length) {
+    feedback.textContent = 'Seleccioná al menos una tarjeta.';
+    feedback.className = 'feedback error';
+    return;
+  }
+
+  let payload = { action, ids };
+  if (action === 'archive') {
+    const reason = window.prompt('Motivo para archivar (mínimo 5 caracteres):', 'Archivado desde navegador');
+    if (!reason) return;
+    payload.reason = reason;
+  } else if (action === 'edit') {
+    const subject = window.prompt('Nueva materia (dejá vacío para no cambiar):', '');
+    const promptText = window.prompt('Nuevo prompt para las seleccionadas (dejá vacío para no cambiar):', '');
+    payload.subject = subject ?? '';
+    payload.prompt_text = promptText ?? '';
+  }
+
+  try {
+    const result = await postJson('/cards/batch', payload);
+    feedback.textContent = `Acción aplicada en ${result.updated ?? 0} tarjeta(s).`;
+    feedback.className = 'feedback success';
+    await loadBrowserCards();
+  } catch (err) {
+    feedback.textContent = `Error: ${err.message}`;
+    feedback.className = 'feedback error';
+  }
+}
+
+function initBrowserTab() {
+  const textEl = document.querySelector('#browser-filter-text');
+  const subjectEl = document.querySelector('#browser-filter-subject');
+  const statusEl = document.querySelector('#browser-filter-status');
+  const selectAllEl = document.querySelector('#browser-select-all');
+  const feedback = document.querySelector('#browser-feedback');
+  feedback.textContent = '';
+
+  [textEl, subjectEl, statusEl].forEach((el) => {
+    el?.addEventListener('input', renderBrowserTable);
+    el?.addEventListener('change', renderBrowserTable);
+  });
+
+  selectAllEl?.addEventListener('change', () => {
+    const visibleIds = getFilteredBrowserCards().map((c) => c.id);
+    if (selectAllEl.checked) visibleIds.forEach((id) => browserState.selected.add(id));
+    else visibleIds.forEach((id) => browserState.selected.delete(id));
+    renderBrowserTable();
+  });
+
+  document.querySelector('#browser-archive-btn')?.addEventListener('click', () => runBrowserBatchAction('archive'));
+  document.querySelector('#browser-suspend-btn')?.addEventListener('click', () => runBrowserBatchAction('suspend'));
+  document.querySelector('#browser-reactivate-btn')?.addEventListener('click', () => runBrowserBatchAction('reactivate'));
+  document.querySelector('#browser-edit-btn')?.addEventListener('click', () => runBrowserBatchAction('edit'));
+
+  loadBrowserCards().catch((err) => {
+    feedback.textContent = `Error al cargar navegador: ${err.message}`;
+    feedback.className = 'feedback error';
+  });
 }
 
 // --- Dashboard ---
