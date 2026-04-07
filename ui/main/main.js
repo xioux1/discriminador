@@ -2358,20 +2358,41 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
     subject              = item.data.subject;
   }
 
+  const normalizedPrompt = normalize(prompt_text || '');
+  const normalizedExpected = normalize(expected_answer_text || '');
+  if (normalizedPrompt.length < minRules.prompt_text) {
+    evalBtn.disabled = false;
+    evalBtn.textContent = 'Evaluar';
+    alert('No se puede evaluar: la consigna de esta tarjeta es demasiado corta o está vacía.');
+    return;
+  }
+  if (answer.length < minRules.user_answer_text) {
+    evalBtn.disabled = false;
+    evalBtn.textContent = 'Evaluar';
+    alert('Tu respuesta debe tener al menos 5 caracteres para poder evaluarse.');
+    return;
+  }
+  if (normalizedExpected.length < minRules.expected_answer_text) {
+    evalBtn.disabled = false;
+    evalBtn.textContent = 'Evaluar';
+    alert('No se puede evaluar esta tarjeta porque no tiene respuesta esperada cargada.');
+    return;
+  }
+
   try {
     const result = await postJson(EVALUATE_ENDPOINT, {
-      prompt_text,
+      prompt_text: normalizedPrompt,
       user_answer_text: answer,
-      expected_answer_text,
+      expected_answer_text: normalizedExpected,
       subject: subject || ''
     });
 
     studyState.currentEvalResult = result;
     studyState.currentExpectedAnswer = expected_answer_text;
     studyState.currentEvalContext = {
-      prompt_text,
+      prompt_text: normalizedPrompt,
       user_answer_text: answer,
-      expected_answer_text,
+      expected_answer_text: normalizedExpected,
       subject: subject || ''
     };
     studyState.currentDecision = null;
