@@ -64,9 +64,10 @@ if (!Auth.isLoggedIn()) {
     evaluate:  document.querySelector('#tab-evaluate'),
     explore:   document.querySelector('#tab-explore'),
     browser:   document.querySelector('#tab-browser'),
+    planner:   document.querySelector('#tab-planner'),
     progress:  document.querySelector('#tab-progress'),
   };
-  let loaded = { dashboard: false, study: false, explore: false, browser: false, progress: false };
+  let loaded = { dashboard: false, study: false, explore: false, browser: false, planner: false, progress: false };
 
   function showTab(tab) {
     Object.values(tabSections).forEach((s) => s.classList.add('hidden'));
@@ -97,6 +98,10 @@ if (!Auth.isLoggedIn()) {
         applyStudySubjectFilter(pendingStudySubject);
       } else if (tab === 'dashboard' && !loaded.dashboard) {
         loaded.dashboard = true; loadDashboard();
+      } else if (tab === 'planner' && !loaded.planner) {
+        loaded.planner = true; initPlannerTab();
+      } else if (tab === 'planner') {
+        // already loaded — just show
       } else if (tab === 'progress' && !loaded.progress) {
         loaded.progress = true; loadProgress();
       }
@@ -3054,6 +3059,250 @@ async function getJson(url) {
   if (res.status === 401) { if (Auth.isLoggedIn()) Auth.logout(); return null; }
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
+}
+
+// ─── Weekly Planner ───────────────────────────────────────────────────────────
+
+const PLANNER_SLOTS = (() => {
+  const s = [];
+  for (let h = 6; h < 22; h++) {
+    s.push(`${String(h).padStart(2,'0')}:00`);
+    s.push(`${String(h).padStart(2,'0')}:30`);
+  }
+  return s; // '06:00' .. '21:30'
+})();
+
+const PLANNER_DAYS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+
+const plannerState = {
+  weekStart: null,   // Date (Sunday at midnight)
+  cells: {},         // key `${dayIndex}_${slot}` → {content, color}
+  saveTimers: {},    // debounce per cell
+  activeCell: null,  // currently focused td
+};
+
+function plannerWeekStart(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - d.getDay()); // rewind to Sunday
+  return d;
+}
+
+function plannerDateStr(date) {
+  // Returns YYYY-MM-DD
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function plannerWeekLabel(sunday) {
+  const sat = new Date(sunday);
+  sat.setDate(sat.getDate() + 6);
+  const fmt = (d) => d.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' });
+  return `${fmt(sunday)} – ${fmt(sat)} ${sunday.getFullYear()}`;
+}
+
+function buildPlannerGrid(weekStart, cells) {
+  const wrap = document.querySelector('#planner-grid-wrap');
+  wrap.innerHTML = '';
+
+  const table = document.createElement('table');
+  table.className = 'planner-table';
+  table.id = 'planner-table';
+
+  // Header
+  const thead = document.createElement('thead');
+  let hrow = '<tr><th class="planner-th-time"></th>';
+  for (let d = 0; d < 7; d++) {
+    const date = new Date(weekStart);
+    date.setDate(date.getDate() + d);
+    const isToday = plannerDateStr(date) === plannerDateStr(new Date());
+    hrow += `<th class="planner-th-day${isToday ? ' planner-today-col' : ''}">
+      <div>${PLANNER_DAYS[d]}</div>
+      <div class="planner-date-num">${date.getDate()}/${date.getMonth()+1}</div>
+    </th>`;
+  }
+  hrow += '</tr>';
+  thead.innerHTML = hrow;
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  for (const slot of PLANNER_SLOTS) {
+    const tr = document.createElement('tr');
+    const timeTd = document.createElement('td');
+    timeTd.className = 'planner-time';
+    timeTd.textContent = slot;
+    tr.appendChild(timeTd);
+
+    for (let d = 0; d < 7; d++) {
+      const key = `${d}_${slot}`;
+      const cell = cells[key] || {};
+      const td = document.createElement('td');
+      td.className = 'planner-cell';
+      td.dataset.day = d;
+      td.dataset.slot = slot;
+      td.dataset.color = cell.color || '';
+      if (cell.color) td.style.background = cell.color;
+      td.textContent = cell.content || '';
+      tbody.appendChild(tr);
+      tr.appendChild(td);
+    }
+  }
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+
+  // Event delegation on the table
+  table.addEventListener('click', (e) => {
+    const td = e.target.closest('.planner-cell');
+    if (!td) return;
+    plannerActivateCell(td);
+  });
+}
+
+function plannerActivateCell(td) {
+  // Deactivate previous
+  if (plannerState.activeCell && plannerState.activeCell !== td) {
+    plannerDeactivateCell(plannerState.activeCell);
+  }
+  plannerState.activeCell = td;
+  td.classList.add('planner-cell-active');
+  td.contentEditable = 'true';
+  td.focus();
+  // Move cursor to end
+  const range = document.createRange();
+  range.selectNodeContents(td);
+  range.collapse(false);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+
+  // Show color bar highlight for active color
+  updateColorBarSelection(td.dataset.color);
+
+  td.addEventListener('blur', plannerOnCellBlur, { once: true });
+  td.addEventListener('keydown', plannerOnCellKeydown);
+}
+
+function plannerDeactivateCell(td) {
+  td.contentEditable = 'false';
+  td.classList.remove('planner-cell-active');
+  td.removeEventListener('keydown', plannerOnCellKeydown);
+}
+
+function plannerOnCellBlur(e) {
+  const td = e.target;
+  plannerDeactivateCell(td);
+  plannerSaveCell(td);
+  plannerState.activeCell = null;
+}
+
+function plannerOnCellKeydown(e) {
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    e.target.blur();
+  } else if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    e.target.blur();
+    // Move to next row same column
+    const day  = parseInt(e.target.dataset.day);
+    const slot = e.target.dataset.slot;
+    const idx  = PLANNER_SLOTS.indexOf(slot);
+    if (idx < PLANNER_SLOTS.length - 1) {
+      const nextSlot = PLANNER_SLOTS[idx + 1];
+      const next = document.querySelector(`#planner-table td[data-day="${day}"][data-slot="${nextSlot}"]`);
+      if (next) plannerActivateCell(next);
+    }
+  } else if (e.key === 'Tab') {
+    e.preventDefault();
+    e.target.blur();
+    // Move to next day same slot
+    const day  = parseInt(e.target.dataset.day);
+    const slot = e.target.dataset.slot;
+    const nextDay = e.shiftKey ? day - 1 : day + 1;
+    if (nextDay >= 0 && nextDay <= 6) {
+      const next = document.querySelector(`#planner-table td[data-day="${nextDay}"][data-slot="${slot}"]`);
+      if (next) plannerActivateCell(next);
+    }
+  }
+}
+
+function plannerSaveCell(td) {
+  const key = `${td.dataset.day}_${td.dataset.slot}`;
+  const content = td.textContent.trim();
+  const color   = td.dataset.color || '';
+
+  clearTimeout(plannerState.saveTimers[key]);
+  plannerState.saveTimers[key] = setTimeout(async () => {
+    const start = plannerDateStr(plannerState.weekStart);
+    try {
+      await postJson('/planner/slot', {
+        week_start: start,
+        day_index:  parseInt(td.dataset.day),
+        slot_time:  td.dataset.slot,
+        content,
+        color: color || null
+      }, 'PUT');
+    } catch (_) {}
+  }, 400);
+}
+
+function plannerApplyColor(color) {
+  const td = plannerState.activeCell;
+  if (!td) return;
+  td.dataset.color = color;
+  td.style.background = color || '';
+  plannerSaveCell(td);
+  updateColorBarSelection(color);
+}
+
+function updateColorBarSelection(color) {
+  document.querySelectorAll('.planner-swatch').forEach(s => {
+    s.classList.toggle('planner-swatch-active', s.dataset.color === (color || ''));
+  });
+}
+
+async function loadPlannerWeek(weekStart) {
+  plannerState.weekStart = weekStart;
+  document.querySelector('#planner-week-label').textContent = plannerWeekLabel(weekStart);
+  document.querySelector('#planner-loading').classList.remove('hidden');
+
+  const start = plannerDateStr(weekStart);
+  try {
+    const data = await getJson(`/planner/week?start=${start}`);
+    const cells = {};
+    for (const row of (data.slots || [])) {
+      cells[`${row.day_index}_${row.slot_time}`] = { content: row.content || '', color: row.color || '' };
+    }
+    plannerState.cells = cells;
+    document.querySelector('#planner-loading').classList.add('hidden');
+    buildPlannerGrid(weekStart, cells);
+  } catch (err) {
+    document.querySelector('#planner-loading').textContent = `Error: ${err.message}`;
+  }
+}
+
+function initPlannerTab() {
+  const weekStart = plannerWeekStart(new Date());
+  loadPlannerWeek(weekStart);
+
+  document.querySelector('#planner-prev').addEventListener('click', () => {
+    const prev = new Date(plannerState.weekStart);
+    prev.setDate(prev.getDate() - 7);
+    loadPlannerWeek(prev);
+  });
+  document.querySelector('#planner-next').addEventListener('click', () => {
+    const next = new Date(plannerState.weekStart);
+    next.setDate(next.getDate() + 7);
+    loadPlannerWeek(next);
+  });
+  document.querySelector('#planner-today').addEventListener('click', () => {
+    loadPlannerWeek(plannerWeekStart(new Date()));
+  });
+
+  document.querySelectorAll('.planner-swatch').forEach(btn => {
+    btn.addEventListener('click', () => plannerApplyColor(btn.dataset.color));
+  });
 }
 
 // ─── Agenda view ──────────────────────────────────────────────────────────────

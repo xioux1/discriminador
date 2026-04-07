@@ -1,0 +1,64 @@
+import { Router } from 'express';
+import { dbPool } from '../db/client.js';
+
+const plannerRouter = Router();
+
+// GET /planner/week?start=YYYY-MM-DD
+// Returns all slots for the given week (sunday-based week_start)
+plannerRouter.get('/planner/week', async (req, res) => {
+  const userId = req.user.id;
+  const { start } = req.query;
+
+  if (!start || !/^\d{4}-\d{2}-\d{2}$/.test(start)) {
+    return res.status(422).json({ error: 'validation_error', message: 'start (YYYY-MM-DD) es obligatorio.' });
+  }
+
+  try {
+    const { rows } = await dbPool.query(
+      `SELECT day_index, slot_time, content, color
+       FROM weekly_planner
+       WHERE user_id = $1 AND week_start = $2`,
+      [userId, start]
+    );
+    return res.json({ slots: rows });
+  } catch (err) {
+    console.error('GET /planner/week error', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+// PUT /planner/slot — upsert a single cell
+// Body: { week_start, day_index, slot_time, content, color }
+plannerRouter.put('/planner/slot', async (req, res) => {
+  const userId = req.user.id;
+  const { week_start, day_index, slot_time, content = '', color = null } = req.body || {};
+
+  if (!week_start || typeof day_index !== 'number' || !slot_time) {
+    return res.status(422).json({ error: 'validation_error', message: 'week_start, day_index y slot_time son obligatorios.' });
+  }
+
+  try {
+    if (!content && !color) {
+      // Delete empty cells to keep the table clean
+      await dbPool.query(
+        `DELETE FROM weekly_planner
+         WHERE user_id = $1 AND week_start = $2 AND day_index = $3 AND slot_time = $4`,
+        [userId, week_start, day_index, slot_time]
+      );
+    } else {
+      await dbPool.query(
+        `INSERT INTO weekly_planner (user_id, week_start, day_index, slot_time, content, color, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, now())
+         ON CONFLICT (user_id, week_start, day_index, slot_time)
+         DO UPDATE SET content = EXCLUDED.content, color = EXCLUDED.color, updated_at = now()`,
+        [userId, week_start, day_index, slot_time, content.slice(0, 200) || null, color || null]
+      );
+    }
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('PUT /planner/slot error', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+export default plannerRouter;

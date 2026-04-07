@@ -17,6 +17,7 @@ import promptToolsRouter from './prompt-tools.js';
 import studyDoubtRouter from './study-doubt.js';
 import studySessionsRouter from './study-sessions.js';
 import githubImportRouter from './github-import.js';
+import plannerRouter from './planner.js';
 
 const router = Router();
 
@@ -25,6 +26,7 @@ router.use(promptToolsRouter);
 router.use(studyDoubtRouter);
 router.use(studySessionsRouter);
 router.use(githubImportRouter);
+router.use(plannerRouter);
 router.use(evaluateRouter);
 router.use(decisionRouter);
 router.use(transcribeRouter);

@@ -37,6 +37,7 @@
       <button class="tab-btn" data-tab="evaluate" style="display:none">Evaluar</button>
       <button class="tab-btn" data-tab="explore" style="display:none">Explorar</button>
       <button class="tab-btn" data-tab="browser">Tarjetas</button>
+      <button class="tab-btn" data-tab="planner">Planificar</button>
       <button class="tab-btn" data-tab="progress">Progreso</button>
       <button id="logout-btn" class="btn-ghost logout-btn" title="Cerrar sesión">Salir</button>
     </nav>
@@ -452,6 +453,31 @@
             </thead>
             <tbody id="browser-table-body"></tbody>
           </table>
+        </div>
+      </section>
+
+      <!-- ═══ TAB: PLANIFICAR ══════════════════════════════════════════════ -->
+      <section id="tab-planner" class="hidden">
+        <div class="planner-toolbar">
+          <button type="button" id="planner-prev" class="btn-ghost planner-nav-btn">&#8592;</button>
+          <span id="planner-week-label" class="planner-week-label"></span>
+          <button type="button" id="planner-next" class="btn-ghost planner-nav-btn">&#8594;</button>
+          <button type="button" id="planner-today" class="btn-ghost" style="font-size:0.82rem;margin-left:8px">Hoy</button>
+          <div class="planner-color-bar" id="planner-color-bar">
+            <span class="pcb-label">Color:</span>
+            <button class="planner-swatch" data-color="" title="Sin color" style="background:#fff;border:1px solid #bbb"></button>
+            <button class="planner-swatch" data-color="#b7e1cd" title="Verde (estudio)" style="background:#b7e1cd"></button>
+            <button class="planner-swatch" data-color="#c9daf8" title="Azul (clase)" style="background:#c9daf8"></button>
+            <button class="planner-swatch" data-color="#fce5cd" title="Naranja (trabajo)" style="background:#fce5cd"></button>
+            <button class="planner-swatch" data-color="#f4cccc" title="Rojo (importante)" style="background:#f4cccc"></button>
+            <button class="planner-swatch" data-color="#fff2cc" title="Amarillo (nota)" style="background:#fff2cc"></button>
+            <button class="planner-swatch" data-color="#d9d2e9" title="Violeta (otro)" style="background:#d9d2e9"></button>
+            <button class="planner-swatch" data-color="#d9d9d9" title="Gris (dormir/fijo)" style="background:#d9d9d9"></button>
+          </div>
+        </div>
+        <div class="planner-wrap">
+          <div id="planner-loading" class="loading-hint">Cargando...</div>
+          <div id="planner-grid-wrap"></div>
         </div>
       </section>
 

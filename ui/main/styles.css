@@ -1511,3 +1511,102 @@ body { letter-spacing: 0.01em; }
     align-items: flex-start;
   }
 }
+
+/* ── Weekly Planner ──────────────────────────────────────────────────────────── */
+#tab-planner { padding: 0; }
+
+.planner-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-wrap: wrap;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.planner-nav-btn { font-size: 1.1rem; padding: 4px 10px; }
+.planner-week-label { font-weight: 700; font-size: 0.95rem; min-width: 180px; text-align: center; }
+
+.planner-color-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+.pcb-label { font-size: 0.78rem; color: var(--text-muted); margin-right: 2px; }
+.planner-swatch {
+  width: 22px; height: 22px;
+  border-radius: 4px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.1s, border-color 0.1s;
+}
+.planner-swatch:hover { transform: scale(1.2); }
+.planner-swatch-active { border-color: #333 !important; transform: scale(1.15); }
+
+.planner-wrap {
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: calc(100vh - 110px);
+}
+
+.planner-table {
+  border-collapse: collapse;
+  min-width: 720px;
+  width: 100%;
+  font-size: 0.78rem;
+  font-family: var(--font);
+  table-layout: fixed;
+}
+
+.planner-table th,
+.planner-table td { border: 1px solid #ddd; }
+
+.planner-th-time { width: 46px; background: var(--surface); }
+.planner-th-day {
+  width: calc((100% - 46px) / 7);
+  background: var(--surface);
+  text-align: center;
+  padding: 4px 2px;
+  font-size: 0.8rem;
+}
+.planner-today-col { background: #e8f0fe; }
+.planner-date-num { font-size: 0.72rem; color: var(--text-muted); }
+
+.planner-time {
+  text-align: right;
+  padding: 0 4px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  white-space: nowrap;
+  background: var(--surface);
+  vertical-align: middle;
+  user-select: none;
+}
+
+.planner-cell {
+  min-height: 26px;
+  height: 26px;
+  padding: 2px 4px;
+  cursor: pointer;
+  vertical-align: middle;
+  white-space: pre-wrap;
+  word-break: break-word;
+  outline: none;
+  transition: background 0.1s;
+  overflow: hidden;
+}
+.planner-cell:hover { filter: brightness(0.95); }
+.planner-cell-active {
+  outline: 2px solid var(--primary) !important;
+  outline-offset: -2px;
+  min-height: 40px;
+  height: auto;
+  z-index: 2;
+  position: relative;
+  white-space: pre-wrap;
+}
