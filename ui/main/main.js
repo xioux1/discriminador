@@ -3076,7 +3076,7 @@ const PLANNER_DAYS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
 const plannerState = {
   weekStart: null,   // Date (Sunday at midnight)
-  cells: {},         // key `${dayIndex}_${slot}` → {content, color}
+  cells: {},         // key `${dayIndex}_${slot}` → {content, color, isFixed}
   saveTimers: {},    // debounce per cell
   activeCell: null,  // currently focused td
 };
@@ -3143,6 +3143,7 @@ function buildPlannerGrid(weekStart, cells) {
       td.dataset.day = d;
       td.dataset.slot = slot;
       td.dataset.color = cell.color || '';
+      td.dataset.fixed = cell.isFixed ? '1' : '';
       if (cell.color) td.style.background = cell.color;
       td.textContent = cell.content || '';
       tbody.appendChild(tr);
@@ -3179,6 +3180,8 @@ function plannerActivateCell(td) {
 
   // Show color bar highlight for active color
   updateColorBarSelection(td.dataset.color);
+  const fixedToggle = document.querySelector('#planner-fixed-toggle');
+  if (fixedToggle) fixedToggle.checked = td.dataset.fixed === '1';
 
   td.addEventListener('blur', plannerOnCellBlur, { once: true });
   td.addEventListener('keydown', plannerOnCellKeydown);
@@ -3231,6 +3234,7 @@ function plannerSaveCell(td) {
   const key = `${td.dataset.day}_${td.dataset.slot}`;
   const content = td.textContent.trim();
   const color   = td.dataset.color || '';
+  const isFixed = td.dataset.fixed === '1';
 
   clearTimeout(plannerState.saveTimers[key]);
   plannerState.saveTimers[key] = setTimeout(async () => {
@@ -3241,7 +3245,8 @@ function plannerSaveCell(td) {
         day_index:  parseInt(td.dataset.day),
         slot_time:  td.dataset.slot,
         content,
-        color: color || null
+        color: color || null,
+        is_fixed: isFixed
       }, 'PUT');
     } catch (_) {}
   }, 400);
@@ -3262,6 +3267,13 @@ function updateColorBarSelection(color) {
   });
 }
 
+function plannerSetFixedForActiveCell(isFixed) {
+  const td = plannerState.activeCell;
+  if (!td) return;
+  td.dataset.fixed = isFixed ? '1' : '';
+  plannerSaveCell(td);
+}
+
 async function loadPlannerWeek(weekStart) {
   plannerState.weekStart = weekStart;
   document.querySelector('#planner-week-label').textContent = plannerWeekLabel(weekStart);
@@ -3272,7 +3284,11 @@ async function loadPlannerWeek(weekStart) {
     const data = await getJson(`/planner/week?start=${start}`);
     const cells = {};
     for (const row of (data.slots || [])) {
-      cells[`${row.day_index}_${row.slot_time}`] = { content: row.content || '', color: row.color || '' };
+      cells[`${row.day_index}_${row.slot_time}`] = {
+        content: row.content || '',
+        color: row.color || '',
+        isFixed: row.is_fixed === true
+      };
     }
     plannerState.cells = cells;
     document.querySelector('#planner-loading').classList.add('hidden');
@@ -3300,7 +3316,11 @@ function initPlannerTab() {
     loadPlannerWeek(plannerWeekStart(new Date()));
   });
 
+  const fixedToggle = document.querySelector('#planner-fixed-toggle');
+  fixedToggle.addEventListener('change', () => plannerSetFixedForActiveCell(fixedToggle.checked));
+
   document.querySelectorAll('.planner-swatch').forEach(btn => {
+    btn.addEventListener('mousedown', (e) => e.preventDefault());
     btn.addEventListener('click', () => plannerApplyColor(btn.dataset.color));
   });
 }
