@@ -2028,6 +2028,73 @@ const briefingState = {
   fullMicroCards:   []      // full micro_cards from server
 };
 
+const STUDY_PERSIST_KEY = 'study.activeSession.v1';
+
+function persistStudySession() {
+  try {
+    if (!studyState.queue?.length || !studyState.sessionStartTime || !studyState.sessionLimitMs) {
+      localStorage.removeItem(STUDY_PERSIST_KEY);
+      return;
+    }
+    localStorage.setItem(STUDY_PERSIST_KEY, JSON.stringify({
+      queue: studyState.queue,
+      index: studyState.index,
+      results: studyState.results,
+      sessionId: studyState.sessionId,
+      sessionStartTime: studyState.sessionStartTime,
+      sessionLimitMs: studyState.sessionLimitMs,
+      sessionEnergyLevel: studyState.sessionEnergyLevel,
+      selectedTime: briefingState.selectedTime,
+      selectedEnergy: briefingState.selectedEnergy,
+      selectedSubject: briefingState.selectedSubject
+    }));
+  } catch (_) {}
+}
+
+function clearPersistedStudySession() {
+  try { localStorage.removeItem(STUDY_PERSIST_KEY); } catch (_) {}
+}
+
+function restorePersistedStudySession() {
+  try {
+    const raw = localStorage.getItem(STUDY_PERSIST_KEY);
+    if (!raw) return false;
+    const saved = JSON.parse(raw);
+    if (!saved?.queue?.length || !saved?.sessionStartTime || !saved?.sessionLimitMs) {
+      clearPersistedStudySession();
+      return false;
+    }
+
+    const expiresAt = Number(saved.sessionStartTime) + Number(saved.sessionLimitMs);
+    if (!Number.isFinite(expiresAt) || Date.now() > expiresAt) {
+      clearPersistedStudySession();
+      return false;
+    }
+
+    briefingState.selectedTime = Number(saved.selectedTime) || null;
+    briefingState.selectedEnergy = saved.selectedEnergy || null;
+    applyStudySubjectFilter(saved.selectedSubject || null);
+
+    studyState.queue = saved.queue;
+    studyState.index = Math.max(0, Math.min(saved.index ?? 0, saved.queue.length - 1));
+    studyState.results = Array.isArray(saved.results) ? saved.results : [];
+    studyState.sessionId = saved.sessionId ?? null;
+    studyState.sessionStartTime = Number(saved.sessionStartTime);
+    studyState.sessionLimitMs = Number(saved.sessionLimitMs);
+    studyState.sessionEnergyLevel = saved.sessionEnergyLevel || null;
+
+    document.querySelector('#study-briefing').classList.add('hidden');
+    document.querySelector('#study-overview').classList.add('hidden');
+    document.querySelector('#study-complete').classList.add('hidden');
+    document.querySelector('#study-session').classList.remove('hidden');
+    showStudyCard();
+    return true;
+  } catch (_) {
+    clearPersistedStudySession();
+    return false;
+  }
+}
+
 function normalizeStudySubjectFilter(subject) {
   const normalized = typeof subject === 'string' ? subject.trim() : '';
   if (!normalized || normalized === '(sin materia)') return null;
@@ -2102,6 +2169,7 @@ function initStudyTab() {
   });
 
   initBriefing();
+  restorePersistedStudySession();
 }
 
 (function initBriefing() {
@@ -2238,6 +2306,7 @@ function startPlannedSession() {
   document.querySelector('#study-complete').classList.add('hidden');
   document.querySelector('#study-session').classList.remove('hidden');
 
+  persistStudySession();
   showStudyCard();
 }
 
@@ -2248,6 +2317,7 @@ function exitStudySession() {
   }
   document.querySelector('#study-session').classList.add('hidden');
   document.querySelector('#study-overview').classList.remove('hidden');
+  persistStudySession();
 }
 
 async function loadStudyOverview() {
@@ -2369,6 +2439,7 @@ async function startStudySession() {
   document.querySelector('#study-complete').classList.add('hidden');
   document.querySelector('#study-session').classList.remove('hidden');
 
+  clearPersistedStudySession();
   showStudyCard();
 }
 
@@ -3036,6 +3107,7 @@ async function handleStudyNextCard() {
     type: item.type,
     concept: item.type === 'micro' ? item.data.concept : null
   });
+  persistStudySession();
 
   advanceStudyCard();
 }
@@ -3043,6 +3115,7 @@ async function handleStudyNextCard() {
 document.querySelector('#study-back-btn')?.addEventListener('click', () => {
   if (studyState.index <= 0) return;
   studyState.index -= 1;
+  persistStudySession();
   showStudyCard();
 });
 
@@ -3051,6 +3124,7 @@ function advanceStudyCard() {
   if (studyState.index >= studyState.queue.length) {
     finishStudySession();
   } else {
+    persistStudySession();
     showStudyCard();
   }
 }
@@ -3095,6 +3169,7 @@ function finishStudySession() {
     }).catch(() => {});
     studyState.sessionId = null;
   }
+  clearPersistedStudySession();
 
   loadStudyOverview();
 }
