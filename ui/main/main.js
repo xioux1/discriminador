@@ -486,7 +486,7 @@ async function loadDashboard() {
     panel.appendChild(list);
     content.appendChild(panel);
 
-    list.addEventListener('click', (e) => {
+    list.addEventListener('click', async (e) => {
       if (e.target.classList.contains('deck-study-btn')) {
         const studyTabBtn = document.querySelector('[data-tab="study"]');
         studyTabBtn.dataset.subjectFromDashboard = e.target.dataset.subject || '';
