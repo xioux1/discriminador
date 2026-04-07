@@ -2762,12 +2762,14 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
   }
 
   try {
-    const result = await postJson(EVALUATE_ENDPOINT, {
+    const evaluationPayload = {
       prompt_text: normalizedPrompt,
       user_answer_text: answer,
       expected_answer_text: normalizedExpected,
-      subject: subject || ''
-    });
+      ...(subject && subject.trim() ? { subject: subject.trim() } : {})
+    };
+
+    const result = await postJson(EVALUATE_ENDPOINT, evaluationPayload);
 
     studyState.currentEvalResult = result;
     studyState.currentExpectedAnswer = expected_answer_text;
@@ -2775,7 +2777,7 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       prompt_text: normalizedPrompt,
       user_answer_text: answer,
       expected_answer_text: normalizedExpected,
-      subject: subject || ''
+      ...(subject && subject.trim() ? { subject: subject.trim() } : {})
     };
     studyState.currentDecision = null;
 
