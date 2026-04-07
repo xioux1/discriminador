@@ -2247,13 +2247,12 @@ async function saveNewCard() {
       ? `Tarjeta guardada. Se libera el ${nextReview.toLocaleDateString('es-AR')}.`
       : 'Tarjeta guardada.';
     feedback.style.color = '#4a7';
+    document.querySelector('#card-subject').value = subject; // keep subject for next card
     document.querySelector('#card-prompt').value = '';
     document.querySelector('#card-expected').value = '';
+    document.querySelector('#card-prompt').focus();
     loadBrowserCards().catch(() => {});
-    setTimeout(() => {
-      document.querySelector('#study-add-form').classList.add('hidden');
-      feedback.textContent = '';
-    }, 1500);
+    setTimeout(() => { feedback.textContent = ''; }, 2500);
   } catch (err) {
     feedback.textContent = `Error: ${err.message}`;
     feedback.style.color = '#c00';
