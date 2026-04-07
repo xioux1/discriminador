@@ -37,7 +37,7 @@ Evalúa una respuesta teórica escrita y devuelve una calificación sugerida con
 - Se aplica `trim` a todos los campos de texto antes de validar.
 - `prompt_text`: mínimo 10 caracteres no vacíos.
 - `user_answer_text`: mínimo 5 caracteres no vacíos.
-- `expected_answer_text`: mínimo 10 caracteres no vacíos.
+- `expected_answer_text`: mínimo 1 carácter no vacío.
 - `subject` (si se envía): entre 1 y 60 caracteres.
 - Payload inválido (JSON mal formado o tipos incorrectos) retorna error.
 
