@@ -3365,6 +3365,7 @@ function initPlannerTab() {
   });
 
   const fixedToggle = document.querySelector('#planner-fixed-toggle');
+  fixedToggle.addEventListener('mousedown', (e) => e.preventDefault());
   fixedToggle.addEventListener('change', () => plannerSetFixedForActiveCell(fixedToggle.checked));
 
   document.querySelectorAll('.planner-swatch').forEach(btn => {
