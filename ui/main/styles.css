@@ -1426,6 +1426,51 @@ body { letter-spacing: 0.01em; }
   border-color: #000;
 }
 
+/* ── Exam Calendar ──────────────────────────────────────────────────────────── */
+.exam-calendar-card {
+  max-width: 760px;
+  margin: 0 auto 16px;
+}
+.exam-calendar-title {
+  font-size: 1rem; font-weight: 700; margin: 0 0 12px;
+}
+.exam-calendar-list {
+  display: flex; flex-direction: column; gap: 6px;
+}
+.exam-calendar-item {
+  display: grid;
+  grid-template-columns: 52px 1fr auto 72px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border-left: 4px solid transparent;
+  font-size: 0.88rem;
+  background: var(--surface);
+}
+.exam-urgency-today  { border-left-color: #e53; background: #fff5f5; }
+.exam-urgency-urgent { border-left-color: #f80; background: #fff8f0; }
+.exam-urgency-soon   { border-left-color: #f5c518; background: #fffdf0; }
+.exam-urgency-later  { border-left-color: var(--border); }
+.exam-urgency-past   { border-left-color: #bbb; opacity: 0.6; }
+
+.exam-cal-countdown {
+  font-weight: 700; font-size: 0.95rem; text-align: center;
+  color: var(--text);
+}
+.exam-urgency-today  .exam-cal-countdown { color: #e53; }
+.exam-urgency-urgent .exam-cal-countdown { color: #d60; }
+.exam-urgency-soon   .exam-cal-countdown { color: #a80; }
+
+.exam-cal-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.exam-cal-subject { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.exam-cal-label   { color: var(--text-muted); font-size: 0.8rem; }
+.exam-cal-date    { color: var(--text-muted); font-size: 0.82rem; white-space: nowrap; }
+.exam-cal-scope   {
+  font-size: 0.76rem; text-align: right;
+  color: var(--text-muted); white-space: nowrap;
+}
+
 .subjects-panel {
   margin: 0 auto;
   max-width: 760px;

@@ -4,6 +4,24 @@ import { invalidateAdvisorCache } from './advisor.js';
 
 const curriculumRouter = Router();
 
+// GET /exam-calendar — all upcoming exam dates across all subjects
+curriculumRouter.get('/exam-calendar', async (req, res) => {
+  const userId = req.user.id;
+  try {
+    const { rows } = await dbPool.query(
+      `SELECT id, subject, label, exam_date, exam_type, scope_pct
+       FROM subject_exam_dates
+       WHERE user_id = $1
+       ORDER BY exam_date ASC`,
+      [userId]
+    );
+    return res.json({ exams: rows });
+  } catch (err) {
+    console.error('GET /exam-calendar error', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
 // GET /curriculum/:subject — devuelve { config, exams, exam_dates }
 curriculumRouter.get('/curriculum/:subject', async (req, res) => {
   const { subject } = req.params;

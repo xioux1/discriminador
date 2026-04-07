@@ -399,6 +399,63 @@ function initBrowserTab() {
 
 // --- Dashboard ---
 
+function renderExamCalendar(exams) {
+  if (!exams || exams.length === 0) return null;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // Only show exams within the next 120 days + past 7 days (show recently passed too)
+  const relevant = exams.filter(e => {
+    const d = new Date(e.exam_date + 'T00:00:00');
+    const diff = Math.round((d - today) / 86400000);
+    return diff >= -7 && diff <= 120;
+  });
+  if (relevant.length === 0) return null;
+
+  const card = document.createElement('div');
+  card.className = 'card exam-calendar-card';
+
+  const title = document.createElement('h3');
+  title.className = 'exam-calendar-title';
+  title.textContent = 'Próximos exámenes';
+  card.appendChild(title);
+
+  const list = document.createElement('div');
+  list.className = 'exam-calendar-list';
+
+  for (const exam of relevant) {
+    const d = new Date(exam.exam_date + 'T00:00:00');
+    const diff = Math.round((d - today) / 86400000);
+
+    let urgency, label;
+    if (diff < 0)       { urgency = 'past';   label = `hace ${Math.abs(diff)}d`; }
+    else if (diff === 0){ urgency = 'today';  label = 'HOY'; }
+    else if (diff <= 7) { urgency = 'urgent'; label = `${diff}d`; }
+    else if (diff <= 21){ urgency = 'soon';   label = `${diff}d`; }
+    else                { urgency = 'later';  label = `${diff}d`; }
+
+    const dayName = d.toLocaleDateString('es-AR', { weekday: 'short' });
+    const dateStr = d.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' });
+
+    const item = document.createElement('div');
+    item.className = `exam-calendar-item exam-urgency-${urgency}`;
+    item.innerHTML = `
+      <div class="exam-cal-countdown">${label}</div>
+      <div class="exam-cal-info">
+        <span class="exam-cal-subject">${escHtml(exam.subject)}</span>
+        <span class="exam-cal-label">${escHtml(exam.label)}</span>
+      </div>
+      <div class="exam-cal-date">${dayName} ${dateStr}</div>
+      <div class="exam-cal-scope">${exam.scope_pct}% temario</div>
+    `;
+    list.appendChild(item);
+  }
+
+  card.appendChild(list);
+  return card;
+}
+
 async function loadDashboard() {
   const loading = document.querySelector('#dashboard-loading');
   const content = document.querySelector('#dashboard-content');
@@ -406,9 +463,10 @@ async function loadDashboard() {
   content.innerHTML = '';
 
   try {
-    const [overview, session] = await Promise.all([
+    const [overview, session, calendarData] = await Promise.all([
       getJson('/stats/overview').catch(() => ({ subjects: [] })),
-      getJson('/scheduler/session').catch(() => ({ cards: [], micro_cards: [] }))
+      getJson('/scheduler/session').catch(() => ({ cards: [], micro_cards: [] })),
+      getJson('/exam-calendar').catch(() => ({ exams: [] }))
     ]);
 
     loading.classList.add('hidden');
@@ -484,6 +542,11 @@ async function loadDashboard() {
     }
 
     panel.appendChild(list);
+
+    // Exam calendar — render before subjects panel if there are exams
+    const examCalendarEl = renderExamCalendar(calendarData?.exams || []);
+    if (examCalendarEl) content.appendChild(examCalendarEl);
+
     content.appendChild(panel);
 
     list.addEventListener('click', async (e) => {
