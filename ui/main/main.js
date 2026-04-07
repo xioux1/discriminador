@@ -3222,6 +3222,8 @@ const plannerState = {
   cells: {},         // key `${dayIndex}_${slot}` → {content, color, isFixed}
   saveTimers: {},    // debounce per cell
   activeCell: null,  // currently focused td
+  fillDrag: null,    // { source: { content, color, isFixed }, paintedKeys:Set<string> }
+  suppressNextClick: false,
 };
 
 function plannerWeekStart(date) {
@@ -3298,10 +3300,57 @@ function buildPlannerGrid(weekStart, cells) {
 
   // Event delegation on the table
   table.addEventListener('click', (e) => {
+    if (plannerState.suppressNextClick) {
+      plannerState.suppressNextClick = false;
+      return;
+    }
     const td = e.target.closest('.planner-cell');
     if (!td) return;
     plannerActivateCell(td);
   });
+  table.addEventListener('mousedown', plannerOnGridMouseDown);
+  table.addEventListener('mouseover', plannerOnGridMouseOver);
+}
+
+function plannerCellSnapshot(td) {
+  return {
+    content: td.textContent.trim(),
+    color: td.dataset.color || '',
+    isFixed: td.dataset.fixed === '1'
+  };
+}
+
+function plannerCellKey(td) {
+  return `${td.dataset.day}_${td.dataset.slot}`;
+}
+
+function plannerPaintCell(td, source) {
+  td.textContent = source.content;
+  td.dataset.color = source.color;
+  td.style.background = source.color || '';
+  td.dataset.fixed = source.isFixed ? '1' : '';
+  plannerSaveCell(td);
+}
+
+function plannerOnGridMouseDown(e) {
+  const td = e.target.closest('.planner-cell');
+  if (!td || !e.altKey) return;
+  e.preventDefault();
+  plannerState.suppressNextClick = true;
+  plannerState.fillDrag = {
+    source: plannerCellSnapshot(td),
+    paintedKeys: new Set([plannerCellKey(td)])
+  };
+}
+
+function plannerOnGridMouseOver(e) {
+  if (!plannerState.fillDrag) return;
+  const td = e.target.closest('.planner-cell');
+  if (!td) return;
+  const key = plannerCellKey(td);
+  if (plannerState.fillDrag.paintedKeys.has(key)) return;
+  plannerState.fillDrag.paintedKeys.add(key);
+  plannerPaintCell(td, plannerState.fillDrag.source);
 }
 
 function plannerActivateCell(td) {
@@ -3444,6 +3493,10 @@ async function loadPlannerWeek(weekStart) {
 function initPlannerTab() {
   const weekStart = plannerWeekStart(new Date());
   loadPlannerWeek(weekStart);
+
+  document.addEventListener('mouseup', () => {
+    plannerState.fillDrag = null;
+  });
 
   document.querySelector('#planner-prev').addEventListener('click', () => {
     const prev = new Date(plannerState.weekStart);
