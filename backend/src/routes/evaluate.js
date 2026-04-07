@@ -10,7 +10,7 @@ const evaluateRouter = Router();
 const REQUIRED_FIELDS = [
   { key: 'prompt_text', minLength: 10 },
   { key: 'user_answer_text', minLength: 5 },
-  { key: 'expected_answer_text', minLength: 10 }
+  { key: 'expected_answer_text', minLength: 1 }
 ];
 
 function normalize(value) {
