@@ -34,9 +34,9 @@
         <nav class="tab-nav" id="main-nav">
       <button class="tab-btn active" data-tab="dashboard">Inicio</button>
       <button class="tab-btn" data-tab="study">Estudiar</button>
-      <button class="tab-btn" data-tab="evaluate">Evaluar</button>
-      <button class="tab-btn" data-tab="explore">Explorar</button>
-      <button class="tab-btn" data-tab="browser">Navegador</button>
+      <button class="tab-btn" data-tab="evaluate" style="display:none">Evaluar</button>
+      <button class="tab-btn" data-tab="explore" style="display:none">Explorar</button>
+      <button class="tab-btn" data-tab="browser">Tarjetas</button>
       <button class="tab-btn" data-tab="progress">Progreso</button>
       <button id="logout-btn" class="btn-ghost logout-btn" title="Cerrar sesión">Salir</button>
     </nav>
@@ -47,6 +47,7 @@
       <section id="tab-dashboard">
         <div id="dashboard-loading" class="loading-hint">Cargando...</div>
         <div id="dashboard-content"></div>
+        <div id="dashboard-agenda"></div>
 
         <!-- Curriculum config modal -->
         <div id="curriculum-modal" class="curriculum-modal hidden">
@@ -173,7 +174,7 @@
           </div>
 
           <div style="margin-top:12px">
-            <button type="button" id="briefing-overview-link" class="btn-ghost" style="font-size:0.82rem;padding:4px 8px">Ver overview / agregar tarjeta</button>
+            <button type="button" id="briefing-overview-link" class="btn-ghost" style="font-size:0.82rem;padding:4px 8px">Ver cola de estudio</button>
           </div>
         </div>
 
@@ -185,8 +186,6 @@
           </div>
           <div class="study-overview-actions hidden" id="study-overview-actions">
             <button type="button" id="study-start-btn" class="btn-primary">Iniciar sesión</button>
-            <button type="button" id="study-add-card-btn" class="btn-secondary">+ Agregar tarjeta</button>
-            <button type="button" id="study-agenda-btn" class="btn-secondary">Agenda</button>
           </div>
         </div>
 
@@ -198,22 +197,6 @@
           </div>
           <div id="agenda-summary" class="agenda-summary"></div>
           <div id="agenda-buckets"></div>
-        </div>
-
-        <!-- Add card form -->
-        <div id="study-add-form" class="card hidden">
-          <h3>Nueva tarjeta</h3>
-          <label for="card-subject">Materia</label>
-          <input id="card-subject" type="text" list="subjects-list" autocomplete="off" />
-          <label for="card-prompt">Pregunta / consigna</label>
-          <textarea id="card-prompt" rows="3"></textarea>
-          <label for="card-expected">Respuesta esperada</label>
-          <textarea id="card-expected" rows="3"></textarea>
-          <div style="display:flex;gap:8px;margin-top:8px">
-            <button type="button" id="card-save-btn" class="btn-primary">Guardar tarjeta</button>
-            <button type="button" id="card-cancel-btn" class="btn-secondary">Cancelar</button>
-          </div>
-          <p id="card-save-feedback" class="feedback"></p>
         </div>
 
         <!-- Active session (full-screen overlay) -->
@@ -411,8 +394,25 @@
         <div id="history-content"></div>
       </section>
 
-      <!-- ═══ TAB: NAVEGADOR ═══════════════════════════════════════════════ -->
+      <!-- ═══ TAB: TARJETAS ════════════════════════════════════════════════ -->
       <section id="tab-browser" class="hidden">
+
+        <!-- Add card form (moved from Estudiar) -->
+        <div id="study-add-form" class="card hidden">
+          <h3>Nueva tarjeta</h3>
+          <label for="card-subject">Materia</label>
+          <input id="card-subject" type="text" list="subjects-list" autocomplete="off" />
+          <label for="card-prompt">Pregunta / consigna</label>
+          <textarea id="card-prompt" rows="3"></textarea>
+          <label for="card-expected">Respuesta esperada</label>
+          <textarea id="card-expected" rows="3"></textarea>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button type="button" id="card-save-btn" class="btn-primary">Guardar tarjeta</button>
+            <button type="button" id="card-cancel-btn" class="btn-secondary">Cancelar</button>
+          </div>
+          <p id="card-save-feedback" class="feedback"></p>
+        </div>
+
         <div class="card browser-toolbar">
           <div class="browser-filters">
             <input type="text" id="browser-filter-text" placeholder="Buscar por prompt..." />
@@ -426,6 +426,7 @@
             </select>
           </div>
           <div class="browser-bulk-actions">
+            <button type="button" id="browser-add-card-btn" class="btn-primary">+ Nueva tarjeta</button>
             <button type="button" id="browser-archive-btn" class="btn-secondary">Archivar</button>
             <button type="button" id="browser-suspend-btn" class="btn-secondary">Suspender</button>
             <button type="button" id="browser-reactivate-btn" class="btn-secondary">Reactivar</button>

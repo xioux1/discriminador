@@ -368,6 +368,13 @@ function initBrowserTab() {
     renderBrowserTable();
   });
 
+  document.querySelector('#browser-add-card-btn')?.addEventListener('click', () => {
+    const form = document.querySelector('#study-add-form');
+    const isHidden = form.classList.contains('hidden');
+    form.classList.toggle('hidden', !isHidden);
+    if (isHidden) form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
   document.querySelector('#browser-archive-btn')?.addEventListener('click', () => runBrowserBatchAction('archive'));
   document.querySelector('#browser-suspend-btn')?.addEventListener('click', () => runBrowserBatchAction('suspend'));
   document.querySelector('#browser-reactivate-btn')?.addEventListener('click', () => runBrowserBatchAction('reactivate'));
@@ -405,7 +412,7 @@ async function loadDashboard() {
       subject: normalizeSubject(subj.subject)
     }));
     if (!subjects.length) {
-      content.innerHTML = '<p style="color:var(--text-muted);padding:16px">Aún no hay evaluaciones registradas. Empezá evaluando en la pestaña Evaluar.</p>';
+      content.innerHTML = '<p style="color:var(--text-muted);padding:16px">Aún no hay tarjetas. Empezá agregando tarjetas en la pestaña Tarjetas.</p>';
       return;
     }
 
@@ -477,9 +484,77 @@ async function loadDashboard() {
         openCurriculumModal(e.target.dataset.subject);
       }
     });
+
+    // Load agenda below subjects
+    loadDashboardAgenda().catch(() => {});
+
   } catch (err) {
     loading.classList.add('hidden');
     content.innerHTML = `<p style="color:var(--fail-fg);padding:16px">Error al cargar: ${err.message}</p>`;
+  }
+}
+
+// --- Dashboard agenda ---
+
+async function loadDashboardAgenda() {
+  const container = document.querySelector('#dashboard-agenda');
+  if (!container) return;
+
+  try {
+    const data = await getJson('/scheduler/agenda');
+    if (!data) return;
+    const s = data.summary;
+    const buckets = data.buckets ?? {};
+
+    // Only render if there's something to show
+    const totalBucketCards = Object.values(buckets).reduce((n, arr) => n + arr.length, 0);
+    if (totalBucketCards === 0) return;
+
+    const panel = document.createElement('div');
+    panel.className = 'card';
+    panel.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <h3 style="margin:0">Agenda</h3>
+        <div class="agenda-pills" style="margin:0">
+          ${s.overdue      ? `<span class="agenda-pill overdue">${s.overdue} vencida${s.overdue !== 1 ? 's' : ''}</span>` : ''}
+          ${s.due_today    ? `<span class="agenda-pill today">${s.due_today} hoy</span>` : ''}
+          ${s.due_tomorrow ? `<span class="agenda-pill soon">${s.due_tomorrow} mañana</span>` : ''}
+          <span class="agenda-pill neutral">${s.total_cards} total</span>
+        </div>
+      </div>
+      <div id="dashboard-agenda-buckets"></div>
+    `;
+    container.innerHTML = '';
+    container.appendChild(panel);
+
+    const bucketsEl = container.querySelector('#dashboard-agenda-buckets');
+    for (const [key, label] of Object.entries(BUCKET_LABELS)) {
+      const cards = buckets[key] ?? [];
+      if (!cards.length) continue;
+
+      const section = document.createElement('div');
+      section.className = 'agenda-bucket';
+      section.innerHTML = `<h4 class="agenda-bucket-title ${key}">${label} <span class="agenda-bucket-count">${cards.length}</span></h4>`;
+
+      for (const card of cards) {
+        const due = new Date(card.next_review_at);
+        const dueStr = formatDue(due);
+        const cardEl = document.createElement('div');
+        cardEl.className = 'agenda-card';
+        cardEl.innerHTML = `
+          <div class="agenda-card-header">
+            ${card.subject ? `<span class="agenda-subject-badge">${escHtml(card.subject)}</span>` : ''}
+            <span class="agenda-due ${key}">${dueStr}</span>
+            <span class="agenda-interval">${card.review_count} revis. · ${card.pass_count} ok</span>
+          </div>
+          <p class="agenda-card-prompt">${escHtml(truncate(card.prompt_text, 100))}</p>
+        `;
+        section.appendChild(cardEl);
+      }
+      bucketsEl.appendChild(section);
+    }
+  } catch (_) {
+    // Agenda is non-critical, fail silently
   }
 }
 
@@ -1818,14 +1893,6 @@ function initStudyTab() {
   document.querySelector('#study-briefing').classList.remove('hidden');
   document.querySelector('#study-overview').classList.add('hidden');
 
-  document.querySelector('#study-add-card-btn').addEventListener('click', () => {
-    document.querySelector('#study-add-form').classList.remove('hidden');
-    document.querySelector('#study-agenda').classList.add('hidden');
-  });
-  document.querySelector('#study-agenda-btn').addEventListener('click', loadAgenda);
-  document.querySelector('#agenda-close-btn').addEventListener('click', () => {
-    document.querySelector('#study-agenda').classList.add('hidden');
-  });
   document.querySelector('#card-cancel-btn').addEventListener('click', () => {
     document.querySelector('#study-add-form').classList.add('hidden');
   });
@@ -2072,7 +2139,7 @@ async function saveNewCard() {
     feedback.style.color = '#4a7';
     document.querySelector('#card-prompt').value = '';
     document.querySelector('#card-expected').value = '';
-    loadStudyOverview();
+    loadBrowserCards().catch(() => {});
     setTimeout(() => {
       document.querySelector('#study-add-form').classList.add('hidden');
       feedback.textContent = '';
