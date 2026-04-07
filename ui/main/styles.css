@@ -1296,13 +1296,19 @@ textarea:focus, input[type="text"]:focus, select:focus {
 }
 .briefing-options { display: flex; flex-wrap: wrap; gap: 8px; }
 .briefing-opt {
-  padding: 8px 16px; border: 2px solid var(--border);
+  padding: 8px 18px; border: 2px solid var(--border);
   border-radius: var(--radius); background: var(--surface);
   font-family: var(--font); font-size: 0.9rem; cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition: border-color 0.15s, background 0.15s, color 0.15s, box-shadow 0.15s;
 }
-.briefing-opt:hover { border-color: var(--primary); }
-.briefing-opt.selected { border-color: var(--primary); background: var(--primary-light); font-weight: 600; }
+.briefing-opt:hover { border-color: var(--primary); background: var(--primary-light); }
+.briefing-opt.selected {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 2px 6px rgba(42,95,200,0.25);
+}
 .briefing-tip {
   background: var(--primary-light); border-left: 3px solid var(--primary);
   padding: 8px 12px; border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
