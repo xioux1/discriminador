@@ -400,19 +400,6 @@ function initBrowserTab() {
 // --- Dashboard ---
 
 function renderExamCalendar(exams) {
-  if (!exams || exams.length === 0) return null;
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  // Only show exams within the next 120 days + past 7 days (show recently passed too)
-  const relevant = exams.filter(e => {
-    const d = new Date(e.exam_date + 'T00:00:00');
-    const diff = Math.round((d - today) / 86400000);
-    return diff >= -7 && diff <= 120;
-  });
-  if (relevant.length === 0) return null;
-
   const card = document.createElement('div');
   card.className = 'card exam-calendar-card';
 
@@ -420,6 +407,32 @@ function renderExamCalendar(exams) {
   title.className = 'exam-calendar-title';
   title.textContent = 'Próximos exámenes';
   card.appendChild(title);
+
+  if (!exams || exams.length === 0) {
+    const empty = document.createElement('p');
+    empty.style.cssText = 'font-size:0.85rem;color:var(--text-muted);margin:0';
+    empty.textContent = 'No hay fechas de examen configuradas. Usá "Configurar" en cada materia para agregarlas.';
+    card.appendChild(empty);
+    return card;
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // Show all future exams + last 14 days
+  const relevant = exams.filter(e => {
+    const d = new Date(e.exam_date + 'T00:00:00');
+    const diff = Math.round((d - today) / 86400000);
+    return diff >= -14;
+  });
+
+  if (relevant.length === 0) {
+    const empty = document.createElement('p');
+    empty.style.cssText = 'font-size:0.85rem;color:var(--text-muted);margin:0';
+    empty.textContent = 'No hay exámenes próximos. Los pasados se ocultan después de 14 días.';
+    card.appendChild(empty);
+    return card;
+  }
 
   const list = document.createElement('div');
   list.className = 'exam-calendar-list';
@@ -543,9 +556,8 @@ async function loadDashboard() {
 
     panel.appendChild(list);
 
-    // Exam calendar — render before subjects panel if there are exams
-    const examCalendarEl = renderExamCalendar(calendarData?.exams || []);
-    if (examCalendarEl) content.appendChild(examCalendarEl);
+    // Exam calendar — always render (shows empty state if no dates configured)
+    content.appendChild(renderExamCalendar(calendarData?.exams || []));
 
     content.appendChild(panel);
 
