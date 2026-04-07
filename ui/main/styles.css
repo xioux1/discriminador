@@ -1466,9 +1466,29 @@ body { letter-spacing: 0.01em; }
 .exam-cal-subject { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .exam-cal-label   { color: var(--text-muted); font-size: 0.8rem; }
 .exam-cal-date    { color: var(--text-muted); font-size: 0.82rem; white-space: nowrap; }
+.exam-cal-meta    { min-width: 120px; }
 .exam-cal-scope   {
   font-size: 0.76rem; text-align: right;
   color: var(--text-muted); white-space: nowrap;
+}
+.exam-cal-coverage { margin-top: 4px; }
+.exam-cal-coverage-track {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: #e9e9e9;
+  overflow: hidden;
+}
+.exam-cal-coverage-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: #000;
+}
+.exam-cal-coverage-text {
+  margin-top: 2px;
+  text-align: right;
+  font-size: 0.72rem;
+  color: var(--text-muted);
 }
 
 .subjects-panel {

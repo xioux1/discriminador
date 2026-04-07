@@ -1,6 +1,7 @@
 const EVALUATE_ENDPOINT = '/evaluate';
 const DECISION_ENDPOINT = '/decision';
 let pendingStudySubject = null;
+const advisorCoverageCache = new Map();
 
 // ─── Auth gate ────────────────────────────────────────────────────────────────
 
@@ -404,7 +405,44 @@ function initBrowserTab() {
 
 // --- Dashboard ---
 
-function renderExamCalendar(exams) {
+async function getAdvisorCoverageBySubject(subjects = []) {
+  const uniqueSubjects = [...new Set(subjects
+    .map((s) => (typeof s === 'string' ? s.trim() : ''))
+    .filter(Boolean))];
+
+  const result = new Map();
+  const missing = [];
+
+  for (const subject of uniqueSubjects) {
+    if (advisorCoverageCache.has(subject)) {
+      result.set(subject, advisorCoverageCache.get(subject));
+    } else {
+      missing.push(subject);
+    }
+  }
+
+  if (!missing.length) return result;
+
+  const responses = await Promise.all(missing.map(async (subject) => {
+    try {
+      const data = await getJson(`/advisor/analysis/${encodeURIComponent(subject)}`);
+      if (data?.error === 'no_config') return { subject, coverage: null };
+      const coverage = Math.max(0, Math.min(100, Math.round(Number(data?.coverage_pct) || 0)));
+      return { subject, coverage };
+    } catch (_err) {
+      return { subject, coverage: null };
+    }
+  }));
+
+  responses.forEach(({ subject, coverage }) => {
+    advisorCoverageCache.set(subject, coverage);
+    result.set(subject, coverage);
+  });
+
+  return result;
+}
+
+async function renderExamCalendar(exams) {
   const card = document.createElement('div');
   card.className = 'card exam-calendar-card';
 
@@ -447,6 +485,7 @@ function renderExamCalendar(exams) {
 
   const list = document.createElement('div');
   list.className = 'exam-calendar-list';
+  const coverageBySubject = await getAdvisorCoverageBySubject(relevant.map((exam) => exam.subject));
 
   for (const exam of relevant) {
     const d = exam._d;
@@ -471,7 +510,16 @@ function renderExamCalendar(exams) {
         <span class="exam-cal-label">${escHtml(exam.label)}</span>
       </div>
       <div class="exam-cal-date">${dayName} ${dateStr}</div>
-      <div class="exam-cal-scope">${exam.scope_pct}% temario</div>
+      <div class="exam-cal-meta">
+        <div class="exam-cal-scope">${exam.scope_pct}% temario</div>
+        ${coverageBySubject.get(exam.subject) != null ? `
+          <div class="exam-cal-coverage">
+            <div class="exam-cal-coverage-track">
+              <div class="exam-cal-coverage-fill" style="width:${coverageBySubject.get(exam.subject)}%"></div>
+            </div>
+            <div class="exam-cal-coverage-text">${coverageBySubject.get(exam.subject)}% cubierto</div>
+          </div>` : ''}
+      </div>
     `;
     list.appendChild(item);
   }
@@ -568,7 +616,7 @@ async function loadDashboard() {
     panel.appendChild(list);
 
     // Exam calendar — always render (shows empty state if no dates configured)
-    content.appendChild(renderExamCalendar(calendarData?.exams || []));
+    content.appendChild(await renderExamCalendar(calendarData?.exams || []));
 
     content.appendChild(panel);
 
