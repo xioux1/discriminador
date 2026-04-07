@@ -3250,6 +3250,19 @@ function plannerWeekLabel(sunday) {
   return `${fmt(sunday)} – ${fmt(sat)} ${sunday.getFullYear()}`;
 }
 
+function plannerIsFutureSlot(weekStart, dayIndex, slot) {
+  if (!weekStart || typeof slot !== 'string') return false;
+  const [hourStr, minuteStr] = slot.split(':');
+  const hour = Number(hourStr);
+  const minute = Number(minuteStr);
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return false;
+
+  const slotDate = new Date(weekStart);
+  slotDate.setDate(slotDate.getDate() + dayIndex);
+  slotDate.setHours(hour, minute, 0, 0);
+  return slotDate.getTime() > Date.now();
+}
+
 function buildPlannerGrid(weekStart, cells, activitySlots = {}) {
   const wrap = document.querySelector('#planner-grid-wrap');
   wrap.innerHTML = '';
@@ -3294,7 +3307,7 @@ function buildPlannerGrid(weekStart, cells, activitySlots = {}) {
       if (cell.color) td.style.background = cell.color;
       td.textContent = cell.content || '';
       const slotActivity = activitySlots[key];
-      if (slotActivity) {
+      if (slotActivity && !plannerIsFutureSlot(weekStart, d, slot)) {
         td.classList.add('planner-cell-study-active');
         td.dataset.activityCount = String(slotActivity.eventsCount || 0);
         const activityDate = slotActivity.lastEventAt ? new Date(slotActivity.lastEventAt) : null;
