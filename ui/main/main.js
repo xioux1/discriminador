@@ -2788,7 +2788,8 @@ async function handleStudyNextCard() {
         card_id: item.data.id,
         grade,
         concept_gaps: gaps,
-        response_time_ms: studyState.responseTimeMs || undefined
+        response_time_ms: studyState.responseTimeMs || undefined,
+        user_answer: studyState.currentEvalContext?.user_answer_text || ''
       });
 
       // Insert new micro-cards at the front of the remaining queue (study them now)

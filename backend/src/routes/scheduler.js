@@ -196,7 +196,7 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
 // Body: { card_id?, micro_card_id?, grade, concept_gaps?, response_time_ms? }
 // grade='review' is treated as 'fail' for scheduling purposes.
 schedulerRouter.post('/scheduler/review', async (req, res) => {
-  const { card_id, micro_card_id, grade, concept_gaps = [], response_time_ms } = req.body || {};
+  const { card_id, micro_card_id, grade, concept_gaps = [], response_time_ms, user_answer = '' } = req.body || {};
   const userId = req.user.id;
 
   if (!grade || !['pass', 'fail', 'review'].includes(grade.toLowerCase())) {
@@ -215,7 +215,7 @@ schedulerRouter.post('/scheduler/review', async (req, res) => {
     if (micro_card_id) {
       return await reviewMicroCard(res, Number(micro_card_id), effectiveGrade, rtMs, userId);
     } else if (card_id) {
-      return await reviewCard(res, Number(card_id), effectiveGrade, concept_gaps, rtMs, userId);
+      return await reviewCard(res, Number(card_id), effectiveGrade, concept_gaps, rtMs, userId, user_answer);
     }
     return res.status(422).json({
       error: 'validation_error',
@@ -228,7 +228,7 @@ schedulerRouter.post('/scheduler/review', async (req, res) => {
 });
 
 // ─── Internal: review a full card ────────────────────────────────────────────
-async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, userId) {
+async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, userId, userAnswer = '') {
   const { rows } = await dbPool.query(
     'SELECT * FROM cards WHERE id = $1 AND user_id = $2 AND archived_at IS NULL AND suspended_at IS NULL',
     [cardId, userId]
@@ -298,7 +298,8 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, userI
           prompt_text: card.prompt_text,
           expected_answer_text: card.expected_answer_text,
           subject: card.subject,
-          concept
+          concept,
+          user_answer: userAnswer
         });
 
         const inserted = await dbPool.query(
