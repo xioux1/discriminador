@@ -80,15 +80,19 @@ cardsRouter.patch('/cards/:id/archive', async (req, res) => {
     });
   }
 
-  const { rowCount } = await dbPool.query(
-    `UPDATE cards
-     SET archived_at = now(),
-         archived_reason = $1,
-         updated_at = now()
-     WHERE id = $2 AND user_id = $3 AND archived_at IS NULL`,
+  // Check if card exists and belongs to user first
+  const { rows: check } = await dbPool.query(
+    'SELECT id, archived_at FROM cards WHERE id = $1 AND user_id = $2',
+    [cardId, userId]
+  );
+  if (!check.length) return res.status(404).json({ error: 'not_found', message: 'Tarjeta no encontrada.' });
+  if (check[0].archived_at) return res.json({ archived: true }); // already archived — idempotent
+
+  await dbPool.query(
+    `UPDATE cards SET archived_at = now(), archived_reason = $1, updated_at = now()
+     WHERE id = $2 AND user_id = $3`,
     [reason.slice(0, 500), cardId, userId]
   );
-  if (rowCount === 0) return res.status(404).json({ error: 'not_found' });
   return res.json({ archived: true });
 });
 

@@ -75,6 +75,8 @@ sessionPlannerRouter.post('/session/plan', async (req, res) => {
        WHERE c.next_review_at <= now()
          AND c.user_id = $1
          AND c.flagged = FALSE
+         AND c.archived_at IS NULL
+         AND c.suspended_at IS NULL
          ${cardsSubjectSql}
        GROUP BY c.id
        ORDER BY c.next_review_at ASC
