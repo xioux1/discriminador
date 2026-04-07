@@ -1897,6 +1897,10 @@ function initStudyTab() {
     document.querySelector('#study-add-form').classList.add('hidden');
   });
   document.querySelector('#card-save-btn').addEventListener('click', saveNewCard);
+  document.querySelector('#study-overview-back-btn').addEventListener('click', () => {
+    document.querySelector('#study-overview').classList.add('hidden');
+    document.querySelector('#study-briefing').classList.remove('hidden');
+  });
   document.querySelector('#study-start-btn').addEventListener('click', startStudySession);
   document.querySelector('#study-exit-btn').addEventListener('click', exitStudySession);
   document.querySelector('#study-edit-prompt-btn').addEventListener('click', toggleStudyPromptEdit);
