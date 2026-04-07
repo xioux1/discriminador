@@ -28,18 +28,19 @@ curriculumRouter.get('/curriculum/:subject', async (req, res) => {
 // PUT /curriculum/:subject — upserta subject_configs (solo syllabus ahora)
 curriculumRouter.put('/curriculum/:subject', async (req, res) => {
   const { subject } = req.params;
-  const { syllabus_text } = req.body;
+  const { syllabus_text, notes_text } = req.body;
   const userId = req.user.id;
   try {
     const { rows } = await dbPool.query(
-      `INSERT INTO subject_configs (subject, syllabus_text, updated_at, user_id)
-       VALUES ($1, $2, now(), $3)
+      `INSERT INTO subject_configs (subject, syllabus_text, notes_text, updated_at, user_id)
+       VALUES ($1, $2, $3, now(), $4)
        ON CONFLICT (subject) DO UPDATE SET
          syllabus_text = EXCLUDED.syllabus_text,
+         notes_text    = EXCLUDED.notes_text,
          user_id       = EXCLUDED.user_id,
          updated_at    = now()
        RETURNING *`,
-      [subject, syllabus_text || null, userId]
+      [subject, syllabus_text || null, notes_text || null, userId]
     );
     invalidateAdvisorCache(subject, userId);
     return res.json({ config: rows[0] });

@@ -50,6 +50,7 @@ export async function analyzeSubject({ subject, config, referenceExams, cards, d
     next_exam: nextExam,
     exam_schedule: examSchedule,   // all parciales + final
     syllabus: config?.syllabus_text || '',
+    class_notes: config?.notes_text || '',  // student's own notes (teacher emphasis)
     reference_exams: referenceExams.map(e => ({
       label: e.label,
       year: e.year,
@@ -76,6 +77,10 @@ export async function analyzeSubject({ subject, config, referenceExams, cards, d
     system: `Sos un tutor universitario experto que analiza el progreso de un estudiante.
 Tenés acceso al plan de estudios, exámenes anteriores y el historial de estudio del alumno.
 Tu análisis debe ser concreto, accionable y en español.
+
+Si el input incluye "class_notes" (apuntes del estudiante), usálos para identificar qué temas
+enfatizó el docente en clase — esos temas tienen mayor probabilidad de aparecer en el examen
+aunque no estén destacados en el programa oficial.
 
 El input puede incluir "exam_schedule": lista de todos los parciales y final con su fecha,
 días restantes y scope_pct (% del temario que cubre ese examen).

@@ -13,10 +13,16 @@ import advisorRouter from './advisor.js';
 import sessionPlannerRouter from './session-planner.js';
 import sqlValidateRouter from './sql-validate.js';
 import cardsRouter from './cards.js';
+import studyDoubtRouter from './study-doubt.js';
+import studySessionsRouter from './study-sessions.js';
+import githubImportRouter from './github-import.js';
 
 const router = Router();
 
 router.use(cardsRouter);
+router.use(studyDoubtRouter);
+router.use(studySessionsRouter);
+router.use(githubImportRouter);
 router.use(evaluateRouter);
 router.use(decisionRouter);
 router.use(transcribeRouter);

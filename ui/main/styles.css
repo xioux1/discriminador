@@ -507,6 +507,17 @@ textarea:focus, input[type="text"]:focus {
 .study-flag-btn:hover { opacity: 1; color: #c0392b; }
 .study-mode-toggle { font-size: 0.78rem; padding: 2px 8px; }
 
+.study-doubt-section { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
+.study-doubt-toggle { font-size: 0.82rem; color: var(--text-muted); padding: 2px 0; }
+.study-doubt-toggle:hover { color: var(--primary); }
+#study-doubt-form textarea { width: 100%; box-sizing: border-box; margin-top: 8px; font-size: 0.9rem; }
+.study-doubt-answer {
+  margin-top: 10px; font-size: 0.9rem; line-height: 1.55;
+  background: var(--surface); border-left: 3px solid var(--primary);
+  padding: 10px 14px; border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  white-space: pre-wrap;
+}
+
 .study-result-block {
   border-top: 1px solid var(--border);
   padding-top: 14px;
