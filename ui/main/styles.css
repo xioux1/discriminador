@@ -1671,8 +1671,29 @@ body { letter-spacing: 0.01em; }
   outline: none;
   transition: background 0.1s;
   overflow: hidden;
+  position: relative;
 }
 .planner-cell:hover { filter: brightness(0.95); }
+.planner-cell-study-active {
+  box-shadow: inset 0 0 0 1px rgba(17, 111, 73, 0.35);
+}
+.planner-cell-study-active::after {
+  content: '';
+  position: absolute;
+  right: 3px;
+  top: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #1f9d62;
+  opacity: 0.85;
+}
+.planner-current-slot {
+  outline: 2px solid #1f9d62 !important;
+  outline-offset: -2px;
+  position: relative;
+  z-index: 1;
+}
 .planner-cell-active {
   outline: 2px solid var(--primary) !important;
   outline-offset: -2px;
