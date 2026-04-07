@@ -1529,6 +1529,17 @@ body { letter-spacing: 0.01em; }
 }
 .planner-nav-btn { font-size: 1.1rem; padding: 4px 10px; }
 .planner-week-label { font-weight: 700; font-size: 0.95rem; min-width: 180px; text-align: center; }
+.planner-fixed-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  user-select: none;
+}
+.planner-fixed-toggle input {
+  margin: 0;
+}
 
 .planner-color-bar {
   display: flex;
