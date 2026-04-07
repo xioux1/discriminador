@@ -124,13 +124,36 @@ sessionPlannerRouter.post('/session/plan', async (req, res) => {
       subjectConfigs = [...examDatesResult.rows, ...legacyRows];
     }
 
-    // 4. Calculate avg_response_time_ms
-    const avgResult = await dbPool.query(
-      `SELECT AVG(avg_response_time_ms)::int AS avg_ms
-       FROM cards
-       WHERE avg_response_time_ms IS NOT NULL`
-    );
-    const avgResponseTimeMs = avgResult.rows[0]?.avg_ms ?? null;
+    // 4. Calculate avg_response_time_ms + user calibration factor in parallel
+    const [avgResult, calibResult] = await Promise.all([
+      dbPool.query(
+        `SELECT AVG(avg_response_time_ms)::int AS avg_ms
+         FROM cards
+         WHERE avg_response_time_ms IS NOT NULL AND user_id = $1`,
+        [userId]
+      ),
+      dbPool.query(
+        `SELECT CASE
+           WHEN COUNT(*) >= 3
+           THEN GREATEST(0.5, LEAST(2.0,
+                  AVG(actual_minutes::numeric / NULLIF(planned_minutes, 0))
+                ))::numeric(4,3)
+           ELSE 1.0
+         END AS calibration_factor
+         FROM (
+           SELECT actual_minutes, planned_minutes
+           FROM study_sessions
+           WHERE user_id = $1
+             AND actual_minutes IS NOT NULL
+             AND planned_minutes > 0
+           ORDER BY ended_at DESC
+           LIMIT 10
+         ) recent`,
+        [userId]
+      )
+    ]);
+    const avgResponseTimeMs  = avgResult.rows[0]?.avg_ms ?? null;
+    const calibrationFactor  = Number(calibResult.rows[0]?.calibration_factor ?? 1.0);
 
     // 5. Call session planner
     const plan = await planSession({
@@ -139,6 +162,7 @@ sessionPlannerRouter.post('/session/plan', async (req, res) => {
       cards,
       microCards,
       subjectConfigs,
+      calibrationFactor,
       avgResponseTimeMs
     });
 

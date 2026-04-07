@@ -492,9 +492,10 @@ async function loadProgress() {
   content.classList.add('hidden');
 
   try {
-    const [actData, overview] = await Promise.all([
+    const [actData, overview, timingData] = await Promise.all([
       getJson('/stats/activity?days=3650'),
-      getJson('/stats/overview').catch(() => ({ subjects: [] }))
+      getJson('/stats/overview').catch(() => ({ subjects: [] })),
+      getJson('/stats/timing?weeks=4').catch(() => null)
     ]);
 
     loading.classList.add('hidden');
@@ -640,6 +641,9 @@ async function loadProgress() {
     } else {
       subjEl.innerHTML = '<p style="color:var(--text-muted)">Aún no hay datos por materia.</p>';
     }
+    // Timing stats
+    renderTimingStats(timingData);
+
     // Populate advisor subject select
     const advisorPanel = document.querySelector('#progress-advisor');
     const advisorSelect = document.querySelector('#advisor-subject-select');
@@ -663,6 +667,57 @@ async function loadProgress() {
     document.querySelector('#progress-content').classList.remove('hidden');
   }
 }
+
+function fmtMs(ms) {
+  if (!ms) return '—';
+  return ms >= 60000 ? (ms / 60000).toFixed(1) + 'm' : Math.round(ms / 1000) + 's';
+}
+
+function renderTimingStats(data) {
+  const subjectsEl   = document.querySelector('#progress-timing-subjects');
+  const slowCardsEl  = document.querySelector('#progress-timing-slowcards');
+  if (!subjectsEl || !slowCardsEl) return;
+
+  if (!data || (!data.by_subject?.length && !data.by_card?.length)) {
+    subjectsEl.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem">Aún no hay datos de tiempo de respuesta.</p>';
+    slowCardsEl.innerHTML = '';
+    return;
+  }
+
+  // Weekly trend per subject
+  if (data.by_subject?.length) {
+    subjectsEl.innerHTML = '<p style="font-size:0.82rem;font-weight:600;color:var(--text-muted);margin-bottom:8px">Promedio semanal por materia</p>';
+    for (const { subject, weeks } of data.by_subject) {
+      const row = document.createElement('div');
+      row.style.cssText = 'margin-bottom:8px;font-size:0.85rem';
+      const trend = weeks.map(w => `<span style="margin-right:6px;color:var(--text-muted)">${w.week_start?.slice(5)} <b style="color:var(--text)">${fmtMs(w.avg_ms)}</b></span>`).join('→ ');
+      row.innerHTML = `<span style="font-weight:600">${escHtml(subject)}</span>: ${trend || '—'}`;
+      subjectsEl.appendChild(row);
+    }
+  } else {
+    subjectsEl.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem">Sin datos de tendencia semanal aún.</p>';
+  }
+
+  // Top slowest cards
+  if (data.by_card?.length) {
+    slowCardsEl.innerHTML = '<p style="font-size:0.82rem;font-weight:600;color:var(--text-muted);margin:0 0 8px">Tarjetas más lentas</p>';
+    const list = document.createElement('div');
+    list.style.cssText = 'display:flex;flex-direction:column;gap:4px';
+    data.by_card.slice(0, 10).forEach(c => {
+      const item = document.createElement('div');
+      item.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:0.82rem';
+      const preview = (c.prompt_text || '').slice(0, 60) + ((c.prompt_text || '').length > 60 ? '…' : '');
+      item.innerHTML = `
+        <span style="background:var(--review-bg);color:var(--review-fg);padding:1px 7px;border-radius:10px;font-weight:600;white-space:nowrap">${fmtMs(c.avg_ms)}</span>
+        <span style="color:var(--text-muted);font-size:0.75rem;white-space:nowrap">${escHtml(c.subject || '')}</span>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(preview)}</span>
+      `;
+      list.appendChild(item);
+    });
+    slowCardsEl.appendChild(list);
+  }
+}
+
 
 // --- End Tab navigation ---
 
@@ -1936,9 +1991,17 @@ function startPlannedSession() {
   studyState.queue                 = queue;
   studyState.index                 = 0;
   studyState.results               = [];
+  studyState.sessionId             = null;
   studyState.sessionStartTime      = Date.now();
   studyState.sessionLimitMs        = briefingState.selectedTime * 60 * 1000;
   studyState.sessionEnergyLevel    = briefingState.selectedEnergy;
+
+  // Record session start for calibration
+  postJson('/study/sessions', {
+    planned_minutes:    briefingState.selectedTime,
+    planned_card_count: queue.length,
+    energy_level:       briefingState.selectedEnergy
+  }).then(d => { studyState.sessionId = d?.session_id ?? null; }).catch(() => {});
 
   document.querySelector('#study-briefing').classList.add('hidden');
   document.querySelector('#study-overview').classList.add('hidden');
@@ -2031,7 +2094,9 @@ const studyState = {
   currentInputMode: '',
   cardStartTime: 0,
   responseTimeMs: 0,
-  timerInterval: null
+  timerInterval: null,
+  sessionId: null,
+  sessionStartTime: 0
 };
 
 function getStudyPromptText(item) {
@@ -2133,6 +2198,7 @@ function showStudyCard() {
   SqlEditor.refresh();
   document.querySelector('#study-answer-block').classList.remove('hidden');
   document.querySelector('#study-result-block').classList.add('hidden');
+  document.querySelector('#study-doubt-section')?.classList.add('hidden');
   const studyEvalBtn = document.querySelector('#study-eval-btn');
   studyEvalBtn.disabled = false;
   studyState.currentEvalResult = null;
@@ -2517,6 +2583,15 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
 
     document.querySelector('#study-answer-block').classList.add('hidden');
     document.querySelector('#study-result-block').classList.remove('hidden');
+
+    // Show doubt section, reset it
+    const doubtSection = document.querySelector('#study-doubt-section');
+    if (doubtSection) {
+      doubtSection.classList.remove('hidden');
+      document.querySelector('#study-doubt-form').classList.add('hidden');
+      document.querySelector('#study-doubt-answer').classList.add('hidden');
+      document.querySelector('#study-doubt-input').value = '';
+    }
   } catch (err) {
     evalBtn.disabled = false;
     evalBtn.textContent = 'Evaluar';
@@ -2633,6 +2708,51 @@ document.querySelector('#study-variant-btn').addEventListener('click', async () 
   }
 });
 
+// ── Doubt chat post-response ──────────────────────────────────────────────────
+document.querySelector('#study-doubt-toggle').addEventListener('click', () => {
+  document.querySelector('#study-doubt-form').classList.toggle('hidden');
+});
+
+document.querySelector('#study-doubt-btn').addEventListener('click', async () => {
+  const question = (document.querySelector('#study-doubt-input').value || '').trim();
+  if (!question) return;
+
+  const item       = studyState.queue[studyState.index];
+  const evalResult = studyState.currentEvalResult;
+  const btn        = document.querySelector('#study-doubt-btn');
+  const answerEl   = document.querySelector('#study-doubt-answer');
+
+  btn.disabled = true;
+  btn.textContent = 'Consultando...';
+  answerEl.classList.add('hidden');
+
+  const isMicro = item?.type === 'micro';
+  const cardPrompt    = isMicro ? item.data.question    : item.data.prompt_text;
+  const expectedAns   = isMicro ? item.data.expected_answer : item.data.expected_answer_text;
+  const subject       = isMicro ? item.data.parent_subject  : item.data.subject;
+  const userAnswer    = (document.querySelector('#study-answer-input').value || '').trim();
+  const grade         = evalResult ? String(evalResult.suggested_grade || '').toLowerCase() : '';
+
+  try {
+    const data = await postJson('/study/doubt', {
+      card_prompt:     cardPrompt   || '',
+      expected_answer: expectedAns  || '',
+      user_answer:     userAnswer   || '',
+      grade,
+      question,
+      subject: subject || ''
+    });
+    answerEl.textContent = data?.answer || '(sin respuesta)';
+    answerEl.classList.remove('hidden');
+  } catch (err) {
+    answerEl.textContent = `Error: ${err.message}`;
+    answerEl.classList.remove('hidden');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Consultar';
+  }
+});
+
 document.querySelector('#study-next-btn').addEventListener('click', async () => {
   await handleStudyNextCard();
 });
@@ -2726,6 +2846,25 @@ function finishStudySession() {
     <p><strong>${passes}</strong> correctas &nbsp;·&nbsp; <strong>${fails}</strong> incorrectas</p>
     ${microsPassed > 0 ? `<p style="color:#4a7;font-size:0.9rem">${microsPassed} micro-concepto${microsPassed !== 1 ? 's' : ''} superado${microsPassed !== 1 ? 's' : ''}.</p>` : ''}
   `;
+
+  // Record actual session time for calibration
+  if (studyState.sessionId && studyState.sessionStartTime) {
+    const actualMinutes = (Date.now() - studyState.sessionStartTime) / 60000;
+    postJson(`/study/sessions/${studyState.sessionId}`, {
+      actual_minutes:    Math.round(actualMinutes * 100) / 100,
+      actual_card_count: results.length
+    }, 'PATCH').then(() => {
+      const plannedMin = briefingState.selectedTime || 0;
+      const actualMin  = Math.round(actualMinutes);
+      if (plannedMin > 0) {
+        const timingEl = document.createElement('p');
+        timingEl.style.cssText = 'font-size:0.85rem;color:var(--text-muted);margin-top:4px';
+        timingEl.textContent = `Planificaste ${plannedMin} min · Tardaste ${actualMin} min`;
+        document.querySelector('#study-complete-summary').appendChild(timingEl);
+      }
+    }).catch(() => {});
+    studyState.sessionId = null;
+  }
 
   loadStudyOverview();
 }
@@ -2858,6 +2997,7 @@ async function openCurriculumModal(subject) {
   try {
     const data = await getJson(`/curriculum/${encodeURIComponent(subject)}`);
     document.querySelector('#curriculum-syllabus').value = data.config?.syllabus_text || '';
+    document.querySelector('#curriculum-notes').value    = data.config?.notes_text    || '';
     document.querySelector('#curriculum-daily-new-limit').value = data.config?.daily_new_cards_limit ?? '';
     renderExamDatesList(data.exam_dates || [], subject);
     renderExamsList(data.exams || [], subject);
@@ -2891,7 +3031,8 @@ document.querySelector('#curriculum-save-btn').addEventListener('click', async (
 
   try {
     await postJson(`/curriculum/${encodeURIComponent(subject)}`, {
-      syllabus_text: document.querySelector('#curriculum-syllabus').value,
+      syllabus_text:         document.querySelector('#curriculum-syllabus').value,
+      notes_text:            document.querySelector('#curriculum-notes').value,
       daily_new_cards_limit: parsedDailyLimit
     }, 'PUT');
     fb.textContent = parsedDailyLimit === null
@@ -2901,6 +3042,40 @@ document.querySelector('#curriculum-save-btn').addEventListener('click', async (
   } catch (err) {
     fb.textContent = `Error: ${err.message}`;
     fb.style.color = 'var(--fail-fg)';
+  }
+});
+
+// ── GitHub import ─────────────────────────────────────────────────────────────
+
+document.querySelector('#github-import-btn').addEventListener('click', async () => {
+  const subject = document.querySelector('#curriculum-modal').dataset.subject;
+  const url     = (document.querySelector('#github-repo-url').value || '').trim();
+  const fb      = document.querySelector('#github-import-feedback');
+  const btn     = document.querySelector('#github-import-btn');
+
+  if (!url) {
+    fb.textContent = 'Pegá una URL de GitHub.';
+    fb.style.color = 'var(--fail-fg)';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Importando...';
+  fb.textContent = 'Leyendo repositorio y generando tarjetas (puede tardar 15-20s)...';
+  fb.style.color = 'var(--text-muted)';
+
+  try {
+    const data = await postJson('/import/github', { repo_url: url, subject });
+    const n = data.cards_created;
+    fb.textContent = `${n} tarjeta${n !== 1 ? 's' : ''} creada${n !== 1 ? 's' : ''}. Aparecerán en tu cola de estudio.`;
+    fb.style.color = 'var(--pass-fg)';
+    document.querySelector('#github-repo-url').value = '';
+  } catch (err) {
+    fb.textContent = `Error: ${err.message}`;
+    fb.style.color = 'var(--fail-fg)';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Importar';
   }
 });
 

@@ -28,7 +28,7 @@ curriculumRouter.get('/curriculum/:subject', async (req, res) => {
 // PUT /curriculum/:subject — upserta subject_configs (solo syllabus ahora)
 curriculumRouter.put('/curriculum/:subject', async (req, res) => {
   const { subject } = req.params;
-  const { syllabus_text, daily_new_cards_limit } = req.body || {};
+  const { syllabus_text, notes_text, daily_new_cards_limit } = req.body || {};
   const userId = req.user.id;
   const parsedDailyLimit = daily_new_cards_limit === null || daily_new_cards_limit === undefined || daily_new_cards_limit === ''
     ? null
@@ -42,15 +42,16 @@ curriculumRouter.put('/curriculum/:subject', async (req, res) => {
   }
   try {
     const { rows } = await dbPool.query(
-      `INSERT INTO subject_configs (subject, syllabus_text, daily_new_cards_limit, updated_at, user_id)
-       VALUES ($1, $2, $3, now(), $4)
+      `INSERT INTO subject_configs (subject, syllabus_text, notes_text, daily_new_cards_limit, updated_at, user_id)
+       VALUES ($1, $2, $3, $4, now(), $5)
        ON CONFLICT (subject) DO UPDATE SET
-         syllabus_text = EXCLUDED.syllabus_text,
+         syllabus_text         = EXCLUDED.syllabus_text,
+         notes_text            = EXCLUDED.notes_text,
          daily_new_cards_limit = EXCLUDED.daily_new_cards_limit,
-         user_id       = EXCLUDED.user_id,
-         updated_at    = now()
+         user_id               = EXCLUDED.user_id,
+         updated_at            = now()
        RETURNING *`,
-      [subject, syllabus_text || null, parsedDailyLimit, userId]
+      [subject, syllabus_text || null, notes_text || null, parsedDailyLimit, userId]
     );
     invalidateAdvisorCache(subject, userId);
     return res.json({ config: rows[0] });

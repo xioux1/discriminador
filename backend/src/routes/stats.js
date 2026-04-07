@@ -122,4 +122,63 @@ statsRouter.get('/stats/question', async (req, res) => {
   }
 });
 
+// GET /stats/timing?weeks=4 — response time trends per subject and slowest cards
+statsRouter.get('/stats/timing', async (req, res) => {
+  const userId = req.user.id;
+  const weeks = Math.min(12, Math.max(1, parseInt(req.query.weeks, 10) || 4));
+
+  try {
+    // Weekly averages per subject from activity_log
+    const subjectRows = await dbPool.query(
+      `SELECT
+         subject,
+         date_trunc('week', logged_date::timestamptz)::date AS week_start,
+         ROUND(AVG(response_time_ms))::int AS avg_ms,
+         COUNT(*) AS cnt
+       FROM activity_log
+       WHERE user_id = $1
+         AND response_time_ms IS NOT NULL
+         AND subject IS NOT NULL
+         AND logged_date >= CURRENT_DATE - ($2::int * 7)
+       GROUP BY subject, week_start
+       ORDER BY subject ASC, week_start ASC`,
+      [userId, weeks]
+    );
+
+    // Group by subject
+    const bySubjectMap = {};
+    for (const row of subjectRows.rows) {
+      if (!bySubjectMap[row.subject]) bySubjectMap[row.subject] = [];
+      bySubjectMap[row.subject].push({
+        week_start: row.week_start,
+        avg_ms: Number(row.avg_ms),
+        count: Number(row.cnt)
+      });
+    }
+    const by_subject = Object.entries(bySubjectMap).map(([subject, weeks]) => ({ subject, weeks }));
+
+    // Top 20 slowest cards (by rolling average already maintained on cards table)
+    const cardRows = await dbPool.query(
+      `SELECT id AS card_id, prompt_text, subject, avg_response_time_ms AS avg_ms
+       FROM cards
+       WHERE user_id = $1
+         AND avg_response_time_ms IS NOT NULL
+       ORDER BY avg_response_time_ms DESC
+       LIMIT 20`,
+      [userId]
+    );
+    const by_card = cardRows.rows.map(r => ({
+      card_id: r.card_id,
+      prompt_text: r.prompt_text,
+      subject: r.subject,
+      avg_ms: Number(r.avg_ms)
+    }));
+
+    return res.json({ by_subject, by_card });
+  } catch (err) {
+    console.error('GET /stats/timing error', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
 export default statsRouter;

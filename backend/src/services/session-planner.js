@@ -29,6 +29,7 @@ function getClient() {
  * @param {Array}  params.microCards
  * @param {Array}  params.subjectConfigs
  * @param {number|null} params.avgResponseTimeMs
+ * @param {number}      params.calibrationFactor - personal correction factor (default 1.0)
  */
 export async function planSession({
   availableMinutes,
@@ -36,10 +37,12 @@ export async function planSession({
   cards,
   microCards,
   subjectConfigs,
-  avgResponseTimeMs
+  avgResponseTimeMs,
+  calibrationFactor = 1.0
 }) {
   const energy = ENERGY[energyLevel] ?? ENERGY.normal;
-  const baseMs  = avgResponseTimeMs ?? DEFAULT_RESPONSE_TIME_MS;
+  // Apply personal calibration factor: if user consistently takes longer, expand per-card estimate
+  const baseMs  = (avgResponseTimeMs ?? DEFAULT_RESPONSE_TIME_MS) * calibrationFactor;
 
   // Deterministic time per card (JS, not LLM)
   const msPerCard    = Math.round(baseMs * energy.speedMultiplier);
