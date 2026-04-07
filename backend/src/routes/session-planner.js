@@ -46,6 +46,7 @@ sessionPlannerRouter.post('/session/plan', async (req, res) => {
               mc.interval_days, mc.ease_factor, mc.next_review_at, mc.review_count,
               mc.status,
               c.subject AS parent_subject,
+              c.avg_response_time_ms AS parent_avg_response_time_ms,
               c.prompt_text AS parent_prompt,
               c.expected_answer_text AS parent_expected
        FROM micro_cards mc
@@ -126,12 +127,21 @@ sessionPlannerRouter.post('/session/plan', async (req, res) => {
       subjectConfigs = [...examDatesResult.rows, ...legacyRows];
     }
 
-    // 4. Calculate avg_response_time_ms + user calibration factor in parallel
-    const [avgResult, calibResult] = await Promise.all([
+    // 4. Calculate timing baselines + user calibration factor in parallel
+    const [avgResult, subjectAvgResult, calibResult] = await Promise.all([
       dbPool.query(
         `SELECT AVG(avg_response_time_ms)::int AS avg_ms
          FROM cards
          WHERE avg_response_time_ms IS NOT NULL AND user_id = $1`,
+        [userId]
+      ),
+      dbPool.query(
+        `SELECT subject, AVG(avg_response_time_ms)::int AS avg_ms
+         FROM cards
+         WHERE user_id = $1
+           AND avg_response_time_ms IS NOT NULL
+           AND subject IS NOT NULL
+         GROUP BY subject`,
         [userId]
       ),
       dbPool.query(
@@ -155,6 +165,11 @@ sessionPlannerRouter.post('/session/plan', async (req, res) => {
       )
     ]);
     const avgResponseTimeMs  = avgResult.rows[0]?.avg_ms ?? null;
+    const subjectAvgMsBySubject = Object.fromEntries(
+      subjectAvgResult.rows
+        .filter((r) => r.subject && Number.isFinite(Number(r.avg_ms)))
+        .map((r) => [r.subject, Number(r.avg_ms)])
+    );
     const calibrationFactor  = Number(calibResult.rows[0]?.calibration_factor ?? 1.0);
 
     // 5. Call session planner
@@ -165,7 +180,8 @@ sessionPlannerRouter.post('/session/plan', async (req, res) => {
       microCards,
       subjectConfigs,
       calibrationFactor,
-      avgResponseTimeMs
+      avgResponseTimeMs,
+      subjectAvgMsBySubject,
     });
 
     return res.status(200).json({
