@@ -190,6 +190,21 @@ test('v2 aplica abreviaturas/correcciones conservadoras y expone replacements en
   assert.ok(result.signals.keywordCoverage >= 0.6);
 });
 
+test('v2 no falla cuando el token coincide con propiedades heredadas del objeto', async () => {
+  process.env.ENABLE_PREPROCESSING_V2 = 'true';
+  const moduleWithPreprocessing = await import(`../scoring.js?proto=${Date.now()}-${Math.random()}`);
+
+  const payloadWithProtoToken = {
+    evaluation_id: 'eval-proto-token',
+    prompt_text: 'Explica __proto__ en JavaScript.',
+    subject: 'General',
+    expected_answer_text: 'proto javascript objeto',
+    user_answer_text: '__proto__ javascript objeto'
+  };
+
+  assert.doesNotThrow(() => moduleWithPreprocessing.scoreEvaluation(payloadWithProtoToken));
+});
+
 test('rescata respuestas con typos densas en conceptos para evitar falso FAIL', async () => {
   const { scoreEvaluation } = await loadScoringModule(false);
 

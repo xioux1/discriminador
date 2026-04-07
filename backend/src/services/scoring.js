@@ -90,6 +90,14 @@ const ABBREVIATION_MAP = {
   xq: 'porque'
 };
 
+function expandAbbreviation(token) {
+  if (Object.prototype.hasOwnProperty.call(ABBREVIATION_MAP, token)) {
+    const mappedValue = ABBREVIATION_MAP[token];
+    return typeof mappedValue === 'string' ? mappedValue : String(mappedValue ?? token);
+  }
+  return token;
+}
+
 const NO_TOUCH_SET = new Set([
   'api',
   'sql',
@@ -263,7 +271,7 @@ function normalizeTextV2WithCorrections(text, { referenceText = '' } = {}) {
     }
 
     const lookupToken = toCorrectionLookupToken(cleanedToken);
-    const abbreviationExpanded = ABBREVIATION_MAP[lookupToken] || lookupToken;
+    const abbreviationExpanded = expandAbbreviation(lookupToken);
     const expandedTokens = abbreviationExpanded.split(/\s+/).filter(Boolean);
     const correctedExpandedTokens = [];
 
