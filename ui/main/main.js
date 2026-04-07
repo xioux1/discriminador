@@ -1513,7 +1513,11 @@ async function postJson(url, body, method = 'POST') {
 
   if (!response.ok) {
     const reason = data.message || `Error HTTP ${response.status}`;
-    throw new Error(reason);
+    const error = new Error(reason);
+    if (Array.isArray(data.details)) {
+      error.details = data.details;
+    }
+    throw error;
   }
 
   return data;
@@ -1526,6 +1530,16 @@ function renderClauseChecklist(clauses) {
     `<span class="sql-clause-item ${c.status}"><span class="sql-clause-label">${statusIcon[c.status]}</span>${c.name}</span>`
   ).join('');
   return `<div class="sql-clause-checklist">${items}</div>`;
+}
+
+function formatValidationIssues(error) {
+  if (!Array.isArray(error?.details) || error.details.length === 0) return '';
+  return error.details
+    .map((detail) => {
+      const field = detail?.field ? `${detail.field}: ` : '';
+      return `${field}${detail?.issue || 'Campo inválido.'}`;
+    })
+    .join(' | ');
 }
 
 form.addEventListener('submit', async (event) => {
@@ -1598,7 +1612,9 @@ form.addEventListener('submit', async (event) => {
   } catch (error) {
     resultLoading.classList.add('hidden');
     resultContent.classList.add('hidden');
-    setFeedback(`No se pudo evaluar: ${error.message}`, 'error');
+    const validationIssues = formatValidationIssues(error);
+    const message = validationIssues ? `${error.message} (${validationIssues})` : error.message;
+    setFeedback(`No se pudo evaluar: ${message}`, 'error');
   } finally {
     uiState.evaluating = false;
     setControlsDisabled(false);
@@ -2895,7 +2911,9 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
   } catch (err) {
     evalBtn.disabled = false;
     evalBtn.textContent = 'Evaluar';
-    alert(`Error al evaluar: ${err.message}`);
+    const validationIssues = formatValidationIssues(err);
+    const message = validationIssues ? `${err.message}\n${validationIssues}` : err.message;
+    alert(`Error al evaluar: ${message}`);
   }
 });
 
