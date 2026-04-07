@@ -29,6 +29,7 @@ function getClient() {
  * @param {Array}  params.microCards
  * @param {Array}  params.subjectConfigs
  * @param {number|null} params.avgResponseTimeMs
+ * @param {Object.<string, number>} params.subjectAvgMsBySubject
  * @param {number}      params.calibrationFactor - personal correction factor (default 1.0)
  */
 export async function planSession({
@@ -38,6 +39,7 @@ export async function planSession({
   microCards,
   subjectConfigs,
   avgResponseTimeMs,
+  subjectAvgMsBySubject = {},
   calibrationFactor = 1.0
 }) {
   const energy = ENERGY[energyLevel] ?? ENERGY.normal;
@@ -72,13 +74,21 @@ export async function planSession({
     const item = allItems.get(key);
     if (!item) continue;
 
-    if (accumulatedMs + msPerCard <= budgetMs) {
-      accumulatedMs += msPerCard;
+    const estimatedMs = estimateItemMs({
+      item,
+      type: ref.type,
+      defaultMs: baseMs,
+      speedMultiplier: energy.speedMultiplier,
+      subjectAvgMsBySubject,
+    });
+
+    if (accumulatedMs + estimatedMs <= budgetMs) {
+      accumulatedMs += estimatedMs;
       planned.push({
         type:         ref.type,
         id:           ref.id,
         subject:      item.subject || item.parent_subject,
-        estimated_ms: msPerCard,
+        estimated_ms: estimatedMs,
         reason:       ref.reason || '',
       });
     } else {
@@ -212,4 +222,19 @@ cards vencidas (${cardSummary.length}):
 ${JSON.stringify(cardSummary, null, 2)}
 
 Devolvé únicamente el JSON con priority_order, session_tip y warnings.`;
+}
+
+function estimateItemMs({ item, type, defaultMs, speedMultiplier, subjectAvgMsBySubject }) {
+  const subject = type === 'micro' ? item.parent_subject : item.subject;
+  const subjectAvg = subject ? subjectAvgMsBySubject[subject] : null;
+
+  const explicitAvg = type === 'micro'
+    ? item.parent_avg_response_time_ms
+    : item.avg_response_time_ms;
+
+  const referenceMs = Number(explicitAvg) > 0
+    ? Number(explicitAvg)
+    : (Number(subjectAvg) > 0 ? Number(subjectAvg) : defaultMs);
+
+  return Math.round(referenceMs * speedMultiplier);
 }
