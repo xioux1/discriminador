@@ -419,17 +419,23 @@ function renderExamCalendar(exams) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  // Show all future exams + last 14 days
-  const relevant = exams.filter(e => {
-    const d = new Date(e.exam_date + 'T00:00:00');
-    const diff = Math.round((d - today) / 86400000);
-    return diff >= -14;
-  });
+  function parseExamDate(raw) {
+    // Handle 'YYYY-MM-DD', 'YYYY-MM-DDT...' or Date objects
+    const s = String(raw).slice(0, 10); // always take first 10 chars
+    const [y, m, d] = s.split('-').map(Number);
+    return new Date(y, m - 1, d); // local date, no timezone issues
+  }
+
+  // Show ALL exams (past only hidden after 30 days)
+  const relevant = exams
+    .map(e => ({ ...e, _d: parseExamDate(e.exam_date) }))
+    .filter(e => Math.round((e._d - today) / 86400000) >= -30)
+    .sort((a, b) => a._d - b._d);
 
   if (relevant.length === 0) {
     const empty = document.createElement('p');
     empty.style.cssText = 'font-size:0.85rem;color:var(--text-muted);margin:0';
-    empty.textContent = 'No hay exámenes próximos. Los pasados se ocultan después de 14 días.';
+    empty.textContent = 'No hay exámenes próximos configurados.';
     card.appendChild(empty);
     return card;
   }
@@ -438,7 +444,7 @@ function renderExamCalendar(exams) {
   list.className = 'exam-calendar-list';
 
   for (const exam of relevant) {
-    const d = new Date(exam.exam_date + 'T00:00:00');
+    const d = exam._d;
     const diff = Math.round((d - today) / 86400000);
 
     let urgency, label;
