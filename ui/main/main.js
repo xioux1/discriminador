@@ -2121,8 +2121,10 @@ function showStudyCard() {
   setStudyPromptFeedback('');
 
   const editPromptBtn = document.querySelector('#study-edit-prompt-btn');
+  const backBtn = document.querySelector('#study-back-btn');
   const clarifyPromptBtn = document.querySelector('#study-clarify-prompt-btn');
   if (editPromptBtn) editPromptBtn.textContent = 'Editar';
+  if (backBtn) backBtn.disabled = studyState.index === 0;
   if (clarifyPromptBtn) clarifyPromptBtn.disabled = false;
 
   // Reset answer + result blocks (refresh SQL layer to clear ghost text)
@@ -2383,6 +2385,7 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
     gradeEl.textContent = getSuggestedGradeLabel(result.suggested_grade);
     gradeEl.className   = `study-grade-inline ${grade.toLowerCase()}`;
     justEl.textContent  = result.justification_short;
+    justEl.classList.add('hidden');
 
     const timeEl = document.querySelector('#study-result-time');
     if (timeEl) {
@@ -2414,17 +2417,24 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
     }
 
     const concepts = result.missing_concepts ?? [];
-    if (concepts.length > 0) {
-      missingEl.innerHTML = `<strong>Faltó:</strong> ${concepts.map((c) => `<span class="concept-tag">${c}</span>`).join(' ')}`;
-      missingEl.classList.remove('hidden');
-    } else {
-      missingEl.textContent = '';
-      missingEl.classList.add('hidden');
-    }
+    missingEl.textContent = '';
+    missingEl.classList.add('hidden');
+
+    const weakTags = weakDimensions.map(([dimension, value]) => {
+      const label = DIM_LABELS[dimension] || dimension;
+      const pct = Math.round(Number(value) * 100);
+      return `<span class="study-dimension-chip weak">${label}: ${pct}%</span>`;
+    }).join(' ');
+    const missingTags = concepts.map((c) => `<span class="concept-tag">${escHtml(c)}</span>`).join(' ');
+    const groupedTags = (weakTags || missingTags)
+      ? `<div class="study-answer-compare-block"><strong>Etiquetas:</strong> ${weakTags}${weakTags && missingTags ? ' ' : ''}${missingTags}</div>`
+      : '';
 
     // Always show answer comparison so the user can contrast their response with the expected one.
     if (grade === 'FAIL' || grade === 'REVIEW' || grade === 'PASS') {
       expectedEl.innerHTML = `
+        <div class="study-answer-compare-block"><strong>Devolución:</strong><div class="study-answer-compare-text">${escapePreserve(result.justification_short || '')}</div></div>
+        ${groupedTags}
         ${formatAnswerBlock('Tu respuesta', answer)}
         ${formatAnswerBlock('Respuesta esperada', expected_answer_text)}
       `;
@@ -2521,7 +2531,6 @@ if (studyDecisionBlock) {
 
     const feedbackEl = document.querySelector('#study-decision-feedback');
     const reasonEl = document.querySelector('#study-correction-reason');
-    const nextBtn = document.querySelector('#study-next-btn');
     const reason = normalize(reasonEl?.value || '');
     const finalGrade = resolveStudyFinalGrade(action, studyState.currentEvalResult.suggested_grade);
     const isArchiveAction = action === 'archive-card';
@@ -2560,7 +2569,12 @@ if (studyDecisionBlock) {
             : 'Firma guardada como duda. Ya podés continuar.');
         feedbackEl.className = 'feedback success';
       }
-      nextBtn.disabled = false;
+      const nextBtn = document.querySelector('#study-next-btn');
+      if (nextBtn) nextBtn.disabled = false;
+      if (!isArchiveAction && action === 'accept') {
+        if (feedbackEl) feedbackEl.textContent = 'Firma guardada. Pasando a la siguiente tarjeta...';
+        await handleStudyNextCard();
+      }
     } catch (err) {
       if (feedbackEl) {
         feedbackEl.textContent = isArchiveAction
@@ -2599,6 +2613,10 @@ document.querySelector('#study-variant-btn').addEventListener('click', async () 
 });
 
 document.querySelector('#study-next-btn').addEventListener('click', async () => {
+  await handleStudyNextCard();
+});
+
+async function handleStudyNextCard() {
   const item   = studyState.queue[studyState.index];
   const evalResult = studyState.currentEvalResult;
   const decision = studyState.currentDecision;
@@ -2649,6 +2667,12 @@ document.querySelector('#study-next-btn').addEventListener('click', async () => 
   });
 
   advanceStudyCard();
+}
+
+document.querySelector('#study-back-btn')?.addEventListener('click', () => {
+  if (studyState.index <= 0) return;
+  studyState.index -= 1;
+  showStudyCard();
 });
 
 function advanceStudyCard() {
