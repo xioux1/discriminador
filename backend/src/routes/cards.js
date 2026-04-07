@@ -171,4 +171,26 @@ cardsRouter.post('/cards/batch', async (req, res) => {
   return res.status(422).json({ error: 'validation_error', message: 'Unsupported action.' });
 });
 
+// POST /cards/rename-subject — rename all cards of a subject (merge/deduplicate subjects)
+cardsRouter.post('/cards/rename-subject', async (req, res) => {
+  const userId = req.user.id;
+  const { old_subject, new_subject } = req.body || {};
+
+  if (!old_subject || typeof old_subject !== 'string' || !new_subject || typeof new_subject !== 'string') {
+    return res.status(422).json({ error: 'validation_error', message: 'old_subject y new_subject son obligatorios.' });
+  }
+
+  try {
+    const { rowCount } = await dbPool.query(
+      `UPDATE cards SET subject = $1, updated_at = now()
+       WHERE user_id = $2 AND subject = $3`,
+      [new_subject.trim(), userId, old_subject.trim()]
+    );
+    return res.json({ updated: rowCount });
+  } catch (err) {
+    console.error('POST /cards/rename-subject error', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
 export default cardsRouter;

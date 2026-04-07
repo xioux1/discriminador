@@ -325,15 +325,25 @@ async function runBrowserBatchAction(action) {
     return;
   }
 
-  let payload = { action, ids };
+  let payload = { action: action === 'reassign' ? 'edit' : action, ids };
   if (action === 'archive') {
     const reason = window.prompt('Motivo para archivar (mínimo 5 caracteres):', 'Archivado desde navegador');
     if (!reason) return;
     payload.reason = reason;
+  } else if (action === 'reassign') {
+    const subject = window.prompt(`Reasignar ${ids.length} tarjeta(s) a la materia:`, '');
+    if (subject === null) return;
+    if (!subject.trim()) {
+      feedback.textContent = 'Ingresá el nombre de la materia destino.';
+      feedback.className = 'feedback error';
+      return;
+    }
+    payload.subject = subject.trim();
+    payload.prompt_text = '';
   } else if (action === 'edit') {
-    const subject = window.prompt('Nueva materia (dejá vacío para no cambiar):', '');
     const promptText = window.prompt('Nuevo prompt para las seleccionadas (dejá vacío para no cambiar):', '');
-    payload.subject = subject ?? '';
+    if (promptText === null) return;
+    payload.subject = '';
     payload.prompt_text = promptText ?? '';
   }
 
@@ -368,6 +378,7 @@ function initBrowserTab() {
     renderBrowserTable();
   });
 
+  document.querySelector('#browser-reassign-btn')?.addEventListener('click', () => runBrowserBatchAction('reassign'));
   document.querySelector('#browser-add-card-btn')?.addEventListener('click', () => {
     const form = document.querySelector('#study-add-form');
     const isHidden = form.classList.contains('hidden');
@@ -466,6 +477,7 @@ async function loadDashboard() {
         <div class="subjects-list-actions">
           <button type="button" class="btn-primary deck-study-btn" data-subject="${subjectName}">Estudiar</button>
           <button type="button" class="btn-secondary deck-config-btn" data-subject="${subjectName}">Configurar</button>
+          <button type="button" class="btn-ghost deck-rename-btn" data-subject="${subjectName}" title="Renombrar o fusionar materia" style="font-size:0.82rem">Renombrar</button>
         </div>
       `;
       list.appendChild(row);
@@ -482,6 +494,19 @@ async function loadDashboard() {
       }
       if (e.target.classList.contains('deck-config-btn')) {
         openCurriculumModal(e.target.dataset.subject);
+      }
+      if (e.target.classList.contains('deck-rename-btn')) {
+        const oldSubject = e.target.dataset.subject;
+        const newSubject = window.prompt(`Renombrar "${oldSubject}" a:`, oldSubject);
+        if (newSubject === null || newSubject.trim() === '' || newSubject.trim() === oldSubject) return;
+        try {
+          const result = await postJson('/cards/rename-subject', { old_subject: oldSubject, new_subject: newSubject.trim() });
+          const n = result.updated ?? 0;
+          if (n > 0) loadDashboard();
+          else alert('No se encontraron tarjetas para renombrar.');
+        } catch (err) {
+          alert(`Error: ${err.message}`);
+        }
       }
     });
 
