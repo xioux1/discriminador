@@ -918,7 +918,7 @@ function attachMathTabInsertion(textarea, isMathModeFn) {
     event.preventDefault();
     const start = textarea.selectionStart ?? textarea.value.length;
     const end = textarea.selectionEnd ?? textarea.value.length;
-    textarea.setRangeText('  ', start, end, 'end');
+    textarea.setRangeText('    ', start, end, 'end');
   });
 }
 
