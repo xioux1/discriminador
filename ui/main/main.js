@@ -3220,10 +3220,12 @@ const PLANNER_DAYS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 const plannerState = {
   weekStart: null,   // Date (Sunday at midnight)
   cells: {},         // key `${dayIndex}_${slot}` → {content, color, isFixed}
+  activitySlots: {}, // key `${dayIndex}_${slot}` → {eventsCount, lastEventAt}
   saveTimers: {},    // debounce per cell
   activeCell: null,  // currently focused td
   fillDrag: null,    // { source: { content, color, isFixed }, paintedKeys:Set<string> }
   suppressNextClick: false,
+  nowMarkerTimer: null,
 };
 
 function plannerWeekStart(date) {
@@ -3248,7 +3250,7 @@ function plannerWeekLabel(sunday) {
   return `${fmt(sunday)} – ${fmt(sat)} ${sunday.getFullYear()}`;
 }
 
-function buildPlannerGrid(weekStart, cells) {
+function buildPlannerGrid(weekStart, cells, activitySlots = {}) {
   const wrap = document.querySelector('#planner-grid-wrap');
   wrap.innerHTML = '';
 
@@ -3291,6 +3293,18 @@ function buildPlannerGrid(weekStart, cells) {
       td.dataset.fixed = cell.isFixed ? '1' : '';
       if (cell.color) td.style.background = cell.color;
       td.textContent = cell.content || '';
+      const slotActivity = activitySlots[key];
+      if (slotActivity) {
+        td.classList.add('planner-cell-study-active');
+        td.dataset.activityCount = String(slotActivity.eventsCount || 0);
+        const activityDate = slotActivity.lastEventAt ? new Date(slotActivity.lastEventAt) : null;
+        const activityTime = activityDate && !Number.isNaN(activityDate.getTime())
+          ? activityDate.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
+          : null;
+        td.title = slotActivity.eventsCount === 1
+          ? `1 actividad de estudio${activityTime ? ` · última: ${activityTime}` : ''}`
+          : `${slotActivity.eventsCount} actividades de estudio${activityTime ? ` · última: ${activityTime}` : ''}`;
+      }
       tbody.appendChild(tr);
       tr.appendChild(td);
     }
@@ -3310,6 +3324,28 @@ function buildPlannerGrid(weekStart, cells) {
   });
   table.addEventListener('mousedown', plannerOnGridMouseDown);
   table.addEventListener('mouseover', plannerOnGridMouseOver);
+}
+
+function plannerCurrentSlotKey(now = new Date()) {
+  const day = now.getDay();
+  const hour = now.getHours();
+  const minute = now.getMinutes();
+  if (hour < 6 || hour >= 22) return null;
+  const normalizedMinute = minute < 30 ? '00' : '30';
+  return `${day}_${String(hour).padStart(2, '0')}:${normalizedMinute}`;
+}
+
+function plannerMarkCurrentSlot() {
+  document.querySelectorAll('.planner-current-slot').forEach((el) => {
+    el.classList.remove('planner-current-slot');
+  });
+  if (!plannerState.weekStart) return;
+  if (plannerDateStr(plannerWeekStart(new Date())) !== plannerDateStr(plannerState.weekStart)) return;
+  const key = plannerCurrentSlotKey(new Date());
+  if (!key) return;
+  const [day, slot] = key.split('_');
+  const cell = document.querySelector(`#planner-table td[data-day="${day}"][data-slot="${slot}"]`);
+  if (cell) cell.classList.add('planner-current-slot');
 }
 
 function plannerCellSnapshot(td) {
@@ -3475,6 +3511,7 @@ async function loadPlannerWeek(weekStart) {
   try {
     const data = await getJson(`/planner/week?start=${start}`);
     const cells = {};
+    const activitySlots = {};
     for (const row of (data.slots || [])) {
       cells[`${row.day_index}_${row.slot_time}`] = {
         content: row.content || '',
@@ -3482,9 +3519,17 @@ async function loadPlannerWeek(weekStart) {
         isFixed: row.is_fixed === true
       };
     }
+    for (const row of (data.activity_slots || [])) {
+      activitySlots[`${row.day_index}_${row.slot_time}`] = {
+        eventsCount: Number(row.events_count || 0),
+        lastEventAt: row.last_event_at || null
+      };
+    }
     plannerState.cells = cells;
+    plannerState.activitySlots = activitySlots;
     document.querySelector('#planner-loading').classList.add('hidden');
-    buildPlannerGrid(weekStart, cells);
+    buildPlannerGrid(weekStart, cells, activitySlots);
+    plannerMarkCurrentSlot();
   } catch (err) {
     document.querySelector('#planner-loading').textContent = `Error: ${err.message}`;
   }
@@ -3493,6 +3538,7 @@ async function loadPlannerWeek(weekStart) {
 function initPlannerTab() {
   const weekStart = plannerWeekStart(new Date());
   loadPlannerWeek(weekStart);
+  plannerState.nowMarkerTimer = setInterval(plannerMarkCurrentSlot, 30000);
 
   document.addEventListener('mouseup', () => {
     plannerState.fillDrag = null;

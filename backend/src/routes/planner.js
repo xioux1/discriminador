@@ -35,7 +35,27 @@ plannerRouter.get('/planner/week', async (req, res) => {
        ORDER BY day_index, slot_time, is_fixed ASC`,
       [userId, start]
     );
-    return res.json({ slots: rows });
+    const { rows: activityRows } = await dbPool.query(
+      `SELECT
+         EXTRACT(DOW FROM created_at)::int AS day_index,
+         to_char(
+           date_trunc('hour', created_at)
+           + (CASE WHEN EXTRACT(MINUTE FROM created_at) >= 30 THEN INTERVAL '30 minutes' ELSE INTERVAL '0 minutes' END),
+           'HH24:MI'
+         ) AS slot_time,
+         COUNT(*)::int AS events_count,
+         MAX(created_at) AS last_event_at
+       FROM activity_log
+       WHERE user_id = $1
+         AND activity_type IN ('study', 'evaluate')
+         AND created_at >= $2::date
+         AND created_at < ($2::date + INTERVAL '7 day')
+       GROUP BY day_index, slot_time
+       ORDER BY day_index, slot_time`,
+      [userId, start]
+    );
+
+    return res.json({ slots: rows, activity_slots: activityRows });
   } catch (err) {
     console.error('GET /planner/week error', err.message);
     return res.status(500).json({ error: 'server_error', message: err.message });
