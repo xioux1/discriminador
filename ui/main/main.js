@@ -389,7 +389,14 @@ function initBrowserTab() {
     const form = document.querySelector('#study-add-form');
     const isHidden = form.classList.contains('hidden');
     form.classList.toggle('hidden', !isHidden);
-    if (isHidden) form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (isHidden) {
+      const subjectFilterValue = String(document.querySelector('#browser-filter-subject')?.value || '').trim();
+      const subjectInput = document.querySelector('#card-subject');
+      if (subjectInput && subjectFilterValue && !subjectInput.value.trim()) {
+        subjectInput.value = subjectFilterValue;
+      }
+      form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
   });
 
   document.querySelector('#browser-archive-btn')?.addEventListener('click', () => runBrowserBatchAction('archive'));
@@ -2391,10 +2398,12 @@ async function loadStudyOverview() {
 }
 
 async function saveNewCard() {
+  if (saveNewCard.isSaving) return;
   const subject  = document.querySelector('#card-subject').value.trim();
   const prompt   = document.querySelector('#card-prompt').value.trim();
   const expected = document.querySelector('#card-expected').value.trim();
   const feedback = document.querySelector('#card-save-feedback');
+  const saveBtn = document.querySelector('#card-save-btn');
 
   if (!prompt || !expected) {
     feedback.textContent = 'La pregunta y la respuesta esperada son obligatorias.';
@@ -2403,6 +2412,10 @@ async function saveNewCard() {
   }
 
   try {
+    saveNewCard.isSaving = true;
+    if (saveBtn) saveBtn.disabled = true;
+    feedback.textContent = 'Guardando tarjeta...';
+    feedback.style.color = '#666';
     const createdCard = await postJson('/scheduler/cards', { subject, prompt_text: prompt, expected_answer_text: expected });
     const nextReview = createdCard?.next_review_at ? new Date(createdCard.next_review_at) : null;
     const now = new Date();
@@ -2416,12 +2429,17 @@ async function saveNewCard() {
     document.querySelector('#card-expected').value = '';
     document.querySelector('#card-prompt').focus();
     loadBrowserCards().catch(() => {});
+    loadStudyOverview().catch(() => {});
     setTimeout(() => { feedback.textContent = ''; }, 2500);
   } catch (err) {
     feedback.textContent = `Error: ${err.message}`;
     feedback.style.color = '#c00';
+  } finally {
+    saveNewCard.isSaving = false;
+    if (saveBtn) saveBtn.disabled = false;
   }
 }
+saveNewCard.isSaving = false;
 
 // ─── Active session state ─────────────────────────────────────────────────────
 const studyState = {
