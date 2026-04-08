@@ -484,3 +484,36 @@ test('ruta /decision FAIL con concept gaps crea micro-card con user_id y aparece
     assert.equal(sessionBody.micro_cards[0].user_id, 1);
   });
 });
+
+test('ruta /decision corregida a PASS no crea micro-cards nuevas', async () => {
+  const state = installSchedulerFlowDbMock();
+
+  await withTestServer(async (baseUrl) => {
+    const decisionResponse = await fetch(`${baseUrl}/decision`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-user-id': '1'
+      },
+      body: JSON.stringify(buildPayload({
+        action: 'correct-pass',
+        accepted_suggestion: false,
+        correction_reason: 'La respuesta es suficiente',
+        final_grade: 'pass',
+        evaluation_id: 'eval-fail-303',
+        evaluation_result: {
+          overall_score: 0.2,
+          model_confidence: 0.9,
+          suggested_grade: 'FAIL',
+          dimensions: { exactitud: 0.2 }
+        }
+      }))
+    });
+
+    assert.equal(decisionResponse.status, 201);
+
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    assert.equal(state.microCards.length, 0);
+  });
+});

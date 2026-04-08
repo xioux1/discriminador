@@ -278,7 +278,8 @@ decisionRouter.post('/decision', async (req, res) => {
         subject: inputSubject || null,
         final_grade: finalGrade,
         evaluation_item_id: evaluationItemId,
-        user_id: userId
+        user_id: userId,
+        decision_action: action
       }).catch((e) => console.warn('[scheduler sync] failed (non-blocking):', e.message));
     }
 
@@ -330,7 +331,8 @@ async function syncSchedulerCard(pool, {
   subject,
   final_grade,
   evaluation_item_id,
-  user_id
+  user_id,
+  decision_action
 }) {
   const microMatch = await pool.query(
     `SELECT mc.*
@@ -430,7 +432,11 @@ async function syncSchedulerCard(pool, {
     'SELECT concept FROM concept_gaps WHERE evaluation_item_id = $1',
     [evaluation_item_id]
   );
-  const targetGaps = final_grade === 'pass' ? gaps.slice(0, 1) : gaps;
+  const shouldCreateMicros =
+    !(final_grade === 'pass' && decision_action === 'correct-pass');
+  const targetGaps = shouldCreateMicros
+    ? (final_grade === 'pass' ? gaps.slice(0, 1) : gaps)
+    : [];
 
   for (const { concept } of targetGaps) {
     if (!concept) continue;
