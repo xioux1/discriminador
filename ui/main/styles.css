@@ -460,65 +460,75 @@ textarea:focus, input[type="text"]:focus, select:focus {
 
 /* ─── Dashboard ──────────────────────────────────────────────────────────────── */
 
-/* Pending banner — compact inline stat row, no blue */
+/* Pending banner — single slim row, reads left to right like a status line */
 .dashboard-pending-banner {
   display: flex;
-  align-items: center;
-  gap: 0;
-  padding: 12px 16px;
+  align-items: baseline;
+  gap: 6px;
+  padding: 8px 16px;        /* lean — same vertical weight as exam rows */
   margin-bottom: 12px;
+  font-size: var(--fs-sm);
 }
+/* Inline pairs: [number label] · [number label]  ——  total */
 .dpb-stat {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 0 16px;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
 }
 .dpb-num {
-  font-size: 1.6rem;
-  font-weight: 800;
+  font-size: 0.92rem;        /* same scale as body — numbers don't dominate */
+  font-weight: 700;
   color: var(--text);
-  line-height: 1;
-  letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
 }
 .dpb-label {
+  color: var(--text-muted);
   font-size: var(--fs-sm);
-  color: var(--text-light);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-top: 3px;
 }
 .dpb-sep {
-  width: 1px;
-  height: 32px;
-  background: rgba(155, 175, 205, 0.35);
+  /* Dot separator between stat pairs */
+  width: auto;
+  height: auto;
+  background: none;
+  color: var(--text-light);
+  font-size: 0.7rem;
+  align-self: center;
+  padding: 0 2px;
 }
+.dpb-sep::before { content: '·'; }
 .dpb-total {
   margin-left: auto;
+  color: var(--text-light);
   font-size: var(--fs-sm);
-  color: var(--text-muted);
-  padding-left: 16px;
+  padding-left: 12px;
 }
 .dpb-ok {
+  color: var(--text-light);
   font-size: var(--fs-sm);
-  color: var(--text-muted);
-  font-style: italic;
 }
 
-/* Beat column — the visual rhythm anchor in subject rows (like countdown in exam rows) */
+/* Beat column — visual rhythm anchor, same fixed width as exam countdown */
 .subjects-list-beat {
-  width: 36px;
-  flex-shrink: 0;
-  font-size: 1rem;
+  width: 48px;               /* matches grid column width */
+  font-size: 0.95rem;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   text-align: center;
   line-height: 1;
   letter-spacing: -0.02em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.subjects-list-beat.has-due { color: var(--text); }
-.subjects-list-beat.is-clear { color: var(--text-light); font-weight: 400; font-size: 1.1rem; }
+.subjects-list-beat.has-due {
+  color: var(--text);
+}
+/* "Al día" — small filled circle in accent-ok green: a status, not an absence */
+.subjects-list-beat.is-clear {
+  font-size: 0.55rem;
+  color: var(--accent-ok);
+  font-weight: 400;
+}
 
 .deck-grid {
   display: grid;
@@ -1802,63 +1812,75 @@ textarea:focus, input[type="text"]:focus, select:focus {
   border-radius: 0;
   overflow: hidden;
 }
+/* Subject rows — CSS grid matching exam-calendar-item proportions */
 .subjects-list-item {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 48px 1fr auto;
   align-items: center;
-  gap: 16px;
-  padding: 13px 0;
-  /* Ultra-thin divider — barely there */
-  border-bottom: 1px solid rgba(160, 180, 210, 0.25);
-  transition: background 0.1s;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(160, 180, 210, 0.22);
 }
 .subjects-list-item:last-child { border-bottom: none; }
-.subjects-list-main { min-width: 0; flex: 1; }
+
+.subjects-list-main { min-width: 0; }
 .subjects-list-name {
   font-weight: 600;
   font-size: var(--fs-lg);
   color: var(--text);
-  line-height: 1.3;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .subjects-list-meta {
   font-size: var(--fs-sm);
-  /* One step lighter than muted — truly secondary */
   color: var(--text-light);
   margin-top: 2px;
   letter-spacing: 0.01em;
 }
+
+/* Actions: secondary links + primary button, grid column 3 */
 .subjects-list-actions {
   display: flex;
   align-items: center;
   gap: 0;
   flex-shrink: 0;
 }
-/* Configurar / Renombrar group — separated from Estudiar by a visible gap */
+
+/* Configurar · Renombrar — own zone, separated by 1px veil + spacing */
 .subjects-list-secondary {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding-right: 20px;         /* breathing room before the button */
-  border-right: 1px solid rgba(155, 175, 205, 0.30);  /* thin micro-separator */
-  margin-right: 20px;
-}
-/* Links: small, underline-style, clearly secondary without being invisible */
-.subjects-list-secondary .btn-link {
-  font-size: var(--fs-sm);
-  color: #8a9aae;              /* midway between muted and light */
-  text-decoration: none;
-  border-bottom: 1px solid rgba(138, 154, 174, 0.40);
-  padding-bottom: 1px;
-  transition: color 0.12s, border-color 0.12s;
-}
-.subjects-list-secondary .btn-link:hover {
-  color: var(--text-muted);
-  border-bottom-color: var(--text-muted);
+  gap: 16px;
+  padding-right: 18px;
+  border-right: 1px solid rgba(155, 175, 205, 0.28);
+  margin-right: 18px;
 }
 
-@media (max-width: 600px) {
-  .subjects-list-item { flex-wrap: wrap; gap: 8px; }
-  .subjects-list-actions { width: 100%; justify-content: flex-end; }
+/* Links up half a tone — present, intentional, not intrusive */
+.subjects-list-secondary .btn-link {
+  font-size: var(--fs-sm);
+  color: #7a8ca0;              /* one step up from previous #8a9aae */
+  text-decoration: none;
+  border-bottom: 1px solid rgba(122, 140, 160, 0.45);
+  padding-bottom: 1px;
+  transition: color 0.10s, border-color 0.10s;
+}
+.subjects-list-secondary .btn-link:hover {
+  color: #4a5c70;              /* precise destination — clear, not vague */
+  border-bottom-color: #4a5c70;
+}
+
+@media (max-width: 620px) {
+  .subjects-list-item {
+    grid-template-columns: 40px 1fr;
+    grid-template-rows: auto auto;
+  }
+  .subjects-list-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
 }
 
 /* ── Weekly Planner ──────────────────────────────────────────────────────────── */

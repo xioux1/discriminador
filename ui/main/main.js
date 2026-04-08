@@ -580,20 +580,12 @@ async function loadDashboard() {
       banner.className = 'dashboard-pending-banner card';
       if (totalDue > 0) {
         banner.innerHTML = `
-          <div class="dpb-stat">
-            <span class="dpb-num">${totalPendingCards}</span>
-            <span class="dpb-label">tarjeta${totalPendingCards !== 1 ? 's' : ''}</span>
-          </div>
-          <div class="dpb-sep"></div>
-          <div class="dpb-stat">
-            <span class="dpb-num">${totalActiveMicros}</span>
-            <span class="dpb-label">micro${totalActiveMicros !== 1 ? 's' : ''}</span>
-          </div>
-          <div class="dpb-total">
-            <span>${totalDue} pendiente${totalDue !== 1 ? 's' : ''} hoy</span>
-          </div>`;
+          <span class="dpb-stat"><span class="dpb-num">${totalPendingCards}</span><span class="dpb-label"> tarjeta${totalPendingCards !== 1 ? 's' : ''}</span></span>
+          <span class="dpb-sep"></span>
+          <span class="dpb-stat"><span class="dpb-num">${totalActiveMicros}</span><span class="dpb-label"> micro${totalActiveMicros !== 1 ? 's' : ''}</span></span>
+          <span class="dpb-total">${totalDue} pendiente${totalDue !== 1 ? 's' : ''}</span>`;
       } else {
-        banner.innerHTML = `<span class="dpb-ok">Al día — sin pendientes hoy</span>`;
+        banner.innerHTML = `<span class="dpb-ok">Sin pendientes hoy</span>`;
       }
       content.appendChild(banner);
     }
@@ -625,7 +617,7 @@ async function loadDashboard() {
       row.className = 'subjects-list-item';
       row.innerHTML = `
         <div class="subjects-list-beat ${totalDueForSubject > 0 ? 'has-due' : 'is-clear'}">
-          ${totalDueForSubject > 0 ? totalDueForSubject : '·'}
+          ${totalDueForSubject > 0 ? totalDueForSubject : '●'}
         </div>
         <div class="subjects-list-main">
           <div class="subjects-list-name">${subjectName}</div>
