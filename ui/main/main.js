@@ -3314,9 +3314,14 @@ function buildPlannerGrid(weekStart, cells, activitySlots = {}) {
         const activityTime = activityDate && !Number.isNaN(activityDate.getTime())
           ? activityDate.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
           : null;
-        td.title = slotActivity.eventsCount === 1
-          ? `1 actividad de estudio${activityTime ? ` · última: ${activityTime}` : ''}`
-          : `${slotActivity.eventsCount} actividades de estudio${activityTime ? ` · última: ${activityTime}` : ''}`;
+        const mins = slotActivity.studyMinutes || 0;
+        td.title = `${slotActivity.eventsCount} repaso${slotActivity.eventsCount !== 1 ? 's' : ''} · ${mins > 0 ? mins + ' min estudiados' : 'tiempo no registrado'}${activityTime ? ` · última: ${activityTime}` : ''}`;
+        if (mins > 0) {
+          const minsBadge = document.createElement('span');
+          minsBadge.className = 'planner-mins-badge';
+          minsBadge.textContent = `${mins}m`;
+          td.appendChild(minsBadge);
+        }
       }
       tbody.appendChild(tr);
       tr.appendChild(td);
@@ -3535,6 +3540,7 @@ async function loadPlannerWeek(weekStart) {
     for (const row of (data.activity_slots || [])) {
       activitySlots[`${row.day_index}_${row.slot_time}`] = {
         eventsCount: Number(row.events_count || 0),
+        studyMinutes: Number(row.study_minutes || 0),
         lastEventAt: row.last_event_at || null
       };
     }

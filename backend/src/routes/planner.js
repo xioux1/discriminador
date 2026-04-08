@@ -37,7 +37,9 @@ plannerRouter.get('/planner/week', async (req, res) => {
     );
     const { rows: activityRows } = await dbPool.query(
       `WITH localized_activity AS (
-         SELECT created_at AT TIME ZONE 'America/Argentina/Buenos_Aires' AS local_created_at
+         SELECT
+           created_at AT TIME ZONE 'America/Argentina/Buenos_Aires' AS local_created_at,
+           COALESCE(response_time_ms, 0) AS response_time_ms
          FROM activity_log
          WHERE user_id = $1
            AND activity_type IN ('study', 'evaluate')
@@ -50,6 +52,7 @@ plannerRouter.get('/planner/week', async (req, res) => {
            'HH24:MI'
          ) AS slot_time,
          COUNT(*)::int AS events_count,
+         ROUND(SUM(response_time_ms) / 60000.0)::int AS study_minutes,
          MAX(local_created_at) AS last_event_at
        FROM localized_activity
        WHERE local_created_at >= $2::date
