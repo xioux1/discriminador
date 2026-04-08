@@ -612,6 +612,17 @@ textarea:focus, input[type="text"]:focus, select:focus {
   transition: width 0.3s;
 }
 .study-progress-label { font-size: 0.82rem; color: var(--text-muted); white-space: nowrap; }
+.study-background-status {
+  margin: 8px auto 0;
+  max-width: 700px;
+  width: calc(100% - 40px);
+  font-size: 0.82rem;
+  color: #735900;
+  background: #fff8dd;
+  border: 1px solid #f0dd99;
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+}
 
 .study-card-panel {
   flex: 1;
