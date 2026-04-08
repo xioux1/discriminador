@@ -52,6 +52,10 @@ export const env = {
 };
 
 export function isLLMJudgeEnabled() {
+  if (process.env.ENABLE_LLM_JUDGE === undefined) {
+    return Boolean(process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY.trim());
+  }
+
   return parseBoolean(process.env.ENABLE_LLM_JUDGE, false);
 }
 
