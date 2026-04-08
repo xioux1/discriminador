@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { dbPool } from '../db/client.js';
-import { computeNextReview } from '../services/scheduler.js';
+import { computeNextReview, MICRO_MASTERY_THRESHOLD_DAYS } from '../services/scheduler.js';
 import { generateMicroCard } from '../services/micro-generator.js';
 
 const decisionRouter = Router();
@@ -267,7 +267,8 @@ decisionRouter.post('/decision', async (req, res) => {
         expected_answer_text: inputExpectedAnswer,
         subject: inputSubject || null,
         final_grade: finalGrade,
-        evaluation_item_id: evaluationItemId
+        evaluation_item_id: evaluationItemId,
+        user_id: userId
       }).catch((e) => console.warn('[scheduler sync] failed (non-blocking):', e.message));
     }
 
@@ -313,11 +314,54 @@ decisionRouter.post('/decision', async (req, res) => {
  * If FAIL and concept gaps exist, generate micro-cards for missing concepts.
  * If PASS, archive any active micro-cards for that card.
  */
-async function syncSchedulerCard(pool, { prompt_text, expected_answer_text, subject, final_grade, evaluation_item_id }) {
+async function syncSchedulerCard(pool, {
+  prompt_text,
+  expected_answer_text,
+  subject,
+  final_grade,
+  evaluation_item_id,
+  user_id
+}) {
+  const microMatch = await pool.query(
+    `SELECT mc.*
+     FROM micro_cards mc
+     WHERE mc.user_id = $1
+       AND mc.status = 'active'
+       AND mc.question = $2
+       AND mc.expected_answer = $3
+     ORDER BY mc.id DESC
+     LIMIT 1`,
+    [user_id, prompt_text, expected_answer_text]
+  );
+
+  if (microMatch.rows.length) {
+    const micro = microMatch.rows[0];
+    const schedule = computeNextReview(
+      parseFloat(micro.interval_days),
+      parseFloat(micro.ease_factor),
+      final_grade
+    );
+
+    const nextStatus =
+      final_grade === 'pass' && schedule.interval_days >= MICRO_MASTERY_THRESHOLD_DAYS
+        ? 'archived'
+        : micro.status;
+
+    await pool.query(
+      `UPDATE micro_cards
+       SET interval_days = $1, ease_factor = $2, next_review_at = $3,
+           status = $4, review_count = review_count + 1, updated_at = now()
+       WHERE id = $5`,
+      [schedule.interval_days, schedule.ease_factor, schedule.next_review_at, nextStatus, micro.id]
+    );
+
+    return;
+  }
+
   // Find or create the card
   const existing = await pool.query(
-    'SELECT * FROM cards WHERE prompt_text = $1 AND archived_at IS NULL LIMIT 1',
-    [prompt_text]
+    'SELECT * FROM cards WHERE user_id = $1 AND prompt_text = $2 AND archived_at IS NULL LIMIT 1',
+    [user_id, prompt_text]
   );
 
   let card;
@@ -330,9 +374,9 @@ async function syncSchedulerCard(pool, { prompt_text, expected_answer_text, subj
     }
   } else {
     const inserted = await pool.query(
-      `INSERT INTO cards (subject, prompt_text, expected_answer_text)
-       VALUES ($1, $2, $3) RETURNING *`,
-      [subject, prompt_text, expected_answer_text]
+      `INSERT INTO cards (subject, prompt_text, expected_answer_text, user_id)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [subject, prompt_text, expected_answer_text, user_id]
     );
     card = inserted.rows[0];
   }
