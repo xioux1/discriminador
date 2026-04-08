@@ -9,6 +9,11 @@ const ALLOWED_ACTIONS = new Set(['accept', 'correct-pass', 'correct-fail', 'unce
 const ALLOWED_FINAL_GRADES = new Set(['pass', 'fail']);
 const ALLOWED_SUGGESTED_GRADES = new Set(['pass', 'review', 'fail']);
 
+function pickTopGap(gaps = []) {
+  const selected = gaps.find((gap) => typeof gap?.concept === 'string' && gap.concept.trim().length > 0);
+  return selected ? [selected] : [];
+}
+
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -453,7 +458,7 @@ async function syncSchedulerCard(pool, {
   const shouldCreateMicros =
     !(final_grade === 'pass' && decision_action === 'correct-pass');
   const targetGaps = shouldCreateMicros
-    ? (final_grade === 'pass' ? gaps.slice(0, 1) : gaps)
+    ? pickTopGap(gaps)
     : [];
 
   for (const { concept } of targetGaps) {

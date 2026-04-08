@@ -6,6 +6,10 @@ import { generateVariant } from '../services/variant-generator.js';
 
 const schedulerRouter = Router();
 
+function pickTopConcept(concepts = []) {
+  return concepts.find((concept) => typeof concept === 'string' && concept.trim().length > 0)?.trim() || null;
+}
+
 // ─── Register / upsert a card ─────────────────────────────────────────────────
 schedulerRouter.post('/scheduler/cards', async (req, res) => {
   const { subject, prompt_text, expected_answer_text } = req.body || {};
@@ -279,13 +283,12 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, userI
   }
 
   if (conceptGaps.length > 0) {
-    // In PASS we generate only one reinforcement micro-card (highest-priority gap).
-    // In FAIL/REVIEW we generate one per missing concept.
-    const targetConcepts = grade === 'pass' ? [conceptGaps[0]] : conceptGaps;
+    // Both PASS and FAIL/REVIEW must generate only one micro-card:
+    // the highest-priority concept (first gap received).
+    const topConcept = pickTopConcept(conceptGaps);
+    const targetConcepts = topConcept ? [topConcept] : [];
 
     for (const concept of targetConcepts) {
-      if (!concept) continue;
-
       const existing = await dbPool.query(
         `SELECT id FROM micro_cards
          WHERE parent_card_id = $1 AND concept = $2 AND status = 'active'`,
