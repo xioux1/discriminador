@@ -399,6 +399,8 @@ function initBrowserTab() {
     }
   });
 
+  ensureAddCardFormHandlers();
+
   document.querySelector('#browser-archive-btn')?.addEventListener('click', () => runBrowserBatchAction('archive'));
   document.querySelector('#browser-suspend-btn')?.addEventListener('click', () => runBrowserBatchAction('suspend'));
   document.querySelector('#browser-reactivate-btn')?.addEventListener('click', () => runBrowserBatchAction('reactivate'));
@@ -2167,10 +2169,7 @@ function initStudyTab() {
   document.querySelector('#study-briefing').classList.remove('hidden');
   document.querySelector('#study-overview').classList.add('hidden');
 
-  document.querySelector('#card-cancel-btn').addEventListener('click', () => {
-    document.querySelector('#study-add-form').classList.add('hidden');
-  });
-  document.querySelector('#card-save-btn').addEventListener('click', saveNewCard);
+  ensureAddCardFormHandlers();
   document.querySelector('#study-overview-back-btn').addEventListener('click', () => {
     document.querySelector('#study-overview').classList.add('hidden');
     document.querySelector('#study-briefing').classList.remove('hidden');
@@ -2218,6 +2217,21 @@ function initStudyTab() {
 
   initBriefing();
   restorePersistedStudySession();
+}
+
+function ensureAddCardFormHandlers() {
+  const saveBtn = document.querySelector('#card-save-btn');
+  const cancelBtn = document.querySelector('#card-cancel-btn');
+  if (cancelBtn && !cancelBtn.dataset.boundCancel) {
+    cancelBtn.addEventListener('click', () => {
+      document.querySelector('#study-add-form').classList.add('hidden');
+    });
+    cancelBtn.dataset.boundCancel = 'true';
+  }
+  if (saveBtn && !saveBtn.dataset.boundSave) {
+    saveBtn.addEventListener('click', saveNewCard);
+    saveBtn.dataset.boundSave = 'true';
+  }
 }
 
 (function initBriefing() {
