@@ -18,6 +18,7 @@ import studyDoubtRouter from './study-doubt.js';
 import studySessionsRouter from './study-sessions.js';
 import githubImportRouter from './github-import.js';
 import plannerRouter from './planner.js';
+import notesRouter from './notes.js';
 
 const router = Router();
 
@@ -40,5 +41,6 @@ router.use(curriculumRouter);
 router.use(advisorRouter);
 router.use(sessionPlannerRouter);
 router.use(sqlValidateRouter);
+router.use(notesRouter);
 
 export default router;

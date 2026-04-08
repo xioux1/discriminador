@@ -115,6 +115,8 @@ if (!Auth.isLoggedIn()) {
   loadDashboard();
 })();
 
+initNotes();
+
 const DIM_LABELS_OVERVIEW = {
   core_idea: 'Idea central',
   conceptual_accuracy: 'Precisión conceptual',
@@ -2708,7 +2710,7 @@ function showStudyCard() {
   }
 }
 
-function toggleStudyPromptEdit() {
+async function toggleStudyPromptEdit() {
   const item = studyState.queue[studyState.index];
   if (!item) return;
 
@@ -2737,7 +2739,20 @@ function toggleStudyPromptEdit() {
 
   renderStudyPrompt(promptEl, editedPrompt);
   editBtn.textContent = 'Editar';
-  setStudyPromptFeedback('Consigna actualizada para esta sesión.', 'success');
+  setStudyPromptFeedback('Guardando...', 'info');
+
+  try {
+    if (item.type === 'micro') {
+      await postJson(`/micro-cards/${item.data.id}/question`, { question: editedPrompt }, 'PATCH');
+      item.data.question = editedPrompt;
+    } else {
+      await postJson('/cards/batch', { action: 'edit', ids: [item.data.id], prompt_text: editedPrompt });
+      item.data.prompt_text = editedPrompt;
+    }
+    setStudyPromptFeedback('Consigna guardada.', 'success');
+  } catch (_) {
+    setStudyPromptFeedback('Error al guardar (cambio aplicado solo esta sesión).', 'error');
+  }
 }
 
 async function clarifyStudyPrompt() {
@@ -4140,4 +4155,49 @@ async function loadAdvisorAnalysis(subject) {
     loading.classList.add('hidden');
     content.innerHTML = `<p style="color:var(--fail-fg)">Error al analizar: ${err.message}</p>`;
   }
+}
+
+// ─── Notes panel ──────────────────────────────────────────────────────────────
+let notesSaveTimer = null;
+
+async function initNotes() {
+  const fab      = document.getElementById('notes-fab');
+  const panel    = document.getElementById('notes-panel');
+  const closeBtn = document.getElementById('notes-panel-close');
+  const textarea = document.getElementById('notes-content');
+  const status   = document.getElementById('notes-save-status');
+
+  // Load saved notes
+  try {
+    const data = await getJson('/notes');
+    textarea.value = data.content || '';
+  } catch (_) {}
+
+  // Toggle panel open/close via FAB
+  fab.addEventListener('click', () => {
+    const isOpen = !panel.classList.contains('hidden');
+    panel.classList.toggle('hidden', isOpen);
+    fab.classList.toggle('active', !isOpen);
+  });
+
+  closeBtn.addEventListener('click', () => {
+    panel.classList.add('hidden');
+    fab.classList.remove('active');
+  });
+
+  // Auto-save with 800ms debounce
+  textarea.addEventListener('input', () => {
+    status.textContent = '';
+    clearTimeout(notesSaveTimer);
+    notesSaveTimer = setTimeout(async () => {
+      status.textContent = 'Guardando...';
+      try {
+        await postJson('/notes', { content: textarea.value }, 'PUT');
+        status.textContent = 'Guardado';
+        setTimeout(() => { status.textContent = ''; }, 2000);
+      } catch (_) {
+        status.textContent = 'Error al guardar';
+      }
+    }, 800);
+  });
 }

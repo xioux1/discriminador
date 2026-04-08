@@ -132,6 +132,30 @@ cardsRouter.patch('/micro-cards/:id/archive', async (req, res) => {
   return res.json({ archived: true });
 });
 
+// PATCH /micro-cards/:id/question  — update the question text of a micro-card
+cardsRouter.patch('/micro-cards/:id/question', async (req, res) => {
+  const userId  = req.user.id;
+  const microId = parseInt(req.params.id, 10);
+  if (!Number.isFinite(microId)) return res.status(400).json({ error: 'invalid_id' });
+
+  const question = typeof req.body?.question === 'string' ? req.body.question.trim() : '';
+  if (question.length < 5) {
+    return res.status(422).json({
+      error: 'validation_error',
+      message: 'question must contain at least 5 characters.'
+    });
+  }
+
+  const { rowCount } = await dbPool.query(
+    `UPDATE micro_cards SET question = $1, updated_at = now()
+     WHERE id = $2 AND user_id = $3 AND status = 'active'`,
+    [question, microId, userId]
+  );
+  if (!rowCount) return res.status(404).json({ error: 'not_found', message: 'Micro-tarjeta no encontrada o archivada.' });
+
+  return res.json({ updated: true });
+});
+
 // POST /cards/batch  — bulk actions in browser tab
 cardsRouter.post('/cards/batch', async (req, res) => {
   const userId = req.user.id;
