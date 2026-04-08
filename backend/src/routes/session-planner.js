@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { dbPool } from '../db/client.js';
-import { planSession } from '../services/session-planner.js';
+import { findDuplicatedSessionItems, planSession } from '../services/session-planner.js';
 
 const sessionPlannerRouter = Router();
 
@@ -87,6 +87,15 @@ sessionPlannerRouter.post('/session/plan', async (req, res) => {
 
     const cards = cardsResult.rows;
     const microCards = microResult.rows;
+
+    const duplicatedItems = findDuplicatedSessionItems(cards, microCards);
+    if (duplicatedItems.length > 0) {
+      return res.status(422).json({
+        error: 'validation_error',
+        message: 'La sesión actual contiene tarjetas o microconsignas duplicadas.',
+        duplicates: duplicatedItems
+      });
+    }
 
     // 3. Collect distinct subjects from cards + micro-cards
     const subjects = new Set();

@@ -238,3 +238,45 @@ function estimateItemMs({ item, type, defaultMs, speedMultiplier, subjectAvgMsBy
 
   return Math.round(referenceMs * speedMultiplier);
 }
+
+function normalizeSessionText(text) {
+  return String(text || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+/**
+ * Validates that a session payload does not contain duplicated prompts/questions.
+ * Duplicates are detected across cards and micro-cards using normalized text.
+ */
+export function findDuplicatedSessionItems(cards = [], microCards = []) {
+  const seenByText = new Map();
+  const duplicatesByText = new Map();
+
+  const register = ({ id, type, text }) => {
+    const normalized = normalizeSessionText(text);
+    if (!normalized) return;
+
+    const current = { id, type, text: String(text).trim() };
+    const existing = seenByText.get(normalized);
+
+    if (!existing) {
+      seenByText.set(normalized, [current]);
+      return;
+    }
+
+    existing.push(current);
+    duplicatesByText.set(normalized, existing);
+  };
+
+  for (const card of cards) {
+    register({ id: card.id, type: 'card', text: card.prompt_text });
+  }
+
+  for (const micro of microCards) {
+    register({ id: micro.id, type: 'micro', text: micro.question });
+  }
+
+  return Array.from(duplicatesByText.values());
+}
