@@ -569,6 +569,18 @@
 
     </div><!-- /.app-shell -->
 
+    <!-- ═══ NOTES FAB + PANEL ════════════════════════════════════════════════ -->
+    <button id="notes-fab" class="notes-fab" title="Notas rápidas" aria-label="Notas rápidas">✎</button>
+
+    <div id="notes-panel" class="notes-panel hidden">
+      <div class="notes-panel-header">
+        <span class="notes-panel-title">Notas</span>
+        <span id="notes-save-status" class="notes-save-status"></span>
+        <button id="notes-panel-close" class="btn-ghost" aria-label="Cerrar">✕</button>
+      </div>
+      <textarea id="notes-content" class="notes-textarea" placeholder="Tus notas rápidas..."></textarea>
+    </div>
+
     <script src="./math-palette.js"></script>
     <script src="./sql-editor.js"></script>
     <script src="./auth.js"></script>
