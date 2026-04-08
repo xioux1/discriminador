@@ -2710,7 +2710,7 @@ function showStudyCard() {
   }
 }
 
-function toggleStudyPromptEdit() {
+async function toggleStudyPromptEdit() {
   const item = studyState.queue[studyState.index];
   if (!item) return;
 
@@ -2739,7 +2739,20 @@ function toggleStudyPromptEdit() {
 
   renderStudyPrompt(promptEl, editedPrompt);
   editBtn.textContent = 'Editar';
-  setStudyPromptFeedback('Consigna actualizada para esta sesión.', 'success');
+  setStudyPromptFeedback('Guardando...', 'info');
+
+  try {
+    if (item.type === 'micro') {
+      await postJson(`/micro-cards/${item.data.id}/question`, { question: editedPrompt }, 'PATCH');
+      item.data.question = editedPrompt;
+    } else {
+      await postJson('/cards/batch', { action: 'edit', ids: [item.data.id], prompt_text: editedPrompt });
+      item.data.prompt_text = editedPrompt;
+    }
+    setStudyPromptFeedback('Consigna guardada.', 'success');
+  } catch (_) {
+    setStudyPromptFeedback('Error al guardar (cambio aplicado solo esta sesión).', 'error');
+  }
 }
 
 async function clarifyStudyPrompt() {
