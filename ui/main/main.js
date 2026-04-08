@@ -162,7 +162,7 @@ async function loadHistoryOverview() {
         const qPassPct = Math.round(q.pass_rate * 100);
         const weakLabel = q.weakest_dimension ? DIM_LABELS_OVERVIEW[q.weakest_dimension] || q.weakest_dimension : null;
         row.innerHTML = `
-          <span class="history-question-prompt">${q.prompt_text.length > 120 ? q.prompt_text.slice(0, 120) + '…' : q.prompt_text}</span>
+          <span class="history-question-prompt">${escHtml(q.prompt_text.length > 120 ? q.prompt_text.slice(0, 120) + '…' : q.prompt_text)}</span>
           <span class="history-question-meta">
             <span class="grade-badge ${q.last_grade}">${q.last_grade.toUpperCase()}</span>
             <span class="stat-pill ${qPassPct >= 60 ? 'pass' : 'fail'}" style="margin:0;font-size:0.75rem">${qPassPct}% · ${q.total}x</span>
@@ -217,8 +217,8 @@ async function loadHistoryOverview() {
                   const date = item.decided_at ? new Date(item.decided_at).toLocaleDateString('es-AR') : '';
                   hrow.innerHTML = `<span class="grade-badge ${item.final_grade}">${item.final_grade.toUpperCase()}</span>
                     <span style="color:#888;font-size:0.8rem">${date}</span>
-                    ${item.justification ? `<span style="color:#555;font-size:0.82rem">${item.justification}</span>` : ''}
-                    ${item.correction_reason ? `<span style="color:#888;font-size:0.8rem">[corrección: ${item.correction_reason}]</span>` : ''}`;
+                    ${item.justification ? `<span style="color:#555;font-size:0.82rem">${escHtml(item.justification)}</span>` : ''}
+                    ${item.correction_reason ? `<span style="color:#888;font-size:0.8rem">[corrección: ${escHtml(item.correction_reason)}]</span>` : ''}`;
                   detail.appendChild(hrow);
                 });
               }
@@ -1751,7 +1751,7 @@ function renderQuestionStats(data) {
       const sourceTag = obs.source === 'user'
         ? '<span style="font-size:0.75rem;color:#888">[corrección]</span>'
         : '<span style="font-size:0.75rem;color:#888">[LLM]</span>';
-      row.innerHTML = `${badge} ${sourceTag} <span style="color:#333">${obs.text}</span>`;
+      row.innerHTML = `${badge} ${sourceTag} <span style="color:#333">${escHtml(obs.text)}</span>`;
       errEl.appendChild(row);
     });
   }
@@ -1885,7 +1885,7 @@ document.querySelector('#stats-toggle').addEventListener('click', () => {
         questionsContainer.innerHTML = '';
         const feedbackBlock = document.createElement('div');
         feedbackBlock.className = 'socratic-feedback';
-        feedbackBlock.innerHTML = `<p><strong>Lo que faltó:</strong> ${error_summary}</p><p><strong>Concepto correcto:</strong> ${correct_concept}</p>`;
+        feedbackBlock.innerHTML = `<p><strong>Lo que faltó:</strong> ${escHtml(error_summary)}</p><p><strong>Concepto correcto:</strong> ${escHtml(correct_concept)}</p>`;
         questionsContainer.appendChild(feedbackBlock);
         submitBtn.classList.add('hidden');
         setFeedback('Revisá el feedback y luego firma tu decisión.');

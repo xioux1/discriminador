@@ -1,11 +1,11 @@
 import { Router } from 'express';
-import { pool } from '../db/client.js';
+import { dbPool } from '../db/client.js';
 
 const router = Router();
 
 router.get('/notes', async (req, res, next) => {
   try {
-    const { rows } = await pool.query(
+    const { rows } = await dbPool.query(
       'SELECT content FROM user_notes WHERE user_id = $1',
       [req.user.id]
     );
@@ -18,7 +18,7 @@ router.get('/notes', async (req, res, next) => {
 router.put('/notes', async (req, res, next) => {
   try {
     const content = typeof req.body.content === 'string' ? req.body.content : '';
-    const { rows } = await pool.query(
+    const { rows } = await dbPool.query(
       `INSERT INTO user_notes (user_id, content, updated_at)
        VALUES ($1, $2, now())
        ON CONFLICT (user_id) DO UPDATE

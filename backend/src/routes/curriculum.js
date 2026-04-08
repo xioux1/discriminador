@@ -62,7 +62,7 @@ curriculumRouter.put('/curriculum/:subject', async (req, res) => {
     const { rows } = await dbPool.query(
       `INSERT INTO subject_configs (subject, syllabus_text, notes_text, daily_new_cards_limit, updated_at, user_id)
        VALUES ($1, $2, $3, $4, now(), $5)
-       ON CONFLICT (subject) DO UPDATE SET
+       ON CONFLICT (subject, user_id) DO UPDATE SET
          syllabus_text         = EXCLUDED.syllabus_text,
          notes_text            = EXCLUDED.notes_text,
          daily_new_cards_limit = EXCLUDED.daily_new_cards_limit,
