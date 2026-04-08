@@ -96,6 +96,42 @@ cardsRouter.patch('/cards/:id/archive', async (req, res) => {
   return res.json({ archived: true });
 });
 
+// PATCH /micro-cards/:id/archive  — archive micro-card with mandatory reason
+cardsRouter.patch('/micro-cards/:id/archive', async (req, res) => {
+  const userId = req.user.id;
+  const microId = parseInt(req.params.id, 10);
+  if (!Number.isFinite(microId)) return res.status(400).json({ error: 'invalid_id' });
+
+  const reason = normalizeReason(req.body?.reason);
+  if (reason.length < 5) {
+    return res.status(422).json({
+      error: 'validation_error',
+      message: 'reason must contain at least 5 characters.'
+    });
+  }
+
+  const { rows: check } = await dbPool.query(
+    'SELECT id, status FROM micro_cards WHERE id = $1 AND user_id = $2',
+    [microId, userId]
+  );
+  if (!check.length) return res.status(404).json({ error: 'not_found', message: 'Micro-tarjeta no encontrada.' });
+  if (check[0].status === 'archived') return res.json({ archived: true });
+
+  await dbPool.query(
+    `UPDATE micro_cards
+     SET status = 'archived',
+         notes = CASE
+           WHEN notes IS NULL OR trim(notes) = '' THEN $1
+           ELSE notes || E'\n[archived] ' || $1
+         END,
+         updated_at = now()
+     WHERE id = $2 AND user_id = $3`,
+    [reason.slice(0, 500), microId, userId]
+  );
+
+  return res.json({ archived: true });
+});
+
 // POST /cards/batch  — bulk actions in browser tab
 cardsRouter.post('/cards/batch', async (req, res) => {
   const userId = req.user.id;
