@@ -2351,6 +2351,7 @@ function startPlannedSession() {
   studyState.queue                 = queue;
   studyState.index                 = 0;
   studyState.results               = [];
+  studyState.pendingMicroGeneration = 0;
   studyState.sessionId             = null;
   studyState.sessionStartTime      = Date.now();
   studyState.sessionLimitMs        = briefingState.selectedTime * 60 * 1000;
@@ -2466,10 +2467,26 @@ const studyState = {
   currentInputMode: '',
   cardStartTime: 0,
   responseTimeMs: 0,
+  pendingMicroGeneration: 0,
   timerInterval: null,
   sessionId: null,
   sessionStartTime: 0
 };
+
+function renderStudyBackgroundStatus() {
+  const statusEl = document.querySelector('#study-background-status');
+  if (!statusEl) return;
+  const pending = Number(studyState.pendingMicroGeneration) || 0;
+  if (pending <= 0) {
+    statusEl.textContent = '';
+    statusEl.classList.add('hidden');
+    return;
+  }
+  statusEl.textContent = pending === 1
+    ? 'Espere, generando microconsignas…'
+    : `Espere, generando microconsignas… (${pending})`;
+  statusEl.classList.remove('hidden');
+}
 
 function getStudyPromptText(item) {
   if (!item) return '';
@@ -2498,9 +2515,11 @@ async function startStudySession() {
   studyState.queue   = [...micros, ...cards];
   studyState.index   = 0;
   studyState.results = [];
+  studyState.pendingMicroGeneration = 0;
   studyState.currentEvalResult = null;
   studyState.currentEvalContext = null;
   studyState.currentDecision = null;
+  renderStudyBackgroundStatus();
 
   if (studyState.queue.length === 0) {
     loadStudyOverview();
@@ -3150,33 +3169,23 @@ async function handleStudyNextCard() {
 
   const grade  = decision.finalGrade;
   const gaps   = evalResult.missing_concepts ?? [];
+  const shouldGenerateMicros = Boolean(grade && item.type === 'card');
 
-  try {
-    if (!grade) {
-      // uncertain: skip scheduler update for this response
-    } else if (item.type === 'micro') {
+  if (shouldGenerateMicros) {
+    studyState.pendingMicroGeneration += 1;
+    renderStudyBackgroundStatus();
+  }
+
+  if (grade && item.type === 'micro') {
+    try {
       await postJson('/scheduler/review', {
         micro_card_id: item.data.id,
         grade,
         response_time_ms: studyState.responseTimeMs || undefined
       });
-    } else {
-      const reviewResp = await postJson('/scheduler/review', {
-        card_id: item.data.id,
-        grade,
-        concept_gaps: gaps,
-        response_time_ms: studyState.responseTimeMs || undefined,
-        user_answer: studyState.currentEvalContext?.user_answer_text || ''
-      });
-
-      // Insert new micro-cards at the front of the remaining queue (study them now)
-      const newMicros = (reviewResp.new_micro_cards ?? []).map((m) => ({ type: 'micro', data: m }));
-      if (newMicros.length) {
-        studyState.queue.splice(studyState.index + 1, 0, ...newMicros);
-      }
+    } catch (err) {
+      console.warn('Review record failed:', err.message);
     }
-  } catch (err) {
-    console.warn('Review record failed:', err.message);
   }
 
   studyState.results.push({
@@ -3185,6 +3194,29 @@ async function handleStudyNextCard() {
     concept: item.type === 'micro' ? item.data.concept : null
   });
   persistStudySession();
+
+  if (shouldGenerateMicros) {
+    postJson('/scheduler/review', {
+      card_id: item.data.id,
+      grade,
+      concept_gaps: gaps,
+      response_time_ms: studyState.responseTimeMs || undefined,
+      user_answer: studyState.currentEvalContext?.user_answer_text || ''
+    }).then((reviewResp) => {
+      // Insert generated micro-cards right before the current card in view.
+      const newMicros = (reviewResp?.new_micro_cards ?? []).map((m) => ({ type: 'micro', data: m }));
+      if (newMicros.length) {
+        studyState.queue.splice(studyState.index, 0, ...newMicros);
+        persistStudySession();
+      }
+      loadAgenda();
+    }).catch((err) => {
+      console.warn('Background review record failed:', err.message);
+    }).finally(() => {
+      studyState.pendingMicroGeneration = Math.max(0, (studyState.pendingMicroGeneration || 0) - 1);
+      renderStudyBackgroundStatus();
+    });
+  }
 
   advanceStudyCard();
 }
@@ -3246,6 +3278,8 @@ function finishStudySession() {
     }).catch(() => {});
     studyState.sessionId = null;
   }
+  studyState.pendingMicroGeneration = 0;
+  renderStudyBackgroundStatus();
   clearPersistedStudySession();
 
   loadStudyOverview();
