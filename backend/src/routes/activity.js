@@ -18,26 +18,33 @@ activityRouter.get('/stats/activity', async (req, res) => {
     // Use a subquery for study_activity so a missing activity_log table
     // degrades gracefully (returns zeros) instead of crashing.
     const { rows } = await dbPool.query(
-      `WITH date_series AS (
+      `WITH tz_today AS (
+         SELECT (NOW() AT TIME ZONE 'America/Argentina/Buenos_Aires')::DATE AS today
+       ),
+       date_series AS (
          SELECT generate_series(
-           CURRENT_DATE - ($1::int - 1) * INTERVAL '1 day',
-           CURRENT_DATE,
+           (SELECT today FROM tz_today) - ($1::int - 1) * INTERVAL '1 day',
+           (SELECT today FROM tz_today),
            INTERVAL '1 day'
          )::DATE AS d
        ),
        evaluate_activity AS (
-         SELECT decided_at::DATE AS day, COUNT(*) AS cnt,
+         SELECT (decided_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::DATE AS day,
+                COUNT(*) AS cnt,
                 COUNT(*) FILTER (WHERE final_grade = 'pass') AS pass_cnt
          FROM user_decisions
-         WHERE decided_at >= CURRENT_DATE - $1::int * INTERVAL '1 day'
+         WHERE (decided_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::DATE
+               BETWEEN (SELECT today FROM tz_today) - $1::int * INTERVAL '1 day'
+                   AND (SELECT today FROM tz_today)
            AND user_id = $2
-         GROUP BY decided_at::DATE
+         GROUP BY 1
        ),
        study_activity AS (
          SELECT logged_date AS day, COUNT(*) AS cnt,
                 COUNT(*) FILTER (WHERE grade = 'pass') AS pass_cnt
          FROM activity_log
-         WHERE logged_date >= CURRENT_DATE - $1::int * INTERVAL '1 day'
+         WHERE logged_date BETWEEN (SELECT today FROM tz_today) - $1::int * INTERVAL '1 day'
+                               AND (SELECT today FROM tz_today)
            AND user_id = $2
          GROUP BY logged_date
        ),

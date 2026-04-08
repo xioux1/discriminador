@@ -139,7 +139,8 @@ statsRouter.get('/stats/timing', async (req, res) => {
        WHERE user_id = $1
          AND response_time_ms IS NOT NULL
          AND subject IS NOT NULL
-         AND logged_date >= CURRENT_DATE - ($2::int * 7)
+         AND logged_date BETWEEN (NOW() AT TIME ZONE 'America/Argentina/Buenos_Aires')::DATE - ($2::int * 7)
+                             AND (NOW() AT TIME ZONE 'America/Argentina/Buenos_Aires')::DATE
        GROUP BY subject, week_start
        ORDER BY subject ASC, week_start ASC`,
       [userId, weeks]

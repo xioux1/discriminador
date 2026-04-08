@@ -1610,3 +1610,20 @@ body { letter-spacing: 0.01em; }
   position: relative;
   white-space: pre-wrap;
 }
+/* Template-origin cells shown with dashed border and lighter text in week view */
+.planner-cell-tmpl {
+  color: #888;
+  border-style: dashed !important;
+}
+/* Activity badge: small pill showing study minutes in the slot */
+.planner-act-badge {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: rgba(0,0,0,0.12);
+  font-size: 0.68rem;
+  line-height: 1.4;
+  vertical-align: middle;
+  pointer-events: none;
+}

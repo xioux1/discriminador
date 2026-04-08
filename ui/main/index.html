@@ -459,10 +459,13 @@
       <!-- ═══ TAB: PLANIFICAR ══════════════════════════════════════════════ -->
       <section id="tab-planner" class="hidden">
         <div class="planner-toolbar">
-          <button type="button" id="planner-prev" class="btn-ghost planner-nav-btn">&#8592;</button>
-          <span id="planner-week-label" class="planner-week-label"></span>
-          <button type="button" id="planner-next" class="btn-ghost planner-nav-btn">&#8594;</button>
-          <button type="button" id="planner-today" class="btn-ghost" style="font-size:0.82rem;margin-left:8px">Hoy</button>
+          <div id="planner-week-nav" style="display:flex;align-items:center;gap:8px">
+            <button type="button" id="planner-prev" class="btn-ghost planner-nav-btn">&#8592;</button>
+            <span id="planner-week-label" class="planner-week-label"></span>
+            <button type="button" id="planner-next" class="btn-ghost planner-nav-btn">&#8594;</button>
+            <button type="button" id="planner-today" class="btn-ghost" style="font-size:0.82rem">Hoy</button>
+          </div>
+          <button type="button" id="planner-mode-btn" class="btn-secondary" style="font-size:0.82rem;margin-left:4px" title="Editar bloques que se repiten cada semana">&#8635; Plantilla</button>
           <div class="planner-color-bar" id="planner-color-bar">
             <span class="pcb-label">Color:</span>
             <button class="planner-swatch" data-color="" title="Sin color" style="background:#fff;border:1px solid #bbb"></button>

@@ -260,10 +260,10 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, userI
      grade === 'pass' ? 1 : 0, responseTimeMs, cardId]
   );
 
-  // Log activity
+  // Log activity (logged_date uses Argentina local date)
   dbPool.query(
-    `INSERT INTO activity_log (activity_type, subject, grade, response_time_ms, user_id)
-     VALUES ('study', $1, $2, $3, $4)`,
+    `INSERT INTO activity_log (activity_type, subject, grade, response_time_ms, user_id, logged_date)
+     VALUES ('study', $1, $2, $3, $4, (NOW() AT TIME ZONE 'America/Argentina/Buenos_Aires')::DATE)`,
     [updated.rows[0]?.subject || null, grade, responseTimeMs, userId]
   ).catch((e) => console.warn('[activity log]', e.message));
 
@@ -373,10 +373,10 @@ async function reviewMicroCard(res, microCardId, grade, responseTimeMs, userId) 
     }
   }
 
-  // Log activity
+  // Log activity (logged_date uses Argentina local date)
   dbPool.query(
-    `INSERT INTO activity_log (activity_type, subject, grade, response_time_ms, user_id)
-     VALUES ('study', $1, $2, $3, $4)`,
+    `INSERT INTO activity_log (activity_type, subject, grade, response_time_ms, user_id, logged_date)
+     VALUES ('study', $1, $2, $3, $4, (NOW() AT TIME ZONE 'America/Argentina/Buenos_Aires')::DATE)`,
     [micro.parent_subject || null, grade, responseTimeMs, userId]
   ).catch((e) => console.warn('[activity log]', e.message));
 
