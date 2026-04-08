@@ -496,7 +496,6 @@ async function renderExamCalendar(exams) {
 
   const list = document.createElement('div');
   list.className = 'exam-calendar-list';
-  const coverageBySubject = await getAdvisorCoverageBySubject(relevant.map((exam) => exam.subject));
 
   for (const exam of relevant) {
     const d = exam._d;
@@ -516,9 +515,12 @@ async function renderExamCalendar(exams) {
 
     const item = document.createElement('div');
     const scopePct = Math.max(0, Math.min(100, Number(exam.scope_pct) || 0));
-    const coveragePct = coverageBySubject.get(exam.subject) != null
-      ? Math.max(0, Math.min(100, Number(coverageBySubject.get(exam.subject)) || 0))
+
+    // Use cached coverage if available, otherwise show update button
+    const cachedCoverage = advisorCoverageCache.has(exam.subject)
+      ? Math.max(0, Math.min(100, Number(advisorCoverageCache.get(exam.subject)) || 0))
       : null;
+
     item.className = `exam-calendar-item exam-urgency-${urgency}`;
     item.innerHTML = `
       <div class="exam-cal-countdown">${label}</div>
@@ -534,17 +536,48 @@ async function renderExamCalendar(exams) {
           </div>
           <div class="exam-cal-metric-text"><strong>${scopePct}%</strong> temario</div>
         </div>
-        ${coveragePct != null ? `
-          <div class="exam-cal-metric exam-cal-coverage">
+        <div class="exam-cal-metric exam-cal-coverage" data-subject="${escHtml(exam.subject)}">
+          ${cachedCoverage != null ? `
             <div class="exam-cal-metric-track exam-cal-coverage-track">
-              <div class="exam-cal-metric-fill exam-cal-coverage-fill" style="width:${coveragePct}%"></div>
+              <div class="exam-cal-metric-fill exam-cal-coverage-fill" style="width:${cachedCoverage}%"></div>
             </div>
-            <div class="exam-cal-metric-text"><strong>${coveragePct}%</strong> cubierto</div>
-          </div>` : ''}
+            <div class="exam-cal-metric-text"><strong>${cachedCoverage}%</strong> cubierto</div>
+          ` : `
+            <button class="btn-update-coverage" data-subject="${escHtml(exam.subject)}">Actualizar %</button>
+          `}
+        </div>
       </div>
     `;
     list.appendChild(item);
   }
+
+  // Delegate click on coverage update buttons
+  list.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.btn-update-coverage');
+    if (!btn) return;
+    const subject = btn.dataset.subject;
+    btn.disabled = true;
+    btn.textContent = '...';
+    try {
+      const data = await getJson(`/advisor/analysis/${encodeURIComponent(subject)}`);
+      const coverage = (data?.error === 'no_config')
+        ? null
+        : Math.max(0, Math.min(100, Math.round(Number(data?.coverage_pct) || 0)));
+      if (coverage != null) advisorCoverageCache.set(subject, coverage);
+      const container = list.querySelector(`.exam-cal-coverage[data-subject="${CSS.escape(subject)}"]`);
+      if (container) {
+        container.innerHTML = coverage != null ? `
+          <div class="exam-cal-metric-track exam-cal-coverage-track">
+            <div class="exam-cal-metric-fill exam-cal-coverage-fill" style="width:${coverage}%"></div>
+          </div>
+          <div class="exam-cal-metric-text"><strong>${coverage}%</strong> cubierto</div>
+        ` : `<span style="font-size:0.75rem;color:var(--text-muted)">Sin config</span>`;
+      }
+    } catch (_) {
+      btn.disabled = false;
+      btn.textContent = 'Actualizar %';
+    }
+  });
 
   card.appendChild(list);
   return card;

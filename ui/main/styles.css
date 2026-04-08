@@ -1968,6 +1968,14 @@ textarea:focus, input[type="text"]:focus, select:focus {
 .exam-cal-scope-fill { background: linear-gradient(90deg, #d68a43, #e1a56b); }
 .exam-cal-coverage-fill { background: linear-gradient(90deg, #a8cbc2, #c6ddd7); }
 .exam-cal-metric-text { font-size: 0.72rem; color: #6f757f; text-align: right; min-width: 86px; white-space: nowrap; }
+.btn-update-coverage {
+  font-size: 0.72rem; padding: 2px 8px; border-radius: 6px;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--text-muted); cursor: pointer; white-space: nowrap;
+  transition: background 0.1s, color 0.1s;
+}
+.btn-update-coverage:hover:not(:disabled) { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn-update-coverage:disabled { opacity: 0.5; cursor: default; }
 
 .subjects-list-actions { gap: 8px; }
 .subjects-list-actions .btn-secondary { min-width: 126px; padding: 8px 14px; font-size: 0.95rem; }
