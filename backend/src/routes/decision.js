@@ -465,8 +465,8 @@ async function syncSchedulerCard(pool, {
     if (!concept) continue;
 
     const already = await pool.query(
-      `SELECT id FROM micro_cards WHERE parent_card_id = $1 AND concept = $2 AND status = 'active'`,
-      [card.id, concept]
+      `SELECT id FROM micro_cards WHERE parent_card_id = $1 AND status = 'active' LIMIT 1`,
+      [card.id]
     );
     if (already.rows.length) continue;
 

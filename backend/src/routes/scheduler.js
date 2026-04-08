@@ -290,9 +290,8 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, userI
 
     for (const concept of targetConcepts) {
       const existing = await dbPool.query(
-        `SELECT id FROM micro_cards
-         WHERE parent_card_id = $1 AND concept = $2 AND status = 'active'`,
-        [cardId, concept]
+        `SELECT id FROM micro_cards WHERE parent_card_id = $1 AND status = 'active' LIMIT 1`,
+        [cardId]
       );
       if (existing.rows.length) continue;
 
