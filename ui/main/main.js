@@ -491,12 +491,14 @@ async function renderExamCalendar(exams) {
     const d = exam._d;
     const diff = Math.round((d - today) / 86400000);
 
+    // Urgency tiers — must match CSS .exam-urgency-* color system:
+    // urgent (amber) ≤ 3d  ·  soon (olive) ≤ 14d  ·  later (neutral) > 14d
     let urgency, label;
-    if (diff < 0)       { urgency = 'past';   label = `hace ${Math.abs(diff)}d`; }
-    else if (diff === 0){ urgency = 'today';  label = 'HOY'; }
-    else if (diff <= 7) { urgency = 'urgent'; label = `${diff}d`; }
-    else if (diff <= 21){ urgency = 'soon';   label = `${diff}d`; }
-    else                { urgency = 'later';  label = `${diff}d`; }
+    if (diff < 0)        { urgency = 'past';   label = `−${Math.abs(diff)}d`; }
+    else if (diff === 0) { urgency = 'today';  label = 'HOY'; }
+    else if (diff <= 3)  { urgency = 'urgent'; label = `${diff}d`; }
+    else if (diff <= 14) { urgency = 'soon';   label = `${diff}d`; }
+    else                 { urgency = 'later';  label = `${diff}d`; }
 
     const dayName = d.toLocaleDateString('es-AR', { weekday: 'short' });
     const dateStr = d.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' });
@@ -572,11 +574,27 @@ async function loadDashboard() {
     const totalActiveMicros = Object.values(activeMicrosBySubject).reduce((a, b) => a + b, 0);
     const totalDue = totalPendingCards + totalActiveMicros;
 
-    if (totalDue > 0) {
+    // Pending banner — compact stat row, neutral surface (no blue)
+    {
       const banner = document.createElement('div');
-      banner.className = 'card';
-      banner.style.cssText = 'background:var(--primary-light,#e8f0fe);margin-bottom:12px';
-      banner.innerHTML = `<strong>${totalDue}</strong> pendiente${totalDue !== 1 ? 's' : ''} hoy (<strong>${totalPendingCards}</strong> tarjeta${totalPendingCards !== 1 ? 's' : ''} principal${totalPendingCards !== 1 ? 'es' : ''} + <strong>${totalActiveMicros}</strong> microconsigna${totalActiveMicros !== 1 ? 's' : ''}).`;
+      banner.className = 'dashboard-pending-banner card';
+      if (totalDue > 0) {
+        banner.innerHTML = `
+          <div class="dpb-stat">
+            <span class="dpb-num">${totalPendingCards}</span>
+            <span class="dpb-label">tarjeta${totalPendingCards !== 1 ? 's' : ''}</span>
+          </div>
+          <div class="dpb-sep"></div>
+          <div class="dpb-stat">
+            <span class="dpb-num">${totalActiveMicros}</span>
+            <span class="dpb-label">micro${totalActiveMicros !== 1 ? 's' : ''}</span>
+          </div>
+          <div class="dpb-total">
+            <span>${totalDue} pendiente${totalDue !== 1 ? 's' : ''} hoy</span>
+          </div>`;
+      } else {
+        banner.innerHTML = `<span class="dpb-ok">Al día — sin pendientes hoy</span>`;
+      }
       content.appendChild(banner);
     }
 
@@ -597,17 +615,21 @@ async function loadDashboard() {
       const pendingMainCards = pendingCardsBySubject[subjectName] || 0;
       const activeMicros = activeMicrosBySubject[subjectName] || 0;
 
+      const totalDueForSubject = (pendingMainCards || 0) + (activeMicros || 0);
       const metaParts = [];
-      if (pendingMainCards > 0) metaParts.push(`${pendingMainCards} pendiente${pendingMainCards !== 1 ? 's' : ''}`);
+      if (pendingMainCards > 0) metaParts.push(`${pendingMainCards} pend.`);
       if (activeMicros > 0) metaParts.push(`${activeMicros} micro${activeMicros !== 1 ? 's' : ''}`);
-      const metaText = metaParts.length ? metaParts.join(' · ') : 'Al día';
+      const metaText = metaParts.join(' · ');
 
       const row = document.createElement('li');
       row.className = 'subjects-list-item';
       row.innerHTML = `
+        <div class="subjects-list-beat ${totalDueForSubject > 0 ? 'has-due' : 'is-clear'}">
+          ${totalDueForSubject > 0 ? totalDueForSubject : '·'}
+        </div>
         <div class="subjects-list-main">
           <div class="subjects-list-name">${subjectName}</div>
-          <div class="subjects-list-meta">${metaText}</div>
+          ${metaText ? `<div class="subjects-list-meta">${metaText}</div>` : ''}
         </div>
         <div class="subjects-list-actions">
           <div class="subjects-list-secondary">
