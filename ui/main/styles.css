@@ -23,10 +23,10 @@
   --shadow:    0 4px 28px rgba(90, 115, 160, 0.09), 0 1px 4px rgba(90, 115, 160, 0.06);
   --shadow-md: 0 8px 48px rgba(90, 115, 160, 0.13), 0 2px 8px rgba(90, 115, 160, 0.08);
 
-  /* Text — cold dark gray, not pure black */
-  --text:       #252a35;
-  --text-muted: #7a8799;
-  --text-light: #b0bcc9;
+  /* Text — three clear levels, none of them invisible */
+  --text:       #22272e;   /* primary: near-black, cold */
+  --text-muted: #6a7a8e;   /* secondary: readable muted gray */
+  --text-light: #9daabb;   /* tertiary: faint — only for timestamps, meta */
 
   /* Radius — soft but sober */
   --radius:    10px;
@@ -64,13 +64,12 @@ body {
   margin: 0;
   min-height: 100vh;
   /* Atmospheric gradient background — diffuse, nebulous */
-  background-color: #edf1f6;
+  background-color: #eef2f7;
   background-image:
-    radial-gradient(ellipse 75% 55% at 12% 18%, rgba(170, 195, 230, 0.32) 0%, transparent 65%),
-    radial-gradient(ellipse 55% 50% at 88% 72%, rgba(185, 205, 235, 0.22) 0%, transparent 60%),
-    radial-gradient(ellipse 60% 40% at 50%  5%, rgba(210, 222, 240, 0.28) 0%, transparent 60%),
-    radial-gradient(ellipse 40% 60% at 70% 45%, rgba(195, 210, 230, 0.15) 0%, transparent 55%),
-    linear-gradient(160deg, #ebeff6 0%, #f4f6fa 45%, #edf1f7 100%);
+    /* Two wide, very soft halos — no drama, just air */
+    radial-gradient(ellipse 110% 70% at 20% 0%,   rgba(185, 205, 230, 0.20) 0%, transparent 70%),
+    radial-gradient(ellipse 100% 80% at 80% 100%,  rgba(190, 208, 232, 0.16) 0%, transparent 70%),
+    linear-gradient(175deg, #ecf0f6 0%, #f5f7fb 100%);
   background-attachment: fixed;
   color: var(--text);
   font-family: var(--font);
@@ -471,8 +470,11 @@ textarea:focus, input[type="text"]:focus, select:focus {
   display: flex;
   flex-direction: column;
   align-items: center;
+  /* Same glass as .card — fully integrated */
   background: var(--surface);
-  border: 1px solid var(--border);
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  border: var(--bw-divider) solid var(--border);
   border-radius: var(--radius);
   padding: 14px 20px;
   flex: 1;
@@ -481,17 +483,23 @@ textarea:focus, input[type="text"]:focus, select:focus {
 }
 
 .dashboard-stat-num {
-  font-size: 2rem;
+  font-size: 1.9rem;
   font-weight: 800;
-  color: var(--primary);
+  /* Dark, not blue — consistent with text palette */
+  color: var(--text);
   line-height: 1;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
 }
 
 .dashboard-stat-label {
-  font-size: 0.78rem;
-  color: var(--text-muted);
-  margin-top: 4px;
+  font-size: var(--fs-sm);
+  /* #2 grey level — present but not competing */
+  color: #8a9aae;
+  margin-top: 5px;
   text-align: center;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
 }
 
 .deck-grid {
@@ -541,11 +549,11 @@ textarea:focus, input[type="text"]:focus, select:focus {
 .study-session-overlay {
   position: fixed;
   inset: 0;
-  background-color: #edf1f6;
+  background-color: #eef2f7;
   background-image:
-    radial-gradient(ellipse 70% 50% at 10% 15%, rgba(170, 195, 230, 0.28) 0%, transparent 65%),
-    radial-gradient(ellipse 50% 45% at 85% 75%, rgba(185, 205, 235, 0.20) 0%, transparent 60%),
-    linear-gradient(160deg, #ebeff6 0%, #f4f6fa 100%);
+    radial-gradient(ellipse 110% 70% at 20% 0%,  rgba(185, 205, 230, 0.18) 0%, transparent 70%),
+    radial-gradient(ellipse 100% 80% at 80% 100%, rgba(190, 208, 232, 0.14) 0%, transparent 70%),
+    linear-gradient(175deg, #ecf0f6 0%, #f5f7fb 100%);
   z-index: 100;
   display: flex;
   flex-direction: column;
@@ -1455,9 +1463,9 @@ textarea:focus, input[type="text"]:focus, select:focus {
   justify-content: center;
   background-color: #edf1f6;
   background-image:
-    radial-gradient(ellipse 75% 55% at 12% 18%, rgba(170, 195, 230, 0.32) 0%, transparent 65%),
-    radial-gradient(ellipse 55% 50% at 88% 72%, rgba(185, 205, 235, 0.22) 0%, transparent 60%),
-    linear-gradient(160deg, #ebeff6 0%, #f4f6fa 100%);
+    radial-gradient(ellipse 110% 70% at 20% 0%,  rgba(185, 205, 230, 0.18) 0%, transparent 70%),
+    radial-gradient(ellipse 100% 80% at 80% 100%, rgba(190, 208, 232, 0.14) 0%, transparent 70%),
+    linear-gradient(175deg, #ecf0f6 0%, #f5f7fb 100%);
 }
 #auth-screen.hidden { display: none; }
 .auth-card {
@@ -1499,10 +1507,12 @@ textarea:focus, input[type="text"]:focus, select:focus {
 
 /* ─── App Header ─────────────────────────────────────────────────────────── */
 .app-header {
-  background: rgba(235, 240, 248, 0.75);
-  backdrop-filter: blur(20px) saturate(1.3);
-  -webkit-backdrop-filter: blur(20px) saturate(1.3);
-  border-bottom: var(--bw-divider) solid var(--border);
+  /* Slightly more opaque and darker than the body — establishes the chrome */
+  background: rgba(224, 231, 242, 0.92);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  /* Two-tone bottom border: subtle base + the bw-divider gives a ledge feel */
+  border-bottom: 1.5px solid rgba(155, 175, 205, 0.60);
   padding: 0 20px;
   height: 44px;
   display: flex;
@@ -1512,22 +1522,23 @@ textarea:focus, input[type="text"]:focus, select:focus {
   z-index: 50;
 }
 .app-logo {
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--text-muted);
-  letter-spacing: 0.04em;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text);          /* full dark, not muted */
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
-/* ─── Tab Nav — glass strip ──────────────────────────────────────────────── */
+/* ─── Tab Nav — glass strip, firm enough to command ─────────────────────── */
 .tab-nav {
   display: flex;
   justify-content: center;
   gap: 0;
-  background: rgba(240, 244, 250, 0.72);
-  backdrop-filter: blur(16px) saturate(1.2);
-  -webkit-backdrop-filter: blur(16px) saturate(1.2);
-  border-bottom: var(--bw-divider) solid var(--border);
+  /* Slightly lighter than header, still distinct from body */
+  background: rgba(232, 238, 248, 0.88);
+  backdrop-filter: blur(16px) saturate(1.3);
+  -webkit-backdrop-filter: blur(16px) saturate(1.3);
+  border-bottom: 1.5px solid rgba(155, 175, 205, 0.55);
   padding: 0 12px;
   overflow-x: auto;
   scrollbar-width: none;
@@ -1539,22 +1550,25 @@ textarea:focus, input[type="text"]:focus, select:focus {
 .tab-btn {
   background: transparent;
   border: none;
-  border-bottom: 2px solid transparent;
+  border-bottom: 2.5px solid transparent;
   padding: 11px 16px;
   font-size: var(--fs-base);
   font-weight: 500;
-  color: var(--text-muted);
+  /* Inactive: readable, not invisible */
+  color: #6a7a90;
   cursor: pointer;
   white-space: nowrap;
-  transition: color 0.15s, border-color 0.15s;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
   font-family: var(--font);
   letter-spacing: 0.02em;
 }
-.tab-btn:hover  { color: var(--text); }
+.tab-btn:hover { color: var(--text); background: rgba(200, 215, 235, 0.25); }
 .tab-btn.active {
+  /* Active tab: full dark text + thicker indicator + faint bg pill */
   color: var(--text);
+  font-weight: 700;
   border-bottom-color: var(--primary);
-  font-weight: 600;
+  background: rgba(255, 255, 255, 0.40);
 }
 
 /* ─── Container ──────────────────────────────────────────────────────────── */
@@ -1666,11 +1680,18 @@ textarea:focus, input[type="text"]:focus, select:focus {
   font-size: 0.88rem;
   background: var(--surface);
 }
-.exam-urgency-today  { border-left-color: #b04040; background: rgba(176,64,64,0.06); }
-.exam-urgency-urgent { border-left-color: var(--accent-warm); background: rgba(176,136,72,0.07); }
-.exam-urgency-soon   { border-left-color: #9aaa60; background: rgba(154,170,96,0.07); }
-.exam-urgency-later  { border-left-color: var(--border); }
-.exam-urgency-past   { border-left-color: var(--border); opacity: 0.55; }
+/*
+  Urgency color system — 4 tiers, fully regimented:
+  urgente  (≤3d)  = amber          --accent-warm  #b08848
+  próximo  (≤14d) = olive seco     #7a8a4a
+  lejano   (>14d) = pearl neutral  --border-mid
+  pasado           = barely visible
+*/
+.exam-urgency-today  { border-left-color: #b04040; background: rgba(176,64,64,0.05); }
+.exam-urgency-urgent { border-left-color: var(--accent-warm); background: rgba(176,136,72,0.06); }
+.exam-urgency-soon   { border-left-color: #7a8a4a; background: rgba(122,138,74,0.06); }
+.exam-urgency-later  { border-left-color: rgba(155, 175, 205, 0.55); background: transparent; }
+.exam-urgency-past   { border-left-color: rgba(155, 175, 205, 0.30); opacity: 0.50; }
 
 .exam-cal-countdown {
   font-weight: 700; font-size: 0.95rem; text-align: center;
@@ -1678,7 +1699,8 @@ textarea:focus, input[type="text"]:focus, select:focus {
 }
 .exam-urgency-today  .exam-cal-countdown { color: #b04040; }
 .exam-urgency-urgent .exam-cal-countdown { color: var(--accent-warm); }
-.exam-urgency-soon   .exam-cal-countdown { color: #7a8a40; }
+.exam-urgency-soon   .exam-cal-countdown { color: #7a8a4a; }
+.exam-urgency-later  .exam-cal-countdown { color: var(--text-muted); }
 
 .exam-cal-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .exam-cal-subject { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1757,50 +1779,64 @@ textarea:focus, input[type="text"]:focus, select:focus {
   list-style: none;
   margin: 0;
   padding: 0;
-  border: var(--bw-divider) solid var(--border);
-  border-radius: var(--radius-sm);
+  /* No outer border — the card handles the frame */
+  border: none;
+  border-radius: 0;
   overflow: hidden;
 }
 .subjects-list-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
-  padding: 9px 12px;
-  border-bottom: var(--bw-divider) solid var(--border);
+  gap: 16px;
+  padding: 13px 0;
+  /* Ultra-thin divider — barely there */
+  border-bottom: 1px solid rgba(160, 180, 210, 0.25);
   transition: background 0.1s;
 }
 .subjects-list-item:last-child { border-bottom: none; }
-.subjects-list-item:hover { background: #fafafa; }
 .subjects-list-main { min-width: 0; flex: 1; }
 .subjects-list-name {
-  font-weight: 700;
+  font-weight: 600;
   font-size: var(--fs-lg);
+  color: var(--text);
   line-height: 1.3;
 }
 .subjects-list-meta {
   font-size: var(--fs-sm);
-  color: var(--text-muted);
-  margin-top: 1px;
+  /* One step lighter than muted — truly secondary */
+  color: var(--text-light);
+  margin-top: 2px;
+  letter-spacing: 0.01em;
 }
 .subjects-list-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex-shrink: 0;
 }
-/* Secondary actions within a subject row — visually recessed */
+/* Configurar / Renombrar — present but not intrusive */
 .subjects-list-secondary {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+}
+/* Override btn-link inside subject rows for slightly more dignity */
+.subjects-list-secondary .btn-link {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(106, 122, 142, 0.35);
+  padding-bottom: 1px;
+  transition: color 0.12s, border-color 0.12s;
+}
+.subjects-list-secondary .btn-link:hover {
+  color: var(--text);
+  border-bottom-color: var(--text);
 }
 
 @media (max-width: 600px) {
-  .subjects-list-item {
-    flex-wrap: wrap;
-    gap: 6px;
-  }
+  .subjects-list-item { flex-wrap: wrap; gap: 8px; }
   .subjects-list-actions { width: 100%; justify-content: flex-end; }
 }
 
