@@ -1,6 +1,7 @@
 const EVALUATE_ENDPOINT = '/evaluate';
 const DECISION_ENDPOINT = '/decision';
 let pendingStudySubject = null;
+const advisorCoverageCache = new Map();
 
 // ─── Auth gate ────────────────────────────────────────────────────────────────
 
@@ -404,7 +405,44 @@ function initBrowserTab() {
 
 // --- Dashboard ---
 
-function renderExamCalendar(exams) {
+async function getAdvisorCoverageBySubject(subjects = []) {
+  const uniqueSubjects = [...new Set(subjects
+    .map((s) => (typeof s === 'string' ? s.trim() : ''))
+    .filter(Boolean))];
+
+  const result = new Map();
+  const missing = [];
+
+  for (const subject of uniqueSubjects) {
+    if (advisorCoverageCache.has(subject)) {
+      result.set(subject, advisorCoverageCache.get(subject));
+    } else {
+      missing.push(subject);
+    }
+  }
+
+  if (!missing.length) return result;
+
+  const responses = await Promise.all(missing.map(async (subject) => {
+    try {
+      const data = await getJson(`/advisor/analysis/${encodeURIComponent(subject)}`);
+      if (data?.error === 'no_config') return { subject, coverage: null };
+      const coverage = Math.max(0, Math.min(100, Math.round(Number(data?.coverage_pct) || 0)));
+      return { subject, coverage };
+    } catch (_err) {
+      return { subject, coverage: null };
+    }
+  }));
+
+  responses.forEach(({ subject, coverage }) => {
+    advisorCoverageCache.set(subject, coverage);
+    result.set(subject, coverage);
+  });
+
+  return result;
+}
+
+async function renderExamCalendar(exams) {
   const card = document.createElement('div');
   card.className = 'card exam-calendar-card';
 
@@ -447,6 +485,7 @@ function renderExamCalendar(exams) {
 
   const list = document.createElement('div');
   list.className = 'exam-calendar-list';
+  const coverageBySubject = await getAdvisorCoverageBySubject(relevant.map((exam) => exam.subject));
 
   for (const exam of relevant) {
     const d = exam._d;
@@ -471,7 +510,16 @@ function renderExamCalendar(exams) {
         <span class="exam-cal-label">${escHtml(exam.label)}</span>
       </div>
       <div class="exam-cal-date">${dayName} ${dateStr}</div>
-      <div class="exam-cal-scope">${exam.scope_pct}% temario</div>
+      <div class="exam-cal-meta">
+        <div class="exam-cal-scope">${exam.scope_pct}% temario</div>
+        ${coverageBySubject.get(exam.subject) != null ? `
+          <div class="exam-cal-coverage">
+            <div class="exam-cal-coverage-track">
+              <div class="exam-cal-coverage-fill" style="width:${coverageBySubject.get(exam.subject)}%"></div>
+            </div>
+            <div class="exam-cal-coverage-text">${coverageBySubject.get(exam.subject)}% cubierto</div>
+          </div>` : ''}
+      </div>
     `;
     list.appendChild(item);
   }
@@ -568,7 +616,7 @@ async function loadDashboard() {
     panel.appendChild(list);
 
     // Exam calendar — always render (shows empty state if no dates configured)
-    content.appendChild(renderExamCalendar(calendarData?.exams || []));
+    content.appendChild(await renderExamCalendar(calendarData?.exams || []));
 
     content.appendChild(panel);
 
@@ -1465,7 +1513,11 @@ async function postJson(url, body, method = 'POST') {
 
   if (!response.ok) {
     const reason = data.message || `Error HTTP ${response.status}`;
-    throw new Error(reason);
+    const error = new Error(reason);
+    if (Array.isArray(data.details)) {
+      error.details = data.details;
+    }
+    throw error;
   }
 
   return data;
@@ -1478,6 +1530,16 @@ function renderClauseChecklist(clauses) {
     `<span class="sql-clause-item ${c.status}"><span class="sql-clause-label">${statusIcon[c.status]}</span>${c.name}</span>`
   ).join('');
   return `<div class="sql-clause-checklist">${items}</div>`;
+}
+
+function formatValidationIssues(error) {
+  if (!Array.isArray(error?.details) || error.details.length === 0) return '';
+  return error.details
+    .map((detail) => {
+      const field = detail?.field ? `${detail.field}: ` : '';
+      return `${field}${detail?.issue || 'Campo inválido.'}`;
+    })
+    .join(' | ');
 }
 
 form.addEventListener('submit', async (event) => {
@@ -1550,7 +1612,9 @@ form.addEventListener('submit', async (event) => {
   } catch (error) {
     resultLoading.classList.add('hidden');
     resultContent.classList.add('hidden');
-    setFeedback(`No se pudo evaluar: ${error.message}`, 'error');
+    const validationIssues = formatValidationIssues(error);
+    const message = validationIssues ? `${error.message} (${validationIssues})` : error.message;
+    setFeedback(`No se pudo evaluar: ${message}`, 'error');
   } finally {
     uiState.evaluating = false;
     setControlsDisabled(false);
@@ -1980,6 +2044,73 @@ const briefingState = {
   fullMicroCards:   []      // full micro_cards from server
 };
 
+const STUDY_PERSIST_KEY = 'study.activeSession.v1';
+
+function persistStudySession() {
+  try {
+    if (!studyState.queue?.length || !studyState.sessionStartTime || !studyState.sessionLimitMs) {
+      localStorage.removeItem(STUDY_PERSIST_KEY);
+      return;
+    }
+    localStorage.setItem(STUDY_PERSIST_KEY, JSON.stringify({
+      queue: studyState.queue,
+      index: studyState.index,
+      results: studyState.results,
+      sessionId: studyState.sessionId,
+      sessionStartTime: studyState.sessionStartTime,
+      sessionLimitMs: studyState.sessionLimitMs,
+      sessionEnergyLevel: studyState.sessionEnergyLevel,
+      selectedTime: briefingState.selectedTime,
+      selectedEnergy: briefingState.selectedEnergy,
+      selectedSubject: briefingState.selectedSubject
+    }));
+  } catch (_) {}
+}
+
+function clearPersistedStudySession() {
+  try { localStorage.removeItem(STUDY_PERSIST_KEY); } catch (_) {}
+}
+
+function restorePersistedStudySession() {
+  try {
+    const raw = localStorage.getItem(STUDY_PERSIST_KEY);
+    if (!raw) return false;
+    const saved = JSON.parse(raw);
+    if (!saved?.queue?.length || !saved?.sessionStartTime || !saved?.sessionLimitMs) {
+      clearPersistedStudySession();
+      return false;
+    }
+
+    const expiresAt = Number(saved.sessionStartTime) + Number(saved.sessionLimitMs);
+    if (!Number.isFinite(expiresAt) || Date.now() > expiresAt) {
+      clearPersistedStudySession();
+      return false;
+    }
+
+    briefingState.selectedTime = Number(saved.selectedTime) || null;
+    briefingState.selectedEnergy = saved.selectedEnergy || null;
+    applyStudySubjectFilter(saved.selectedSubject || null);
+
+    studyState.queue = saved.queue;
+    studyState.index = Math.max(0, Math.min(saved.index ?? 0, saved.queue.length - 1));
+    studyState.results = Array.isArray(saved.results) ? saved.results : [];
+    studyState.sessionId = saved.sessionId ?? null;
+    studyState.sessionStartTime = Number(saved.sessionStartTime);
+    studyState.sessionLimitMs = Number(saved.sessionLimitMs);
+    studyState.sessionEnergyLevel = saved.sessionEnergyLevel || null;
+
+    document.querySelector('#study-briefing').classList.add('hidden');
+    document.querySelector('#study-overview').classList.add('hidden');
+    document.querySelector('#study-complete').classList.add('hidden');
+    document.querySelector('#study-session').classList.remove('hidden');
+    showStudyCard();
+    return true;
+  } catch (_) {
+    clearPersistedStudySession();
+    return false;
+  }
+}
+
 function normalizeStudySubjectFilter(subject) {
   const normalized = typeof subject === 'string' ? subject.trim() : '';
   if (!normalized || normalized === '(sin materia)') return null;
@@ -2054,6 +2185,7 @@ function initStudyTab() {
   });
 
   initBriefing();
+  restorePersistedStudySession();
 }
 
 (function initBriefing() {
@@ -2190,6 +2322,7 @@ function startPlannedSession() {
   document.querySelector('#study-complete').classList.add('hidden');
   document.querySelector('#study-session').classList.remove('hidden');
 
+  persistStudySession();
   showStudyCard();
 }
 
@@ -2200,6 +2333,7 @@ function exitStudySession() {
   }
   document.querySelector('#study-session').classList.add('hidden');
   document.querySelector('#study-overview').classList.remove('hidden');
+  persistStudySession();
 }
 
 async function loadStudyOverview() {
@@ -2321,6 +2455,7 @@ async function startStudySession() {
   document.querySelector('#study-complete').classList.add('hidden');
   document.querySelector('#study-session').classList.remove('hidden');
 
+  clearPersistedStudySession();
   showStudyCard();
 }
 
@@ -2627,12 +2762,14 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
   }
 
   try {
-    const result = await postJson(EVALUATE_ENDPOINT, {
+    const evaluationPayload = {
       prompt_text: normalizedPrompt,
       user_answer_text: answer,
       expected_answer_text: normalizedExpected,
-      subject: subject || ''
-    });
+      ...(subject && subject.trim() ? { subject: subject.trim() } : {})
+    };
+
+    const result = await postJson(EVALUATE_ENDPOINT, evaluationPayload);
 
     studyState.currentEvalResult = result;
     studyState.currentExpectedAnswer = expected_answer_text;
@@ -2640,7 +2777,7 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       prompt_text: normalizedPrompt,
       user_answer_text: answer,
       expected_answer_text: normalizedExpected,
-      subject: subject || ''
+      ...(subject && subject.trim() ? { subject: subject.trim() } : {})
     };
     studyState.currentDecision = null;
 
@@ -2776,7 +2913,9 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
   } catch (err) {
     evalBtn.disabled = false;
     evalBtn.textContent = 'Evaluar';
-    alert(`Error al evaluar: ${err.message}`);
+    const validationIssues = formatValidationIssues(err);
+    const message = validationIssues ? `${err.message}\n${validationIssues}` : err.message;
+    alert(`Error al evaluar: ${message}`);
   }
 });
 
@@ -2988,6 +3127,7 @@ async function handleStudyNextCard() {
     type: item.type,
     concept: item.type === 'micro' ? item.data.concept : null
   });
+  persistStudySession();
 
   advanceStudyCard();
 }
@@ -2995,6 +3135,7 @@ async function handleStudyNextCard() {
 document.querySelector('#study-back-btn')?.addEventListener('click', () => {
   if (studyState.index <= 0) return;
   studyState.index -= 1;
+  persistStudySession();
   showStudyCard();
 });
 
@@ -3003,6 +3144,7 @@ function advanceStudyCard() {
   if (studyState.index >= studyState.queue.length) {
     finishStudySession();
   } else {
+    persistStudySession();
     showStudyCard();
   }
 }
@@ -3047,6 +3189,7 @@ function finishStudySession() {
     }).catch(() => {});
     studyState.sessionId = null;
   }
+  clearPersistedStudySession();
 
   loadStudyOverview();
 }
@@ -3075,13 +3218,14 @@ const PLANNER_SLOTS = (() => {
 const PLANNER_DAYS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
 const plannerState = {
-  weekStart: null,      // Date (Sunday at midnight)
-  cells: {},            // key `${dayIndex}_${slot}` → {content, color}  (week-specific)
-  template: {},         // key `${dayIndex}_${slot}` → {content, color}  (recurring)
-  activity: {},         // key `${dayIndex}_${hour}` → {minutes, reviews}
-  saveTimers: {},       // debounce per cell
-  activeCell: null,     // currently focused td
-  mode: 'week',         // 'week' | 'template'
+  weekStart: null,   // Date (Sunday at midnight)
+  cells: {},         // key `${dayIndex}_${slot}` → {content, color, isFixed}
+  activitySlots: {}, // key `${dayIndex}_${slot}` → {eventsCount, lastEventAt}
+  saveTimers: {},    // debounce per cell
+  activeCell: null,  // currently focused td
+  fillDrag: null,    // { source: { content, color, isFixed }, paintedKeys:Set<string> }
+  suppressNextClick: false,
+  nowMarkerTimer: null,
 };
 
 function plannerWeekStart(date) {
@@ -3106,23 +3250,22 @@ function plannerWeekLabel(sunday) {
   return `${fmt(sunday)} – ${fmt(sat)} ${sunday.getFullYear()}`;
 }
 
-function plannerMergedCells() {
-  // In week mode: template provides defaults, week-specific overrides
-  const merged = {};
-  for (const [key, val] of Object.entries(plannerState.template)) {
-    merged[key] = { ...val, fromTemplate: true };
-  }
-  for (const [key, val] of Object.entries(plannerState.cells)) {
-    merged[key] = { ...val, fromTemplate: false };
-  }
-  return merged;
+function plannerIsFutureSlot(weekStart, dayIndex, slot) {
+  if (!weekStart || typeof slot !== 'string') return false;
+  const [hourStr, minuteStr] = slot.split(':');
+  const hour = Number(hourStr);
+  const minute = Number(minuteStr);
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return false;
+
+  const slotDate = new Date(weekStart);
+  slotDate.setDate(slotDate.getDate() + dayIndex);
+  slotDate.setHours(hour, minute, 0, 0);
+  return slotDate.getTime() > Date.now();
 }
 
-function buildPlannerGrid(weekStart, cells) {
+function buildPlannerGrid(weekStart, cells, activitySlots = {}) {
   const wrap = document.querySelector('#planner-grid-wrap');
   wrap.innerHTML = '';
-
-  const isTemplateMode = plannerState.mode === 'template';
 
   const table = document.createElement('table');
   table.className = 'planner-table';
@@ -3132,17 +3275,13 @@ function buildPlannerGrid(weekStart, cells) {
   const thead = document.createElement('thead');
   let hrow = '<tr><th class="planner-th-time"></th>';
   for (let d = 0; d < 7; d++) {
-    if (isTemplateMode) {
-      hrow += `<th class="planner-th-day"><div>${PLANNER_DAYS[d]}</div></th>`;
-    } else {
-      const date = new Date(weekStart);
-      date.setDate(date.getDate() + d);
-      const isToday = plannerDateStr(date) === plannerDateStr(new Date());
-      hrow += `<th class="planner-th-day${isToday ? ' planner-today-col' : ''}">
-        <div>${PLANNER_DAYS[d]}</div>
-        <div class="planner-date-num">${date.getDate()}/${date.getMonth()+1}</div>
-      </th>`;
-    }
+    const date = new Date(weekStart);
+    date.setDate(date.getDate() + d);
+    const isToday = plannerDateStr(date) === plannerDateStr(new Date());
+    hrow += `<th class="planner-th-day${isToday ? ' planner-today-col' : ''}">
+      <div>${PLANNER_DAYS[d]}</div>
+      <div class="planner-date-num">${date.getDate()}/${date.getMonth()+1}</div>
+    </th>`;
   }
   hrow += '</tr>';
   thead.innerHTML = hrow;
@@ -3156,36 +3295,29 @@ function buildPlannerGrid(weekStart, cells) {
     timeTd.textContent = slot;
     tr.appendChild(timeTd);
 
-    const slotHour = parseInt(slot.split(':')[0], 10);
-
     for (let d = 0; d < 7; d++) {
       const key = `${d}_${slot}`;
       const cell = cells[key] || {};
       const td = document.createElement('td');
+      td.className = 'planner-cell';
       td.dataset.day = d;
       td.dataset.slot = slot;
       td.dataset.color = cell.color || '';
+      td.dataset.fixed = cell.isFixed ? '1' : '';
       if (cell.color) td.style.background = cell.color;
-
-      // Class: template origin shown lighter in week mode
-      const isFromTemplate = !isTemplateMode && cell.fromTemplate;
-      td.className = 'planner-cell' + (isFromTemplate ? ' planner-cell-tmpl' : '');
-
-      // Content + activity badge
       td.textContent = cell.content || '';
-
-      // Activity minutes badge (week mode only)
-      if (!isTemplateMode) {
-        const act = plannerState.activity[`${d}_${slotHour}`];
-        if (act && act.minutes > 0) {
-          const badge = document.createElement('span');
-          badge.className = 'planner-act-badge';
-          badge.textContent = `${act.minutes}m`;
-          badge.title = `${act.reviews} repaso${act.reviews !== 1 ? 's' : ''} (~${act.minutes} min)`;
-          td.appendChild(badge);
-        }
+      const slotActivity = activitySlots[key];
+      if (slotActivity && !plannerIsFutureSlot(weekStart, d, slot)) {
+        td.classList.add('planner-cell-study-active');
+        td.dataset.activityCount = String(slotActivity.eventsCount || 0);
+        const activityDate = slotActivity.lastEventAt ? new Date(slotActivity.lastEventAt) : null;
+        const activityTime = activityDate && !Number.isNaN(activityDate.getTime())
+          ? activityDate.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
+          : null;
+        td.title = slotActivity.eventsCount === 1
+          ? `1 actividad de estudio${activityTime ? ` · última: ${activityTime}` : ''}`
+          : `${slotActivity.eventsCount} actividades de estudio${activityTime ? ` · última: ${activityTime}` : ''}`;
       }
-
       tbody.appendChild(tr);
       tr.appendChild(td);
     }
@@ -3195,10 +3327,79 @@ function buildPlannerGrid(weekStart, cells) {
 
   // Event delegation on the table
   table.addEventListener('click', (e) => {
+    if (plannerState.suppressNextClick) {
+      plannerState.suppressNextClick = false;
+      return;
+    }
     const td = e.target.closest('.planner-cell');
     if (!td) return;
     plannerActivateCell(td);
   });
+  table.addEventListener('mousedown', plannerOnGridMouseDown);
+  table.addEventListener('mouseover', plannerOnGridMouseOver);
+}
+
+function plannerCurrentSlotKey(now = new Date()) {
+  const day = now.getDay();
+  const hour = now.getHours();
+  const minute = now.getMinutes();
+  if (hour < 6 || hour >= 22) return null;
+  const normalizedMinute = minute < 30 ? '00' : '30';
+  return `${day}_${String(hour).padStart(2, '0')}:${normalizedMinute}`;
+}
+
+function plannerMarkCurrentSlot() {
+  document.querySelectorAll('.planner-current-slot').forEach((el) => {
+    el.classList.remove('planner-current-slot');
+  });
+  if (!plannerState.weekStart) return;
+  if (plannerDateStr(plannerWeekStart(new Date())) !== plannerDateStr(plannerState.weekStart)) return;
+  const key = plannerCurrentSlotKey(new Date());
+  if (!key) return;
+  const [day, slot] = key.split('_');
+  const cell = document.querySelector(`#planner-table td[data-day="${day}"][data-slot="${slot}"]`);
+  if (cell) cell.classList.add('planner-current-slot');
+}
+
+function plannerCellSnapshot(td) {
+  return {
+    content: td.textContent.trim(),
+    color: td.dataset.color || '',
+    isFixed: td.dataset.fixed === '1'
+  };
+}
+
+function plannerCellKey(td) {
+  return `${td.dataset.day}_${td.dataset.slot}`;
+}
+
+function plannerPaintCell(td, source) {
+  td.textContent = source.content;
+  td.dataset.color = source.color;
+  td.style.background = source.color || '';
+  td.dataset.fixed = source.isFixed ? '1' : '';
+  plannerSaveCell(td);
+}
+
+function plannerOnGridMouseDown(e) {
+  const td = e.target.closest('.planner-cell');
+  if (!td || !e.altKey) return;
+  e.preventDefault();
+  plannerState.suppressNextClick = true;
+  plannerState.fillDrag = {
+    source: plannerCellSnapshot(td),
+    paintedKeys: new Set([plannerCellKey(td)])
+  };
+}
+
+function plannerOnGridMouseOver(e) {
+  if (!plannerState.fillDrag) return;
+  const td = e.target.closest('.planner-cell');
+  if (!td) return;
+  const key = plannerCellKey(td);
+  if (plannerState.fillDrag.paintedKeys.has(key)) return;
+  plannerState.fillDrag.paintedKeys.add(key);
+  plannerPaintCell(td, plannerState.fillDrag.source);
 }
 
 function plannerActivateCell(td) {
@@ -3220,6 +3421,8 @@ function plannerActivateCell(td) {
 
   // Show color bar highlight for active color
   updateColorBarSelection(td.dataset.color);
+  const fixedToggle = document.querySelector('#planner-fixed-toggle');
+  if (fixedToggle) fixedToggle.checked = td.dataset.fixed === '1';
 
   td.addEventListener('blur', plannerOnCellBlur, { once: true });
   td.addEventListener('keydown', plannerOnCellKeydown);
@@ -3272,42 +3475,20 @@ function plannerSaveCell(td) {
   const key = `${td.dataset.day}_${td.dataset.slot}`;
   const content = td.textContent.trim();
   const color   = td.dataset.color || '';
-  const dayIndex = parseInt(td.dataset.day);
+  const isFixed = td.dataset.fixed === '1';
 
   clearTimeout(plannerState.saveTimers[key]);
   plannerState.saveTimers[key] = setTimeout(async () => {
+    const start = plannerDateStr(plannerState.weekStart);
     try {
-      if (plannerState.mode === 'template') {
-        await postJson('/planner/template/slot', {
-          day_index: dayIndex,
-          slot_time: td.dataset.slot,
-          content,
-          color: color || null
-        }, 'PUT');
-        // Update local template state
-        const tKey = `${dayIndex}_${td.dataset.slot}`;
-        if (content || color) {
-          plannerState.template[tKey] = { content, color };
-        } else {
-          delete plannerState.template[tKey];
-        }
-      } else {
-        const start = plannerDateStr(plannerState.weekStart);
-        await postJson('/planner/slot', {
-          week_start: start,
-          day_index:  dayIndex,
-          slot_time:  td.dataset.slot,
-          content,
-          color: color || null
-        }, 'PUT');
-        // Update local week state
-        const wKey = `${dayIndex}_${td.dataset.slot}`;
-        if (content || color) {
-          plannerState.cells[wKey] = { content, color };
-        } else {
-          delete plannerState.cells[wKey];
-        }
-      }
+      await postJson('/planner/slot', {
+        week_start: start,
+        day_index:  parseInt(td.dataset.day),
+        slot_time:  td.dataset.slot,
+        content,
+        color: color || null,
+        is_fixed: isFixed
+      }, 'PUT');
     } catch (_) {}
   }, 400);
 }
@@ -3327,25 +3508,11 @@ function updateColorBarSelection(color) {
   });
 }
 
-function plannerSetMode(mode) {
-  plannerState.mode = mode;
-  const modeBtn   = document.querySelector('#planner-mode-btn');
-  const weekNav   = document.querySelector('#planner-week-nav');
-  const isTemplate = mode === 'template';
-
-  if (modeBtn) {
-    modeBtn.textContent = isTemplate ? '← Semana' : '↻ Plantilla';
-    modeBtn.title = isTemplate ? 'Volver a vista semanal' : 'Editar bloques que se repiten cada semana';
-    modeBtn.classList.toggle('btn-primary', isTemplate);
-    modeBtn.classList.toggle('btn-secondary', !isTemplate);
-  }
-  if (weekNav) weekNav.style.display = isTemplate ? 'none' : 'flex';
-
-  if (isTemplate) {
-    buildPlannerGrid(plannerState.weekStart, plannerState.template);
-  } else {
-    buildPlannerGrid(plannerState.weekStart, plannerMergedCells());
-  }
+function plannerSetFixedForActiveCell(isFixed) {
+  const td = plannerState.activeCell;
+  if (!td) return;
+  td.dataset.fixed = isFixed ? '1' : '';
+  plannerSaveCell(td);
 }
 
 async function loadPlannerWeek(weekStart) {
@@ -3355,35 +3522,27 @@ async function loadPlannerWeek(weekStart) {
 
   const start = plannerDateStr(weekStart);
   try {
-    const [weekData, actData] = await Promise.all([
-      getJson(`/planner/week?start=${start}`),
-      getJson(`/planner/slot-activity?week_start=${start}`).catch(() => ({ slots: [] }))
-    ]);
-
+    const data = await getJson(`/planner/week?start=${start}`);
     const cells = {};
-    for (const row of (weekData.slots || [])) {
-      cells[`${row.day_index}_${row.slot_time}`] = { content: row.content || '', color: row.color || '' };
+    const activitySlots = {};
+    for (const row of (data.slots || [])) {
+      cells[`${row.day_index}_${row.slot_time}`] = {
+        content: row.content || '',
+        color: row.color || '',
+        isFixed: row.is_fixed === true
+      };
     }
-    const template = {};
-    for (const row of (weekData.template || [])) {
-      template[`${row.day_index}_${row.slot_time}`] = { content: row.content || '', color: row.color || '' };
+    for (const row of (data.activity_slots || [])) {
+      activitySlots[`${row.day_index}_${row.slot_time}`] = {
+        eventsCount: Number(row.events_count || 0),
+        lastEventAt: row.last_event_at || null
+      };
     }
-    const activity = {};
-    for (const row of (actData.slots || [])) {
-      activity[`${row.day_index}_${row.hour}`] = { minutes: Number(row.minutes), reviews: Number(row.reviews) };
-    }
-
-    plannerState.cells    = cells;
-    plannerState.template = template;
-    plannerState.activity = activity;
-
+    plannerState.cells = cells;
+    plannerState.activitySlots = activitySlots;
     document.querySelector('#planner-loading').classList.add('hidden');
-
-    if (plannerState.mode === 'template') {
-      buildPlannerGrid(weekStart, plannerState.template);
-    } else {
-      buildPlannerGrid(weekStart, plannerMergedCells());
-    }
+    buildPlannerGrid(weekStart, cells, activitySlots);
+    plannerMarkCurrentSlot();
   } catch (err) {
     document.querySelector('#planner-loading').textContent = `Error: ${err.message}`;
   }
@@ -3392,6 +3551,11 @@ async function loadPlannerWeek(weekStart) {
 function initPlannerTab() {
   const weekStart = plannerWeekStart(new Date());
   loadPlannerWeek(weekStart);
+  plannerState.nowMarkerTimer = setInterval(plannerMarkCurrentSlot, 30000);
+
+  document.addEventListener('mouseup', () => {
+    plannerState.fillDrag = null;
+  });
 
   document.querySelector('#planner-prev').addEventListener('click', () => {
     const prev = new Date(plannerState.weekStart);
@@ -3407,13 +3571,12 @@ function initPlannerTab() {
     loadPlannerWeek(plannerWeekStart(new Date()));
   });
 
-  document.querySelector('#planner-mode-btn')?.addEventListener('click', () => {
-    plannerSetMode(plannerState.mode === 'template' ? 'week' : 'template');
-  });
+  const fixedToggle = document.querySelector('#planner-fixed-toggle');
+  fixedToggle.addEventListener('mousedown', (e) => e.preventDefault());
+  fixedToggle.addEventListener('change', () => plannerSetFixedForActiveCell(fixedToggle.checked));
 
-  // Fix: prevent blur when clicking color swatches
   document.querySelectorAll('.planner-swatch').forEach(btn => {
-    btn.addEventListener('mousedown', e => e.preventDefault());
+    btn.addEventListener('mousedown', (e) => e.preventDefault());
     btn.addEventListener('click', () => plannerApplyColor(btn.dataset.color));
   });
 }
