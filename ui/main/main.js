@@ -2178,6 +2178,7 @@ function initStudyTab() {
   document.querySelector('#study-exit-btn').addEventListener('click', exitStudySession);
   document.querySelector('#study-edit-prompt-btn').addEventListener('click', toggleStudyPromptEdit);
   document.querySelector('#study-clarify-prompt-btn').addEventListener('click', clarifyStudyPrompt);
+  document.querySelector('#study-delete-btn').addEventListener('click', deleteCurrentStudyCardFromFront);
 
   // Link to show overview/add-card from briefing
   document.querySelector('#briefing-overview-link').addEventListener('click', () => {
@@ -2580,9 +2581,11 @@ function showStudyCard() {
   const editPromptBtn = document.querySelector('#study-edit-prompt-btn');
   const backBtn = document.querySelector('#study-back-btn');
   const clarifyPromptBtn = document.querySelector('#study-clarify-prompt-btn');
+  const deleteBtn = document.querySelector('#study-delete-btn');
   if (editPromptBtn) editPromptBtn.textContent = 'Editar';
   if (backBtn) backBtn.disabled = studyState.index === 0;
   if (clarifyPromptBtn) clarifyPromptBtn.disabled = false;
+  if (deleteBtn) deleteBtn.hidden = item.type !== 'card';
 
   // Reset answer + result blocks (refresh SQL layer to clear ghost text)
   const _studyInput = document.querySelector('#study-answer-input');
@@ -3013,6 +3016,41 @@ async function archiveCurrentStudyCard(reason) {
   }
 
   await postJson(`/cards/${currentItem.data.id}/archive`, { reason }, 'PATCH');
+}
+
+async function deleteCurrentStudyCardFromFront() {
+  const item = studyState.queue[studyState.index];
+  if (!item || item.type !== 'card') return;
+
+  const reason = (window.prompt('Motivo para eliminar la tarjeta (mínimo 5 caracteres):', 'Eliminada desde el frente de la tarjeta') || '').trim();
+  if (!reason) return;
+  if (reason.length < 5) {
+    alert('Ingresá un motivo de al menos 5 caracteres.');
+    return;
+  }
+
+  const deleteBtn = document.querySelector('#study-delete-btn');
+  if (deleteBtn) {
+    deleteBtn.disabled = true;
+    deleteBtn.textContent = 'Eliminando...';
+  }
+
+  try {
+    await archiveCurrentStudyCard(reason);
+    studyState.queue.splice(studyState.index, 1);
+    if (studyState.index >= studyState.queue.length) {
+      studyState.index = Math.max(0, studyState.queue.length - 1);
+    }
+    persistStudySession();
+    showStudyCard();
+  } catch (err) {
+    alert(`No se pudo eliminar la tarjeta: ${err.message}`);
+  } finally {
+    if (deleteBtn) {
+      deleteBtn.disabled = false;
+      deleteBtn.textContent = 'Eliminar';
+    }
+  }
 }
 
 const studyDecisionBlock = document.querySelector('#study-decision-block');
