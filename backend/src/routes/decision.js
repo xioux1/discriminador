@@ -442,20 +442,30 @@ async function syncSchedulerCard(pool, {
     if (already.rows.length) continue;
 
     try {
-      const micro = await generateMicroCard({
-        prompt_text: card.prompt_text,
-        expected_answer_text: card.expected_answer_text,
-        subject: card.subject,
-        concept
-      });
+      let micro;
+      try {
+        micro = await generateMicroCard({
+          prompt_text: card.prompt_text,
+          expected_answer_text: card.expected_answer_text,
+          subject: card.subject,
+          concept
+        });
+      } catch (generationError) {
+        console.warn(`[scheduler sync] micro-card gen failed for "${concept}", using fallback:`, generationError.message);
+        micro = {
+          question: `¿Qué es "${concept}" y por qué es importante?`,
+          expected_answer: ''
+        };
+      }
+
       await pool.query(
-        `INSERT INTO micro_cards (parent_card_id, concept, question, expected_answer)
-         VALUES ($1, $2, $3, $4)`,
-        [card.id, concept, micro.question, micro.expected_answer]
+        `INSERT INTO micro_cards (parent_card_id, concept, question, expected_answer, user_id)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [card.id, concept, micro.question, micro.expected_answer, user_id]
       );
       console.info(`[scheduler sync] micro-card created for concept "${concept}" (card ${card.id})`);
     } catch (e) {
-      console.warn(`[scheduler sync] micro-card gen failed for "${concept}":`, e.message);
+      console.warn(`[scheduler sync] micro-card persist failed for "${concept}":`, e.message);
     }
   }
 }
