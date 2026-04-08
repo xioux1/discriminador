@@ -3787,6 +3787,9 @@ async function loadAgenda() {
             <span class="agenda-interval">${intervalStr} · ${card.review_count} revis. · ${card.pass_count} ok</span>
           </div>
           <p class="agenda-card-prompt">${truncate(card.prompt_text, 120)}</p>
+          <div class="agenda-card-actions">
+            <button type="button" class="btn-ghost agenda-delete-btn" data-card-id="${card.id}">Eliminar</button>
+          </div>
           ${micros.length ? `
             <div class="agenda-micros">
               ${micros.map((m) => `
@@ -3799,6 +3802,29 @@ async function loadAgenda() {
             </div>
           ` : ''}
         `;
+
+        const deleteBtn = cardEl.querySelector('.agenda-delete-btn');
+        if (deleteBtn) {
+          deleteBtn.addEventListener('click', async () => {
+            const reason = (window.prompt('Motivo para eliminar la tarjeta (mínimo 5 caracteres):', 'Eliminada desde sección estudio') || '').trim();
+            if (!reason) return;
+            if (reason.length < 5) {
+              alert('Ingresá un motivo de al menos 5 caracteres.');
+              return;
+            }
+
+            deleteBtn.disabled = true;
+            deleteBtn.textContent = 'Eliminando...';
+            try {
+              await postJson(`/cards/${card.id}/archive`, { reason }, 'PATCH');
+              await loadAgenda();
+            } catch (err) {
+              alert(`No se pudo eliminar la tarjeta: ${err.message}`);
+              deleteBtn.disabled = false;
+              deleteBtn.textContent = 'Eliminar';
+            }
+          });
+        }
         section.appendChild(cardEl);
       }
 

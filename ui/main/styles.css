@@ -712,6 +712,9 @@ textarea:focus, input[type="text"]:focus, select:focus {
 .study-clarify-prompt-btn { font-size: 0.78rem; padding: 2px 8px; }
 .study-flag-btn { font-size: 0.78rem; padding: 2px 8px; color: var(--text-muted); opacity: 0.6; }
 .study-flag-btn:hover { opacity: 1; color: #c0392b; }
+.agenda-card-actions { display: flex; justify-content: flex-end; margin-top: 8px; }
+.agenda-delete-btn { font-size: 0.75rem; padding: 2px 8px; color: #a94442; }
+.agenda-delete-btn:hover { color: #8a1f1f; }
 .study-mode-toggle { font-size: 0.78rem; padding: 2px 8px; }
 .study-prompt-feedback { margin: 0 0 10px; font-size: 0.82rem; color: var(--text-muted); }
 
