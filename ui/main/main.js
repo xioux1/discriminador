@@ -1453,7 +1453,7 @@ function renderResult(result) {
   }
   const concepts = result.missing_concepts;
   if (concepts && concepts.length > 0) {
-    missingEl.innerHTML = `<strong>Conceptos ausentes:</strong> ${concepts.map((c) => `<span class="concept-tag">${c}</span>`).join(' ')}`;
+    missingEl.innerHTML = `<strong>Conceptos ausentes:</strong> ${concepts.map((c) => `<span class="concept-tag">${escHtml(c)}</span>`).join(' ')}`;
     missingEl.classList.remove('hidden');
   } else {
     missingEl.textContent = '';
