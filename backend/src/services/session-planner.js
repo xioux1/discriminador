@@ -121,10 +121,12 @@ async function getPrioritizedOrder({ availableMinutes, energyLevel, cards, micro
     system: `Sos un tutor que organiza sesiones de estudio. Tu única tarea es ORDENAR las tarjetas por prioridad — no calculés cuántas entran ni tiempos, eso lo hace el sistema.
 
 Criterios de orden (de mayor a menor prioridad):
-1. Micro-tarjetas vencidas (remediales — siempre primero).
-2. Tarjetas con examen en ≤ 7 días, ordenadas por urgencia.
-3. Tarjetas con active_micro_count > 0 (tienen conceptos pendientes).
-4. Resto por fecha de vencimiento (más atrasadas primero).
+1. Micro-tarjetas con created_today=true (remediales frescas — detectadas hoy, siempre primero).
+2. Tarjetas generales con has_micro_in_queue=true: mostralas ANTES que sus micros. Razón: si se responde bien la general, las micros se archivan automáticamente y no hace falta revisarlas.
+3. Micro-tarjetas con parent_also_due=true: solo después de que su tarjeta general ya fue incluida en el orden.
+4. Tarjetas con examen en ≤ 7 días, ordenadas por urgencia.
+5. Micro-tarjetas con parent_also_due=false (la tarjeta general no está en la cola hoy).
+6. Resto por fecha de vencimiento (más atrasadas primero).
 
 Si energyLevel='tired': preferí tarjetas con higher pass_count (más familiares) sobre tarjetas nuevas.
 Si energyLevel='focused': podés incluir tarjetas más desafiantes primero.
@@ -159,10 +161,27 @@ Respondé ÚNICAMENTE con JSON válido:
 }
 
 function buildFallbackOrder({ cards, microCards }) {
-  const order = [];
-  for (const m of microCards) order.push({ type: 'micro', id: m.id, reason: 'vencida' });
-  for (const c of cards)      order.push({ type: 'card',  id: c.id, reason: 'vencida' });
-  return order;
+  const todayStr   = new Date().toISOString().slice(0, 10);
+  const dueCardIds = new Set(cards.map(c => c.id));
+
+  // Remediales frescas: micros creadas hoy (el gap fue detectado esta sesión) → primero siempre
+  const remedialMicros   = microCards.filter(m => m.created_at?.slice(0, 10) === todayStr);
+  // Dependientes: la tarjeta general también está en cola → van DESPUÉS de la general
+  const dependentMicros  = microCards.filter(m => m.created_at?.slice(0, 10) !== todayStr && dueCardIds.has(m.parent_card_id));
+  // Standalone: la tarjeta general no está en cola hoy
+  const standaloneMicros = microCards.filter(m => m.created_at?.slice(0, 10) !== todayStr && !dueCardIds.has(m.parent_card_id));
+
+  const parentIds      = new Set(dependentMicros.map(m => m.parent_card_id));
+  const parentsFirst   = cards.filter(c =>  parentIds.has(c.id)); // generales con micros en cola → revisar antes
+  const remainingCards = cards.filter(c => !parentIds.has(c.id));
+
+  return [
+    ...remedialMicros.map(m   => ({ type: 'micro', id: m.id, reason: 'remedial-hoy' })),
+    ...parentsFirst.map(c     => ({ type: 'card',  id: c.id, reason: 'general-primero' })),
+    ...dependentMicros.map(m  => ({ type: 'micro', id: m.id, reason: 'dependiente' })),
+    ...standaloneMicros.map(m => ({ type: 'micro', id: m.id, reason: 'vencida' })),
+    ...remainingCards.map(c   => ({ type: 'card',  id: c.id, reason: 'vencida' })),
+  ];
 }
 
 function buildItemMap(cards, microCards) {
@@ -188,10 +207,17 @@ function buildUserMessage({ availableMinutes, energyLevel, cards, microCards, su
     };
   }
 
+  const todayStr      = now.toISOString().slice(0, 10);
+  const dueCardIds    = new Set(cards.map(c => c.id));
+  const microParentIds = new Set(microCards.map(m => m.parent_card_id));
+
   const microSummary = microCards.map((m) => ({
     id: m.id, type: 'micro',
     concept: m.concept,
     parent_subject: m.parent_subject,
+    parent_card_id: m.parent_card_id,
+    created_today:   m.created_at?.slice(0, 10) === todayStr,
+    parent_also_due: dueCardIds.has(m.parent_card_id),
     ...examInfo(m.parent_subject),
   }));
 
@@ -201,6 +227,7 @@ function buildUserMessage({ availableMinutes, energyLevel, cards, microCards, su
     pass_count: c.pass_count,
     review_count: c.review_count,
     active_micro_count: parseInt(c.active_micro_count) || 0,
+    has_micro_in_queue: microParentIds.has(c.id),
     ...examInfo(c.subject),
   }));
 

@@ -44,7 +44,7 @@ sessionPlannerRouter.post('/session/plan', async (req, res) => {
     const microResult = await dbPool.query(
       `SELECT mc.id, mc.concept, mc.parent_card_id, mc.question, mc.expected_answer,
               mc.interval_days, mc.ease_factor, mc.next_review_at, mc.review_count,
-              mc.status,
+              mc.status, mc.created_at,
               c.subject AS parent_subject,
               c.avg_response_time_ms AS parent_avg_response_time_ms,
               c.prompt_text AS parent_prompt,
