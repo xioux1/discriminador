@@ -2585,7 +2585,7 @@ function showStudyCard() {
   if (editPromptBtn) editPromptBtn.textContent = 'Editar';
   if (backBtn) backBtn.disabled = studyState.index === 0;
   if (clarifyPromptBtn) clarifyPromptBtn.disabled = false;
-  if (deleteBtn) deleteBtn.hidden = item.type !== 'card';
+  if (deleteBtn) deleteBtn.hidden = !['card', 'micro'].includes(item.type);
 
   // Reset answer + result blocks (refresh SQL layer to clear ghost text)
   const _studyInput = document.querySelector('#study-answer-input');
@@ -3008,19 +3008,22 @@ function resolveStudyFinalGrade(action, suggestedGrade) {
 
 async function archiveCurrentStudyCard(reason) {
   const currentItem = studyState.queue[studyState.index];
-  if (!currentItem || currentItem.type !== 'card') {
-    throw new Error('Solo se pueden archivar tarjetas principales.');
+  if (!currentItem || !['card', 'micro'].includes(currentItem.type)) {
+    throw new Error('No hay una tarjeta válida para eliminar.');
   }
   if (!reason || reason.length < 5) {
     throw new Error('Indicá un motivo de al menos 5 caracteres para archivar.');
   }
 
-  await postJson(`/cards/${currentItem.data.id}/archive`, { reason }, 'PATCH');
+  const path = currentItem.type === 'card'
+    ? `/cards/${currentItem.data.id}/archive`
+    : `/micro-cards/${currentItem.data.id}/archive`;
+  await postJson(path, { reason }, 'PATCH');
 }
 
 async function deleteCurrentStudyCardFromFront() {
   const item = studyState.queue[studyState.index];
-  if (!item || item.type !== 'card') return;
+  if (!item || !['card', 'micro'].includes(item.type)) return;
 
   const reason = (window.prompt('Motivo para eliminar la tarjeta (mínimo 5 caracteres):', 'Eliminada desde el frente de la tarjeta') || '').trim();
   if (!reason) return;
