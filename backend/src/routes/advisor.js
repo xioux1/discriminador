@@ -129,8 +129,20 @@ advisorRouter.get('/advisor/analysis/:subject', async (req, res) => {
 
     return res.json(result);
   } catch (err) {
-    console.error('GET /advisor/analysis/:subject error', err.message);
-    return res.status(500).json({ error: 'server_error', message: err.message });
+    const rawMessage = String(err?.message || 'Error desconocido');
+    const isCreditsError = /credit balance is too low/i.test(rawMessage);
+    const status = Number(err?.status) || Number(err?.statusCode) || (isCreditsError ? 503 : 500);
+
+    if (isCreditsError) {
+      console.error('GET /advisor/analysis/:subject provider_credits_exhausted', rawMessage);
+      return res.status(503).json({
+        error: 'llm_credits_exhausted',
+        message: 'El servicio de análisis está temporalmente no disponible por falta de créditos del proveedor LLM. Reintentá en unos minutos.'
+      });
+    }
+
+    console.error('GET /advisor/analysis/:subject error', rawMessage);
+    return res.status(status >= 400 && status < 600 ? status : 500).json({ error: 'server_error', message: rawMessage });
   }
 });
 

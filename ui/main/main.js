@@ -3257,7 +3257,16 @@ async function getJson(url) {
   });
   Auth.handleRefreshToken(res);
   if (res.status === 401) { if (Auth.isLoggedIn()) Auth.logout(); return null; }
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) {
+    let reason = '';
+    try {
+      const data = await res.json();
+      reason = data?.message || data?.error || '';
+    } catch (_e) {
+      // noop: fallback below
+    }
+    throw new Error(reason ? `${reason} (HTTP ${res.status})` : `HTTP ${res.status}`);
+  }
   return res.json();
 }
 
