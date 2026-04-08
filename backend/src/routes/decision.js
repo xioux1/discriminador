@@ -340,8 +340,9 @@ async function syncSchedulerCard(pool, {
      WHERE mc.user_id = $1
        AND mc.status = 'active'
        AND mc.question = $2
-       AND mc.expected_answer = $3
-     ORDER BY mc.id DESC
+     ORDER BY
+       CASE WHEN mc.expected_answer = $3 THEN 0 ELSE 1 END,
+       mc.id DESC
      LIMIT 1`,
     [user_id, prompt_text, expected_answer_text]
   );
@@ -367,6 +368,23 @@ async function syncSchedulerCard(pool, {
       [schedule.interval_days, schedule.ease_factor, schedule.next_review_at, nextStatus, micro.id]
     );
 
+    return;
+  }
+
+
+  // Safety rail: micro-cards never spawn new micro-cards.
+  // If the prompt belongs to any historical micro-card, stop the scheduler sync here.
+  const historicalMicroMatch = await pool.query(
+    `SELECT id
+     FROM micro_cards
+     WHERE user_id = $1
+       AND question = $2
+     ORDER BY id DESC
+     LIMIT 1`,
+    [user_id, prompt_text]
+  );
+
+  if (historicalMicroMatch.rows.length) {
     return;
   }
 
