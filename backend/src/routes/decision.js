@@ -360,8 +360,14 @@ async function syncSchedulerCard(pool, {
 
   // Find or create the card
   const existing = await pool.query(
-    'SELECT * FROM cards WHERE user_id = $1 AND prompt_text = $2 AND archived_at IS NULL LIMIT 1',
-    [user_id, prompt_text]
+    `SELECT *
+       FROM cards
+      WHERE user_id = $1
+        AND prompt_text = $2
+        AND expected_answer_text = $3
+        AND archived_at IS NULL
+      LIMIT 1`,
+    [user_id, prompt_text, expected_answer_text]
   );
 
   let card;
