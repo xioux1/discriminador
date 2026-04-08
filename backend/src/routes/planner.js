@@ -36,20 +36,30 @@ plannerRouter.get('/planner/week', async (req, res) => {
       [userId, start]
     );
     const { rows: activityRows } = await dbPool.query(
-      `SELECT
-         EXTRACT(DOW FROM created_at)::int AS day_index,
+      `WITH localized_activity AS (
+         SELECT
+           created_at AT TIME ZONE 'America/Argentina/Buenos_Aires' AS local_created_at,
+           response_time_ms
+         FROM activity_log
+         WHERE user_id = $1
+           AND activity_type IN ('study', 'evaluate')
+       )
+       SELECT
+         EXTRACT(DOW FROM local_created_at)::int AS day_index,
          to_char(
-           date_trunc('hour', created_at)
-           + (CASE WHEN EXTRACT(MINUTE FROM created_at) >= 30 THEN INTERVAL '30 minutes' ELSE INTERVAL '0 minutes' END),
+           date_trunc('hour', local_created_at)
+           + (CASE WHEN EXTRACT(MINUTE FROM local_created_at) >= 30 THEN INTERVAL '30 minutes' ELSE INTERVAL '0 minutes' END),
            'HH24:MI'
          ) AS slot_time,
          COUNT(*)::int AS events_count,
-         MAX(created_at) AS last_event_at
-       FROM activity_log
-       WHERE user_id = $1
-         AND activity_type IN ('study', 'evaluate')
-         AND created_at >= $2::date
-         AND created_at < ($2::date + INTERVAL '7 day')
+         ROUND(
+           LEAST(30, COALESCE(SUM(response_time_ms), 0) / 60000.0)::numeric,
+           1
+         ) AS effective_minutes,
+         MAX(local_created_at) AS last_event_at
+       FROM localized_activity
+       WHERE local_created_at >= $2::date
+         AND local_created_at < ($2::date + INTERVAL '7 day')
        GROUP BY day_index, slot_time
        ORDER BY day_index, slot_time`,
       [userId, start]

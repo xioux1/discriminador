@@ -1688,6 +1688,19 @@ body { letter-spacing: 0.01em; }
   background: #1f9d62;
   opacity: 0.85;
 }
+.planner-cell-effective-minutes {
+  position: absolute;
+  right: 12px;
+  top: 2px;
+  font-size: 0.58rem;
+  line-height: 1;
+  color: #236948;
+  opacity: 0.9;
+  pointer-events: none;
+}
+.planner-cell-active .planner-cell-effective-minutes {
+  display: none;
+}
 .planner-current-slot {
   outline: 2px solid #1f9d62 !important;
   outline-offset: -2px;

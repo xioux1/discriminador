@@ -3250,6 +3250,19 @@ function plannerWeekLabel(sunday) {
   return `${fmt(sunday)} – ${fmt(sat)} ${sunday.getFullYear()}`;
 }
 
+function plannerIsFutureSlot(weekStart, dayIndex, slot) {
+  if (!weekStart || typeof slot !== 'string') return false;
+  const [hourStr, minuteStr] = slot.split(':');
+  const hour = Number(hourStr);
+  const minute = Number(minuteStr);
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return false;
+
+  const slotDate = new Date(weekStart);
+  slotDate.setDate(slotDate.getDate() + dayIndex);
+  slotDate.setHours(hour, minute, 0, 0);
+  return slotDate.getTime() > Date.now();
+}
+
 function buildPlannerGrid(weekStart, cells, activitySlots = {}) {
   const wrap = document.querySelector('#planner-grid-wrap');
   wrap.innerHTML = '';
@@ -3294,16 +3307,26 @@ function buildPlannerGrid(weekStart, cells, activitySlots = {}) {
       if (cell.color) td.style.background = cell.color;
       td.textContent = cell.content || '';
       const slotActivity = activitySlots[key];
-      if (slotActivity) {
+      if (slotActivity && !plannerIsFutureSlot(weekStart, d, slot)) {
         td.classList.add('planner-cell-study-active');
         td.dataset.activityCount = String(slotActivity.eventsCount || 0);
+        const effectiveMinutes = Number(slotActivity.effectiveMinutes || 0);
+        if (effectiveMinutes > 0) {
+          const effectiveLabel = document.createElement('span');
+          effectiveLabel.className = 'planner-cell-effective-minutes';
+          effectiveLabel.textContent = `${effectiveMinutes % 1 === 0 ? effectiveMinutes.toFixed(0) : effectiveMinutes.toFixed(1)}m`;
+          td.appendChild(effectiveLabel);
+        }
         const activityDate = slotActivity.lastEventAt ? new Date(slotActivity.lastEventAt) : null;
         const activityTime = activityDate && !Number.isNaN(activityDate.getTime())
           ? activityDate.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
           : null;
+        const minutesTitle = effectiveMinutes > 0
+          ? ` · tiempo efectivo: ${effectiveMinutes % 1 === 0 ? effectiveMinutes.toFixed(0) : effectiveMinutes.toFixed(1)} min`
+          : '';
         td.title = slotActivity.eventsCount === 1
-          ? `1 actividad de estudio${activityTime ? ` · última: ${activityTime}` : ''}`
-          : `${slotActivity.eventsCount} actividades de estudio${activityTime ? ` · última: ${activityTime}` : ''}`;
+          ? `1 actividad de estudio${minutesTitle}${activityTime ? ` · última: ${activityTime}` : ''}`
+          : `${slotActivity.eventsCount} actividades de estudio${minutesTitle}${activityTime ? ` · última: ${activityTime}` : ''}`;
       }
       tbody.appendChild(tr);
       tr.appendChild(td);
@@ -3522,6 +3545,7 @@ async function loadPlannerWeek(weekStart) {
     for (const row of (data.activity_slots || [])) {
       activitySlots[`${row.day_index}_${row.slot_time}`] = {
         eventsCount: Number(row.events_count || 0),
+        effectiveMinutes: Number(row.effective_minutes || 0),
         lastEventAt: row.last_event_at || null
       };
     }
