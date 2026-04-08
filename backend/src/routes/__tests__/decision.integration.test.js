@@ -322,10 +322,22 @@ function installSchedulerFlowDbMock() {
     if (compactSql.startsWith('SELECT mc.* FROM micro_cards mc WHERE mc.user_id = $1')) {
       const [userId, promptText, expectedAnswerText] = params;
       const found = state.microCards
-        .filter((row) => row.user_id === userId && row.status === 'active'
-          && row.question === promptText && row.expected_answer === expectedAnswerText)
-        .sort((a, b) => b.id - a.id)[0];
+        .filter((row) => row.user_id === userId && row.status === 'active' && row.question === promptText)
+        .sort((a, b) => {
+          const aRank = a.expected_answer === expectedAnswerText ? 0 : 1;
+          const bRank = b.expected_answer === expectedAnswerText ? 0 : 1;
+          if (aRank !== bRank) return aRank - bRank;
+          return b.id - a.id;
+        })[0];
       return found ? { rows: [found], rowCount: 1 } : { rows: [], rowCount: 0 };
+    }
+
+    if (compactSql.startsWith('SELECT id FROM micro_cards WHERE user_id = $1')) {
+      const [userId, promptText] = params;
+      const found = state.microCards
+        .filter((row) => row.user_id === userId && row.question === promptText)
+        .sort((a, b) => b.id - a.id)[0];
+      return found ? { rows: [{ id: found.id }], rowCount: 1 } : { rows: [], rowCount: 0 };
     }
 
     if (compactSql.startsWith('SELECT * FROM cards WHERE user_id = $1')) {
@@ -515,5 +527,55 @@ test('ruta /decision corregida a PASS no crea micro-cards nuevas', async () => {
     await new Promise((resolve) => setTimeout(resolve, 80));
 
     assert.equal(state.microCards.length, 0);
+  });
+});
+
+
+test('ruta /decision sobre micro-card no crea tarjeta principal ni micro-cards hijas', async () => {
+  const state = installSchedulerFlowDbMock();
+  state.microCards.push({
+    id: state.nextMicroCardId++,
+    parent_card_id: 999,
+    concept: 'inercia',
+    question: '¿Qué es la inercia?',
+    expected_answer: 'Resistencia al cambio de movimiento',
+    user_id: 1,
+    status: 'active',
+    interval_days: 1,
+    ease_factor: 2.5,
+    review_count: 0,
+    next_review_at: new Date(Date.now() - 1000).toISOString()
+  });
+
+  await withTestServer(async (baseUrl) => {
+    const decisionResponse = await fetch(`${baseUrl}/decision`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-user-id': '1'
+      },
+      body: JSON.stringify(buildPayload({
+        action: 'correct-fail',
+        accepted_suggestion: false,
+        correction_reason: 'No explicó bien el concepto',
+        final_grade: 'fail',
+        evaluation_id: 'eval-fail-303',
+        prompt_text: '¿Qué es la inercia?',
+        expected_answer_text: 'Definición alternativa',
+        evaluation_result: {
+          overall_score: 0.2,
+          model_confidence: 0.9,
+          suggested_grade: 'FAIL',
+          dimensions: { exactitud: 0.2 }
+        }
+      }))
+    });
+
+    assert.equal(decisionResponse.status, 201);
+
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    assert.equal(state.cards.length, 0);
+    assert.equal(state.microCards.length, 1);
   });
 });
