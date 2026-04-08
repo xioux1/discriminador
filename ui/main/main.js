@@ -3244,10 +3244,12 @@ async function handleStudyNextCard() {
       response_time_ms: studyState.responseTimeMs || undefined,
       user_answer: studyState.currentEvalContext?.user_answer_text || ''
     }).then((reviewResp) => {
-      // Insert generated micro-cards right before the current card in view.
+      // Insert generated micro-cards *after* the card currently on screen.
+      // If we insert at `studyState.index`, we would silently replace the logical
+      // "current card" while the UI still shows the previous prompt.
       const newMicros = (reviewResp?.new_micro_cards ?? []).map((m) => ({ type: 'micro', data: m }));
       if (newMicros.length) {
-        studyState.queue.splice(studyState.index, 0, ...newMicros);
+        studyState.queue.splice(studyState.index + 1, 0, ...newMicros);
         persistStudySession();
       }
       loadAgenda();
