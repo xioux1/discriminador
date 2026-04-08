@@ -489,63 +489,67 @@
 
       <!-- ═══ TAB: PROGRESO ════════════════════════════════════════════════ -->
       <section id="tab-progress" class="hidden">
-        <div id="progress-loading" class="loading-hint">Cargando estadísticas...</div>
+        <div id="progress-loading" class="loading-hint">Cargando...</div>
         <div id="progress-content" class="hidden">
 
-          <!-- Streak + summary pills -->
-          <div class="card">
-            <h2>Actividad general</h2>
-            <div id="progress-pills" class="progress-pills"></div>
-          </div>
+          <div class="card progress-card">
 
-          <!-- Heatmap -->
-          <div class="card">
-            <div class="heatmap-header">
-              <h3 id="heatmap-title">Actividad (año 2026)</h3>
-              <div class="heatmap-year-nav">
-                <button id="heatmap-prev-year" class="ghost small" type="button">← Año anterior</button>
-                <button id="heatmap-next-year" class="ghost small" type="button">Año siguiente →</button>
+            <!-- Streak + summary -->
+            <div class="progress-section">
+              <p class="progress-section-label">Actividad</p>
+              <div id="progress-pills" class="progress-pills"></div>
+            </div>
+
+            <!-- Heatmap -->
+            <div class="progress-section">
+              <div class="heatmap-header">
+                <p class="progress-section-label" id="heatmap-title" style="margin:0">Historial</p>
+                <div class="heatmap-year-nav">
+                  <button id="heatmap-prev-year" class="btn-ghost" type="button" style="font-size:var(--fs-sm)">← Anterior</button>
+                  <button id="heatmap-next-year" class="btn-ghost" type="button" style="font-size:var(--fs-sm)">Siguiente →</button>
+                </div>
+              </div>
+              <div id="heatmap-container" class="heatmap-container" style="margin-top:12px">
+                <div id="heatmap-year-labels" class="heatmap-year-labels"></div>
+                <div id="heatmap-month-labels" class="heatmap-month-labels"></div>
+                <div id="heatmap-grid" class="heatmap-grid"></div>
+                <div id="heatmap-legend" class="heatmap-legend" style="margin-top:8px">
+                  <span style="color:var(--c-neutral)">Menos</span>
+                  <span class="heatmap-cell" style="--lvl:0"></span>
+                  <span class="heatmap-cell" style="--lvl:1"></span>
+                  <span class="heatmap-cell" style="--lvl:2"></span>
+                  <span class="heatmap-cell" style="--lvl:3"></span>
+                  <span class="heatmap-cell" style="--lvl:4"></span>
+                  <span style="color:var(--c-neutral)">Más</span>
+                </div>
               </div>
             </div>
-            <div id="heatmap-container" class="heatmap-container">
-              <div id="heatmap-year-labels" class="heatmap-year-labels"></div>
-              <div id="heatmap-month-labels" class="heatmap-month-labels"></div>
-              <div id="heatmap-grid" class="heatmap-grid"></div>
-              <div id="heatmap-legend" class="heatmap-legend">
-                <span>Menos</span>
-                <span class="heatmap-cell" style="--lvl:0"></span>
-                <span class="heatmap-cell" style="--lvl:1"></span>
-                <span class="heatmap-cell" style="--lvl:2"></span>
-                <span class="heatmap-cell" style="--lvl:3"></span>
-                <span class="heatmap-cell" style="--lvl:4"></span>
-                <span>Más</span>
-              </div>
+
+            <!-- Per-subject stats -->
+            <div class="progress-section">
+              <p class="progress-section-label">Por materia</p>
+              <div id="progress-subjects"></div>
             </div>
-          </div>
 
-          <!-- Per-subject stats -->
-          <div class="card">
-            <h3>Por materia</h3>
-            <div id="progress-subjects"></div>
-          </div>
+            <!-- Timing stats -->
+            <div class="progress-section">
+              <p class="progress-section-label">Tiempo de respuesta</p>
+              <div id="progress-timing-subjects"></div>
+              <div id="progress-timing-slowcards" style="margin-top:20px"></div>
+            </div>
 
-          <!-- Timing stats -->
-          <div class="card">
-            <h3>Tiempo de respuesta</h3>
-            <div id="progress-timing-subjects"></div>
-            <div id="progress-timing-slowcards" style="margin-top:16px"></div>
-          </div>
+          </div><!-- /.card -->
 
         </div>
 
         <div id="progress-advisor" class="card hidden" style="margin-top:16px">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-            <h3 style="margin:0">Análisis de curriculum</h3>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+            <p class="progress-section-label" style="margin:0">Análisis de curriculum</p>
             <select id="advisor-subject-select" class="editor-mode-select">
-              <option value="">Seleccioná una materia</option>
+              <option value="">— elegir materia —</option>
             </select>
           </div>
-          <div id="advisor-loading" class="hidden" style="color:var(--text-muted);padding:12px 0">Analizando...</div>
+          <div id="advisor-loading" class="hidden" style="color:var(--c-neutral);padding:12px 0;font-size:var(--fs-sm)">Analizando...</div>
           <div id="advisor-content"></div>
         </div>
       </section>

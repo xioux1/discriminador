@@ -23,6 +23,22 @@
   --radius-lg:  12px;
 
   --font: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  /* ── Design system tokens ───────────────────────────────── */
+  /* Text scale — 3 sizes */
+  --fs-sm:   0.75rem;   /* secondary labels, meta, captions */
+  --fs-base: 0.88rem;   /* body text, buttons */
+  --fs-lg:   1rem;      /* primary content, headings */
+
+  /* Border weight — 2 levels */
+  --bw-divider: 1px;    /* list separators, subtle rules */
+  --bw-ui:      1.5px;  /* inputs, buttons, card outlines */
+
+  /* Color roles — 4 semantic roles */
+  --c-action:  #000;          /* interactive elements (buttons, links) */
+  --c-ok:      #1a6e1a;       /* success, pass */
+  --c-warn:    #7a5200;       /* caution, review */
+  --c-neutral: var(--text-muted); /* secondary information */
 }
 
 /* ─── Reset & Base ───────────────────────────────────────────────────────────── */
@@ -161,11 +177,15 @@ textarea:focus, input[type="text"]:focus, select:focus {
 /* ─── Cards ──────────────────────────────────────────────────────────────────── */
 .card {
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: var(--bw-divider) solid var(--border);
   border-radius: var(--radius);
   padding: 20px;
   margin-bottom: 16px;
   box-shadow: var(--shadow);
+}
+/* Progress card gets extra room — it's the "jewel" screen */
+.progress-card {
+  padding: 28px 28px 8px;
 }
 
 /* ─── Utility ────────────────────────────────────────────────────────────────── */
@@ -706,21 +726,51 @@ textarea:focus, input[type="text"]:focus, select:focus {
 }
 .history-question-detail.open { display: block; }
 
-/* ─── Progress tab ───────────────────────────────────────────────────────────── */
-.progress-pills { display: flex; flex-wrap: wrap; gap: 10px; }
+/* ─── Progress tab — "jewel" screen ─────────────────────────────────────────── */
+
+/* Stat pills — big numbers for streak + totals */
+.progress-pills { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 4px; }
 
 .progress-pill {
-  background: var(--primary-light);
-  border: 1px solid #b8ccf0;
-  border-radius: var(--radius);
-  padding: 12px 18px;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  min-width: 100px;
+  align-items: flex-start;
+  min-width: 88px;
 }
-.progress-pill-num   { font-size: 1.8rem; font-weight: 800; color: var(--primary); line-height: 1; }
-.progress-pill-label { font-size: 0.75rem; color: var(--text-muted); margin-top: 3px; }
+.progress-pill-num {
+  font-size: 2rem;
+  font-weight: 800;
+  color: #000;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+.progress-pill.pass .progress-pill-num { color: var(--c-ok); }
+.progress-pill-label {
+  font-size: var(--fs-sm);
+  color: var(--c-neutral);
+  margin-top: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+
+/* Section separator — light rule with breathing room */
+.progress-section {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: var(--bw-divider) solid var(--border);
+}
+.progress-section:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+
+.progress-section-label {
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--c-neutral);
+  margin: 0 0 16px;
+}
 
 /* Heatmap */
 .heatmap-header {
@@ -819,26 +869,44 @@ textarea:focus, input[type="text"]:focus, select:focus {
 
 .progress-subject-row {
   display: grid;
-  grid-template-columns: minmax(130px, 220px) minmax(120px, 1fr) 56px 44px;
+  grid-template-columns: minmax(130px, 200px) minmax(120px, 1fr) 48px 40px;
   align-items: center;
-  gap: 10px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--border);
+  gap: 12px;
+  padding: 11px 0;
+  border-bottom: var(--bw-divider) solid var(--border);
 }
 .progress-subject-row:last-child { border-bottom: none; }
 .progress-subject-name {
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: var(--fs-base);
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.progress-subject-bar-track { width: 100%; background: #eee; border-radius: 4px; height: 8px; min-width: 80px; }
-.progress-subject-pct { font-size: 0.85rem; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.progress-subject-count { font-size: 0.8rem; color: var(--text-muted); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.progress-subject-bar-track {
+  width: 100%;
+  background: #ebebeb;
+  border-radius: 3px;
+  height: 6px;
+  min-width: 80px;
+}
+.progress-subject-pct {
+  font-size: var(--fs-base);
+  font-weight: 700;
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.progress-subject-count {
+  font-size: var(--fs-sm);
+  color: var(--c-neutral);
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
 
 @media (max-width: 640px) {
   .progress-subject-row {
-    grid-template-columns: minmax(96px, 1fr) minmax(96px, 1fr) 48px 40px;
+    grid-template-columns: minmax(96px, 1fr) minmax(96px, 1fr) 40px 36px;
     gap: 8px;
   }
 }
@@ -1406,25 +1474,75 @@ body { letter-spacing: 0.01em; }
   max-width: 860px;
 }
 
+/* ── Monochrome button system ─────────────────────────────────────────────── */
+/* Primary: solid black — the single dominant action in any context */
 .btn-primary,
-.btn-secondary,
-.btn-ghost,
 .actions button {
-  background: #fff;
-  color: #000;
-  border: 1px solid #000;
+  background: #000;
+  color: #fff;
+  border: var(--bw-ui) solid #000;
+  font-size: var(--fs-base);
   font-weight: 600;
+  padding: 7px 18px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-family: var(--font);
+  transition: opacity 0.12s;
 }
 .btn-primary:hover,
-.btn-secondary:hover,
-.btn-ghost:hover,
-.actions button:hover,
+.actions button:hover { opacity: 0.82; }
+.btn-primary:disabled { opacity: 0.35; cursor: default; }
+
+/* Secondary: outlined — supporting actions */
+.btn-secondary {
+  background: transparent;
+  color: #000;
+  border: var(--bw-ui) solid #000;
+  font-size: var(--fs-base);
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-family: var(--font);
+  transition: background 0.12s;
+}
+.btn-secondary:hover { background: #f0f0f0; }
+
+/* Ghost: no border — tertiary/contextual actions */
+.btn-ghost {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: var(--fs-base);
+  padding: 5px 10px;
+  cursor: pointer;
+  font-family: var(--font);
+  border-radius: var(--radius-sm);
+  transition: color 0.12s, background 0.12s;
+}
+.btn-ghost:hover { color: #000; background: #f0f0f0; }
+
+/* Tab active state */
 .tab-btn:hover,
 .tab-btn.active {
   background: #000;
   color: #fff;
   border-color: #000;
 }
+
+/* Text-link style — for low-weight actions like Renombrar */
+.btn-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: var(--font);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.btn-link:hover { color: #000; }
 
 /* ── Exam Calendar ──────────────────────────────────────────────────────────── */
 .exam-calendar-card {
@@ -1528,36 +1646,62 @@ body { letter-spacing: 0.01em; }
   margin: 20px auto 0;
 }
 .subjects-panel-title {
-  margin-bottom: 14px;
-  text-align: center;
+  margin-bottom: 10px;
+  font-size: var(--fs-sm);
+  font-weight: 700;
   text-transform: uppercase;
-  font-size: 0.95rem;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
 }
 .subjects-list {
   list-style: none;
   margin: 0;
   padding: 0;
-  border: 1px solid var(--border);
+  border: var(--bw-divider) solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
 }
 .subjects-list-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 14px;
-  padding: 12px;
-  border-bottom: 1px solid var(--border);
+  gap: 12px;
+  padding: 9px 12px;
+  border-bottom: var(--bw-divider) solid var(--border);
+  transition: background 0.1s;
 }
 .subjects-list-item:last-child { border-bottom: none; }
-.subjects-list-main { min-width: 0; }
-.subjects-list-name { font-weight: 700; margin-bottom: 4px; }
-.subjects-list-meta { font-size: 0.8rem; }
-.subjects-list-actions { display: flex; gap: 8px; }
+.subjects-list-item:hover { background: #fafafa; }
+.subjects-list-main { min-width: 0; flex: 1; }
+.subjects-list-name {
+  font-weight: 700;
+  font-size: var(--fs-lg);
+  line-height: 1.3;
+}
+.subjects-list-meta {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+.subjects-list-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+/* Secondary actions within a subject row — visually recessed */
+.subjects-list-secondary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 
-@media (max-width: 720px) {
+@media (max-width: 600px) {
   .subjects-list-item {
-    flex-direction: column;
-    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 6px;
   }
+  .subjects-list-actions { width: 100%; justify-content: flex-end; }
 }
 
 /* ── Weekly Planner ──────────────────────────────────────────────────────────── */

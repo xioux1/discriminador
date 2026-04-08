@@ -597,17 +597,24 @@ async function loadDashboard() {
       const pendingMainCards = pendingCardsBySubject[subjectName] || 0;
       const activeMicros = activeMicrosBySubject[subjectName] || 0;
 
+      const metaParts = [];
+      if (pendingMainCards > 0) metaParts.push(`${pendingMainCards} pendiente${pendingMainCards !== 1 ? 's' : ''}`);
+      if (activeMicros > 0) metaParts.push(`${activeMicros} micro${activeMicros !== 1 ? 's' : ''}`);
+      const metaText = metaParts.length ? metaParts.join(' · ') : 'Al día';
+
       const row = document.createElement('li');
       row.className = 'subjects-list-item';
       row.innerHTML = `
         <div class="subjects-list-main">
           <div class="subjects-list-name">${subjectName}</div>
-          <div class="subjects-list-meta">Tarjetas principales pendientes: ${pendingMainCards} · Microconsignas activas: ${activeMicros}</div>
+          <div class="subjects-list-meta">${metaText}</div>
         </div>
         <div class="subjects-list-actions">
+          <div class="subjects-list-secondary">
+            <button type="button" class="btn-link deck-config-btn" data-subject="${subjectName}">Configurar</button>
+            <button type="button" class="btn-link deck-rename-btn" data-subject="${subjectName}">Renombrar</button>
+          </div>
           <button type="button" class="btn-primary deck-study-btn" data-subject="${subjectName}">Estudiar</button>
-          <button type="button" class="btn-secondary deck-config-btn" data-subject="${subjectName}">Configurar</button>
-          <button type="button" class="btn-ghost deck-rename-btn" data-subject="${subjectName}" title="Renombrar o fusionar materia" style="font-size:0.82rem">Renombrar</button>
         </div>
       `;
       list.appendChild(row);
@@ -735,18 +742,18 @@ async function loadProgress() {
     loading.classList.add('hidden');
     content.classList.remove('hidden');
 
-    // Streak pills
+    // Streak + summary pills
     const pills = document.querySelector('#progress-pills');
     pills.innerHTML = '';
     [
-      { label: `Racha: ${actData.streak_current} día${actData.streak_current !== 1 ? 's' : ''}`, cls: actData.streak_current > 0 ? 'pass' : '' },
-      { label: `Mejor racha: ${actData.streak_best} días`, cls: '' },
-      { label: `Total revisiones: ${actData.total_reviews}`, cls: '' }
-    ].forEach(({ label, cls }) => {
-      const span = document.createElement('span');
-      span.className = `progress-pill${cls ? ' ' + cls : ''}`;
-      span.textContent = label;
-      pills.appendChild(span);
+      { num: actData.streak_current, label: 'Racha actual', cls: actData.streak_current > 0 ? 'pass' : '', unit: actData.streak_current === 1 ? 'día' : 'días' },
+      { num: actData.streak_best,    label: 'Mejor racha',  cls: '', unit: actData.streak_best === 1 ? 'día' : 'días' },
+      { num: actData.total_reviews,  label: 'Revisiones',   cls: '' }
+    ].forEach(({ num, label, cls, unit }) => {
+      const pill = document.createElement('div');
+      pill.className = `progress-pill${cls ? ' ' + cls : ''}`;
+      pill.innerHTML = `<span class="progress-pill-num">${num}${unit ? `<span style="font-size:1.1rem;font-weight:600"> ${unit}</span>` : ''}</span><span class="progress-pill-label">${label}</span>`;
+      pills.appendChild(pill);
     });
 
     // Heatmap — año calendario completo, navegable por año
@@ -786,7 +793,7 @@ async function loadProgress() {
       grid.innerHTML = '';
       monthLabels.innerHTML = '';
       yearLabels.innerHTML = '';
-      heatmapTitle.textContent = `Actividad (año ${year})`;
+      heatmapTitle.textContent = `Historial ${year}`;
 
       const startDate = new Date(year, 0, 1);
       const endDate = new Date(year, 11, 31);
@@ -860,6 +867,7 @@ async function loadProgress() {
     if (subjects.length > 0) {
       for (const s of subjects) {
         const pct = Math.round(s.pass_rate * 100);
+        const pctColor = pct >= 70 ? 'var(--c-ok)' : pct >= 40 ? 'var(--c-warn)' : 'var(--fail-fg)';
         const row = document.createElement('div');
         row.className = 'progress-subject-row';
         row.innerHTML = `
@@ -867,13 +875,13 @@ async function loadProgress() {
           <div class="progress-subject-bar-track">
             <div class="dimension-bar-fill${pct < 40 ? ' weak' : pct < 70 ? ' mid' : ''}" style="width:${pct}%"></div>
           </div>
-          <span class="progress-subject-pct" style="color:${pct >= 60 ? 'var(--pass-fg)' : 'var(--fail-fg)'}">${pct}%</span>
+          <span class="progress-subject-pct" style="color:${pctColor}">${pct}%</span>
           <span class="progress-subject-count">${s.total_questions}q</span>
         `;
         subjEl.appendChild(row);
       }
     } else {
-      subjEl.innerHTML = '<p style="color:var(--text-muted)">Aún no hay datos por materia.</p>';
+      subjEl.innerHTML = '<p style="color:var(--c-neutral);font-size:var(--fs-sm)">Sin actividad por materia todavía.</p>';
     }
     // Timing stats
     renderTimingStats(timingData);
