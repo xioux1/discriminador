@@ -54,6 +54,13 @@ function resolveFinalGrade(action, finalGrade, suggestedGrade) {
 
 decisionRouter.post('/decision', async (req, res) => {
   const userId = req.user?.id ?? null;
+  if (!userId) {
+    return res.status(401).json({
+      error: 'unauthorized',
+      message: 'Authentication required.'
+    });
+  }
+
   if (!req.is('application/json')) {
     return res.status(400).json({
       error: 'bad_request',
@@ -174,6 +181,7 @@ decisionRouter.post('/decision', async (req, res) => {
     FROM evaluation_items
     WHERE source_system = 'evaluate_api'
       AND source_record_id = $1
+      AND user_id = $2
     ORDER BY id DESC
     LIMIT 1
   `;
@@ -191,6 +199,7 @@ decisionRouter.post('/decision', async (req, res) => {
       AND (ei.evaluator_context->>'model_confidence')::numeric = $6
       AND gs.suggested_grade = $7
       AND gs.confidence = $8
+      AND ei.user_id = $9
     ORDER BY ei.id DESC
     LIMIT 1
   `;
@@ -203,7 +212,8 @@ decisionRouter.post('/decision', async (req, res) => {
     overallScore,
     modelConfidence,
     suggestedGrade,
-    modelConfidence
+    modelConfidence,
+    userId
   ];
 
   let client;
@@ -213,7 +223,7 @@ decisionRouter.post('/decision', async (req, res) => {
     await client.query('BEGIN');
 
     const resolvedItem = evaluationId
-      ? await client.query(resolveByEvaluationIdQuery, [evaluationId])
+      ? await client.query(resolveByEvaluationIdQuery, [evaluationId, userId])
       : await client.query(resolveByContextQuery, resolveByContextValues);
 
     if (resolvedItem.rowCount === 0) {

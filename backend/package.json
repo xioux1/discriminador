@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
-    "test": "node --test src/services/__tests__/scoring.test.js",
+    "test": "node --test src/services/__tests__/*.test.js src/routes/__tests__/*.test.js",
     "audit:overall-variants": "node scripts/compare-overall-variants.js"
   },
   "dependencies": {
