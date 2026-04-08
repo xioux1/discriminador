@@ -504,6 +504,10 @@ async function renderExamCalendar(exams) {
     const dateStr = d.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' });
 
     const item = document.createElement('div');
+    const scopePct = Math.max(0, Math.min(100, Number(exam.scope_pct) || 0));
+    const coveragePct = coverageBySubject.get(exam.subject) != null
+      ? Math.max(0, Math.min(100, Number(coverageBySubject.get(exam.subject)) || 0))
+      : null;
     item.className = `exam-calendar-item exam-urgency-${urgency}`;
     item.innerHTML = `
       <div class="exam-cal-countdown">${label}</div>
@@ -513,13 +517,18 @@ async function renderExamCalendar(exams) {
       </div>
       <div class="exam-cal-date">${dayName} ${dateStr}</div>
       <div class="exam-cal-meta">
-        <div class="exam-cal-scope">${exam.scope_pct}% temario</div>
-        ${coverageBySubject.get(exam.subject) != null ? `
-          <div class="exam-cal-coverage">
-            <div class="exam-cal-coverage-track">
-              <div class="exam-cal-coverage-fill" style="width:${coverageBySubject.get(exam.subject)}%"></div>
+        <div class="exam-cal-metric">
+          <div class="exam-cal-metric-track exam-cal-scope-track">
+            <div class="exam-cal-metric-fill exam-cal-scope-fill" style="width:${scopePct}%"></div>
+          </div>
+          <div class="exam-cal-metric-text"><strong>${scopePct}%</strong> temario</div>
+        </div>
+        ${coveragePct != null ? `
+          <div class="exam-cal-metric exam-cal-coverage">
+            <div class="exam-cal-metric-track exam-cal-coverage-track">
+              <div class="exam-cal-metric-fill exam-cal-coverage-fill" style="width:${coveragePct}%"></div>
             </div>
-            <div class="exam-cal-coverage-text">${coverageBySubject.get(exam.subject)}% cubierto</div>
+            <div class="exam-cal-metric-text"><strong>${coveragePct}%</strong> cubierto</div>
           </div>` : ''}
       </div>
     `;
@@ -579,13 +588,9 @@ async function loadDashboard() {
       const banner = document.createElement('div');
       banner.className = 'dashboard-pending-banner card';
       if (totalDue > 0) {
-        banner.innerHTML = `
-          <span class="dpb-stat"><span class="dpb-num">${totalPendingCards}</span><span class="dpb-label"> tarjeta${totalPendingCards !== 1 ? 's' : ''}</span></span>
-          <span class="dpb-sep"></span>
-          <span class="dpb-stat"><span class="dpb-num">${totalActiveMicros}</span><span class="dpb-label"> micro${totalActiveMicros !== 1 ? 's' : ''}</span></span>
-          <span class="dpb-total">${totalDue} pendiente${totalDue !== 1 ? 's' : ''}</span>`;
+        banner.textContent = `${totalDue} pendientes hoy (${totalPendingCards} tarjetas principales + ${totalActiveMicros} microconsignas).`;
       } else {
-        banner.innerHTML = `<span class="dpb-ok">Sin pendientes hoy</span>`;
+        banner.textContent = 'Sin pendientes hoy.';
       }
       content.appendChild(banner);
     }
@@ -624,11 +629,9 @@ async function loadDashboard() {
           ${metaText ? `<div class="subjects-list-meta">${metaText}</div>` : ''}
         </div>
         <div class="subjects-list-actions">
-          <div class="subjects-list-secondary">
-            <button type="button" class="btn-link deck-config-btn" data-subject="${subjectName}">Configurar</button>
-            <button type="button" class="btn-link deck-rename-btn" data-subject="${subjectName}">Renombrar</button>
-          </div>
-          <button type="button" class="btn-primary deck-study-btn" data-subject="${subjectName}">Estudiar</button>
+          <button type="button" class="btn-secondary deck-study-btn" data-subject="${subjectName}">Estudiar</button>
+          <button type="button" class="btn-secondary deck-config-btn" data-subject="${subjectName}">Configurar</button>
+          <button type="button" class="btn-secondary deck-rename-btn" data-subject="${subjectName}">Renombrar</button>
         </div>
       `;
       list.appendChild(row);
