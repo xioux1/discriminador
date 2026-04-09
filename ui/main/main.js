@@ -2304,6 +2304,7 @@ function initStudyTab() {
     document.querySelector('#study-answer-input'),
     () => studyState.currentInputMode === 'math'
   );
+  bindStudyKeyboardShortcuts();
 
   document.querySelector('#study-again-btn').addEventListener('click', () => {
     document.querySelector('#study-complete').classList.add('hidden');
@@ -2323,6 +2324,39 @@ function initStudyTab() {
 
   initBriefing();
   restorePersistedStudySession();
+}
+
+function bindStudyKeyboardShortcuts() {
+  const answerInput = document.querySelector('#study-answer-input');
+  if (answerInput && !answerInput.dataset.boundStudyShortcuts) {
+    answerInput.addEventListener('keydown', (event) => {
+      if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.altKey) return;
+      if (event.key !== 'Enter') return;
+      const evalBtn = document.querySelector('#study-eval-btn');
+      if (!evalBtn || evalBtn.disabled || evalBtn.offsetParent === null) return;
+      event.preventDefault();
+      evalBtn.click();
+    });
+    answerInput.dataset.boundStudyShortcuts = 'true';
+  }
+
+  if (!document.body.dataset.boundStudyAcceptShortcut) {
+    document.addEventListener('keydown', (event) => {
+      if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.altKey) return;
+      if (event.code !== 'Slash') return;
+
+      const sessionVisible = document.querySelector('#study-session')?.offsetParent !== null;
+      const resultVisible = document.querySelector('#study-result-block')?.offsetParent !== null;
+      if (!sessionVisible || !resultVisible) return;
+
+      const acceptBtn = document.querySelector('#study-decision-block [data-study-action="accept"]');
+      if (!acceptBtn || acceptBtn.disabled || acceptBtn.offsetParent === null) return;
+
+      event.preventDefault();
+      acceptBtn.click();
+    });
+    document.body.dataset.boundStudyAcceptShortcut = 'true';
+  }
 }
 
 function ensureAddCardFormHandlers() {
