@@ -2289,10 +2289,10 @@ textarea:focus, input[type="text"]:focus, select:focus {
 }
 .study-decision-accept-btn {
   padding: 5px 14px; font-size: 0.85rem; border-radius: var(--radius-sm);
-  background: var(--accent); color: #fff; border: none; cursor: pointer;
+  background: var(--primary); color: #fff; border: none; cursor: pointer;
   font-family: inherit; font-weight: 600;
 }
-.study-decision-accept-btn:hover { filter: brightness(1.1); }
+.study-decision-accept-btn:hover { background: var(--primary-dark); }
 
 .study-grade-override-group {
   display: flex; align-items: center; gap: 4px;
