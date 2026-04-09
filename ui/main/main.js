@@ -2836,10 +2836,20 @@ async function clarifyStudyPrompt() {
   clarifyBtn.textContent = 'Aclarando...';
   setStudyPromptFeedback('Generando versión más clara...', 'info');
 
+  const expectedAnswer = (item.type === 'micro'
+    ? item.data.expected_answer
+    : item.data.expected_answer_text
+  ) || '';
+
   try {
     const data = await postJson('/prompts/clarify', { prompt_text: promptText });
     const clarifiedPrompt = (data.clarified_prompt || '').trim();
     if (clarifiedPrompt.length < 10) throw new Error('No se pudo generar una versión clara de la consigna.');
+
+    // Guard: reject if the LLM returned the expected answer instead of rephrasing the question
+    if (expectedAnswer && clarifiedPrompt.trim().toLowerCase() === expectedAnswer.trim().toLowerCase()) {
+      throw new Error('El modelo devolvió la respuesta en lugar de reformular la consigna. Intentá de nuevo.');
+    }
 
     if (item.type === 'micro') item.data.session_question = clarifiedPrompt;
     else item.data.session_prompt_text = clarifiedPrompt;
