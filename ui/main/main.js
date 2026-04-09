@@ -80,7 +80,8 @@ if (!Auth.isLoggedIn()) {
       tabs.forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
       const tab = btn.dataset.tab;
-      if (tab === 'study' && btn.dataset.subjectFromDashboard !== undefined) {
+      const fromDashboard = tab === 'study' && btn.dataset.subjectFromDashboard !== undefined;
+      if (fromDashboard) {
         pendingStudySubject = btn.dataset.subjectFromDashboard || '';
         delete btn.dataset.subjectFromDashboard;
       } else if (tab === 'study') {
@@ -105,6 +106,18 @@ if (!Auth.isLoggedIn()) {
         // already loaded — just show
       } else if (tab === 'progress' && !loaded.progress) {
         loaded.progress = true; loadProgress();
+      }
+
+      // Dashboard "Estudiar" subject button → skip briefing, go straight to the
+      // subject-filtered overview so the user can start reviewing immediately.
+      if (tab === 'study' && fromDashboard && briefingState.selectedSubject) {
+        const sessionEl = document.querySelector('#study-session');
+        if (sessionEl && sessionEl.classList.contains('hidden')) {
+          document.querySelector('#study-briefing').classList.add('hidden');
+          document.querySelector('#study-complete').classList.add('hidden');
+          document.querySelector('#study-overview').classList.remove('hidden');
+          loadStudyOverview();
+        }
       }
     });
   });
@@ -2468,11 +2481,14 @@ async function loadStudyOverview() {
     const cardCount  = data.cards?.length ?? 0;
     const total      = microCount + cardCount;
 
+    const subjectTag = briefingState.selectedSubject
+      ? ` <span style="font-size:0.82rem;color:var(--text-muted);font-weight:400">· ${escHtml(briefingState.selectedSubject)}</span>`
+      : '';
     if (total === 0) {
-      summary.innerHTML = '<span style="color:#4a7;font-weight:600">Sin tarjetas para hoy. ¡Al día!</span>';
+      summary.innerHTML = `<span style="color:#4a7;font-weight:600">Sin tarjetas para hoy. ¡Al día!</span>${subjectTag}`;
     } else {
       summary.innerHTML = `
-        <span class="study-queue-count">${total}</span> tarjeta${total !== 1 ? 's' : ''} para hoy
+        <span class="study-queue-count">${total}</span> tarjeta${total !== 1 ? 's' : ''} para hoy${subjectTag}
         ${microCount > 0 ? `<span class="study-queue-detail">(${microCount} micro-concepto${microCount !== 1 ? 's' : ''})</span>` : ''}
       `;
     }
