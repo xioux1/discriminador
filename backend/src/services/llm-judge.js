@@ -87,7 +87,7 @@ MISSING: <concepto1>, <concepto2> | NONE
   • Todos los elementos esenciales de la respuesta esperada están presentes (en cualquier orden)
   • No hay errores conceptuales (errores de ortografía, redacción o concisión no cuentan)
   Tolerá sin penalizar: sinónimos, paráfrasis, respuesta más larga, orden diferente, ejemplos explicativos,
-  omisión de detalles no esenciales. Regla: si dudás entre HARD y GOOD, elegí GOOD.
+  omisión de detalles no esenciales. Regla de desempate: si dudás entre HARD y GOOD, elegí HARD.
   Ejemplo: "¿Qué es un cursor?" → "puntero que recorre fila a fila el resultado de un SELECT en PL/SQL" → GOOD
 
 ▸ EASY — Respuesta perfecta que va más allá del mínimo requerido.
@@ -97,7 +97,7 @@ MISSING: <concepto1>, <concepto2> | NONE
   • Explicó el "por qué" o "para qué" del concepto (no solo el "qué")
   • Anticipó un caso edge, limitación o excepción del concepto
   • La respuesta fue notablemente más precisa o completa que la esperada
-  Regla: si dudás entre GOOD y EASY, elegí GOOD. EASY es para respuestas claramente superiores.
+  Regla de desempate: si dudás entre GOOD y EASY, elegí GOOD. EASY es solo para respuestas claramente superiores.
 
 Para MISSING: listá los conceptos o ideas específicas que faltan o están incorrectos. Usá NONE si no falta nada relevante. Máximo 3 conceptos, sin oraciones largas.`;
 
