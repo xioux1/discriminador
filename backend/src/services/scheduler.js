@@ -24,9 +24,18 @@ export function computeNextReview(intervalDays, easeFactor, grade) {
 }
 
 function daysFromNow(days) {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  return d;
+  // Anki-style: next_review_at = midnight of (today + days) in Argentina time.
+  // Cards become due at 00:00 local time, not at the exact hour of the review,
+  // so the full day's queue is available at midnight rather than dripping in
+  // throughout the day as timestamps from N days ago are crossed.
+  //
+  // Argentina = UTC-3 (no DST). Midnight Argentina = 03:00 UTC.
+  const BUE_MS = 3 * 60 * 60 * 1000; // 3-hour offset
+  // Shift to Argentina "virtual UTC" so we can do UTC date arithmetic on local time
+  const local = new Date(Date.now() - BUE_MS);
+  local.setUTCHours(0, 0, 0, 0);          // truncate to local midnight
+  local.setUTCDate(local.getUTCDate() + days); // add N days
+  return new Date(local.getTime() + BUE_MS);   // shift back to real UTC
 }
 
 /**
