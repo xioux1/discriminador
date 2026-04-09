@@ -2984,8 +2984,8 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
 
     gradeEl.textContent = getSuggestedGradeLabel(result.suggested_grade);
     gradeEl.className   = `study-grade-inline ${grade.toLowerCase()}`;
-    justEl.textContent  = result.justification_short;
-    justEl.classList.add('hidden');
+    justEl.textContent = result.justification_short;
+    justEl.classList.remove('hidden');
 
     const timeEl = document.querySelector('#study-result-time');
     if (timeEl) {
@@ -3030,19 +3030,13 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       ? `<div class="study-answer-compare-block"><strong>Etiquetas:</strong> ${weakTags}${weakTags && missingTags ? ' ' : ''}${missingTags}</div>`
       : '';
 
-    // Always show answer comparison so the user can contrast their response with the expected one.
-    if (grade === 'FAIL' || grade === 'REVIEW' || grade === 'PASS') {
-      expectedEl.innerHTML = `
-        <div class="study-answer-compare-block"><strong>Devolución:</strong><div class="study-answer-compare-text">${escapePreserve(result.justification_short || '')}</div></div>
-        ${groupedTags}
-        ${formatAnswerBlock('Tu respuesta', answer)}
-        ${formatAnswerBlock('Respuesta esperada', expected_answer_text)}
-      `;
-      expectedEl.classList.remove('hidden');
-    } else {
-      expectedEl.textContent = '';
-      expectedEl.classList.add('hidden');
-    }
+    // Always show answer comparison.
+    expectedEl.innerHTML = `
+      ${groupedTags}
+      ${formatAnswerBlock('Tu respuesta', answer)}
+      ${formatAnswerBlock('Respuesta esperada', expected_answer_text)}
+    `;
+    expectedEl.classList.remove('hidden');
 
     // SQL clause checklist in study result block
     let studySqlChecklist = document.querySelector('#study-sql-clause-checklist');
