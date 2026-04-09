@@ -44,8 +44,8 @@ statsRouter.get('/stats/question', async (req, res) => {
     }
 
     const total = rows.length;
-    const passCount = rows.filter((r) => r.final_grade === 'pass').length;
-    const failCount = rows.filter((r) => r.final_grade === 'fail').length;
+    const passCount = rows.filter((r) => ['pass', 'good', 'easy'].includes(r.final_grade)).length;
+    const failCount = rows.filter((r) => ['fail', 'again', 'hard'].includes(r.final_grade)).length;
 
     // Dimension weakness: average score per dimension across all rows that have dimension data
     const dimTotals = {};
@@ -72,8 +72,8 @@ statsRouter.get('/stats/question', async (req, res) => {
     // Trend: compare last 3 vs previous 3
     let trend = 'insufficient_data';
     if (rows.length >= 4) {
-      const recent = rows.slice(0, 3).filter((r) => r.final_grade === 'pass').length;
-      const older  = rows.slice(3, 6).filter((r) => r.final_grade === 'pass').length;
+      const recent = rows.slice(0, 3).filter((r) => ['pass', 'good', 'easy'].includes(r.final_grade)).length;
+      const older  = rows.slice(3, 6).filter((r) => ['pass', 'good', 'easy'].includes(r.final_grade)).length;
       const recentTotal = Math.min(3, rows.length);
       const olderTotal  = Math.min(3, Math.max(0, rows.length - 3));
       if (olderTotal === 0) {

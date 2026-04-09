@@ -269,12 +269,17 @@
               <div id="study-result-expected" class="study-result-expected hidden"></div>
               <div id="study-decision-block" class="study-result-micro hidden">
                 <strong>Firma de evaluación (obligatoria)</strong>
-                <div class="actions" style="margin-top:8px">
-                  <button type="button" data-study-action="accept">Aceptar sugerencia</button>
-                  <button type="button" data-study-action="correct-pass">Corregir a PASS</button>
-                  <button type="button" data-study-action="correct-fail">Corregir a FAIL</button>
-                  <button type="button" data-study-action="uncertain">Marcar duda</button>
-                  <button type="button" data-study-action="archive-card" id="study-archive-card-btn">Archivar tarjeta</button>
+                <div class="study-decision-actions" style="margin-top:8px">
+                  <button type="button" class="study-decision-accept-btn" data-study-action="accept">Aceptar sugerencia</button>
+                  <div class="study-grade-override-group">
+                    <span class="study-grade-override-label">Corregir a:</span>
+                    <button type="button" class="study-grade-btn grade-again" data-study-action="correct-again">Again</button>
+                    <button type="button" class="study-grade-btn grade-hard"  data-study-action="correct-hard">Hard</button>
+                    <button type="button" class="study-grade-btn grade-good"  data-study-action="correct-good">Good</button>
+                    <button type="button" class="study-grade-btn grade-easy"  data-study-action="correct-easy">Easy</button>
+                  </div>
+                  <button type="button" class="study-decision-misc-btn" data-study-action="uncertain">Marcar duda</button>
+                  <button type="button" class="study-decision-misc-btn" data-study-action="archive-card" id="study-archive-card-btn">Archivar tarjeta</button>
                 </div>
                 <label for="study-correction-reason" style="display:block;margin-top:8px;font-size:0.82rem;color:var(--text-muted)">Motivo (obligatorio si corriges, marcas duda o archivas)</label>
                 <textarea id="study-correction-reason" rows="2"></textarea>
@@ -370,11 +375,16 @@
             <h3>Dimensiones</h3>
             <ul id="dimensions-list"></ul>
 
-            <div class="actions">
-              <button type="button" data-action="accept">Aceptar sugerencia</button>
-              <button type="button" data-action="correct-pass">Corregir a PASS</button>
-              <button type="button" data-action="correct-fail">Corregir a FAIL</button>
-              <button type="button" data-action="uncertain">Marcar duda</button>
+            <div class="study-decision-actions" style="margin-top:4px">
+              <button type="button" class="study-decision-accept-btn" data-action="accept">Aceptar sugerencia</button>
+              <div class="study-grade-override-group">
+                <span class="study-grade-override-label">Corregir a:</span>
+                <button type="button" class="study-grade-btn grade-again" data-action="correct-again">Again</button>
+                <button type="button" class="study-grade-btn grade-hard"  data-action="correct-hard">Hard</button>
+                <button type="button" class="study-grade-btn grade-good"  data-action="correct-good">Good</button>
+                <button type="button" class="study-grade-btn grade-easy"  data-action="correct-easy">Easy</button>
+              </div>
+              <button type="button" class="study-decision-misc-btn" data-action="uncertain">Marcar duda</button>
             </div>
 
             <button type="button" id="socratic-trigger-btn" class="socratic-trigger hidden">Responder preguntas de profundización</button>

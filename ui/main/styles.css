@@ -9,6 +9,11 @@
   --pass-bg:    rgba(100, 155, 125, 0.13); --pass-fg:    #3d7a5a;
   --fail-bg:    rgba(170,  85,  85, 0.10); --fail-fg:    #8a3a3a;
   --review-bg:  rgba(180, 145,  75, 0.12); --review-fg:  #7a5a20;
+  /* FSRS 4-grade palette */
+  --again-bg:   rgba(170,  70,  70, 0.12); --again-fg:   #8a2a2a;
+  --hard-bg:    rgba(195, 120,  40, 0.12); --hard-fg:    #8a4a10;
+  --good-bg:    rgba(100, 155, 125, 0.13); --good-fg:    #3d7a5a;
+  --easy-bg:    rgba( 55, 120, 200, 0.12); --easy-fg:    #1a5a9a;
 
   /* Background — diffuse field */
   --bg:     #edf1f6;
@@ -238,8 +243,10 @@ textarea:focus, input[type="text"]:focus, select:focus {
   flex-shrink: 0;
   text-transform: uppercase;
 }
-.grade-badge.pass, .grade-badge.PASS { background: var(--pass-bg); color: var(--pass-fg); }
-.grade-badge.fail, .grade-badge.FAIL { background: var(--fail-bg); color: var(--fail-fg); }
+.grade-badge.pass, .grade-badge.PASS, .grade-badge.good, .grade-badge.GOOD { background: var(--good-bg); color: var(--good-fg); }
+.grade-badge.fail, .grade-badge.FAIL, .grade-badge.again, .grade-badge.AGAIN { background: var(--again-bg); color: var(--again-fg); }
+.grade-badge.hard, .grade-badge.HARD { background: var(--hard-bg); color: var(--hard-fg); }
+.grade-badge.easy, .grade-badge.EASY { background: var(--easy-bg); color: var(--easy-fg); }
 .grade-badge.review { background: var(--review-bg); color: var(--review-fg); }
 
 .stat-pill {
@@ -252,8 +259,10 @@ textarea:focus, input[type="text"]:focus, select:focus {
   background: #f0f0f0;
   color: #444;
 }
-.stat-pill.pass   { background: var(--pass-bg);   color: var(--pass-fg); }
-.stat-pill.fail   { background: var(--fail-bg);   color: var(--fail-fg); }
+.stat-pill.pass, .stat-pill.good { background: var(--good-bg); color: var(--good-fg); }
+.stat-pill.fail, .stat-pill.again { background: var(--again-bg); color: var(--again-fg); }
+.stat-pill.hard   { background: var(--hard-bg);   color: var(--hard-fg); }
+.stat-pill.easy   { background: var(--easy-bg);   color: var(--easy-fg); }
 .stat-pill.review { background: var(--review-bg); color: var(--review-fg); }
 
 /* ─── Dictation button ───────────────────────────────────────────────────────── */
@@ -758,9 +767,11 @@ textarea:focus, input[type="text"]:focus, select:focus {
   border-radius: var(--radius-sm);
   font-size: 0.92rem;
 }
-.study-grade-inline.pass   { background: var(--pass-bg);   color: var(--pass-fg); }
-.study-grade-inline.fail   { background: var(--fail-bg);   color: var(--fail-fg); }
-.study-grade-inline.review { background: var(--review-bg); color: var(--review-fg); }
+.study-grade-inline.pass,  .study-grade-inline.good  { background: var(--good-bg);   color: var(--good-fg); }
+.study-grade-inline.fail,  .study-grade-inline.again { background: var(--again-bg);  color: var(--again-fg); }
+.study-grade-inline.hard                             { background: var(--hard-bg);   color: var(--hard-fg); }
+.study-grade-inline.easy                             { background: var(--easy-bg);   color: var(--easy-fg); }
+.study-grade-inline.review                           { background: var(--review-bg); color: var(--review-fg); }
 
 .study-queue-summary { font-size: 1rem; margin-bottom: 12px; }
 .study-queue-count   { font-size: 2rem; font-weight: 800; color: var(--primary); margin-right: 4px; }
@@ -2271,3 +2282,41 @@ textarea:focus, input[type="text"]:focus, select:focus {
   background: transparent; font-family: inherit; color: var(--text);
   min-height: 80px;
 }
+
+/* ─── Study decision: 4-grade override buttons ───────────────────────────── */
+.study-decision-actions {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+}
+.study-decision-accept-btn {
+  padding: 5px 14px; font-size: 0.85rem; border-radius: var(--radius-sm);
+  background: var(--accent); color: #fff; border: none; cursor: pointer;
+  font-family: inherit; font-weight: 600;
+}
+.study-decision-accept-btn:hover { filter: brightness(1.1); }
+
+.study-grade-override-group {
+  display: flex; align-items: center; gap: 4px;
+  border: var(--bw-divider) solid var(--border);
+  border-radius: var(--radius-sm); padding: 2px 6px;
+  background: var(--surface);
+}
+.study-grade-override-label {
+  font-size: 0.75rem; color: var(--text-muted); margin-right: 2px; white-space: nowrap;
+}
+.study-grade-btn {
+  padding: 3px 10px; font-size: 0.82rem; font-weight: 700;
+  border-radius: var(--radius-sm); border: none; cursor: pointer;
+  font-family: inherit; transition: filter 0.1s;
+}
+.study-grade-btn:hover { filter: brightness(0.92); }
+.study-grade-btn.grade-again { background: var(--again-bg); color: var(--again-fg); }
+.study-grade-btn.grade-hard  { background: var(--hard-bg);  color: var(--hard-fg); }
+.study-grade-btn.grade-good  { background: var(--good-bg);  color: var(--good-fg); }
+.study-grade-btn.grade-easy  { background: var(--easy-bg);  color: var(--easy-fg); }
+
+.study-decision-misc-btn {
+  padding: 4px 10px; font-size: 0.8rem; border-radius: var(--radius-sm);
+  background: var(--surface); border: var(--bw-divider) solid var(--border);
+  color: var(--text-muted); cursor: pointer; font-family: inherit;
+}
+.study-decision-misc-btn:hover { color: var(--text); border-color: var(--text-muted); }

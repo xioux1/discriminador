@@ -1381,6 +1381,11 @@ function normalizeSuggestedGrade(grade) {
 
 function getSuggestedGradeLabel(grade) {
   const normalized = normalizeSuggestedGrade(grade);
+  if (normalized === 'AGAIN') return 'Again — Sin respuesta útil';
+  if (normalized === 'HARD')  return 'Hard — Incompleto';
+  if (normalized === 'GOOD')  return 'Good — Correcto';
+  if (normalized === 'EASY')  return 'Easy — Dominio total';
+  // Legacy compat
   if (normalized === 'REVIEW') {
     return 'requiere validación docente';
   }
@@ -1394,9 +1399,9 @@ function enqueueManualCase(result) {
   }
 
   const priorityByGrade = {
-    REVIEW: 0,
-    FAIL: 1,
-    PASS: 2,
+    AGAIN: 0, HARD: 1, GOOD: 2, EASY: 3,
+    // legacy compat
+    FAIL: 0, REVIEW: 1, PASS: 2,
   };
   const normalizedGrade = normalizeSuggestedGrade(result.suggested_grade);
   const existingIndex = uiState.manualQueue.findIndex((item) => item.evaluation_id === result.evaluation_id);
@@ -1468,13 +1473,13 @@ function renderResult(result) {
   document.querySelector('#socratic-questions').innerHTML = '';
 
   const grade = normalizeSuggestedGrade(result.suggested_grade);
-  if (grade === 'REVIEW') {
-    socraticTrigger.textContent = 'Responder preguntas de profundización';
-    socraticTrigger.dataset.label = 'Responder preguntas de profundización';
-    socraticTrigger.classList.remove('hidden');
-  } else if (grade === 'FAIL') {
+  if (grade === 'AGAIN' || grade === 'FAIL') {
     socraticTrigger.textContent = 'Entender el error';
     socraticTrigger.dataset.label = 'Entender el error';
+    socraticTrigger.classList.remove('hidden');
+  } else if (grade === 'HARD' || grade === 'REVIEW') {
+    socraticTrigger.textContent = 'Profundizar concepto';
+    socraticTrigger.dataset.label = 'Profundizar concepto';
     socraticTrigger.classList.remove('hidden');
   } else {
     socraticTrigger.classList.add('hidden');
@@ -1640,11 +1645,7 @@ form.addEventListener('submit', async (event) => {
       }
     }
 
-    const normalizedSuggestedGrade = normalizeSuggestedGrade(result.suggested_grade);
-    const reviewHint = normalizedSuggestedGrade === 'REVIEW'
-      ? ` Caso priorizado en cola manual (#${manualQueueStatus.position} de ${manualQueueStatus.size}).`
-      : '';
-    setFeedback(`Evaluación lista. Ahora firma una decisión final.${reviewHint}`);
+    setFeedback('Evaluación lista. Ahora firma una decisión final.');
   } catch (error) {
     resultLoading.classList.add('hidden');
     resultContent.classList.add('hidden');
@@ -1794,7 +1795,8 @@ document.querySelector('#stats-toggle').addEventListener('click', () => {
   const submitBtn = document.querySelector('#socratic-submit-btn');
 
   function getSocraticMode() {
-    return normalizeSuggestedGrade(uiState.lastResult?.suggested_grade) === 'FAIL' ? 'fail' : 'review';
+    const g = normalizeSuggestedGrade(uiState.lastResult?.suggested_grade);
+    return (g === 'FAIL' || g === 'AGAIN' || g === 'HARD') ? 'fail' : 'review';
   }
 
   triggerBtn.addEventListener('click', async () => {
@@ -2027,15 +2029,21 @@ resultContent.addEventListener('click', async (event) => {
   const correctionReason = normalize(document.querySelector('#correction_reason').value);
   const normalizedSuggestion = normalizeSuggestedGrade(suggestion);
 
+  // REVIEW is legacy; new 4-grade system has no REVIEW state
   if (action === 'accept' && normalizedSuggestion === 'REVIEW') {
-    setFeedback('Las sugerencias en revisión requieren validación docente: usa corregir o marcar duda.', 'error');
+    setFeedback('Caso en revisión: usá "Corregir a" para asignar un grado específico.', 'error');
     return;
   }
 
   const finalGradeByAction = {
     accept: suggestion,
-    'correct-pass': 'PASS',
-    'correct-fail': 'FAIL',
+    'correct-again': 'AGAIN',
+    'correct-hard':  'HARD',
+    'correct-good':  'GOOD',
+    'correct-easy':  'EASY',
+    // legacy compat
+    'correct-pass':  'GOOD',
+    'correct-fail':  'AGAIN',
     uncertain: null,
   };
 
@@ -3015,8 +3023,13 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
 
 function resolveStudyFinalGrade(action, suggestedGrade) {
   const normalizedSuggested = normalizeSuggestedGrade(suggestedGrade);
-  if (action === 'correct-pass') return 'PASS';
-  if (action === 'correct-fail') return 'FAIL';
+  if (action === 'correct-again') return 'AGAIN';
+  if (action === 'correct-hard')  return 'HARD';
+  if (action === 'correct-good')  return 'GOOD';
+  if (action === 'correct-easy')  return 'EASY';
+  // legacy compat
+  if (action === 'correct-pass')  return 'GOOD';
+  if (action === 'correct-fail')  return 'AGAIN';
   if (action === 'accept') return normalizedSuggested;
   return null;
 }
