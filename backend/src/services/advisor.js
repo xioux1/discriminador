@@ -23,7 +23,7 @@ function getClient() {
  * @param {object} params.activityStats - { total_reviews, pass_rate, streak }
  * @returns {object} JSON analizado por el LLM
  */
-export async function analyzeSubject({ subject, config, referenceExams, cards, decisions, activityStats }) {
+export async function analyzeSubject({ subject, config, referenceExams, cards, decisions, activityStats, classNotes = [] }) {
   const client = getClient();
 
   const today = new Date().toISOString().slice(0, 10);
@@ -50,7 +50,10 @@ export async function analyzeSubject({ subject, config, referenceExams, cards, d
     next_exam: nextExam,
     exam_schedule: examSchedule,   // all parciales + final
     syllabus: config?.syllabus_text || '',
-    class_notes: config?.notes_text || '',  // student's own notes (teacher emphasis)
+    // Per-class notes (new structured format) + legacy single-blob fallback
+    class_notes: classNotes.length > 0
+      ? classNotes.map(n => `[${n.title || 'Sin título'}]\n${n.content}`).join('\n\n')
+      : (config?.notes_text || ''),
     reference_exams: referenceExams.map(e => ({
       label: e.label,
       year: e.year,

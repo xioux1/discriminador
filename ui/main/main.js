@@ -3885,16 +3885,20 @@ async function openCurriculumModal(subject) {
   document.querySelector('#exam-add-feedback').textContent = '';
   document.querySelector('#exam-date-feedback').textContent = '';
 
-  // Load existing config
+  // Load existing config + class notes
   try {
-    const data = await getJson(`/curriculum/${encodeURIComponent(subject)}`);
+    const [data, classNotesData] = await Promise.all([
+      getJson(`/curriculum/${encodeURIComponent(subject)}`),
+      getJson(`/curriculum/${encodeURIComponent(subject)}/class-notes`)
+    ]);
     document.querySelector('#curriculum-syllabus').value = data.config?.syllabus_text || '';
-    document.querySelector('#curriculum-notes').value    = data.config?.notes_text    || '';
     document.querySelector('#curriculum-daily-new-limit').value = data.config?.daily_new_cards_limit ?? '';
     renderExamDatesList(data.exam_dates || [], subject);
     renderExamsList(data.exams || [], subject);
+    renderClassNotesList(classNotesData.class_notes || [], subject);
   } catch (_e) {
     document.querySelector('#curriculum-daily-new-limit').value = '';
+    renderClassNotesList([], subject);
   }
 
   // Store current subject in modal
@@ -3924,7 +3928,6 @@ document.querySelector('#curriculum-save-btn').addEventListener('click', async (
   try {
     await postJson(`/curriculum/${encodeURIComponent(subject)}`, {
       syllabus_text:         document.querySelector('#curriculum-syllabus').value,
-      notes_text:            document.querySelector('#curriculum-notes').value,
       daily_new_cards_limit: parsedDailyLimit
     }, 'PUT');
     fb.textContent = parsedDailyLimit === null
@@ -4087,6 +4090,107 @@ function renderExamsList(exams, subject) {
   }
     });
   });
+}
+
+// ── Class notes (per-class entries) ───────────────────────────────────────────
+
+function renderClassNotesList(classNotes, subject) {
+  const list = document.querySelector('#class-notes-list');
+  list.innerHTML = '';
+
+  if (!classNotes.length) {
+    list.innerHTML = '<p style="color:var(--text-muted);font-size:0.82rem;margin:0 0 4px">Sin clases cargadas.</p>';
+  } else {
+    classNotes.forEach(note => appendClassNoteCard(note, subject, list));
+  }
+
+  // Wire "Agregar clase" button (replace listener to avoid duplicates)
+  const addBtn = document.querySelector('#class-note-add-btn');
+  const newAddBtn = addBtn.cloneNode(true);
+  addBtn.parentNode.replaceChild(newAddBtn, addBtn);
+  newAddBtn.addEventListener('click', async () => {
+    try {
+      const created = await postJson(`/curriculum/${encodeURIComponent(subject)}/class-notes`, {
+        title: '', content: ''
+      });
+      // Remove empty-state message if present
+      const emptyMsg = list.querySelector('p');
+      if (emptyMsg) emptyMsg.remove();
+      appendClassNoteCard(created, subject, list);
+      // Scroll to the new card and focus title
+      const newCard = list.lastElementChild;
+      newCard?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      newCard?.querySelector('.class-note-title-input')?.focus();
+    } catch (err) {
+      console.error('Error adding class note:', err);
+    }
+  });
+}
+
+function appendClassNoteCard(note, subject, container) {
+  const card = document.createElement('div');
+  card.className = 'class-note-card';
+  card.dataset.id = note.id;
+
+  const displayTitle = note.title || 'Sin título';
+  card.innerHTML = `
+    <div class="class-note-header">
+      <button type="button" class="class-note-toggle" aria-expanded="true">▾</button>
+      <input type="text" class="class-note-title-input" value="${escHtml(note.title || '')}" placeholder="Título de la clase" maxlength="200">
+      <button type="button" class="class-note-delete btn-ghost" style="font-size:0.72rem;padding:1px 7px">Eliminar</button>
+    </div>
+    <div class="class-note-body">
+      <textarea class="class-note-content" placeholder="Contenido de la clase..." maxlength="5000">${escHtml(note.content || '')}</textarea>
+      <span class="class-note-save-status"></span>
+    </div>`;
+
+  let saveTimer = null;
+  const saveStatus = card.querySelector('.class-note-save-status');
+
+  async function saveNote(fields) {
+    saveStatus.textContent = 'Guardando...';
+    try {
+      await postJson(`/curriculum/${encodeURIComponent(subject)}/class-notes/${note.id}`, fields, 'PATCH');
+      saveStatus.textContent = 'Guardado';
+      setTimeout(() => { saveStatus.textContent = ''; }, 2000);
+    } catch (_e) {
+      saveStatus.textContent = 'Error al guardar';
+    }
+  }
+
+  const titleInput = card.querySelector('.class-note-title-input');
+  titleInput.addEventListener('input', () => {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => saveNote({ title: titleInput.value }), 800);
+  });
+
+  const contentTextarea = card.querySelector('.class-note-content');
+  contentTextarea.addEventListener('input', () => {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => saveNote({ content: contentTextarea.value }), 800);
+  });
+
+  const toggleBtn = card.querySelector('.class-note-toggle');
+  const body = card.querySelector('.class-note-body');
+  toggleBtn.addEventListener('click', () => {
+    const expanded = toggleBtn.getAttribute('aria-expanded') === 'true';
+    toggleBtn.setAttribute('aria-expanded', String(!expanded));
+    toggleBtn.textContent = expanded ? '▸' : '▾';
+    body.style.display = expanded ? 'none' : '';
+  });
+
+  card.querySelector('.class-note-delete').addEventListener('click', async () => {
+    try {
+      await deleteJson(`/curriculum/${encodeURIComponent(subject)}/class-notes/${note.id}`);
+      card.remove();
+      const list = document.querySelector('#class-notes-list');
+      if (!list.children.length) {
+        list.innerHTML = '<p style="color:var(--text-muted);font-size:0.82rem;margin:0 0 4px">Sin clases cargadas.</p>';
+      }
+    } catch (_e) {}
+  });
+
+  container.appendChild(card);
 }
 
 // ─── Advisor analysis ─────────────────────────────────────────────────────────
