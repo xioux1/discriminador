@@ -1247,11 +1247,15 @@ function sqlClientSideErrors(sql) {
     });
   }
 
-  // 3. Unbalanced parentheses
-  let depth = 0;
-  let lastOpen = -1;
+  // 3. Unbalanced parentheses (skip chars inside string literals)
+  let depth = 0, lastOpen = -1, inStr = false;
   for (let i = 0; i < lines.length; i++) {
-    for (const ch of lines[i]) {
+    const ln = lines[i];
+    for (let ci = 0; ci < ln.length; ci++) {
+      const ch = ln[ci];
+      if (ch === "'" && !inStr) { inStr = true; continue; }
+      if (ch === "'" && inStr)  { inStr = false; continue; }
+      if (inStr) continue;
       if (ch === '(') { depth++; lastOpen = i + 1; }
       else if (ch === ')') { depth--; }
     }
@@ -1260,6 +1264,36 @@ function sqlClientSideErrors(sql) {
     errors.push({ line: lastOpen, message: `ORA-00907: falta el paréntesis derecho`, hint: `Revisá que cada ( tenga su ) correspondiente` });
   } else if (depth < 0) {
     errors.push({ line: lines.length, message: `ORA-00907: paréntesis de cierre sin apertura`, hint: `Hay un ) de más` });
+  }
+
+  // 4. IF / END IF balance (PL/SQL blocks)
+  if (hasPLSQL) {
+    // Strip single-line comments and string literals before counting
+    const normSql = sql.replace(/--[^\n]*/g, '').replace(/'([^']|'')*'/g, "''").toUpperCase();
+    // \bIF\b does NOT match inside ELSIF (no word boundary before I)
+    // so rawIfCount = number of IF blocks that need an END IF
+    const rawIfCount  = (normSql.match(/\bIF\b/g) || []).length;
+    const endIfCount  = (normSql.match(/\bEND\s+IF\b/g) || []).length;
+    if (rawIfCount > endIfCount) {
+      const missing = rawIfCount - endIfCount;
+      errors.push({
+        line: lines.length,
+        message: `PLS-00103: Falta${missing > 1 ? 'n' : ''} ${missing} END IF; — ${rawIfCount} IF pero solo ${endIfCount} END IF`,
+        hint: 'Cada IF...THEN debe cerrar con END IF;',
+      });
+    }
+
+    // LOOP / END LOOP balance
+    const loopCount    = (normSql.match(/\bLOOP\b/g) || []).length;
+    const endLoopCount = (normSql.match(/\bEND\s+LOOP\b/g) || []).length;
+    if (loopCount > endLoopCount) {
+      const missing = loopCount - endLoopCount;
+      errors.push({
+        line: lines.length,
+        message: `PLS-00103: Falta${missing > 1 ? 'n' : ''} ${missing} END LOOP; — ${loopCount} LOOP pero solo ${endLoopCount} END LOOP`,
+        hint: 'Cada LOOP debe cerrar con END LOOP;',
+      });
+    }
   }
 
   return errors;

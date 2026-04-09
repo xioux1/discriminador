@@ -55,30 +55,29 @@ function deterministicPlsqlChecks(sql) {
   // Strip comments and strings from full text first
   const clean = norm(sql).toUpperCase();
 
-  // Count standalone IF ... THEN openings (not ELSIF)
-  const ifMatches   = (clean.match(/\bIF\b(?!\s*\(|\s+SQL)/g)  || []).filter(m => m === 'IF').length;
-  // ELSIF doesn't open a new block
-  const elsifCount  = (clean.match(/\bELSIF\b/g) || []).length;
+  // \bIF\b does NOT match inside ELSIF (no word boundary before I in ELSIF)
+  // Bug fix: removed (?!\s*\() exclusion — that silently skipped `IF (cond) THEN`
+  // and (?!\s+SQL) — that silently skipped `IF SQL%ROWCOUNT > 0 THEN`
+  const rawIfCount  = (clean.match(/\bIF\b/g) || []).length;
   const endIfCount  = (clean.match(/\bEND\s+IF\b/g) || []).length;
-  const openIfs     = ifMatches - elsifCount;
 
-  if (openIfs > endIfCount) {
-    const missing = openIfs - endIfCount;
+  if (rawIfCount > endIfCount) {
+    const missing = rawIfCount - endIfCount;
     errors.push({
       line: lines.length,
-      message: `PLS-00103: Falta${missing > 1 ? 'n' : ''} ${missing} END IF; — hay más IF que END IF en el bloque`,
+      message: `PLS-00103: Falta${missing > 1 ? 'n' : ''} ${missing} END IF; — ${rawIfCount} IF pero solo ${endIfCount} END IF`,
       hint: 'Cada IF...THEN debe cerrar con END IF;'
     });
   }
 
-  // COUNT LOOP vs END LOOP
+  // LOOP vs END LOOP
   const loopCount    = (clean.match(/\bLOOP\b/g) || []).length;
   const endLoopCount = (clean.match(/\bEND\s+LOOP\b/g) || []).length;
   if (loopCount > endLoopCount) {
     const missing = loopCount - endLoopCount;
     errors.push({
       line: lines.length,
-      message: `PLS-00103: Falta${missing > 1 ? 'n' : ''} ${missing} END LOOP; — hay más LOOP que END LOOP`,
+      message: `PLS-00103: Falta${missing > 1 ? 'n' : ''} ${missing} END LOOP; — ${loopCount} LOOP pero solo ${endLoopCount} END LOOP`,
       hint: 'Cada LOOP debe cerrar con END LOOP;'
     });
   }
@@ -111,37 +110,31 @@ sqlValidateRouter.post('/sql/validate', async (req, res) => {
   // --- Step 2: LLM static analysis for subtler errors ---
   try {
     const response = await getClient().messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 700,
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 600,
       temperature: 0,
-      system: `Sos un compilador estático de Oracle PL/SQL y SQL estándar. Tu única función es detectar ERRORES DE SINTAXIS reales.
+      system: `Sos un compilador estático de Oracle SQL y PL/SQL. SOLO reportás errores de SINTAXIS que un compilador detectaría en el texto dado, sin ejecutarlo.
 
-Lenguaje soportado (detectá automáticamente):
-- SQL estándar: SELECT, INSERT, UPDATE, DELETE, CREATE TABLE, ALTER, etc.
-- PL/SQL: DECLARE/BEGIN/END, PROCEDURE/FUNCTION/TRIGGER/PACKAGE, CURSOR, FOR/WHILE/LOOP, IF/ELSIF/ELSE/END IF, EXCEPTION WHEN, %TYPE, %ROWTYPE, SQL%ROWCOUNT, SQL%FOUND, SQL%NOTFOUND, DBMS_OUTPUT, RAISE_APPLICATION_ERROR, SELECT...INTO, etc.
+REPORTAR (errores de sintaxis reales solamente):
+- Keyword mal escrita que rompe sintaxis
+- Paréntesis desbalanceados
+- String literal sin cerrar (comilla simple sin cierre)
+- Coma faltante o extra
+- Punto y coma faltante al final de sentencia PL/SQL
+- SELECT sin FROM (cuando aplica)
+- BEGIN sin END o END sin BEGIN
 
-QUÉ REPORTAR (solo esto):
-- Palabra clave mal escrita que rompe la sintaxis
-- Paréntesis no balanceados
-- BEGIN sin END correspondiente
-- String literal sin cerrar
-- Coma faltante o extra en lista de parámetros/columnas
-- Operador inválido
-- Punto y coma faltante al final de sentencias dentro de bloques PL/SQL
-- Sentencia UPDATE/INSERT/DELETE/SELECT sin terminar en ;
+NO REPORTAR:
+- Tablas, columnas o variables inexistentes (no tenés el esquema)
+- Malas prácticas, rendimiento, lógica de negocio
+- Errores que ya detectó el pre-compilador (IF/END IF, LOOP/END LOOP, paréntesis — ya están chequeados)
 
-QUÉ NO REPORTAR:
-- Tablas, columnas o variables que no existen (no tenés acceso al esquema)
-- Malas prácticas o código ineficiente
-- Lógica de negocio incorrecta
-- Redundancias
+Si el código tiene errores claros de sintaxis, reportalos con número de línea exacto.
+Si el código parece correcto sintácticamente, respondé valid:true con errors:[].
+NO inventes errores cuando tenés dudas. Preferí false negative a false positive.
+Mensajes estilo Oracle: "PLS-00103: ..." / "ORA-XXXXX: ...". Máximo 3 errores.
 
-Sé preciso: solo reportá errores que podés identificar con certeza en el texto. Incluí número de línea.
-Mensajes en estilo Oracle: "PLS-00103: ..." / "ORA-00907: ...".
-Máximo 4 errores.
-
-Respondé ÚNICAMENTE con JSON válido:
-{ "valid": true|false, "errors": [{ "line": N, "message": "...", "hint": "..." }] }`,
+SOLO JSON: { "valid": true|false, "errors": [{ "line": N, "message": "...", "hint": "..." }] }`,
       messages: [{
         role: 'user',
         content: `Analizá este código SQL/PL/SQL:\n\n${sql}`
