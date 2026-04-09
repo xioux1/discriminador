@@ -691,8 +691,22 @@ textarea:focus, input[type="text"]:focus, select:focus {
   font-size: 1.1rem;
   font-weight: 700;
   margin-bottom: 18px;
-  line-height: 1.5;
+  line-height: 1.6;
   color: var(--text);
+}
+.prompt-math-line {
+  display: block;
+  font-family: 'Georgia', serif;
+  font-weight: 600;
+  font-size: 1.0rem;
+  background: var(--primary-light);
+  border-left: 3px solid var(--primary);
+  padding: 4px 10px;
+  margin: 6px 0;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  color: var(--primary-dark);
+  letter-spacing: 0.01em;
+  white-space: pre-wrap;
 }
 .study-card-prompt[contenteditable="true"] {
   padding: 8px;

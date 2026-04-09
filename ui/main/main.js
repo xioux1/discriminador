@@ -1574,13 +1574,28 @@ function escapePreserve(text) {
   return escHtml(text).replace(/\n/g, '<br>');
 }
 
+const MATH_LINE_RE = /[=²³⁰¹⁴⁵⁶⁷⁸⁹₀₁₂₃₄₅₆₇₈₉αβγδεζηθλμνξπρστφψωΔΩ∑∫∂∞±√∝∈∉∩∪⊂⊃≤≥≠≈]|[a-zA-Z][₀₁₂₃]|[a-zA-Z]\d*[²³]|\b(cos|sin|tan|log|ln|lim|sup|inf|max|min|det|div|rot|grad)\b/;
+
 function formatPromptForDisplay(text) {
   const normalized = String(text ?? '')
     .replace(/\r\n?/g, '\n')
     .replace(/:\s+([•●▪◦])/g, ':\n$1')
     .replace(/\s+([•●▪◦])\s+/g, '\n$1 ')
     .trim();
-  return escapePreserve(normalized);
+
+  // Detect if text contains math — if so, wrap equation-heavy lines visually
+  const lines = normalized.split('\n');
+  const hasMath = lines.some(l => MATH_LINE_RE.test(l));
+  if (!hasMath) return escapePreserve(normalized);
+
+  return lines.map(line => {
+    if (!line.trim()) return '<br>';
+    // Lines with = or strong math content get a styled block
+    if (/=/.test(line) && MATH_LINE_RE.test(line)) {
+      return `<span class="prompt-math-line">${escHtml(line)}</span>`;
+    }
+    return escHtml(line) + '<br>';
+  }).join('');
 }
 
 function renderStudyPrompt(promptEl, promptText) {

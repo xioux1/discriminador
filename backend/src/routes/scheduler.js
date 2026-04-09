@@ -198,19 +198,21 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
 
 // ─── Record a review result ───────────────────────────────────────────────────
 // Body: { card_id?, micro_card_id?, grade, concept_gaps?, response_time_ms? }
-// grade='review' is treated as 'fail' for scheduling purposes.
+// Accepted grades: again|hard|good|easy (+ legacy pass|fail|review)
 schedulerRouter.post('/scheduler/review', async (req, res) => {
   const { card_id, micro_card_id, grade, concept_gaps = [], response_time_ms, user_answer = '' } = req.body || {};
   const userId = req.user.id;
 
-  if (!grade || !['pass', 'fail', 'review'].includes(grade.toLowerCase())) {
+  const VALID_GRADES = new Set(['pass', 'fail', 'review', 'again', 'hard', 'good', 'easy']);
+  if (!grade || !VALID_GRADES.has(grade.toLowerCase())) {
     return res.status(422).json({
       error: 'validation_error',
-      message: 'grade must be pass, fail, or review.'
+      message: 'grade must be again, hard, good, or easy.'
     });
   }
 
-  const effectiveGrade = grade.toLowerCase() === 'review' ? 'fail' : grade.toLowerCase();
+  // Normalize: legacy 'review' → 'hard'; everything else passed through
+  const effectiveGrade = grade.toLowerCase() === 'review' ? 'hard' : grade.toLowerCase();
 
   // Log activity (best-effort)
   const rtMs = Number.isFinite(Number(response_time_ms)) ? Number(response_time_ms) : null;
