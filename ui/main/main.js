@@ -2627,7 +2627,7 @@ function showStudyCard() {
   subjectEl.textContent = `Materia: ${subjectLabel}`;
 
   if (item.type === 'micro') {
-    badge.textContent = `Micro-concepto: ${item.data.concept}`;
+    badge.textContent = 'Micro-concepto';
     badge.classList.remove('hidden');
     renderStudyPrompt(promptEl, getStudyPromptText(item));
     // Show parent card as context so student knows what topic this stems from
