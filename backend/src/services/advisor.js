@@ -111,14 +111,27 @@ Respondé ÚNICAMENTE con un JSON válido con esta estructura exacta:
 
   const raw = response.content[0]?.text?.trim() || '{}';
 
-  // Strip markdown code fences if present
-  const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+  // Robustly extract JSON regardless of preamble text or code fences.
+  // The LLM sometimes adds "Aquí el análisis:\n\n```json\n{...}" or similar,
+  // which breaks a simple ^``` anchor match.
+  let cleaned = raw;
+  const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fenceMatch) {
+    // Content between the first pair of code fences
+    cleaned = fenceMatch[1];
+  } else {
+    // No code fences — find the outermost { ... } block
+    const start = raw.indexOf('{');
+    const end   = raw.lastIndexOf('}');
+    if (start !== -1 && end > start) cleaned = raw.slice(start, end + 1);
+  }
 
   let parsed;
   try {
     parsed = JSON.parse(cleaned);
   } catch (_e) {
-    parsed = { summary: raw, coverage_pct: 0, covered_topics: [], missing_topics: [], exam_gaps: [], priorities: [], pace_ok: true, pace_message: '' };
+    console.error('[advisor] JSON parse failed. Raw LLM output:', raw.slice(0, 300));
+    parsed = { summary: 'No se pudo procesar la respuesta del análisis. Intentá de nuevo.', coverage_pct: 0, covered_topics: [], missing_topics: [], exam_gaps: [], priorities: [], pace_ok: true, pace_message: '' };
   }
 
   // Always set days_until_exam from our calculation (more reliable than LLM arithmetic)

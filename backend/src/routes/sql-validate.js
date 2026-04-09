@@ -142,7 +142,14 @@ SOLO JSON: { "valid": true|false, "errors": [{ "line": N, "message": "...", "hin
     });
 
     const text = response.content.find((b) => b.type === 'text')?.text ?? '';
-    const jsonText = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+    let jsonText = text;
+    const fence = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (fence) {
+      jsonText = fence[1];
+    } else {
+      const s = text.indexOf('{'), e = text.lastIndexOf('}');
+      if (s !== -1 && e > s) jsonText = text.slice(s, e + 1);
+    }
 
     let result;
     try {
