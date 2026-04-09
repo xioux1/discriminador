@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { dbPool } from '../db/client.js';
-import { computeNextReview, MICRO_MASTERY_THRESHOLD_DAYS } from '../services/scheduler.js';
+import { computeNextReview } from '../services/scheduler.js';
 import { generateMicroCard } from '../services/micro-generator.js';
 import { generateVariant } from '../services/variant-generator.js';
 
@@ -336,11 +336,9 @@ async function reviewMicroCard(res, microCardId, grade, responseTimeMs, userId) 
     grade
   );
 
-  // Archive when mastery threshold is reached.
-  const newStatus =
-    grade === 'pass' && schedule.interval_days >= MICRO_MASTERY_THRESHOLD_DAYS
-      ? 'archived'
-      : micro.status;
+  // Archive immediately on any PASS — micros are remedial, not long-term SR.
+  // This frees the parent card to generate a fresh micro on a different concept.
+  const newStatus = grade === 'pass' ? 'archived' : micro.status;
 
   const updated = await dbPool.query(
     `UPDATE micro_cards

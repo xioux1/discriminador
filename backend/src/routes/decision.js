@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { dbPool } from '../db/client.js';
-import { computeNextReview, MICRO_MASTERY_THRESHOLD_DAYS } from '../services/scheduler.js';
+import { computeNextReview } from '../services/scheduler.js';
 import { generateMicroCard } from '../services/micro-generator.js';
 
 const decisionRouter = Router();
@@ -360,10 +360,8 @@ async function syncSchedulerCard(pool, {
       final_grade
     );
 
-    const nextStatus =
-      final_grade === 'pass' && schedule.interval_days >= MICRO_MASTERY_THRESHOLD_DAYS
-        ? 'archived'
-        : micro.status;
+    // Archive immediately on any PASS — micros are remedial, not long-term SR.
+    const nextStatus = final_grade === 'pass' ? 'archived' : micro.status;
 
     await pool.query(
       `UPDATE micro_cards
