@@ -2344,7 +2344,8 @@ function bindStudyKeyboardShortcuts() {
     document.addEventListener('keydown', (event) => {
       if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
       const isSlashShortcut = event.code === 'Slash' || event.key === '/';
-      if (!isSlashShortcut) return;
+      const isEnterShortcut = event.key === 'Enter' && !event.shiftKey;
+      if (!isSlashShortcut && !isEnterShortcut) return;
 
       const sessionVisible = document.querySelector('#study-session')?.offsetParent !== null;
       const resultVisible = document.querySelector('#study-result-block')?.offsetParent !== null;
