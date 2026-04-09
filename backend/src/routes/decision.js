@@ -1,13 +1,24 @@
 import { Router } from 'express';
 import { dbPool } from '../db/client.js';
-import { computeNextReview } from '../services/scheduler.js';
+import { computeNextReview, isPassGrade, isFailGrade } from '../services/scheduler.js';
 import { generateMicroCard } from '../services/micro-generator.js';
 
 const decisionRouter = Router();
 
-const ALLOWED_ACTIONS = new Set(['accept', 'correct-pass', 'correct-fail', 'uncertain']);
-const ALLOWED_FINAL_GRADES = new Set(['pass', 'fail']);
-const ALLOWED_SUGGESTED_GRADES = new Set(['pass', 'review', 'fail']);
+const ALLOWED_ACTIONS = new Set([
+  'accept', 'uncertain',
+  // 4-grade corrections
+  'correct-again', 'correct-hard', 'correct-good', 'correct-easy',
+  // legacy compat
+  'correct-pass', 'correct-fail'
+]);
+const ALLOWED_FINAL_GRADES = new Set(['again', 'hard', 'good', 'easy', 'pass', 'fail']);
+const ALLOWED_SUGGESTED_GRADES = new Set(['again', 'hard', 'good', 'easy', 'pass', 'review', 'fail']);
+
+const CORRECTION_ACTIONS = new Set([
+  'correct-again', 'correct-hard', 'correct-good', 'correct-easy',
+  'correct-pass', 'correct-fail'
+]);
 
 function pickTopGap(gaps = []) {
   const selected = gaps.find((gap) => typeof gap?.concept === 'string' && gap.concept.trim().length > 0);
@@ -39,21 +50,19 @@ function toDecisionType(action) {
 }
 
 function resolveFinalGrade(action, finalGrade, suggestedGrade) {
-  const normalizedFinalGrade = normalizeString(finalGrade).toLowerCase();
+  // New 4-grade explicit corrections
+  if (action === 'correct-again') return 'again';
+  if (action === 'correct-hard')  return 'hard';
+  if (action === 'correct-good')  return 'good';
+  if (action === 'correct-easy')  return 'easy';
+  // Legacy corrections (map to new equivalents)
+  if (action === 'correct-pass')  return 'good';
+  if (action === 'correct-fail')  return 'again';
+
+  const normalizedFinalGrade    = normalizeString(finalGrade).toLowerCase();
   const normalizedSuggestedGrade = normalizeString(suggestedGrade).toLowerCase();
 
-  if (action === 'correct-pass') {
-    return 'pass';
-  }
-
-  if (action === 'correct-fail') {
-    return 'fail';
-  }
-
-  if (action === 'accept') {
-    return normalizedFinalGrade;
-  }
-
+  if (action === 'accept') return normalizedFinalGrade || normalizedSuggestedGrade;
   return normalizedFinalGrade || normalizedSuggestedGrade;
 }
 
@@ -96,7 +105,7 @@ decisionRouter.post('/decision', async (req, res) => {
   if (!ALLOWED_ACTIONS.has(action)) {
     validationErrors.push({
       field: 'action',
-      issue: "Must be one of: 'accept', 'correct-pass', 'correct-fail', 'uncertain'."
+      issue: "Must be one of: 'accept', 'correct-again', 'correct-hard', 'correct-good', 'correct-easy', 'uncertain'."
     });
   }
 
@@ -110,14 +119,14 @@ decisionRouter.post('/decision', async (req, res) => {
   if (!ALLOWED_SUGGESTED_GRADES.has(suggestedGrade)) {
     validationErrors.push({
       field: 'evaluation_result.suggested_grade',
-      issue: "Must be one of: 'PASS', 'REVIEW' or 'FAIL'."
+      issue: "Must be one of: 'AGAIN', 'HARD', 'GOOD', 'EASY'."
     });
   }
 
   if (!ALLOWED_FINAL_GRADES.has(finalGrade)) {
     validationErrors.push({
       field: 'final_grade',
-      issue: "Must resolve to one of: 'PASS' or 'FAIL'."
+      issue: "Must resolve to one of: 'again', 'hard', 'good', 'easy'."
     });
   }
 
@@ -129,7 +138,7 @@ decisionRouter.post('/decision', async (req, res) => {
   }
 
 
-  if ((action === 'correct-pass' || action === 'correct-fail' || action === 'uncertain') && correctionReason.length < 5) {
+  if ((CORRECTION_ACTIONS.has(action) || action === 'uncertain') && correctionReason.length < 5) {
     validationErrors.push({
       field: 'correction_reason',
       issue: 'Must contain at least 5 characters for correction/uncertain decisions.'
@@ -143,7 +152,7 @@ decisionRouter.post('/decision', async (req, res) => {
     });
   }
 
-  if ((action === 'correct-pass' || action === 'correct-fail') && acceptedSuggestion !== false) {
+  if (CORRECTION_ACTIONS.has(action) && acceptedSuggestion !== false) {
     validationErrors.push({
       field: 'accepted_suggestion',
       issue: 'Must be false when action is a correction.'
@@ -276,7 +285,7 @@ decisionRouter.post('/decision', async (req, res) => {
     ).catch((e) => console.warn('[activity log]', e.message));
 
     // Bridge: keep scheduler in sync (best-effort, non-blocking)
-    if (action !== 'uncertain' && inputPrompt && inputExpectedAnswer && ['pass', 'fail'].includes(finalGrade)) {
+    if (action !== 'uncertain' && inputPrompt && inputExpectedAnswer && ALLOWED_FINAL_GRADES.has(finalGrade)) {
       syncSchedulerCard(dbPool, {
         prompt_text: inputPrompt,
         expected_answer_text: inputExpectedAnswer,
@@ -360,8 +369,8 @@ async function syncSchedulerCard(pool, {
       final_grade
     );
 
-    // Archive immediately on any PASS — micros are remedial, not long-term SR.
-    const nextStatus = final_grade === 'pass' ? 'archived' : micro.status;
+    // Archive immediately on any pass-grade (good/easy)
+    const nextStatus = isPassGrade(final_grade) ? 'archived' : micro.status;
 
     await pool.query(
       `UPDATE micro_cards
@@ -436,10 +445,10 @@ async function syncSchedulerCard(pool, {
          updated_at = now()
      WHERE id = $5`,
     [schedule.interval_days, schedule.ease_factor, schedule.next_review_at,
-     final_grade === 'pass' ? 1 : 0, card.id]
+     isPassGrade(final_grade) ? 1 : 0, card.id]
   );
 
-  if (final_grade === 'pass') {
+  if (isPassGrade(final_grade)) {
     // Full understanding confirmed — retire active micro-cards
     await pool.query(
       `UPDATE micro_cards SET status = 'archived', updated_at = now()
@@ -453,8 +462,10 @@ async function syncSchedulerCard(pool, {
     'SELECT concept FROM concept_gaps WHERE evaluation_item_id = $1',
     [evaluation_item_id]
   );
-  const shouldCreateMicros =
-    !(final_grade === 'pass' && decision_action === 'correct-pass');
+  // Don't create micros when teacher explicitly corrected to a pass grade
+  const isManualPassCorrection = isPassGrade(final_grade) &&
+    ['correct-pass', 'correct-good', 'correct-easy'].includes(decision_action);
+  const shouldCreateMicros = !isManualPassCorrection;
   const targetGaps = shouldCreateMicros
     ? pickTopGap(gaps)
     : [];
@@ -463,8 +474,8 @@ async function syncSchedulerCard(pool, {
     if (!concept) continue;
 
     const already = await pool.query(
-      `SELECT id FROM micro_cards WHERE parent_card_id = $1 AND status = 'active' LIMIT 1`,
-      [card.id]
+      `SELECT id FROM micro_cards WHERE parent_card_id = $1 AND concept = $2 AND status = 'active'`,
+      [card.id, concept]
     );
     if (already.rows.length) continue;
 

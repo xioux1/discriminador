@@ -32,7 +32,9 @@ studyDoubtRouter.post('/study/doubt', async (req, res) => {
   }
 
   try {
-    const gradeLabel = grade === 'pass' ? 'APROBÓ' : grade === 'fail' ? 'NO APROBÓ' : 'REVISIÓN';
+    const gradeLabel = ['pass','good','easy'].includes(grade) ? 'APROBÓ'
+      : ['fail','again'].includes(grade) ? 'NO APROBÓ'
+      : grade === 'hard' ? 'INCOMPLETO' : 'REVISIÓN';
     const userMessage = `Contexto de la tarjeta:
 Consigna: ${String(card_prompt).slice(0, 800)}
 Respuesta esperada: ${String(expected_answer).slice(0, 800)}

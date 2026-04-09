@@ -9,6 +9,11 @@
   --pass-bg:    rgba(100, 155, 125, 0.13); --pass-fg:    #3d7a5a;
   --fail-bg:    rgba(170,  85,  85, 0.10); --fail-fg:    #8a3a3a;
   --review-bg:  rgba(180, 145,  75, 0.12); --review-fg:  #7a5a20;
+  /* FSRS 4-grade palette */
+  --again-bg:   rgba(170,  70,  70, 0.12); --again-fg:   #8a2a2a;
+  --hard-bg:    rgba(195, 120,  40, 0.12); --hard-fg:    #8a4a10;
+  --good-bg:    rgba(100, 155, 125, 0.13); --good-fg:    #3d7a5a;
+  --easy-bg:    rgba( 55, 120, 200, 0.12); --easy-fg:    #1a5a9a;
 
   /* Background — diffuse field */
   --bg:     #edf1f6;
@@ -238,8 +243,10 @@ textarea:focus, input[type="text"]:focus, select:focus {
   flex-shrink: 0;
   text-transform: uppercase;
 }
-.grade-badge.pass, .grade-badge.PASS { background: var(--pass-bg); color: var(--pass-fg); }
-.grade-badge.fail, .grade-badge.FAIL { background: var(--fail-bg); color: var(--fail-fg); }
+.grade-badge.pass, .grade-badge.PASS, .grade-badge.good, .grade-badge.GOOD { background: var(--good-bg); color: var(--good-fg); }
+.grade-badge.fail, .grade-badge.FAIL, .grade-badge.again, .grade-badge.AGAIN { background: var(--again-bg); color: var(--again-fg); }
+.grade-badge.hard, .grade-badge.HARD { background: var(--hard-bg); color: var(--hard-fg); }
+.grade-badge.easy, .grade-badge.EASY { background: var(--easy-bg); color: var(--easy-fg); }
 .grade-badge.review { background: var(--review-bg); color: var(--review-fg); }
 
 .stat-pill {
@@ -252,8 +259,10 @@ textarea:focus, input[type="text"]:focus, select:focus {
   background: #f0f0f0;
   color: #444;
 }
-.stat-pill.pass   { background: var(--pass-bg);   color: var(--pass-fg); }
-.stat-pill.fail   { background: var(--fail-bg);   color: var(--fail-fg); }
+.stat-pill.pass, .stat-pill.good { background: var(--good-bg); color: var(--good-fg); }
+.stat-pill.fail, .stat-pill.again { background: var(--again-bg); color: var(--again-fg); }
+.stat-pill.hard   { background: var(--hard-bg);   color: var(--hard-fg); }
+.stat-pill.easy   { background: var(--easy-bg);   color: var(--easy-fg); }
 .stat-pill.review { background: var(--review-bg); color: var(--review-fg); }
 
 /* ─── Dictation button ───────────────────────────────────────────────────────── */
@@ -758,9 +767,11 @@ textarea:focus, input[type="text"]:focus, select:focus {
   border-radius: var(--radius-sm);
   font-size: 0.92rem;
 }
-.study-grade-inline.pass   { background: var(--pass-bg);   color: var(--pass-fg); }
-.study-grade-inline.fail   { background: var(--fail-bg);   color: var(--fail-fg); }
-.study-grade-inline.review { background: var(--review-bg); color: var(--review-fg); }
+.study-grade-inline.pass,  .study-grade-inline.good  { background: var(--good-bg);   color: var(--good-fg); }
+.study-grade-inline.fail,  .study-grade-inline.again { background: var(--again-bg);  color: var(--again-fg); }
+.study-grade-inline.hard                             { background: var(--hard-bg);   color: var(--hard-fg); }
+.study-grade-inline.easy                             { background: var(--easy-bg);   color: var(--easy-fg); }
+.study-grade-inline.review                           { background: var(--review-bg); color: var(--review-fg); }
 
 .study-queue-summary { font-size: 1rem; margin-bottom: 12px; }
 .study-queue-count   { font-size: 2rem; font-weight: 800; color: var(--primary); margin-right: 4px; }
@@ -1968,14 +1979,6 @@ textarea:focus, input[type="text"]:focus, select:focus {
 .exam-cal-scope-fill { background: linear-gradient(90deg, #d68a43, #e1a56b); }
 .exam-cal-coverage-fill { background: linear-gradient(90deg, #a8cbc2, #c6ddd7); }
 .exam-cal-metric-text { font-size: 0.72rem; color: #6f757f; text-align: right; min-width: 86px; white-space: nowrap; }
-.btn-update-coverage {
-  font-size: 0.72rem; padding: 2px 8px; border-radius: 6px;
-  border: 1px solid var(--border); background: transparent;
-  color: var(--text-muted); cursor: pointer; white-space: nowrap;
-  transition: background 0.1s, color 0.1s;
-}
-.btn-update-coverage:hover:not(:disabled) { background: var(--accent); color: #fff; border-color: var(--accent); }
-.btn-update-coverage:disabled { opacity: 0.5; cursor: default; }
 
 .subjects-list-actions { gap: 8px; }
 .subjects-list-actions .btn-secondary { min-width: 126px; padding: 8px 14px; font-size: 0.95rem; }
@@ -2147,7 +2150,7 @@ textarea:focus, input[type="text"]:focus, select:focus {
 
 /* ─── Notes FAB + Panel ───────────────────────────────────────────────────── */
 .notes-fab {
-  position: fixed; bottom: 80px; right: 24px; z-index: 300;
+  position: fixed; bottom: 24px; right: 24px; z-index: 300;
   width: 44px; height: 44px; border-radius: 50%;
   background: var(--primary); color: #fff; border: none;
   font-size: 1.25rem; cursor: pointer; box-shadow: var(--shadow-md);
@@ -2236,3 +2239,84 @@ textarea:focus, input[type="text"]:focus, select:focus {
 }
 .planner-todo-input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .planner-todo-add-btn { font-size: 0.82rem; padding: 5px 12px; }
+
+/* ─── Class Notes (curriculum modal) ─────────────────────────────────────── */
+.class-notes-list { display: flex; flex-direction: column; gap: 8px; }
+
+.class-note-card {
+  border: var(--bw-divider) solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  overflow: hidden;
+}
+.class-note-header {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 10px;
+  background: var(--surface);
+  border-bottom: var(--bw-divider) solid var(--border);
+  cursor: pointer;
+  user-select: none;
+}
+.class-note-header:hover { background: var(--surface-hover, #f0f2f7); }
+.class-note-toggle { font-size: 0.7rem; color: var(--text-muted); transition: transform 0.15s; flex-shrink: 0; }
+.class-note-card.collapsed .class-note-toggle { transform: rotate(-90deg); }
+.class-note-title-input {
+  flex: 1; border: none; background: transparent; font-size: 0.88rem;
+  font-weight: 600; color: var(--text); font-family: inherit;
+  outline: none; padding: 0; cursor: text;
+  min-width: 0;
+}
+.class-note-title-input::placeholder { font-weight: 400; color: var(--text-muted); }
+.class-note-delete {
+  font-size: 0.72rem; color: var(--text-muted); background: none; border: none;
+  cursor: pointer; padding: 2px 4px; border-radius: 3px; opacity: 0.5; flex-shrink: 0;
+}
+.class-note-delete:hover { opacity: 1; color: var(--fail-fg); }
+
+.class-note-body { padding: 0; }
+.class-note-card.collapsed .class-note-body { display: none; }
+.class-note-content {
+  width: 100%; box-sizing: border-box;
+  border: none; resize: vertical; outline: none;
+  padding: 8px 10px; font-size: 0.85rem; line-height: 1.55;
+  background: transparent; font-family: inherit; color: var(--text);
+  min-height: 80px;
+}
+
+/* ─── Study decision: 4-grade override buttons ───────────────────────────── */
+.study-decision-actions {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+}
+.study-decision-accept-btn {
+  padding: 5px 14px; font-size: 0.85rem; border-radius: var(--radius-sm);
+  background: var(--accent); color: #fff; border: none; cursor: pointer;
+  font-family: inherit; font-weight: 600;
+}
+.study-decision-accept-btn:hover { filter: brightness(1.1); }
+
+.study-grade-override-group {
+  display: flex; align-items: center; gap: 4px;
+  border: var(--bw-divider) solid var(--border);
+  border-radius: var(--radius-sm); padding: 2px 6px;
+  background: var(--surface);
+}
+.study-grade-override-label {
+  font-size: 0.75rem; color: var(--text-muted); margin-right: 2px; white-space: nowrap;
+}
+.study-grade-btn {
+  padding: 3px 10px; font-size: 0.82rem; font-weight: 700;
+  border-radius: var(--radius-sm); border: none; cursor: pointer;
+  font-family: inherit; transition: filter 0.1s;
+}
+.study-grade-btn:hover { filter: brightness(0.92); }
+.study-grade-btn.grade-again { background: var(--again-bg); color: var(--again-fg); }
+.study-grade-btn.grade-hard  { background: var(--hard-bg);  color: var(--hard-fg); }
+.study-grade-btn.grade-good  { background: var(--good-bg);  color: var(--good-fg); }
+.study-grade-btn.grade-easy  { background: var(--easy-bg);  color: var(--easy-fg); }
+
+.study-decision-misc-btn {
+  padding: 4px 10px; font-size: 0.8rem; border-radius: var(--radius-sm);
+  background: var(--surface); border: var(--bw-divider) solid var(--border);
+  color: var(--text-muted); cursor: pointer; font-family: inherit;
+}
+.study-decision-misc-btn:hover { color: var(--text); border-color: var(--text-muted); }

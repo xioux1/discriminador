@@ -1461,6 +1461,11 @@ function normalizeSuggestedGrade(grade) {
 
 function getSuggestedGradeLabel(grade) {
   const normalized = normalizeSuggestedGrade(grade);
+  if (normalized === 'AGAIN') return 'Again — Sin respuesta útil';
+  if (normalized === 'HARD')  return 'Hard — Incompleto';
+  if (normalized === 'GOOD')  return 'Good — Correcto';
+  if (normalized === 'EASY')  return 'Easy — Dominio total';
+  // Legacy compat
   if (normalized === 'REVIEW') {
     return 'requiere validación docente';
   }
@@ -1474,9 +1479,9 @@ function enqueueManualCase(result) {
   }
 
   const priorityByGrade = {
-    REVIEW: 0,
-    FAIL: 1,
-    PASS: 2,
+    AGAIN: 0, HARD: 1, GOOD: 2, EASY: 3,
+    // legacy compat
+    FAIL: 0, REVIEW: 1, PASS: 2,
   };
   const normalizedGrade = normalizeSuggestedGrade(result.suggested_grade);
   const existingIndex = uiState.manualQueue.findIndex((item) => item.evaluation_id === result.evaluation_id);
@@ -1548,13 +1553,13 @@ function renderResult(result) {
   document.querySelector('#socratic-questions').innerHTML = '';
 
   const grade = normalizeSuggestedGrade(result.suggested_grade);
-  if (grade === 'REVIEW') {
-    socraticTrigger.textContent = 'Responder preguntas de profundización';
-    socraticTrigger.dataset.label = 'Responder preguntas de profundización';
-    socraticTrigger.classList.remove('hidden');
-  } else if (grade === 'FAIL') {
+  if (grade === 'AGAIN' || grade === 'FAIL') {
     socraticTrigger.textContent = 'Entender el error';
     socraticTrigger.dataset.label = 'Entender el error';
+    socraticTrigger.classList.remove('hidden');
+  } else if (grade === 'HARD' || grade === 'REVIEW') {
+    socraticTrigger.textContent = 'Profundizar concepto';
+    socraticTrigger.dataset.label = 'Profundizar concepto';
     socraticTrigger.classList.remove('hidden');
   } else {
     socraticTrigger.classList.add('hidden');
@@ -1720,11 +1725,7 @@ form.addEventListener('submit', async (event) => {
       }
     }
 
-    const normalizedSuggestedGrade = normalizeSuggestedGrade(result.suggested_grade);
-    const reviewHint = normalizedSuggestedGrade === 'REVIEW'
-      ? ` Caso priorizado en cola manual (#${manualQueueStatus.position} de ${manualQueueStatus.size}).`
-      : '';
-    setFeedback(`Evaluación lista. Ahora firma una decisión final.${reviewHint}`);
+    setFeedback('Evaluación lista. Ahora firma una decisión final.');
   } catch (error) {
     resultLoading.classList.add('hidden');
     resultContent.classList.add('hidden');
@@ -1874,7 +1875,8 @@ document.querySelector('#stats-toggle').addEventListener('click', () => {
   const submitBtn = document.querySelector('#socratic-submit-btn');
 
   function getSocraticMode() {
-    return normalizeSuggestedGrade(uiState.lastResult?.suggested_grade) === 'FAIL' ? 'fail' : 'review';
+    const g = normalizeSuggestedGrade(uiState.lastResult?.suggested_grade);
+    return (g === 'FAIL' || g === 'AGAIN' || g === 'HARD') ? 'fail' : 'review';
   }
 
   triggerBtn.addEventListener('click', async () => {
@@ -2107,15 +2109,21 @@ resultContent.addEventListener('click', async (event) => {
   const correctionReason = normalize(document.querySelector('#correction_reason').value);
   const normalizedSuggestion = normalizeSuggestedGrade(suggestion);
 
+  // REVIEW is legacy; new 4-grade system has no REVIEW state
   if (action === 'accept' && normalizedSuggestion === 'REVIEW') {
-    setFeedback('Las sugerencias en revisión requieren validación docente: usa corregir o marcar duda.', 'error');
+    setFeedback('Caso en revisión: usá "Corregir a" para asignar un grado específico.', 'error');
     return;
   }
 
   const finalGradeByAction = {
     accept: suggestion,
-    'correct-pass': 'PASS',
-    'correct-fail': 'FAIL',
+    'correct-again': 'AGAIN',
+    'correct-hard':  'HARD',
+    'correct-good':  'GOOD',
+    'correct-easy':  'EASY',
+    // legacy compat
+    'correct-pass':  'GOOD',
+    'correct-fail':  'AGAIN',
     uncertain: null,
   };
 
@@ -3108,8 +3116,13 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
 
 function resolveStudyFinalGrade(action, suggestedGrade) {
   const normalizedSuggested = normalizeSuggestedGrade(suggestedGrade);
-  if (action === 'correct-pass') return 'PASS';
-  if (action === 'correct-fail') return 'FAIL';
+  if (action === 'correct-again') return 'AGAIN';
+  if (action === 'correct-hard')  return 'HARD';
+  if (action === 'correct-good')  return 'GOOD';
+  if (action === 'correct-easy')  return 'EASY';
+  // legacy compat
+  if (action === 'correct-pass')  return 'GOOD';
+  if (action === 'correct-fail')  return 'AGAIN';
   if (action === 'accept') return normalizedSuggested;
   return null;
 }
@@ -4053,16 +4066,20 @@ async function openCurriculumModal(subject) {
   document.querySelector('#exam-add-feedback').textContent = '';
   document.querySelector('#exam-date-feedback').textContent = '';
 
-  // Load existing config
+  // Load existing config + class notes
   try {
-    const data = await getJson(`/curriculum/${encodeURIComponent(subject)}`);
+    const [data, classNotesData] = await Promise.all([
+      getJson(`/curriculum/${encodeURIComponent(subject)}`),
+      getJson(`/curriculum/${encodeURIComponent(subject)}/class-notes`)
+    ]);
     document.querySelector('#curriculum-syllabus').value = data.config?.syllabus_text || '';
-    document.querySelector('#curriculum-notes').value    = data.config?.notes_text    || '';
     document.querySelector('#curriculum-daily-new-limit').value = data.config?.daily_new_cards_limit ?? '';
     renderExamDatesList(data.exam_dates || [], subject);
     renderExamsList(data.exams || [], subject);
+    renderClassNotesList(classNotesData.class_notes || [], subject);
   } catch (_e) {
     document.querySelector('#curriculum-daily-new-limit').value = '';
+    renderClassNotesList([], subject);
   }
 
   // Store current subject in modal
@@ -4092,7 +4109,6 @@ document.querySelector('#curriculum-save-btn').addEventListener('click', async (
   try {
     await postJson(`/curriculum/${encodeURIComponent(subject)}`, {
       syllabus_text:         document.querySelector('#curriculum-syllabus').value,
-      notes_text:            document.querySelector('#curriculum-notes').value,
       daily_new_cards_limit: parsedDailyLimit
     }, 'PUT');
     fb.textContent = parsedDailyLimit === null
@@ -4255,6 +4271,107 @@ function renderExamsList(exams, subject) {
   }
     });
   });
+}
+
+// ── Class notes (per-class entries) ───────────────────────────────────────────
+
+function renderClassNotesList(classNotes, subject) {
+  const list = document.querySelector('#class-notes-list');
+  list.innerHTML = '';
+
+  if (!classNotes.length) {
+    list.innerHTML = '<p style="color:var(--text-muted);font-size:0.82rem;margin:0 0 4px">Sin clases cargadas.</p>';
+  } else {
+    classNotes.forEach(note => appendClassNoteCard(note, subject, list));
+  }
+
+  // Wire "Agregar clase" button (replace listener to avoid duplicates)
+  const addBtn = document.querySelector('#class-note-add-btn');
+  const newAddBtn = addBtn.cloneNode(true);
+  addBtn.parentNode.replaceChild(newAddBtn, addBtn);
+  newAddBtn.addEventListener('click', async () => {
+    try {
+      const created = await postJson(`/curriculum/${encodeURIComponent(subject)}/class-notes`, {
+        title: '', content: ''
+      });
+      // Remove empty-state message if present
+      const emptyMsg = list.querySelector('p');
+      if (emptyMsg) emptyMsg.remove();
+      appendClassNoteCard(created, subject, list);
+      // Scroll to the new card and focus title
+      const newCard = list.lastElementChild;
+      newCard?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      newCard?.querySelector('.class-note-title-input')?.focus();
+    } catch (err) {
+      console.error('Error adding class note:', err);
+    }
+  });
+}
+
+function appendClassNoteCard(note, subject, container) {
+  const card = document.createElement('div');
+  card.className = 'class-note-card';
+  card.dataset.id = note.id;
+
+  const displayTitle = note.title || 'Sin título';
+  card.innerHTML = `
+    <div class="class-note-header">
+      <button type="button" class="class-note-toggle" aria-expanded="true">▾</button>
+      <input type="text" class="class-note-title-input" value="${escHtml(note.title || '')}" placeholder="Título de la clase" maxlength="200">
+      <button type="button" class="class-note-delete btn-ghost" style="font-size:0.72rem;padding:1px 7px">Eliminar</button>
+    </div>
+    <div class="class-note-body">
+      <textarea class="class-note-content" placeholder="Contenido de la clase..." maxlength="5000">${escHtml(note.content || '')}</textarea>
+      <span class="class-note-save-status"></span>
+    </div>`;
+
+  let saveTimer = null;
+  const saveStatus = card.querySelector('.class-note-save-status');
+
+  async function saveNote(fields) {
+    saveStatus.textContent = 'Guardando...';
+    try {
+      await postJson(`/curriculum/${encodeURIComponent(subject)}/class-notes/${note.id}`, fields, 'PATCH');
+      saveStatus.textContent = 'Guardado';
+      setTimeout(() => { saveStatus.textContent = ''; }, 2000);
+    } catch (_e) {
+      saveStatus.textContent = 'Error al guardar';
+    }
+  }
+
+  const titleInput = card.querySelector('.class-note-title-input');
+  titleInput.addEventListener('input', () => {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => saveNote({ title: titleInput.value }), 800);
+  });
+
+  const contentTextarea = card.querySelector('.class-note-content');
+  contentTextarea.addEventListener('input', () => {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => saveNote({ content: contentTextarea.value }), 800);
+  });
+
+  const toggleBtn = card.querySelector('.class-note-toggle');
+  const body = card.querySelector('.class-note-body');
+  toggleBtn.addEventListener('click', () => {
+    const expanded = toggleBtn.getAttribute('aria-expanded') === 'true';
+    toggleBtn.setAttribute('aria-expanded', String(!expanded));
+    toggleBtn.textContent = expanded ? '▸' : '▾';
+    body.style.display = expanded ? 'none' : '';
+  });
+
+  card.querySelector('.class-note-delete').addEventListener('click', async () => {
+    try {
+      await deleteJson(`/curriculum/${encodeURIComponent(subject)}/class-notes/${note.id}`);
+      card.remove();
+      const list = document.querySelector('#class-notes-list');
+      if (!list.children.length) {
+        list.innerHTML = '<p style="color:var(--text-muted);font-size:0.82rem;margin:0 0 4px">Sin clases cargadas.</p>';
+      }
+    } catch (_e) {}
+  });
+
+  container.appendChild(card);
 }
 
 // ─── Advisor analysis ─────────────────────────────────────────────────────────

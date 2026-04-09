@@ -177,4 +177,93 @@ curriculumRouter.delete('/curriculum/:subject/exams/:id', async (req, res) => {
   }
 });
 
+// ─── Class Notes ─────────────────────────────────────────────────────────────
+
+// GET /curriculum/:subject/class-notes
+curriculumRouter.get('/curriculum/:subject/class-notes', async (req, res) => {
+  const { subject } = req.params;
+  const userId = req.user.id;
+  try {
+    const { rows } = await dbPool.query(
+      `SELECT id, title, content, position
+       FROM subject_class_notes
+       WHERE user_id = $1 AND subject = $2
+       ORDER BY position ASC, id ASC`,
+      [userId, subject]
+    );
+    return res.json({ class_notes: rows });
+  } catch (err) {
+    console.error('GET /curriculum/:subject/class-notes error', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+// POST /curriculum/:subject/class-notes — add a new class entry
+curriculumRouter.post('/curriculum/:subject/class-notes', async (req, res) => {
+  const { subject } = req.params;
+  const userId = req.user.id;
+  const title   = typeof req.body?.title   === 'string' ? req.body.title.trim()   : '';
+  const content = typeof req.body?.content === 'string' ? req.body.content.trim() : '';
+  try {
+    const { rows } = await dbPool.query(
+      `INSERT INTO subject_class_notes (user_id, subject, title, content, position)
+       VALUES ($1, $2, $3, $4,
+         (SELECT COALESCE(MAX(position), 0) + 1 FROM subject_class_notes WHERE user_id = $1 AND subject = $2))
+       RETURNING id, title, content, position`,
+      [userId, subject, title.slice(0, 200), content.slice(0, 5000)]
+    );
+    invalidateAdvisorCache(subject, userId);
+    return res.status(201).json(rows[0]);
+  } catch (err) {
+    console.error('POST /curriculum/:subject/class-notes error', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+// PATCH /curriculum/:subject/class-notes/:id — update title or content
+curriculumRouter.patch('/curriculum/:subject/class-notes/:id', async (req, res) => {
+  const { subject } = req.params;
+  const id = Number(req.params.id);
+  const userId = req.user.id;
+  if (!Number.isFinite(id)) return res.status(422).json({ error: 'validation_error', message: 'invalid id.' });
+  const { title, content } = req.body || {};
+  try {
+    const sets = ['updated_at = now()'];
+    const params = [id, userId, subject];
+    if (typeof title   === 'string') { params.push(title.trim().slice(0, 200));  sets.push(`title = $${params.length}`); }
+    if (typeof content === 'string') { params.push(content.trim().slice(0, 5000)); sets.push(`content = $${params.length}`); }
+    const { rows } = await dbPool.query(
+      `UPDATE subject_class_notes SET ${sets.join(', ')}
+       WHERE id = $1 AND user_id = $2 AND subject = $3
+       RETURNING id, title, content, position`,
+      params
+    );
+    if (!rows.length) return res.status(404).json({ error: 'not_found' });
+    invalidateAdvisorCache(subject, userId);
+    return res.json(rows[0]);
+  } catch (err) {
+    console.error('PATCH /curriculum/:subject/class-notes/:id error', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+// DELETE /curriculum/:subject/class-notes/:id
+curriculumRouter.delete('/curriculum/:subject/class-notes/:id', async (req, res) => {
+  const { subject } = req.params;
+  const id = Number(req.params.id);
+  const userId = req.user.id;
+  if (!Number.isFinite(id)) return res.status(422).json({ error: 'validation_error', message: 'invalid id.' });
+  try {
+    await dbPool.query(
+      'DELETE FROM subject_class_notes WHERE id = $1 AND user_id = $2 AND subject = $3',
+      [id, userId, subject]
+    );
+    invalidateAdvisorCache(subject, userId);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE /curriculum/:subject/class-notes/:id error', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
 export default curriculumRouter;

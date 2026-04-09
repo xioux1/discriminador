@@ -1,45 +1,80 @@
 /**
- * SM-2 inspired interval calculator.
- * Binary pass/fail: no quality 0-5 scale, just success or failure.
+ * Extended SM-2 with 4 quality grades (FSRS-inspired).
  *
- * PASS: interval grows by ease_factor (compound spacing)
- * FAIL: reset to 1 day, ease degrades slightly (min 1.3)
+ * again (1) – Blackout completo: sin respuesta, error conceptual grave
+ * hard  (2) – Idea general correcta, pero faltan detalles técnicos críticos
+ * good  (3) – Respuesta correcta con todos los conceptos esenciales
+ * easy  (4) – Perfecto, inmediato, podría enseñarlo
+ *
+ * Backward compat: 'pass' → 'good', 'fail' → 'again'.
  */
 export function computeNextReview(intervalDays, easeFactor, grade) {
-  if (grade === 'pass') {
-    const newInterval = Math.max(1, Math.round(intervalDays * easeFactor));
-    return {
-      interval_days: newInterval,
-      ease_factor: easeFactor,
-      next_review_at: daysFromNow(newInterval)
-    };
-  }
+  // Normalize legacy grades
+  const g = grade === 'pass' ? 'good' : grade === 'fail' ? 'again' : grade;
 
-  // fail
-  return {
-    interval_days: 1,
-    ease_factor: Math.max(1.3, easeFactor - 0.2),
-    next_review_at: daysFromNow(1)
-  };
+  switch (g) {
+    case 'again':
+      // Full reset: 1 day, significant ease penalty
+      return {
+        interval_days: 1,
+        ease_factor: Math.max(1.3, easeFactor - 0.30),
+        next_review_at: daysFromNow(1)
+      };
+
+    case 'hard': {
+      // Partial reset: interval shrinks to 80%, small ease penalty
+      const newInterval = Math.max(1, Math.floor(intervalDays * 0.8));
+      return {
+        interval_days: newInterval,
+        ease_factor: Math.max(1.3, easeFactor - 0.15),
+        next_review_at: daysFromNow(newInterval)
+      };
+    }
+
+    case 'good': {
+      // Standard spacing: interval grows by ease_factor
+      const newInterval = Math.max(1, Math.round(intervalDays * easeFactor));
+      return {
+        interval_days: newInterval,
+        ease_factor: easeFactor,
+        next_review_at: daysFromNow(newInterval)
+      };
+    }
+
+    case 'easy': {
+      // Boosted spacing: grows faster, ease improves
+      const newInterval = Math.max(1, Math.round(intervalDays * easeFactor * 1.3));
+      return {
+        interval_days: newInterval,
+        ease_factor: Math.min(3.0, easeFactor + 0.10),
+        next_review_at: daysFromNow(newInterval)
+      };
+    }
+
+    default:
+      // Fallback: treat as 'good'
+      return {
+        interval_days: Math.max(1, Math.round(intervalDays * easeFactor)),
+        ease_factor: easeFactor,
+        next_review_at: daysFromNow(Math.max(1, Math.round(intervalDays * easeFactor)))
+      };
+  }
+}
+
+/** Returns true for grades that represent successful recall (good, easy, legacy pass). */
+export function isPassGrade(grade) {
+  return ['pass', 'good', 'easy'].includes(grade);
+}
+
+/** Returns true for grades that represent failed/partial recall (again, hard, legacy fail). */
+export function isFailGrade(grade) {
+  return ['fail', 'again', 'hard'].includes(grade);
 }
 
 function daysFromNow(days) {
-  // Anki-style: next_review_at = midnight of (today + days) in Argentina time.
-  // Cards become due at 00:00 local time, not at the exact hour of the review,
-  // so the full day's queue is available at midnight rather than dripping in
-  // throughout the day as timestamps from N days ago are crossed.
-  //
-  // Argentina = UTC-3 (no DST). Midnight Argentina = 03:00 UTC.
-  const BUE_MS = 3 * 60 * 60 * 1000; // 3-hour offset
-  // Shift to Argentina "virtual UTC" so we can do UTC date arithmetic on local time
+  const BUE_MS = 3 * 60 * 60 * 1000;
   const local = new Date(Date.now() - BUE_MS);
-  local.setUTCHours(0, 0, 0, 0);          // truncate to local midnight
-  local.setUTCDate(local.getUTCDate() + days); // add N days
-  return new Date(local.getTime() + BUE_MS);   // shift back to real UTC
+  local.setUTCHours(0, 0, 0, 0);
+  local.setUTCDate(local.getUTCDate() + days);
+  return new Date(local.getTime() + BUE_MS);
 }
-
-/**
- * A micro-card is considered mastered when its interval reaches 7+ days.
- * At that point it gets archived and stops appearing in sessions.
- */
-export const MICRO_MASTERY_THRESHOLD_DAYS = 7;

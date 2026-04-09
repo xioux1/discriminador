@@ -32,14 +32,20 @@ advisorRouter.get('/advisor/analysis/:subject', async (req, res) => {
   }
 
   try {
-    // 1. Read subject_configs + all upcoming exam dates for this subject
-    const [configResult, examDatesResult] = await Promise.all([
+    // 1. Read subject_configs + exam dates + class notes
+    const [configResult, examDatesResult, classNotesResult] = await Promise.all([
       dbPool.query('SELECT * FROM subject_configs WHERE subject = $1 AND user_id = $2', [subject, userId]),
       dbPool.query(
         `SELECT * FROM subject_exam_dates
          WHERE subject = $1 AND user_id = $2
          ORDER BY exam_date ASC`,
         [subject, userId]
+      ),
+      dbPool.query(
+        `SELECT title, content FROM subject_class_notes
+         WHERE user_id = $1 AND subject = $2
+         ORDER BY position ASC, id ASC`,
+        [userId, subject]
       )
     ]);
     const config = configResult.rows[0] || null;
@@ -121,7 +127,8 @@ advisorRouter.get('/advisor/analysis/:subject', async (req, res) => {
       referenceExams,
       cards,
       decisions,
-      activityStats
+      activityStats,
+      classNotes: classNotesResult.rows
     });
 
     // Store in cache

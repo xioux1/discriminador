@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { dbPool } from '../db/client.js';
-import { computeNextReview } from '../services/scheduler.js';
+import { computeNextReview, isPassGrade } from '../services/scheduler.js';
 import { generateMicroCard } from '../services/micro-generator.js';
 import { generateVariant } from '../services/variant-generator.js';
 
@@ -261,7 +261,7 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, userI
      WHERE id = $6
      RETURNING *`,
     [schedule.interval_days, schedule.ease_factor, schedule.next_review_at,
-     grade === 'pass' ? 1 : 0, responseTimeMs, cardId]
+     isPassGrade(grade) ? 1 : 0, responseTimeMs, cardId]
   );
 
   // Log activity (logged_date uses Argentina local date)
@@ -273,7 +273,7 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, userI
 
   let newMicroCards = [];
 
-  if (grade === 'pass') {
+  if (isPassGrade(grade)) {
     // Archive all active micro-cards — the student demonstrated full understanding.
     await dbPool.query(
       `UPDATE micro_cards SET status = 'archived', updated_at = now()
@@ -283,15 +283,15 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, userI
   }
 
   if (conceptGaps.length > 0) {
-    // Both PASS and FAIL/REVIEW must generate only one micro-card:
-    // the highest-priority concept (first gap received).
+    // Generate one micro-card (highest-priority concept gap).
     const topConcept = pickTopConcept(conceptGaps);
     const targetConcepts = topConcept ? [topConcept] : [];
 
     for (const concept of targetConcepts) {
       const existing = await dbPool.query(
-        `SELECT id FROM micro_cards WHERE parent_card_id = $1 AND status = 'active' LIMIT 1`,
-        [cardId]
+        `SELECT id FROM micro_cards
+         WHERE parent_card_id = $1 AND concept = $2 AND status = 'active'`,
+        [cardId, concept]
       );
       if (existing.rows.length) continue;
 
@@ -336,9 +336,8 @@ async function reviewMicroCard(res, microCardId, grade, responseTimeMs, userId) 
     grade
   );
 
-  // Archive immediately on any PASS — micros are remedial, not long-term SR.
-  // This frees the parent card to generate a fresh micro on a different concept.
-  const newStatus = grade === 'pass' ? 'archived' : micro.status;
+  // Archive immediately on any pass-grade (good/easy).
+  const newStatus = isPassGrade(grade) ? 'archived' : micro.status;
 
   const updated = await dbPool.query(
     `UPDATE micro_cards
@@ -352,7 +351,7 @@ async function reviewMicroCard(res, microCardId, grade, responseTimeMs, userId) 
 
   let parentUnblocked = false;
 
-  if (grade === 'pass') {
+  if (isPassGrade(grade)) {
     // Check remaining active micros for this parent (excluding the one we just updated).
     const { rows: remaining } = await dbPool.query(
       `SELECT COUNT(*) AS cnt FROM micro_cards

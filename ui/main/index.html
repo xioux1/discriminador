@@ -104,11 +104,14 @@
               <textarea id="curriculum-syllabus" rows="6" placeholder="Pegá el plan de estudios, índice del libro, o listado de temas..."></textarea>
 
               <!-- ── Apuntes de clase ───────────────────────────────────────── -->
-              <h4 class="curriculum-section-title" style="margin-top:12px">Apuntes de clase</h4>
-              <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 6px">Lo que el profe marcó como importante, temas recurrentes en clase, énfasis propios.</p>
-              <textarea id="curriculum-notes" rows="5" placeholder="Ej: 'El profe siempre pregunta cursores y excepciones. Dijo que la normalización entra seguro.'"></textarea>
+              <div style="display:flex;align-items:baseline;gap:10px;margin-top:14px">
+                <h4 class="curriculum-section-title" style="margin:0">Apuntes de clase</h4>
+                <button type="button" id="class-note-add-btn" class="btn-secondary" style="font-size:0.78rem;padding:3px 10px">+ Agregar clase</button>
+              </div>
+              <p style="font-size:0.8rem;color:var(--text-muted);margin:4px 0 8px">Cada clase, sus temas y lo que el profe marcó como importante.</p>
+              <div id="class-notes-list" class="class-notes-list"></div>
 
-              <button type="button" id="curriculum-save-btn" class="btn-primary" style="margin-top:10px">Guardar</button>
+              <button type="button" id="curriculum-save-btn" class="btn-primary" style="margin-top:14px">Guardar</button>
               <p id="curriculum-save-feedback" style="font-size:0.82rem;margin-top:6px"></p>
 
               <hr style="margin:16px 0">
@@ -266,12 +269,17 @@
               <div id="study-result-expected" class="study-result-expected hidden"></div>
               <div id="study-decision-block" class="study-result-micro hidden">
                 <strong>Firma de evaluación (obligatoria)</strong>
-                <div class="actions" style="margin-top:8px">
-                  <button type="button" data-study-action="accept">Aceptar sugerencia</button>
-                  <button type="button" data-study-action="correct-pass">Corregir a PASS</button>
-                  <button type="button" data-study-action="correct-fail">Corregir a FAIL</button>
-                  <button type="button" data-study-action="uncertain">Marcar duda</button>
-                  <button type="button" data-study-action="archive-card" id="study-archive-card-btn">Archivar tarjeta</button>
+                <div class="study-decision-actions" style="margin-top:8px">
+                  <button type="button" class="study-decision-accept-btn" data-study-action="accept">Aceptar sugerencia</button>
+                  <div class="study-grade-override-group">
+                    <span class="study-grade-override-label">Corregir a:</span>
+                    <button type="button" class="study-grade-btn grade-again" data-study-action="correct-again">Again</button>
+                    <button type="button" class="study-grade-btn grade-hard"  data-study-action="correct-hard">Hard</button>
+                    <button type="button" class="study-grade-btn grade-good"  data-study-action="correct-good">Good</button>
+                    <button type="button" class="study-grade-btn grade-easy"  data-study-action="correct-easy">Easy</button>
+                  </div>
+                  <button type="button" class="study-decision-misc-btn" data-study-action="uncertain">Marcar duda</button>
+                  <button type="button" class="study-decision-misc-btn" data-study-action="archive-card" id="study-archive-card-btn">Archivar tarjeta</button>
                 </div>
                 <label for="study-correction-reason" style="display:block;margin-top:8px;font-size:0.82rem;color:var(--text-muted)">Motivo (obligatorio si corriges, marcas duda o archivas)</label>
                 <textarea id="study-correction-reason" rows="2"></textarea>
@@ -367,11 +375,16 @@
             <h3>Dimensiones</h3>
             <ul id="dimensions-list"></ul>
 
-            <div class="actions">
-              <button type="button" data-action="accept">Aceptar sugerencia</button>
-              <button type="button" data-action="correct-pass">Corregir a PASS</button>
-              <button type="button" data-action="correct-fail">Corregir a FAIL</button>
-              <button type="button" data-action="uncertain">Marcar duda</button>
+            <div class="study-decision-actions" style="margin-top:4px">
+              <button type="button" class="study-decision-accept-btn" data-action="accept">Aceptar sugerencia</button>
+              <div class="study-grade-override-group">
+                <span class="study-grade-override-label">Corregir a:</span>
+                <button type="button" class="study-grade-btn grade-again" data-action="correct-again">Again</button>
+                <button type="button" class="study-grade-btn grade-hard"  data-action="correct-hard">Hard</button>
+                <button type="button" class="study-grade-btn grade-good"  data-action="correct-good">Good</button>
+                <button type="button" class="study-grade-btn grade-easy"  data-action="correct-easy">Easy</button>
+              </div>
+              <button type="button" class="study-decision-misc-btn" data-action="uncertain">Marcar duda</button>
             </div>
 
             <button type="button" id="socratic-trigger-btn" class="socratic-trigger hidden">Responder preguntas de profundización</button>
