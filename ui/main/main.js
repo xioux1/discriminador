@@ -3836,6 +3836,81 @@ function initPlannerTab() {
     btn.addEventListener('mousedown', (e) => e.preventDefault());
     btn.addEventListener('click', () => plannerApplyColor(btn.dataset.color));
   });
+
+  initPlannerTodos();
+}
+
+// ─── Planner To-do list ────────────────────────────────────────────────────────
+
+function initPlannerTodos() {
+  loadPlannerTodos();
+
+  const input  = document.querySelector('#planner-todo-input');
+  const addBtn = document.querySelector('#planner-todo-add-btn');
+
+  const submit = async () => {
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    try {
+      const todo = await postJson('/planner/todos', { text });
+      appendTodoItem(todo);
+    } catch (_) {}
+  };
+
+  addBtn.addEventListener('click', submit);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+}
+
+async function loadPlannerTodos() {
+  const list = document.querySelector('#planner-todo-list');
+  try {
+    const data = await getJson('/planner/todos');
+    list.innerHTML = '';
+    for (const todo of data.todos ?? []) appendTodoItem(todo);
+  } catch (_) {}
+}
+
+function appendTodoItem(todo) {
+  const list = document.querySelector('#planner-todo-list');
+  const li = document.createElement('li');
+  li.className = `planner-todo-item${todo.done ? ' done' : ''}`;
+  li.dataset.id = todo.id;
+
+  const check = document.createElement('input');
+  check.type = 'checkbox';
+  check.className = 'planner-todo-check';
+  check.checked = todo.done;
+  check.addEventListener('change', async () => {
+    const done = check.checked;
+    li.classList.toggle('done', done);
+    await postJson(`/planner/todos/${todo.id}`, { done }, 'PATCH').catch(() => {});
+  });
+
+  const textEl = document.createElement('input');
+  textEl.type = 'text';
+  textEl.className = 'planner-todo-text';
+  textEl.value = todo.text;
+  textEl.addEventListener('blur', async () => {
+    const text = textEl.value.trim();
+    if (!text) { textEl.value = todo.text; return; }
+    if (text === todo.text) return;
+    todo.text = text;
+    await postJson(`/planner/todos/${todo.id}`, { text }, 'PATCH').catch(() => {});
+  });
+  textEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') textEl.blur(); });
+
+  const del = document.createElement('button');
+  del.className = 'planner-todo-delete';
+  del.textContent = '✕';
+  del.title = 'Eliminar';
+  del.addEventListener('click', async () => {
+    await deleteJson(`/planner/todos/${todo.id}`).catch(() => {});
+    li.remove();
+  });
+
+  li.append(check, textEl, del);
+  list.appendChild(li);
 }
 
 // ─── Agenda view ──────────────────────────────────────────────────────────────

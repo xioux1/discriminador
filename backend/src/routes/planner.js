@@ -142,4 +142,79 @@ plannerRouter.put('/planner/slot', async (req, res) => {
   }
 });
 
+// ─── Planner To-do list ───────────────────────────────────────────────────────
+
+// GET /planner/todos
+plannerRouter.get('/planner/todos', async (req, res) => {
+  const userId = req.user.id;
+  try {
+    const { rows } = await dbPool.query(
+      'SELECT id, text, done, position FROM planner_todos WHERE user_id = $1 ORDER BY position ASC, id ASC',
+      [userId]
+    );
+    return res.json({ todos: rows });
+  } catch (err) {
+    console.error('GET /planner/todos error', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+// POST /planner/todos — create
+plannerRouter.post('/planner/todos', async (req, res) => {
+  const userId = req.user.id;
+  const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
+  if (!text) return res.status(422).json({ error: 'validation_error', message: 'text is required.' });
+  try {
+    const { rows } = await dbPool.query(
+      `INSERT INTO planner_todos (user_id, text, position)
+       VALUES ($1, $2, (SELECT COALESCE(MAX(position), 0) + 1 FROM planner_todos WHERE user_id = $1))
+       RETURNING id, text, done, position`,
+      [userId, text.slice(0, 500)]
+    );
+    return res.status(201).json(rows[0]);
+  } catch (err) {
+    console.error('POST /planner/todos error', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+// PATCH /planner/todos/:id — update text or done
+plannerRouter.patch('/planner/todos/:id', async (req, res) => {
+  const userId = req.user.id;
+  const id = Number(req.params.id);
+  const { text, done } = req.body || {};
+  if (!Number.isFinite(id)) return res.status(422).json({ error: 'validation_error', message: 'invalid id.' });
+  try {
+    const sets = [];
+    const params = [id, userId];
+    if (typeof text === 'string') { params.push(text.trim().slice(0, 500)); sets.push(`text = $${params.length}`); }
+    if (typeof done === 'boolean') { params.push(done); sets.push(`done = $${params.length}`); }
+    if (!sets.length) return res.status(422).json({ error: 'validation_error', message: 'nothing to update.' });
+    sets.push('updated_at = now()');
+    const { rows } = await dbPool.query(
+      `UPDATE planner_todos SET ${sets.join(', ')} WHERE id = $1 AND user_id = $2 RETURNING id, text, done, position`,
+      params
+    );
+    if (!rows.length) return res.status(404).json({ error: 'not_found' });
+    return res.json(rows[0]);
+  } catch (err) {
+    console.error('PATCH /planner/todos/:id error', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+// DELETE /planner/todos/:id
+plannerRouter.delete('/planner/todos/:id', async (req, res) => {
+  const userId = req.user.id;
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(422).json({ error: 'validation_error', message: 'invalid id.' });
+  try {
+    await dbPool.query('DELETE FROM planner_todos WHERE id = $1 AND user_id = $2', [id, userId]);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE /planner/todos/:id error', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
 export default plannerRouter;

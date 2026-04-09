@@ -2184,3 +2184,55 @@ textarea:focus, input[type="text"]:focus, select:focus {
   padding: 16px; font-size: 0.88rem; line-height: 1.65;
   background: transparent; font-family: inherit; color: var(--text);
 }
+
+/* ─── Planner To-do Section ──────────────────────────────────────────────── */
+.planner-todo-section {
+  margin: 20px 0 8px;
+  border: var(--bw-divider) solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  max-width: 600px;
+}
+.planner-todo-header {
+  padding: 10px 14px 8px;
+  border-bottom: var(--bw-divider) solid var(--border);
+}
+.planner-todo-title { font-size: 0.82rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+
+.planner-todo-list {
+  list-style: none; margin: 0; padding: 4px 0;
+  min-height: 8px;
+}
+.planner-todo-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 14px;
+  border-bottom: var(--bw-divider) solid var(--border);
+}
+.planner-todo-item:last-child { border-bottom: none; }
+.planner-todo-item.done .planner-todo-text { text-decoration: line-through; color: var(--text-muted); }
+
+.planner-todo-check {
+  width: 16px; height: 16px; flex-shrink: 0; cursor: pointer; accent-color: var(--accent);
+}
+.planner-todo-text {
+  flex: 1; font-size: 0.88rem; color: var(--text);
+  border: none; background: transparent; outline: none; font-family: inherit;
+  padding: 0; cursor: text;
+}
+.planner-todo-text:focus { background: var(--bg); border-radius: 3px; padding: 1px 4px; }
+.planner-todo-delete {
+  font-size: 0.75rem; color: var(--text-muted); background: none; border: none;
+  cursor: pointer; padding: 2px 4px; border-radius: 3px; opacity: 0.5; line-height: 1;
+}
+.planner-todo-delete:hover { opacity: 1; color: var(--fail-fg); }
+
+.planner-todo-add {
+  display: flex; gap: 8px; padding: 8px 10px;
+}
+.planner-todo-input {
+  flex: 1; font-size: 0.88rem; padding: 5px 8px;
+  border: var(--bw-divider) solid var(--border); border-radius: var(--radius);
+  background: var(--bg); color: var(--text); font-family: inherit;
+}
+.planner-todo-input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.planner-todo-add-btn { font-size: 0.82rem; padding: 5px 12px; }
