@@ -1473,6 +1473,49 @@ function getSuggestedGradeLabel(grade) {
   return normalized;
 }
 
+function isNegativeGrade(grade) {
+  const normalized = normalizeSuggestedGrade(grade);
+  return normalized === 'AGAIN' || normalized === 'HARD' || normalized === 'FAIL' || normalized === 'REVIEW';
+}
+
+function getPrimaryGapLabel(result = {}) {
+  const concepts = Array.isArray(result.missing_concepts) ? result.missing_concepts : [];
+  const firstConcept = concepts.find((concept) => String(concept || '').trim().length > 0);
+  if (firstConcept) return firstConcept;
+
+  const weakestDimension = Object.entries(result.dimensions || {})
+    .sort((a, b) => Number(a[1]) - Number(b[1]))[0];
+  if (weakestDimension) {
+    const [dimension] = weakestDimension;
+    return DIM_LABELS[dimension] || dimension;
+  }
+
+  return '';
+}
+
+function buildJustificationHtml(result = {}) {
+  const grade = normalizeSuggestedGrade(result.suggested_grade);
+  const justificationText = String(result.justification_short || result.justification || '').trim();
+  const safeJustification = escHtml(justificationText || 'Sin detalle disponible.');
+  if (!isNegativeGrade(grade)) {
+    return `<span class="justification-detail">${safeJustification}</span>`;
+  }
+
+  const primaryGap = getPrimaryGapLabel(result);
+  const missingPrefix = primaryGap
+    ? `Faltó primero: ${escHtml(primaryGap)}.`
+    : 'Faltó primero identificar el punto clave que faltaba en la respuesta.';
+
+  return `<span class="justification-priority-gap">${missingPrefix}</span><span class="justification-detail">${safeJustification}</span>`;
+}
+
+function renderJustification(targetEl, result = {}) {
+  if (!targetEl) return;
+  const grade = normalizeSuggestedGrade(result.suggested_grade);
+  targetEl.innerHTML = buildJustificationHtml(result);
+  targetEl.classList.toggle('justification-negative', isNegativeGrade(grade));
+}
+
 function enqueueManualCase(result) {
   if (!result?.evaluation_id) {
     return { position: null, size: uiState.manualQueue.length };
@@ -1518,7 +1561,7 @@ function renderResult(result) {
   document.querySelector('#suggested-grade').textContent = getSuggestedGradeLabel(result.suggested_grade);
   document.querySelector('#overall-score').textContent = Number(result.overall_score).toFixed(2);
   document.querySelector('#model-confidence').textContent = Number(result.model_confidence).toFixed(2);
-  document.querySelector('#justification-short').textContent = result.justification_short;
+  renderJustification(document.querySelector('#justification-short'), result);
 
   const dimensionsList = document.querySelector('#dimensions-list');
   dimensionsList.innerHTML = '';
@@ -1995,7 +2038,11 @@ document.querySelector('#stats-toggle').addEventListener('click', () => {
 
         uiState.lastResult = { ...uiState.lastResult, ...reeval };
         document.querySelector('#suggested-grade').textContent = getSuggestedGradeLabel(reeval.suggested_grade);
-        document.querySelector('#justification-short').textContent = reeval.justification;
+        renderJustification(document.querySelector('#justification-short'), {
+          ...uiState.lastResult,
+          ...reeval,
+          justification_short: reeval.justification || reeval.justification_short || uiState.lastResult?.justification_short,
+        });
         section.classList.add('hidden');
         setFeedback('Re-evaluación completada. Ahora firma una decisión final.');
       }
@@ -3033,7 +3080,7 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
 
     gradeEl.textContent = getSuggestedGradeLabel(result.suggested_grade);
     gradeEl.className   = `study-grade-inline ${grade.toLowerCase()}`;
-    justEl.textContent = result.justification_short;
+    renderJustification(justEl, result);
     justEl.classList.remove('hidden');
 
     const timeEl = document.querySelector('#study-result-time');

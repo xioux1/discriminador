@@ -771,6 +771,18 @@ textarea:focus, input[type="text"]:focus, select:focus {
 }
 
 .study-result-justification { color: var(--text-muted); font-size: 0.9rem; margin: 4px 0 10px; }
+.justification-detail { display: block; }
+.justification-priority-gap {
+  display: block;
+  margin-bottom: 6px;
+  padding: 6px 9px;
+  border-left: 3px solid #d92d20;
+  border-radius: 6px;
+  background: #ffe9e9;
+  color: #b42318;
+  font-weight: 700;
+}
+.justification-negative .justification-detail { color: #7a271a; }
 
 .study-result-actions { margin-top: 12px; }
 .study-next-btn { width: 100%; }
