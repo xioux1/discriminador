@@ -199,7 +199,7 @@ sessionPlannerRouter.post('/session/plan', async (req, res) => {
       micro_cards: microCards
     });
   } catch (err) {
-    console.error('POST /session/plan', err.message);
+    console.error('POST /session/plan', err.stack || err.message);
     return res.status(500).json({ error: 'server_error', message: err.message });
   }
 });

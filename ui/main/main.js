@@ -1279,35 +1279,9 @@ function sqlClientSideErrors(sql) {
     errors.push({ line: lines.length, message: `ORA-00907: paréntesis de cierre sin apertura`, hint: `Hay un ) de más` });
   }
 
-  // 4. IF / END IF balance (PL/SQL blocks)
-  if (hasPLSQL) {
-    // Strip single-line comments and string literals before counting
-    const normSql = sql.replace(/--[^\n]*/g, '').replace(/'([^']|'')*'/g, "''").toUpperCase();
-    // \bIF\b does NOT match inside ELSIF (no word boundary before I)
-    // so rawIfCount = number of IF blocks that need an END IF
-    const rawIfCount  = (normSql.match(/\bIF\b/g) || []).length;
-    const endIfCount  = (normSql.match(/\bEND\s+IF\b/g) || []).length;
-    if (rawIfCount > endIfCount) {
-      const missing = rawIfCount - endIfCount;
-      errors.push({
-        line: lines.length,
-        message: `PLS-00103: Falta${missing > 1 ? 'n' : ''} ${missing} END IF; — ${rawIfCount} IF pero solo ${endIfCount} END IF`,
-        hint: 'Cada IF...THEN debe cerrar con END IF;',
-      });
-    }
-
-    // LOOP / END LOOP balance
-    const loopCount    = (normSql.match(/\bLOOP\b/g) || []).length;
-    const endLoopCount = (normSql.match(/\bEND\s+LOOP\b/g) || []).length;
-    if (loopCount > endLoopCount) {
-      const missing = loopCount - endLoopCount;
-      errors.push({
-        line: lines.length,
-        message: `PLS-00103: Falta${missing > 1 ? 'n' : ''} ${missing} END LOOP; — ${loopCount} LOOP pero solo ${endLoopCount} END LOOP`,
-        hint: 'Cada LOOP debe cerrar con END LOOP;',
-      });
-    }
-  }
+  // Block structure (IF/END IF, LOOP/END LOOP, CASE/END CASE, BEGIN/END) is
+  // checked by the backend structural parser — not duplicated here to avoid
+  // false positives from the old regex-counting approach.
 
   return errors;
 }
@@ -1473,6 +1447,49 @@ function getSuggestedGradeLabel(grade) {
   return normalized;
 }
 
+function isNegativeGrade(grade) {
+  const normalized = normalizeSuggestedGrade(grade);
+  return normalized === 'AGAIN' || normalized === 'HARD' || normalized === 'FAIL' || normalized === 'REVIEW';
+}
+
+function getPrimaryGapLabel(result = {}) {
+  const concepts = Array.isArray(result.missing_concepts) ? result.missing_concepts : [];
+  const firstConcept = concepts.find((concept) => String(concept || '').trim().length > 0);
+  if (firstConcept) return firstConcept;
+
+  const weakestDimension = Object.entries(result.dimensions || {})
+    .sort((a, b) => Number(a[1]) - Number(b[1]))[0];
+  if (weakestDimension) {
+    const [dimension] = weakestDimension;
+    return DIM_LABELS[dimension] || dimension;
+  }
+
+  return '';
+}
+
+function buildJustificationHtml(result = {}) {
+  const grade = normalizeSuggestedGrade(result.suggested_grade);
+  const justificationText = String(result.justification_short || result.justification || '').trim();
+  const safeJustification = escHtml(justificationText || 'Sin detalle disponible.');
+  if (!isNegativeGrade(grade)) {
+    return `<span class="justification-detail">${safeJustification}</span>`;
+  }
+
+  const primaryGap = getPrimaryGapLabel(result);
+  const missingPrefix = primaryGap
+    ? `Faltó primero: ${escHtml(primaryGap)}.`
+    : 'Faltó primero identificar el punto clave que faltaba en la respuesta.';
+
+  return `<span class="justification-priority-gap">${missingPrefix}</span><span class="justification-detail">${safeJustification}</span>`;
+}
+
+function renderJustification(targetEl, result = {}) {
+  if (!targetEl) return;
+  const grade = normalizeSuggestedGrade(result.suggested_grade);
+  targetEl.innerHTML = buildJustificationHtml(result);
+  targetEl.classList.toggle('justification-negative', isNegativeGrade(grade));
+}
+
 function enqueueManualCase(result) {
   if (!result?.evaluation_id) {
     return { position: null, size: uiState.manualQueue.length };
@@ -1518,7 +1535,7 @@ function renderResult(result) {
   document.querySelector('#suggested-grade').textContent = getSuggestedGradeLabel(result.suggested_grade);
   document.querySelector('#overall-score').textContent = Number(result.overall_score).toFixed(2);
   document.querySelector('#model-confidence').textContent = Number(result.model_confidence).toFixed(2);
-  document.querySelector('#justification-short').textContent = result.justification_short;
+  renderJustification(document.querySelector('#justification-short'), result);
 
   const dimensionsList = document.querySelector('#dimensions-list');
   dimensionsList.innerHTML = '';
@@ -1995,7 +2012,11 @@ document.querySelector('#stats-toggle').addEventListener('click', () => {
 
         uiState.lastResult = { ...uiState.lastResult, ...reeval };
         document.querySelector('#suggested-grade').textContent = getSuggestedGradeLabel(reeval.suggested_grade);
-        document.querySelector('#justification-short').textContent = reeval.justification;
+        renderJustification(document.querySelector('#justification-short'), {
+          ...uiState.lastResult,
+          ...reeval,
+          justification_short: reeval.justification || reeval.justification_short || uiState.lastResult?.justification_short,
+        });
         section.classList.add('hidden');
         setFeedback('Re-evaluación completada. Ahora firma una decisión final.');
       }
@@ -2187,7 +2208,7 @@ const STUDY_PERSIST_KEY = 'study.activeSession.v1';
 
 function persistStudySession() {
   try {
-    if (!studyState.queue?.length || !studyState.sessionStartTime || !studyState.sessionLimitMs) {
+    if (!studyState.queue?.length || !studyState.sessionStartTime) {
       localStorage.removeItem(STUDY_PERSIST_KEY);
       return;
     }
@@ -2197,8 +2218,8 @@ function persistStudySession() {
       results: studyState.results,
       sessionId: studyState.sessionId,
       sessionStartTime: studyState.sessionStartTime,
-      sessionLimitMs: studyState.sessionLimitMs,
-      sessionEnergyLevel: studyState.sessionEnergyLevel,
+      sessionLimitMs: studyState.sessionLimitMs ?? null,
+      sessionEnergyLevel: studyState.sessionEnergyLevel ?? null,
       selectedTime: briefingState.selectedTime,
       selectedEnergy: briefingState.selectedEnergy,
       selectedSubject: briefingState.selectedSubject
@@ -2215,12 +2236,14 @@ function restorePersistedStudySession() {
     const raw = localStorage.getItem(STUDY_PERSIST_KEY);
     if (!raw) return false;
     const saved = JSON.parse(raw);
-    if (!saved?.queue?.length || !saved?.sessionStartTime || !saved?.sessionLimitMs) {
+    if (!saved?.queue?.length || !saved?.sessionStartTime) {
       clearPersistedStudySession();
       return false;
     }
 
-    const expiresAt = Number(saved.sessionStartTime) + Number(saved.sessionLimitMs);
+    // Planned sessions expire at their configured limit; ad-hoc sessions expire after 8 hours.
+    const limitMs   = saved.sessionLimitMs ? Number(saved.sessionLimitMs) : 8 * 60 * 60 * 1000;
+    const expiresAt = Number(saved.sessionStartTime) + limitMs;
     if (!Number.isFinite(expiresAt) || Date.now() > expiresAt) {
       clearPersistedStudySession();
       return false;
@@ -2234,8 +2257,8 @@ function restorePersistedStudySession() {
     studyState.index = Math.max(0, Math.min(saved.index ?? 0, saved.queue.length - 1));
     studyState.results = Array.isArray(saved.results) ? saved.results : [];
     studyState.sessionId = saved.sessionId ?? null;
-    studyState.sessionStartTime = Number(saved.sessionStartTime);
-    studyState.sessionLimitMs = Number(saved.sessionLimitMs);
+    studyState.sessionStartTime   = Number(saved.sessionStartTime);
+    studyState.sessionLimitMs     = saved.sessionLimitMs ? Number(saved.sessionLimitMs) : null;
     studyState.sessionEnergyLevel = saved.sessionEnergyLevel || null;
 
     document.querySelector('#study-briefing').classList.add('hidden');
@@ -2304,8 +2327,10 @@ function initStudyTab() {
     document.querySelector('#study-answer-input'),
     () => studyState.currentInputMode === 'math'
   );
+  bindStudyKeyboardShortcuts();
 
   document.querySelector('#study-again-btn').addEventListener('click', () => {
+    clearPersistedStudySession();
     document.querySelector('#study-complete').classList.add('hidden');
     document.querySelector('#study-overview').classList.add('hidden');
     // Reset briefing state
@@ -2323,6 +2348,51 @@ function initStudyTab() {
 
   initBriefing();
   restorePersistedStudySession();
+}
+
+function bindStudyKeyboardShortcuts() {
+  // Mark the input so re-init calls don't double-bind (actual listener is global below).
+  const answerInput = document.querySelector('#study-answer-input');
+  if (answerInput) answerInput.dataset.boundStudyShortcuts = 'true';
+
+  if (!document.body.dataset.boundStudyAcceptShortcut) {
+    document.addEventListener('keydown', (event) => {
+      if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.altKey) return;
+
+      const sessionVisible = !document.querySelector('#study-session')?.classList.contains('hidden');
+      if (!sessionVisible) return;
+
+      if (event.key === 'Enter') {
+        // Stage 2: result is visible → accept suggestion.
+        const resultVisible = document.querySelector('#study-result-block')?.offsetParent !== null;
+        if (resultVisible) {
+          const acceptBtn = document.querySelector('#study-decision-block [data-study-action="accept"]');
+          if (acceptBtn && !acceptBtn.disabled && acceptBtn.offsetParent !== null) {
+            event.preventDefault();
+            acceptBtn.click();
+            return;
+          }
+        }
+        // Stage 1: result not yet visible → evaluate.
+        const evalBtn = document.querySelector('#study-eval-btn');
+        if (!evalBtn || evalBtn.disabled || evalBtn.offsetParent === null) return;
+        event.preventDefault();
+        evalBtn.click();
+        return;
+      }
+
+      // Ctrl+/ kept as an alias for accepting the suggestion.
+      if (event.code === 'Slash') {
+        const resultVisible = document.querySelector('#study-result-block')?.offsetParent !== null;
+        if (!resultVisible) return;
+        const acceptBtn = document.querySelector('#study-decision-block [data-study-action="accept"]');
+        if (!acceptBtn || acceptBtn.disabled || acceptBtn.offsetParent === null) return;
+        event.preventDefault();
+        acceptBtn.click();
+      }
+    });
+    document.body.dataset.boundStudyAcceptShortcut = 'true';
+  }
 }
 
 function ensureAddCardFormHandlers() {
@@ -2579,7 +2649,9 @@ const studyState = {
   pendingMicroGeneration: 0,
   timerInterval: null,
   sessionId: null,
-  sessionStartTime: 0
+  sessionStartTime: 0,
+  sessionLimitMs: null,
+  sessionEnergyLevel: null
 };
 
 function renderStudyBackgroundStatus() {
@@ -2621,13 +2693,16 @@ async function startStudySession() {
   const micros = (data.micro_cards ?? []).map((m) => ({ type: 'micro', data: m }));
   const cards  = (data.cards ?? []).map((c) => ({ type: 'card', data: c }));
 
-  studyState.queue   = [...micros, ...cards];
-  studyState.index   = 0;
-  studyState.results = [];
+  studyState.queue              = [...micros, ...cards];
+  studyState.index              = 0;
+  studyState.results            = [];
   studyState.pendingMicroGeneration = 0;
-  studyState.currentEvalResult = null;
+  studyState.currentEvalResult  = null;
   studyState.currentEvalContext = null;
-  studyState.currentDecision = null;
+  studyState.currentDecision    = null;
+  studyState.sessionStartTime   = Date.now();
+  studyState.sessionLimitMs     = null; // ad-hoc: no time limit (8 h expiry)
+  studyState.sessionEnergyLevel = briefingState.selectedEnergy || null;
   renderStudyBackgroundStatus();
 
   if (studyState.queue.length === 0) {
@@ -2640,7 +2715,7 @@ async function startStudySession() {
   document.querySelector('#study-complete').classList.add('hidden');
   document.querySelector('#study-session').classList.remove('hidden');
 
-  clearPersistedStudySession();
+  persistStudySession();
   showStudyCard();
 }
 
@@ -2999,7 +3074,7 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
 
     gradeEl.textContent = getSuggestedGradeLabel(result.suggested_grade);
     gradeEl.className   = `study-grade-inline ${grade.toLowerCase()}`;
-    justEl.textContent = result.justification_short;
+    renderJustification(justEl, result);
     justEl.classList.remove('hidden');
 
     const timeEl = document.querySelector('#study-result-time');

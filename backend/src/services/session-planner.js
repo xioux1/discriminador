@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 
-const LLM_MODEL = 'claude-haiku-4-5';
+const LLM_MODEL = 'claude-haiku-4-5-20251001';
 const DEFAULT_RESPONSE_TIME_MS = 45000; // 45s default if no history
 
 // Energy level parameters
