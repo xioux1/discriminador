@@ -623,8 +623,8 @@ textarea:focus, input[type="text"]:focus, select:focus {
 .study-progress-label { font-size: 0.82rem; color: var(--text-muted); white-space: nowrap; }
 .study-background-status {
   margin: 8px auto 0;
-  max-width: 700px;
-  width: calc(100% - 40px);
+  max-width: 900px;
+  width: calc(100% - 32px);
   font-size: 0.82rem;
   color: #735900;
   background: #fff8dd;
@@ -636,10 +636,10 @@ textarea:focus, input[type="text"]:focus, select:focus {
 .study-card-panel {
   flex: 1;
   overflow-y: auto;
-  max-width: 700px;
+  max-width: 900px;
   width: 100%;
   margin: 0 auto;
-  padding: 28px 20px;
+  padding: 28px 16px;
 }
 
 .study-card-subject {
