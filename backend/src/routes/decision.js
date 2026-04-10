@@ -497,9 +497,9 @@ async function syncSchedulerCard(pool, {
       }
 
       await pool.query(
-        `INSERT INTO micro_cards (parent_card_id, concept, question, expected_answer, user_id)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [card.id, concept, micro.question, micro.expected_answer, user_id]
+        `INSERT INTO micro_cards (parent_card_id, concept, question, expected_answer, user_id, subject)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [card.id, concept, micro.question, micro.expected_answer, user_id, card.subject || null]
       );
       console.info(`[scheduler sync] micro-card created for concept "${concept}" (card ${card.id})`);
     } catch (e) {

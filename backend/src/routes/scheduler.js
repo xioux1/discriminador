@@ -307,9 +307,9 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, userI
         });
 
         const inserted = await dbPool.query(
-          `INSERT INTO micro_cards (parent_card_id, concept, question, expected_answer, user_id)
-           VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-          [cardId, concept, micro.question, micro.expected_answer, userId]
+          `INSERT INTO micro_cards (parent_card_id, concept, question, expected_answer, user_id, subject)
+           VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+          [cardId, concept, micro.question, micro.expected_answer, userId, card.subject || null]
         );
         newMicroCards.push(inserted.rows[0]);
       } catch (microErr) {
