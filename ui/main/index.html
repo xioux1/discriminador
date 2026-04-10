@@ -587,6 +587,17 @@
           </div>
           <div id="advisor-loading" class="hidden" style="color:var(--c-neutral);padding:12px 0;font-size:var(--fs-sm)">Analizando...</div>
           <div id="advisor-content"></div>
+
+          <!-- ── Tutor chat ─────────────────────────────────────────── -->
+          <div id="advisor-chat" class="hidden" style="margin-top:20px;border-top:1px solid var(--border);padding-top:16px">
+            <p class="progress-section-label" style="margin:0 0 10px">Chat con el tutor</p>
+            <div id="advisor-chat-messages" class="advisor-chat-messages"></div>
+            <div style="display:flex;gap:8px;margin-top:10px;align-items:flex-end">
+              <textarea id="advisor-chat-input" class="advisor-chat-input" rows="2"
+                placeholder="Pedime un cronograma, estimá tiempo faltante, preguntame lo que quieras..."></textarea>
+              <button type="button" id="advisor-chat-send" class="btn-primary" style="white-space:nowrap">Enviar</button>
+            </div>
+          </div>
         </div>
       </section>
 

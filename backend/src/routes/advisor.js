@@ -1,6 +1,22 @@
 import { Router } from 'express';
+import Anthropic from '@anthropic-ai/sdk';
 import { dbPool } from '../db/client.js';
 import { analyzeSubject } from '../services/advisor.js';
+
+let _client = null;
+function getClient() {
+  if (!_client) _client = new Anthropic();
+  return _client;
+}
+
+function weekKey(date) {
+  const d = new Date(date);
+  const day = d.getDay();
+  const mon = new Date(d);
+  mon.setDate(d.getDate() - day + (day === 0 ? -6 : 1));
+  mon.setHours(0, 0, 0, 0);
+  return mon.toISOString().slice(0, 10);
+}
 
 const advisorRouter = Router();
 
@@ -150,6 +166,177 @@ advisorRouter.get('/advisor/analysis/:subject', async (req, res) => {
 
     console.error('GET /advisor/analysis/:subject error', rawMessage);
     return res.status(status >= 400 && status < 600 ? status : 500).json({ error: 'server_error', message: rawMessage });
+  }
+});
+
+// POST /advisor/chat
+// Body: { subject, message, history: [{role, content}] }
+advisorRouter.post('/advisor/chat', async (req, res) => {
+  const { subject, message, history = [] } = req.body || {};
+  const userId = req.user.id;
+
+  if (!subject?.trim()) return res.status(422).json({ error: 'validation_error', message: 'subject es requerido.' });
+  if (!message?.trim()) return res.status(422).json({ error: 'validation_error', message: 'message es requerido.' });
+  if (!Array.isArray(history) || history.length > 40) return res.status(422).json({ error: 'validation_error', message: 'history debe ser un array (max 40 items).' });
+
+  try {
+    const today = new Date();
+
+    const [configResult, examDatesResult, cardsResult, decisionsResult, sessionsResult] = await Promise.all([
+      dbPool.query(
+        `SELECT syllabus_text FROM subject_configs WHERE subject = $1 AND user_id = $2`,
+        [subject, userId]
+      ),
+      dbPool.query(
+        `SELECT label, exam_date, exam_type, scope_pct
+         FROM subject_exam_dates WHERE subject = $1 AND user_id = $2
+         ORDER BY exam_date ASC`,
+        [subject, userId]
+      ),
+      dbPool.query(
+        `SELECT pass_count, review_count, interval_days, ease_factor, created_at, last_reviewed_at
+         FROM cards
+         WHERE subject = $1 AND user_id = $2
+           AND archived_at IS NULL AND suspended_at IS NULL`,
+        [subject, userId]
+      ),
+      dbPool.query(
+        `SELECT ud.final_grade, ud.decided_at
+         FROM user_decisions ud
+         JOIN evaluation_items ei ON ud.evaluation_item_id = ei.id
+         WHERE COALESCE(NULLIF(trim(ei.input_payload->>'subject'), ''), '(sin materia)') = $1
+           AND ud.user_id = $2 AND ud.final_grade IS NOT NULL
+         ORDER BY ud.decided_at DESC LIMIT 120`,
+        [subject, userId]
+      ),
+      dbPool.query(
+        `SELECT actual_minutes FROM study_sessions
+         WHERE user_id = $1 AND actual_minutes IS NOT NULL
+         ORDER BY ended_at DESC LIMIT 20`,
+        [userId]
+      ),
+    ]);
+
+    const config     = configResult.rows[0] || null;
+    const examDates  = examDatesResult.rows;
+    const cards      = cardsResult.rows;
+    const decisions  = decisionsResult.rows;
+    const sessions   = sessionsResult.rows;
+
+    // ── Card stats ────────────────────────────────────────────────────────
+    const total       = cards.length;
+    const mastered    = cards.filter(c => Number(c.interval_days) >= 14).length;
+    const neverSeen   = cards.filter(c => Number(c.review_count) === 0).length;
+    const struggling  = cards.filter(c => {
+      const rr = Number(c.review_count);
+      return rr >= 3 && Number(c.pass_count) / rr < 0.5;
+    }).length;
+    const inProgress  = total - mastered - neverSeen;
+
+    // ── Avg days from card creation to mastery ────────────────────────────
+    const masteredWithDates = cards.filter(c =>
+      Number(c.interval_days) >= 14 && c.created_at && c.last_reviewed_at
+    );
+    let avgDaysToMastery = null;
+    if (masteredWithDates.length > 0) {
+      const sum = masteredWithDates.reduce(
+        (s, c) => s + Math.ceil((new Date(c.last_reviewed_at) - new Date(c.created_at)) / 86400000), 0
+      );
+      avgDaysToMastery = Math.round(sum / masteredWithDates.length);
+    }
+
+    // ── New cards added per week (recent 8 weeks) ─────────────────────────
+    const byWeek = {};
+    for (const c of cards) {
+      if (c.created_at) {
+        const wk = weekKey(new Date(c.created_at));
+        byWeek[wk] = (byWeek[wk] || 0) + 1;
+      }
+    }
+    const recentWeekCounts = Object.entries(byWeek)
+      .sort(([a], [b]) => b.localeCompare(a))
+      .slice(0, 8)
+      .map(([, n]) => n);
+    const avgNewCardsPerWeek = recentWeekCounts.length > 0
+      ? Math.round(recentWeekCounts.reduce((a, b) => a + b, 0) / recentWeekCounts.length)
+      : 0;
+
+    // ── Recent pass rate (last 4 weeks) ───────────────────────────────────
+    const cutoff = new Date(today);
+    cutoff.setDate(cutoff.getDate() - 28);
+    const recent = decisions.filter(d => new Date(d.decided_at) >= cutoff);
+    const recentPassRate = recent.length > 0
+      ? Number((recent.filter(d => d.final_grade === 'pass').length / recent.length).toFixed(2))
+      : null;
+
+    // ── Avg study session length ──────────────────────────────────────────
+    const avgSessionMinutes = sessions.length > 0
+      ? Math.round(sessions.reduce((s, r) => s + Number(r.actual_minutes), 0) / sessions.length)
+      : null;
+
+    // ── Exam schedule ─────────────────────────────────────────────────────
+    const examSchedule = examDates.map(e => ({
+      label:      e.label,
+      exam_date:  e.exam_date,
+      exam_type:  e.exam_type,
+      scope_pct:  e.scope_pct,
+      days_until: Math.ceil((new Date(e.exam_date + 'T00:00:00') - today) / 86400000),
+    }));
+    const nextExam = examSchedule.find(e => e.days_until >= 0) || null;
+
+    // ── Context object for LLM ────────────────────────────────────────────
+    const context = {
+      subject,
+      today: today.toISOString().slice(0, 10),
+      syllabus: config?.syllabus_text?.slice(0, 1500) || null,
+      exam_schedule: examSchedule,
+      next_exam: nextExam,
+      card_stats: {
+        total,
+        mastered,           // interval_days >= 14 (SM-2 stable)
+        in_progress: inProgress,
+        never_reviewed: neverSeen,
+        struggling,         // pass_rate < 50% after ≥3 reviews
+      },
+      historical_metrics: {
+        avg_days_card_to_mastery:     avgDaysToMastery,
+        avg_new_cards_added_per_week: avgNewCardsPerWeek,
+        recent_pass_rate_last_4w:     recentPassRate,
+        avg_study_session_minutes:    avgSessionMinutes,
+        weeks_of_history:             recentWeekCounts.length,
+      },
+    };
+
+    const systemPrompt = `Sos un tutor universitario experto en planificación de estudio. Tenés acceso al perfil completo del estudiante para "${subject}".
+
+DATOS DEL ESTUDIANTE:
+${JSON.stringify(context, null, 2)}
+
+INSTRUCCIONES:
+- Estimá el tiempo faltante para dominar los temas usando avg_days_card_to_mastery (días reales historizados) y avg_new_cards_added_per_week (ritmo real), no milisegundos por tarjeta.
+- Si te piden un cronograma, organizalo semana a semana hasta el próximo examen.
+- Citá los números reales del estudiante cuando sean relevantes (ej: "históricamente tardás X días en dominar una tarjeta").
+- Sé directo y accionable. Máximo 4 párrafos salvo que pidan cronograma detallado.
+- Respondé siempre en español.`;
+
+    const safeHistory = history
+      .filter(h => (h.role === 'user' || h.role === 'assistant') && typeof h.content === 'string')
+      .map(h => ({ role: h.role, content: h.content.slice(0, 2000) }));
+
+    const response = await getClient().messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1500,
+      temperature: 0.3,
+      system: systemPrompt,
+      messages: [...safeHistory, { role: 'user', content: message.trim() }],
+    });
+
+    return res.json({ reply: response.content[0]?.text?.trim() || '' });
+
+  } catch (err) {
+    const rawMessage = String(err?.message || 'Error desconocido');
+    console.error('POST /advisor/chat error', rawMessage);
+    return res.status(500).json({ error: 'server_error', message: rawMessage });
   }
 });
 

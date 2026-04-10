@@ -973,8 +973,13 @@ async function loadProgress() {
     advisorPanel.classList.remove('hidden');
 
     advisorSelect.addEventListener('change', () => {
-      if (advisorSelect.value) loadAdvisorAnalysis(advisorSelect.value);
-      else document.querySelector('#advisor-content').innerHTML = '';
+      if (advisorSelect.value) {
+        loadAdvisorAnalysis(advisorSelect.value);
+      } else {
+        document.querySelector('#advisor-content').innerHTML = '';
+        document.querySelector('#advisor-chat').classList.add('hidden');
+        resetAdvisorChat(null);
+      }
     });
   } catch (err) {
     loading.classList.add('hidden');
@@ -4458,13 +4463,82 @@ function appendClassNoteCard(note, subject, container) {
   container.appendChild(card);
 }
 
+// ─── Advisor chat ─────────────────────────────────────────────────────────────
+
+let _advisorChatHistory = [];
+let _advisorChatSubject = null;
+
+function resetAdvisorChat(subject) {
+  _advisorChatHistory = [];
+  _advisorChatSubject = subject;
+  const msgs = document.querySelector('#advisor-chat-messages');
+  if (msgs) msgs.innerHTML = '';
+}
+
+function appendChatMsg(role, text) {
+  const msgs = document.querySelector('#advisor-chat-messages');
+  const el = document.createElement('div');
+  el.className = `advisor-chat-msg ${role}`;
+  // Minimal markdown: **bold**, newlines
+  el.innerHTML = escHtml(text)
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  msgs.appendChild(el);
+  msgs.scrollTop = msgs.scrollHeight;
+  return el;
+}
+
+async function sendAdvisorChatMessage() {
+  const input   = document.querySelector('#advisor-chat-input');
+  const sendBtn = document.querySelector('#advisor-chat-send');
+  const message = input.value.trim();
+  if (!message || !_advisorChatSubject) return;
+
+  input.value = '';
+  input.disabled = true;
+  sendBtn.disabled = true;
+
+  appendChatMsg('user', message);
+  const thinkingEl = appendChatMsg('assistant thinking', '...');
+
+  try {
+    const data = await postJson('/advisor/chat', {
+      subject: _advisorChatSubject,
+      message,
+      history: _advisorChatHistory,
+    });
+
+    thinkingEl.remove();
+    appendChatMsg('assistant', data.reply || 'Sin respuesta.');
+
+    _advisorChatHistory.push({ role: 'user',      content: message     });
+    _advisorChatHistory.push({ role: 'assistant', content: data.reply  });
+    // Keep bounded
+    if (_advisorChatHistory.length > 20) _advisorChatHistory = _advisorChatHistory.slice(-20);
+  } catch (err) {
+    thinkingEl.remove();
+    appendChatMsg('assistant', `Error: ${err.message}`);
+  } finally {
+    input.disabled = false;
+    sendBtn.disabled = false;
+    input.focus();
+  }
+}
+
+document.querySelector('#advisor-chat-send').addEventListener('click', sendAdvisorChatMessage);
+document.querySelector('#advisor-chat-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAdvisorChatMessage(); }
+});
+
 // ─── Advisor analysis ─────────────────────────────────────────────────────────
 
 async function loadAdvisorAnalysis(subject) {
   const loading = document.querySelector('#advisor-loading');
   const content = document.querySelector('#advisor-content');
+  const chat    = document.querySelector('#advisor-chat');
   loading.classList.remove('hidden');
   content.innerHTML = '';
+  chat.classList.add('hidden');
+  resetAdvisorChat(subject);
 
   try {
     const data = await getJson(`/advisor/analysis/${encodeURIComponent(subject)}`);
@@ -4520,6 +4594,12 @@ async function loadAdvisorAnalysis(subject) {
         <div class="advisor-tags">${data.covered_topics.map(t => `<span class="advisor-tag covered">${t}</span>`).join('')}</div>
       </div>` : ''}
     `;
+
+    // Show chat and greet
+    chat.classList.remove('hidden');
+    appendChatMsg('assistant',
+      `Análisis de ${subject} listo. Podés pedirme un cronograma semana a semana, que estime cuánto tiempo te falta para dominar los temas pendientes, o preguntarme lo que quieras sobre tu progreso.`
+    );
   } catch (err) {
     loading.classList.add('hidden');
     content.innerHTML = `<p style="color:var(--fail-fg)">Error al analizar: ${err.message}</p>`;
