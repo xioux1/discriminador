@@ -14,6 +14,9 @@
   --hard-bg:    rgba(195, 120,  40, 0.12); --hard-fg:    #8a4a10;
   --good-bg:    rgba(100, 155, 125, 0.13); --good-fg:    #3d7a5a;
   --easy-bg:    rgba( 55, 120, 200, 0.12); --easy-fg:    #1a5a9a;
+  /* Timing distinction: active (blue) = solving time; review (amber) = reading the answer */
+  --active-time-bg: var(--easy-bg);   --active-time-fg: var(--easy-fg);
+  --review-time-bg: var(--review-bg); --review-time-fg: var(--review-fg);
 
   /* Background — diffuse field */
   --bg:     #edf1f6;
@@ -767,7 +770,25 @@ textarea:focus, input[type="text"]:focus, select:focus {
 
 .study-result-time {
   font-size: 0.78rem;
-  color: var(--text-muted);
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+.time-pill {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.time-pill--active {
+  background: var(--active-time-bg);
+  color: var(--active-time-fg);
+}
+.time-pill--review {
+  background: var(--review-time-bg);
+  color: var(--review-time-fg);
 }
 
 .study-result-justification { color: var(--text-muted); font-size: 0.9rem; margin: 4px 0 10px; }

@@ -197,10 +197,10 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
 });
 
 // ─── Record a review result ───────────────────────────────────────────────────
-// Body: { card_id?, micro_card_id?, grade, concept_gaps?, response_time_ms? }
+// Body: { card_id?, micro_card_id?, grade, concept_gaps?, response_time_ms?, review_time_ms? }
 // Accepted grades: again|hard|good|easy (+ legacy pass|fail|review)
 schedulerRouter.post('/scheduler/review', async (req, res) => {
-  const { card_id, micro_card_id, grade, concept_gaps = [], response_time_ms, user_answer = '' } = req.body || {};
+  const { card_id, micro_card_id, grade, concept_gaps = [], response_time_ms, review_time_ms, user_answer = '' } = req.body || {};
   const userId = req.user.id;
 
   const VALID_GRADES = new Set(['pass', 'fail', 'review', 'again', 'hard', 'good', 'easy']);
@@ -215,13 +215,14 @@ schedulerRouter.post('/scheduler/review', async (req, res) => {
   const effectiveGrade = grade.toLowerCase() === 'review' ? 'hard' : grade.toLowerCase();
 
   // Log activity (best-effort)
-  const rtMs = Number.isFinite(Number(response_time_ms)) ? Number(response_time_ms) : null;
+  const rtMs  = Number.isFinite(Number(response_time_ms)) ? Number(response_time_ms) : null;
+  const rvtMs = Number.isFinite(Number(review_time_ms))   ? Number(review_time_ms)   : null;
 
   try {
     if (micro_card_id) {
-      return await reviewMicroCard(res, Number(micro_card_id), effectiveGrade, rtMs, userId);
+      return await reviewMicroCard(res, Number(micro_card_id), effectiveGrade, rtMs, rvtMs, userId);
     } else if (card_id) {
-      return await reviewCard(res, Number(card_id), effectiveGrade, concept_gaps, rtMs, userId, user_answer);
+      return await reviewCard(res, Number(card_id), effectiveGrade, concept_gaps, rtMs, rvtMs, userId, user_answer);
     }
     return res.status(422).json({
       error: 'validation_error',
@@ -234,7 +235,7 @@ schedulerRouter.post('/scheduler/review', async (req, res) => {
 });
 
 // ─── Internal: review a full card ────────────────────────────────────────────
-async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, userId, userAnswer = '') {
+async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, reviewTimeMs, userId, userAnswer = '') {
   const { rows } = await dbPool.query(
     'SELECT * FROM cards WHERE id = $1 AND user_id = $2 AND archived_at IS NULL AND suspended_at IS NULL',
     [cardId, userId]
@@ -258,19 +259,22 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, userI
          avg_response_time_ms = CASE WHEN $5::int IS NOT NULL THEN
            COALESCE(ROUND((COALESCE(avg_response_time_ms, $5::int) + $5::int) / 2.0), $5::int)
            ELSE avg_response_time_ms END,
+         avg_review_time_ms = CASE WHEN $6::int IS NOT NULL THEN
+           COALESCE(ROUND((COALESCE(avg_review_time_ms, $6::int) + $6::int) / 2.0), $6::int)
+           ELSE avg_review_time_ms END,
          last_reviewed_at = now(),
          updated_at = now()
-     WHERE id = $6
+     WHERE id = $7
      RETURNING *`,
     [schedule.interval_days, schedule.ease_factor, schedule.next_review_at,
-     isPassGrade(grade) ? 1 : 0, responseTimeMs, cardId]
+     isPassGrade(grade) ? 1 : 0, responseTimeMs, reviewTimeMs, cardId]
   );
 
   // Log activity (logged_date uses Argentina local date)
   dbPool.query(
-    `INSERT INTO activity_log (activity_type, subject, grade, response_time_ms, user_id, logged_date)
-     VALUES ('study', $1, $2, $3, $4, (NOW() AT TIME ZONE 'America/Argentina/Buenos_Aires')::DATE)`,
-    [updated.rows[0]?.subject || null, grade, responseTimeMs, userId]
+    `INSERT INTO activity_log (activity_type, subject, grade, response_time_ms, review_time_ms, user_id, logged_date)
+     VALUES ('study', $1, $2, $3, $4, $5, (NOW() AT TIME ZONE 'America/Argentina/Buenos_Aires')::DATE)`,
+    [updated.rows[0]?.subject || null, grade, responseTimeMs, reviewTimeMs, userId]
   ).catch((e) => console.warn('[activity log]', e.message));
 
   let newMicroCards = [];
@@ -320,7 +324,7 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, userI
 }
 
 // ─── Internal: review a micro-card ───────────────────────────────────────────
-async function reviewMicroCard(res, microCardId, grade, responseTimeMs, userId) {
+async function reviewMicroCard(res, microCardId, grade, responseTimeMs, reviewTimeMs, userId) {
   const { rows } = await dbPool.query('SELECT * FROM micro_cards WHERE id = $1 AND user_id = $2', [microCardId, userId]);
   if (!rows.length) {
     return res.status(404).json({ error: 'not_found', message: 'Micro-card not found.' });
@@ -371,9 +375,9 @@ async function reviewMicroCard(res, microCardId, grade, responseTimeMs, userId) 
 
   // Log activity (logged_date uses Argentina local date)
   dbPool.query(
-    `INSERT INTO activity_log (activity_type, subject, grade, response_time_ms, user_id, logged_date)
-     VALUES ('study', $1, $2, $3, $4, (NOW() AT TIME ZONE 'America/Argentina/Buenos_Aires')::DATE)`,
-    [micro.parent_subject || null, grade, responseTimeMs, userId]
+    `INSERT INTO activity_log (activity_type, subject, grade, response_time_ms, review_time_ms, user_id, logged_date)
+     VALUES ('study', $1, $2, $3, $4, $5, (NOW() AT TIME ZONE 'America/Argentina/Buenos_Aires')::DATE)`,
+    [micro.parent_subject || null, grade, responseTimeMs, reviewTimeMs, userId]
   ).catch((e) => console.warn('[activity log]', e.message));
 
   return res.status(200).json({

@@ -182,7 +182,7 @@ advisorRouter.post('/advisor/chat', async (req, res) => {
   try {
     const today = new Date();
 
-    const [configResult, examDatesResult, cardsResult, decisionsResult, sessionsResult, plannerResult, todosResult] = await Promise.all([
+    const [configResult, examDatesResult, cardsResult, decisionsResult, sessionsResult, plannerResult, todosResult, timingResult] = await Promise.all([
       dbPool.query(
         `SELECT syllabus_text FROM subject_configs WHERE subject = $1 AND user_id = $2`,
         [subject, userId]
@@ -230,6 +230,16 @@ advisorRouter.post('/advisor/chat', async (req, res) => {
         `SELECT text FROM planner_todos
          WHERE user_id = $1 AND done = false
          ORDER BY position ASC LIMIT 20`,
+        [userId]
+      ),
+      // Avg active and review times (last 60 days)
+      dbPool.query(
+        `SELECT
+           ROUND(AVG(response_time_ms))::int AS avg_active_ms,
+           ROUND(AVG(review_time_ms))::int   AS avg_review_ms
+         FROM activity_log
+         WHERE user_id = $1
+           AND logged_date >= CURRENT_DATE - 60`,
         [userId]
       ),
     ]);
@@ -338,6 +348,8 @@ advisorRouter.post('/advisor/chat', async (req, res) => {
         recent_pass_rate_last_4w:     recentPassRate,
         avg_study_session_minutes:    avgSessionMinutes,
         weeks_of_history:             recentWeekCounts.length,
+        avg_active_time_ms:  timingResult.rows[0]?.avg_active_ms ? Number(timingResult.rows[0].avg_active_ms) : null,
+        avg_review_time_ms:  timingResult.rows[0]?.avg_review_ms ? Number(timingResult.rows[0].avg_review_ms) : null,
       },
       planner_schedule: plannerSummary,
       pending_todos: pendingTodos,
@@ -350,6 +362,7 @@ ${JSON.stringify(context, null, 2)}
 
 INSTRUCCIONES:
 - Estimá el tiempo faltante para dominar los temas usando avg_days_card_to_mastery (días reales historizados) y avg_new_cards_added_per_week (ritmo real), no milisegundos por tarjeta.
+- avg_active_time_ms es el tiempo promedio que el estudiante tarda en contestar (fase activa); avg_review_time_ms es el tiempo promedio leyendo la respuesta (fase de revisión). Ambos en milisegundos. Si avg_review_time_ms es significativamente mayor que avg_active_time_ms, el estudiante dedica más tiempo a procesar las respuestas correctas, lo cual es positivo para la retención.
 - Si te piden un cronograma, organizalo semana a semana hasta el próximo examen, respetando los bloques ya agendados en planner_schedule y las tareas pendientes en pending_todos.
 - Citá los números reales del estudiante cuando sean relevantes (ej: "históricamente tardás X días en dominar una tarjeta").
 - Si el planificador tiene slots libres, proponé usarlos para el estudio.

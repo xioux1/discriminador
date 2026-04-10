@@ -1018,7 +1018,10 @@ function renderTimingStats(data) {
     for (const { subject, weeks } of data.by_subject) {
       const row = document.createElement('div');
       row.style.cssText = 'margin-bottom:8px;font-size:0.85rem';
-      const trend = weeks.map(w => `<span style="margin-right:6px;color:var(--text-muted)">${w.week_start?.slice(5)} <b style="color:var(--text)">${fmtMs(w.avg_ms)}</b></span>`).join('→ ');
+      const trend = weeks.map(w => {
+        const reviewPill = w.avg_review_ms ? ` <span class="time-pill time-pill--review">${fmtMs(w.avg_review_ms)}</span>` : '';
+        return `<span style="margin-right:6px;color:var(--text-muted)">${w.week_start?.slice(5)} <span class="time-pill time-pill--active">${fmtMs(w.avg_ms)}</span>${reviewPill}</span>`;
+      }).join('→ ');
       row.innerHTML = `<span style="font-weight:600">${escHtml(subject)}</span>: ${trend || '—'}`;
       subjectsEl.appendChild(row);
     }
@@ -1036,7 +1039,8 @@ function renderTimingStats(data) {
       item.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:0.82rem';
       const preview = (c.prompt_text || '').slice(0, 60) + ((c.prompt_text || '').length > 60 ? '…' : '');
       item.innerHTML = `
-        <span style="background:var(--review-bg);color:var(--review-fg);padding:1px 7px;border-radius:10px;font-weight:600;white-space:nowrap">${fmtMs(c.avg_ms)}</span>
+        <span class="time-pill time-pill--active" style="white-space:nowrap">${fmtMs(c.avg_ms)}</span>
+        ${c.avg_review_ms ? `<span class="time-pill time-pill--review" style="white-space:nowrap">${fmtMs(c.avg_review_ms)}</span>` : ''}
         <span style="color:var(--text-muted);font-size:0.75rem;white-space:nowrap">${escHtml(c.subject || '')}</span>
         <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(preview)}</span>
       `;
@@ -2658,6 +2662,8 @@ const studyState = {
   currentInputMode: '',
   cardStartTime: 0,
   responseTimeMs: 0,
+  reviewStartTime: 0,
+  reviewTimeMs: 0,
   pendingMicroGeneration: 0,
   timerInterval: null,
   sessionId: null,
@@ -2803,6 +2809,8 @@ function showStudyCard() {
   if (studyState.timerInterval) clearInterval(studyState.timerInterval);
   studyState.cardStartTime = Date.now();
   studyState.responseTimeMs = 0;
+  studyState.reviewStartTime = 0;
+  studyState.reviewTimeMs = 0;
   const timerEl = document.querySelector('#study-timer');
   timerEl.textContent = '0s';
   studyState.timerInterval = setInterval(() => {
@@ -3092,7 +3100,7 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
     const timeEl = document.querySelector('#study-result-time');
     if (timeEl) {
       const elapsed = Math.round((studyState.responseTimeMs || 0) / 1000);
-      timeEl.textContent = `${elapsed}s`;
+      timeEl.innerHTML = `<span class="time-pill time-pill--active">${elapsed}s activo</span>`;
     }
 
     // Replicate Evaluate-style dimension feedback in Study
@@ -3192,6 +3200,10 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
 
     document.querySelector('#study-answer-block').classList.add('hidden');
     document.querySelector('#study-result-block').classList.remove('hidden');
+
+    // Start review timer (time spent reading the answer/feedback)
+    studyState.reviewStartTime = Date.now();
+    studyState.reviewTimeMs = 0;
 
     // Show doubt section, reset it
     const doubtSection = document.querySelector('#study-doubt-section');
@@ -3425,6 +3437,18 @@ async function handleStudyNextCard() {
     return;
   }
 
+  // Capture review time (time from answer revealed to Siguiente clicked)
+  if (studyState.reviewStartTime) {
+    studyState.reviewTimeMs = Date.now() - studyState.reviewStartTime;
+  }
+
+  // Update time display to show review pill alongside active pill
+  const _timeEl = document.querySelector('#study-result-time');
+  if (_timeEl && studyState.reviewTimeMs) {
+    const reviewSec = Math.round(studyState.reviewTimeMs / 1000);
+    _timeEl.innerHTML += ` <span class="time-pill time-pill--review">${reviewSec}s revisión</span>`;
+  }
+
   const grade  = decision.finalGrade;
   const gaps   = evalResult.missing_concepts ?? [];
   const shouldGenerateMicros = Boolean(grade && item.type === 'card');
@@ -3439,7 +3463,8 @@ async function handleStudyNextCard() {
       await postJson('/scheduler/review', {
         micro_card_id: item.data.id,
         grade,
-        response_time_ms: studyState.responseTimeMs || undefined
+        response_time_ms: studyState.responseTimeMs || undefined,
+        review_time_ms:   studyState.reviewTimeMs   || undefined
       });
     } catch (err) {
       console.warn('Review record failed:', err.message);
@@ -3459,6 +3484,7 @@ async function handleStudyNextCard() {
       grade,
       concept_gaps: gaps,
       response_time_ms: studyState.responseTimeMs || undefined,
+      review_time_ms:   studyState.reviewTimeMs   || undefined,
       user_answer: studyState.currentEvalContext?.user_answer_text || ''
     }).then((reviewResp) => {
       // Insert generated micro-cards *after* the card currently on screen.

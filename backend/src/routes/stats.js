@@ -134,6 +134,7 @@ statsRouter.get('/stats/timing', async (req, res) => {
          subject,
          date_trunc('week', logged_date::timestamptz)::date AS week_start,
          ROUND(AVG(response_time_ms))::int AS avg_ms,
+         ROUND(AVG(review_time_ms))::int   AS avg_review_ms,
          COUNT(*) AS cnt
        FROM activity_log
        WHERE user_id = $1
@@ -153,6 +154,7 @@ statsRouter.get('/stats/timing', async (req, res) => {
       bySubjectMap[row.subject].push({
         week_start: row.week_start,
         avg_ms: Number(row.avg_ms),
+        avg_review_ms: row.avg_review_ms ? Number(row.avg_review_ms) : null,
         count: Number(row.cnt)
       });
     }
@@ -160,7 +162,9 @@ statsRouter.get('/stats/timing', async (req, res) => {
 
     // Top 20 slowest cards (by rolling average already maintained on cards table)
     const cardRows = await dbPool.query(
-      `SELECT id AS card_id, prompt_text, subject, avg_response_time_ms AS avg_ms
+      `SELECT id AS card_id, prompt_text, subject,
+              avg_response_time_ms AS avg_ms,
+              avg_review_time_ms   AS avg_review_ms
        FROM cards
        WHERE user_id = $1
          AND avg_response_time_ms IS NOT NULL
@@ -172,7 +176,8 @@ statsRouter.get('/stats/timing', async (req, res) => {
       card_id: r.card_id,
       prompt_text: r.prompt_text,
       subject: r.subject,
-      avg_ms: Number(r.avg_ms)
+      avg_ms: Number(r.avg_ms),
+      avg_review_ms: r.avg_review_ms ? Number(r.avg_review_ms) : null
     }));
 
     return res.json({ by_subject, by_card });
