@@ -2374,33 +2374,45 @@ function initStudyTab() {
 }
 
 function bindStudyKeyboardShortcuts() {
+  // Mark the input so re-init calls don't double-bind (actual listener is global below).
   const answerInput = document.querySelector('#study-answer-input');
-  if (answerInput && !answerInput.dataset.boundStudyShortcuts) {
-    answerInput.addEventListener('keydown', (event) => {
-      if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.altKey) return;
-      if (event.key !== 'Enter') return;
-      const evalBtn = document.querySelector('#study-eval-btn');
-      if (!evalBtn || evalBtn.disabled || evalBtn.offsetParent === null) return;
-      event.preventDefault();
-      evalBtn.click();
-    });
-    answerInput.dataset.boundStudyShortcuts = 'true';
-  }
+  if (answerInput) answerInput.dataset.boundStudyShortcuts = 'true';
 
   if (!document.body.dataset.boundStudyAcceptShortcut) {
     document.addEventListener('keydown', (event) => {
       if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.altKey) return;
-      if (event.code !== 'Slash') return;
 
       const sessionVisible = document.querySelector('#study-session')?.offsetParent !== null;
-      const resultVisible = document.querySelector('#study-result-block')?.offsetParent !== null;
-      if (!sessionVisible || !resultVisible) return;
+      if (!sessionVisible) return;
 
-      const acceptBtn = document.querySelector('#study-decision-block [data-study-action="accept"]');
-      if (!acceptBtn || acceptBtn.disabled || acceptBtn.offsetParent === null) return;
+      if (event.key === 'Enter') {
+        // Stage 2: result is visible → accept suggestion.
+        const resultVisible = document.querySelector('#study-result-block')?.offsetParent !== null;
+        if (resultVisible) {
+          const acceptBtn = document.querySelector('#study-decision-block [data-study-action="accept"]');
+          if (acceptBtn && !acceptBtn.disabled && acceptBtn.offsetParent !== null) {
+            event.preventDefault();
+            acceptBtn.click();
+            return;
+          }
+        }
+        // Stage 1: result not yet visible → evaluate.
+        const evalBtn = document.querySelector('#study-eval-btn');
+        if (!evalBtn || evalBtn.disabled || evalBtn.offsetParent === null) return;
+        event.preventDefault();
+        evalBtn.click();
+        return;
+      }
 
-      event.preventDefault();
-      acceptBtn.click();
+      // Ctrl+/ kept as an alias for accepting the suggestion.
+      if (event.code === 'Slash') {
+        const resultVisible = document.querySelector('#study-result-block')?.offsetParent !== null;
+        if (!resultVisible) return;
+        const acceptBtn = document.querySelector('#study-decision-block [data-study-action="accept"]');
+        if (!acceptBtn || acceptBtn.disabled || acceptBtn.offsetParent === null) return;
+        event.preventDefault();
+        acceptBtn.click();
+      }
     });
     document.body.dataset.boundStudyAcceptShortcut = 'true';
   }
