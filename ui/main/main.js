@@ -2208,7 +2208,7 @@ const STUDY_PERSIST_KEY = 'study.activeSession.v1';
 
 function persistStudySession() {
   try {
-    if (!studyState.queue?.length || !studyState.sessionStartTime || !studyState.sessionLimitMs) {
+    if (!studyState.queue?.length || !studyState.sessionStartTime) {
       localStorage.removeItem(STUDY_PERSIST_KEY);
       return;
     }
@@ -2218,8 +2218,8 @@ function persistStudySession() {
       results: studyState.results,
       sessionId: studyState.sessionId,
       sessionStartTime: studyState.sessionStartTime,
-      sessionLimitMs: studyState.sessionLimitMs,
-      sessionEnergyLevel: studyState.sessionEnergyLevel,
+      sessionLimitMs: studyState.sessionLimitMs ?? null,
+      sessionEnergyLevel: studyState.sessionEnergyLevel ?? null,
       selectedTime: briefingState.selectedTime,
       selectedEnergy: briefingState.selectedEnergy,
       selectedSubject: briefingState.selectedSubject
@@ -2236,12 +2236,14 @@ function restorePersistedStudySession() {
     const raw = localStorage.getItem(STUDY_PERSIST_KEY);
     if (!raw) return false;
     const saved = JSON.parse(raw);
-    if (!saved?.queue?.length || !saved?.sessionStartTime || !saved?.sessionLimitMs) {
+    if (!saved?.queue?.length || !saved?.sessionStartTime) {
       clearPersistedStudySession();
       return false;
     }
 
-    const expiresAt = Number(saved.sessionStartTime) + Number(saved.sessionLimitMs);
+    // Planned sessions expire at their configured limit; ad-hoc sessions expire after 8 hours.
+    const limitMs   = saved.sessionLimitMs ? Number(saved.sessionLimitMs) : 8 * 60 * 60 * 1000;
+    const expiresAt = Number(saved.sessionStartTime) + limitMs;
     if (!Number.isFinite(expiresAt) || Date.now() > expiresAt) {
       clearPersistedStudySession();
       return false;
@@ -2255,8 +2257,8 @@ function restorePersistedStudySession() {
     studyState.index = Math.max(0, Math.min(saved.index ?? 0, saved.queue.length - 1));
     studyState.results = Array.isArray(saved.results) ? saved.results : [];
     studyState.sessionId = saved.sessionId ?? null;
-    studyState.sessionStartTime = Number(saved.sessionStartTime);
-    studyState.sessionLimitMs = Number(saved.sessionLimitMs);
+    studyState.sessionStartTime   = Number(saved.sessionStartTime);
+    studyState.sessionLimitMs     = saved.sessionLimitMs ? Number(saved.sessionLimitMs) : null;
     studyState.sessionEnergyLevel = saved.sessionEnergyLevel || null;
 
     document.querySelector('#study-briefing').classList.add('hidden');
@@ -2328,6 +2330,7 @@ function initStudyTab() {
   bindStudyKeyboardShortcuts();
 
   document.querySelector('#study-again-btn').addEventListener('click', () => {
+    clearPersistedStudySession();
     document.querySelector('#study-complete').classList.add('hidden');
     document.querySelector('#study-overview').classList.add('hidden');
     // Reset briefing state
@@ -2646,7 +2649,9 @@ const studyState = {
   pendingMicroGeneration: 0,
   timerInterval: null,
   sessionId: null,
-  sessionStartTime: 0
+  sessionStartTime: 0,
+  sessionLimitMs: null,
+  sessionEnergyLevel: null
 };
 
 function renderStudyBackgroundStatus() {
@@ -2688,13 +2693,16 @@ async function startStudySession() {
   const micros = (data.micro_cards ?? []).map((m) => ({ type: 'micro', data: m }));
   const cards  = (data.cards ?? []).map((c) => ({ type: 'card', data: c }));
 
-  studyState.queue   = [...micros, ...cards];
-  studyState.index   = 0;
-  studyState.results = [];
+  studyState.queue              = [...micros, ...cards];
+  studyState.index              = 0;
+  studyState.results            = [];
   studyState.pendingMicroGeneration = 0;
-  studyState.currentEvalResult = null;
+  studyState.currentEvalResult  = null;
   studyState.currentEvalContext = null;
-  studyState.currentDecision = null;
+  studyState.currentDecision    = null;
+  studyState.sessionStartTime   = Date.now();
+  studyState.sessionLimitMs     = null; // ad-hoc: no time limit (8 h expiry)
+  studyState.sessionEnergyLevel = briefingState.selectedEnergy || null;
   renderStudyBackgroundStatus();
 
   if (studyState.queue.length === 0) {
@@ -2707,7 +2715,7 @@ async function startStudySession() {
   document.querySelector('#study-complete').classList.add('hidden');
   document.querySelector('#study-session').classList.remove('hidden');
 
-  clearPersistedStudySession();
+  persistStudySession();
   showStudyCard();
 }
 
