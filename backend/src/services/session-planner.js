@@ -160,16 +160,22 @@ Respondé ÚNICAMENTE con JSON válido:
   return order;
 }
 
+function dateStr(val) {
+  if (!val) return '';
+  if (typeof val === 'string') return val.slice(0, 10);
+  return new Date(val).toISOString().slice(0, 10);
+}
+
 function buildFallbackOrder({ cards, microCards }) {
   const todayStr   = new Date().toISOString().slice(0, 10);
   const dueCardIds = new Set(cards.map(c => c.id));
 
   // Remediales frescas: micros creadas hoy (el gap fue detectado esta sesión) → primero siempre
-  const remedialMicros   = microCards.filter(m => m.created_at?.slice(0, 10) === todayStr);
+  const remedialMicros   = microCards.filter(m => dateStr(m.created_at) === todayStr);
   // Dependientes: la tarjeta general también está en cola → van DESPUÉS de la general
-  const dependentMicros  = microCards.filter(m => m.created_at?.slice(0, 10) !== todayStr && dueCardIds.has(m.parent_card_id));
+  const dependentMicros  = microCards.filter(m => dateStr(m.created_at) !== todayStr && dueCardIds.has(m.parent_card_id));
   // Standalone: la tarjeta general no está en cola hoy
-  const standaloneMicros = microCards.filter(m => m.created_at?.slice(0, 10) !== todayStr && !dueCardIds.has(m.parent_card_id));
+  const standaloneMicros = microCards.filter(m => dateStr(m.created_at) !== todayStr && !dueCardIds.has(m.parent_card_id));
 
   const parentIds      = new Set(dependentMicros.map(m => m.parent_card_id));
   const parentsFirst   = cards.filter(c =>  parentIds.has(c.id)); // generales con micros en cola → revisar antes
@@ -216,7 +222,7 @@ function buildUserMessage({ availableMinutes, energyLevel, cards, microCards, su
     concept: m.concept,
     parent_subject: m.parent_subject,
     parent_card_id: m.parent_card_id,
-    created_today:   m.created_at?.slice(0, 10) === todayStr,
+    created_today:   dateStr(m.created_at) === todayStr,
     parent_also_due: dueCardIds.has(m.parent_card_id),
     ...examInfo(m.parent_subject),
   }));
