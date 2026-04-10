@@ -2382,7 +2382,7 @@ function bindStudyKeyboardShortcuts() {
     document.addEventListener('keydown', (event) => {
       if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.altKey) return;
 
-      const sessionVisible = document.querySelector('#study-session')?.offsetParent !== null;
+      const sessionVisible = !document.querySelector('#study-session')?.classList.contains('hidden');
       if (!sessionVisible) return;
 
       if (event.key === 'Enter') {
