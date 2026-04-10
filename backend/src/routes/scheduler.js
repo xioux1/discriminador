@@ -290,13 +290,6 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, userI
     const targetConcepts = topConcept ? [topConcept] : [];
 
     for (const concept of targetConcepts) {
-      const existing = await dbPool.query(
-        `SELECT id FROM micro_cards
-         WHERE parent_card_id = $1 AND status = 'active'`,
-        [cardId]
-      );
-      if (existing.rows.length) continue;
-
       try {
         const micro = await generateMicroCard({
           prompt_text: card.prompt_text,
@@ -308,10 +301,12 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, userI
 
         const inserted = await dbPool.query(
           `INSERT INTO micro_cards (parent_card_id, concept, question, expected_answer, user_id, subject)
-           VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+           VALUES ($1, $2, $3, $4, $5, $6)
+           ON CONFLICT DO NOTHING
+           RETURNING *`,
           [cardId, concept, micro.question, micro.expected_answer, userId, card.subject || null]
         );
-        newMicroCards.push(inserted.rows[0]);
+        if (inserted.rows.length) newMicroCards.push(inserted.rows[0]);
       } catch (microErr) {
         console.warn(`Failed to generate micro-card for concept "${concept}":`, microErr.message);
       }

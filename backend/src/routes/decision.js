@@ -473,12 +473,6 @@ async function syncSchedulerCard(pool, {
   for (const { concept } of targetGaps) {
     if (!concept) continue;
 
-    const already = await pool.query(
-      `SELECT id FROM micro_cards WHERE parent_card_id = $1 AND status = 'active'`,
-      [card.id]
-    );
-    if (already.rows.length) continue;
-
     try {
       let micro;
       try {
@@ -496,12 +490,17 @@ async function syncSchedulerCard(pool, {
         };
       }
 
-      await pool.query(
+      const result = await pool.query(
         `INSERT INTO micro_cards (parent_card_id, concept, question, expected_answer, user_id, subject)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT DO NOTHING`,
         [card.id, concept, micro.question, micro.expected_answer, user_id, card.subject || null]
       );
-      console.info(`[scheduler sync] micro-card created for concept "${concept}" (card ${card.id})`);
+      if (result.rowCount > 0) {
+        console.info(`[scheduler sync] micro-card created for concept "${concept}" (card ${card.id})`);
+      } else {
+        console.info(`[scheduler sync] micro-card skipped — already active for card ${card.id}`);
+      }
     } catch (e) {
       console.warn(`[scheduler sync] micro-card persist failed for "${concept}":`, e.message);
     }
