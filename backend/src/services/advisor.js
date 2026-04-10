@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 
 const LLM_MODEL = 'claude-sonnet-4-6';
-const LLM_MAX_TOKENS = 1500;
+const LLM_MAX_TOKENS = 2048;
 
 let _client = null;
 
@@ -112,6 +112,10 @@ Respondé ÚNICAMENTE con un JSON válido con esta estructura exacta:
     ]
   });
 
+  if (response.stop_reason === 'max_tokens') {
+    console.warn('[advisor] LLM response truncated (max_tokens hit). Consider raising LLM_MAX_TOKENS or shortening the input.');
+  }
+
   const raw = response.content[0]?.text?.trim() || '{}';
 
   // Robustly extract JSON regardless of preamble text or code fences.
@@ -133,7 +137,7 @@ Respondé ÚNICAMENTE con un JSON válido con esta estructura exacta:
   try {
     parsed = JSON.parse(cleaned);
   } catch (_e) {
-    console.error('[advisor] JSON parse failed. Raw LLM output:', raw.slice(0, 300));
+    console.error('[advisor] JSON parse failed. stop_reason:', response.stop_reason, '— Raw LLM output:', raw.slice(0, 500));
     parsed = { summary: 'No se pudo procesar la respuesta del análisis. Intentá de nuevo.', coverage_pct: 0, covered_topics: [], missing_topics: [], exam_gaps: [], priorities: [], pace_ok: true, pace_message: '' };
   }
 
