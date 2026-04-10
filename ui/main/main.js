@@ -974,10 +974,17 @@ async function loadProgress() {
 
     advisorSelect.addEventListener('change', () => {
       if (advisorSelect.value) {
+        // Show chat immediately on subject selection — don't wait for analysis
+        const chat = document.querySelector('#advisor-chat');
+        if (chat) {
+          chat.classList.remove('hidden');
+          resetAdvisorChat(advisorSelect.value);
+        }
         loadAdvisorAnalysis(advisorSelect.value);
       } else {
+        const chat = document.querySelector('#advisor-chat');
+        if (chat) chat.classList.add('hidden');
         document.querySelector('#advisor-content').innerHTML = '';
-        document.querySelector('#advisor-chat').classList.add('hidden');
         resetAdvisorChat(null);
       }
     });
@@ -4534,11 +4541,8 @@ document.querySelector('#advisor-chat-input').addEventListener('keydown', (e) =>
 async function loadAdvisorAnalysis(subject) {
   const loading = document.querySelector('#advisor-loading');
   const content = document.querySelector('#advisor-content');
-  const chat    = document.querySelector('#advisor-chat');
   loading.classList.remove('hidden');
   content.innerHTML = '';
-  chat.classList.add('hidden');
-  resetAdvisorChat(subject);
 
   try {
     const data = await getJson(`/advisor/analysis/${encodeURIComponent(subject)}`);
@@ -4546,7 +4550,6 @@ async function loadAdvisorAnalysis(subject) {
 
     if (data.error === 'no_config') {
       content.innerHTML = `<p style="color:var(--text-muted)">Esta materia no tiene plan de estudios. Configurala desde el Dashboard (⚙ Configurar).</p>`;
-      chat.classList.remove('hidden');
       appendChatMsg('assistant',
         `No hay programa configurado para ${subject}, pero igual puedo ayudarte. Podés pedirme un cronograma basado en tu historial, estimaciones de tiempo, o cualquier consulta sobre tu progreso.`
       );
@@ -4599,17 +4602,14 @@ async function loadAdvisorAnalysis(subject) {
       </div>` : ''}
     `;
 
-    // Show chat and greet
-    chat.classList.remove('hidden');
     appendChatMsg('assistant',
       `Análisis de ${subject} listo. Podés pedirme un cronograma semana a semana, que estime cuánto tiempo te falta para dominar los temas pendientes, o preguntarme lo que quieras sobre tu progreso.`
     );
   } catch (err) {
     loading.classList.add('hidden');
     content.innerHTML = `<p style="color:var(--fail-fg)">Error al analizar: ${err.message}</p>`;
-    chat.classList.remove('hidden');
     appendChatMsg('assistant',
-      `Hubo un error al cargar el análisis de ${subject}, pero igual puedo ayudarte con el chat. Preguntame lo que necesites.`
+      `Hubo un error al cargar el análisis de ${subject}, pero igual podés preguntarme lo que necesites.`
     );
   }
 }
