@@ -182,7 +182,7 @@ advisorRouter.post('/advisor/chat', async (req, res) => {
   try {
     const today = new Date();
 
-    const [configResult, examDatesResult, cardsResult, decisionsResult, sessionsResult] = await Promise.all([
+    const [configResult, examDatesResult, cardsResult, decisionsResult, sessionsResult, plannerResult, todosResult] = await Promise.all([
       dbPool.query(
         `SELECT syllabus_text FROM subject_configs WHERE subject = $1 AND user_id = $2`,
         [subject, userId]
@@ -215,11 +215,45 @@ advisorRouter.post('/advisor/chat', async (req, res) => {
          ORDER BY ended_at DESC LIMIT 20`,
         [userId]
       ),
+      // Planner slots for current week + next 3 weeks
+      dbPool.query(
+        `SELECT week_start, day_index, slot_time, content, color
+         FROM weekly_planner
+         WHERE user_id = $1
+           AND week_start >= CURRENT_DATE - INTERVAL '7 days'
+           AND week_start <= CURRENT_DATE + INTERVAL '28 days'
+         ORDER BY week_start, day_index, slot_time`,
+        [userId]
+      ),
+      // Pending todos
+      dbPool.query(
+        `SELECT text FROM planner_todos
+         WHERE user_id = $1 AND done = false
+         ORDER BY position ASC LIMIT 20`,
+        [userId]
+      ),
     ]);
 
     const config     = configResult.rows[0] || null;
     const examDates  = examDatesResult.rows;
     const cards      = cardsResult.rows;
+
+    // ── Planner: aggregate slots by week → day → list of blocks ──────────
+    const DAY_NAMES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+    const plannerByWeek = {};
+    for (const row of plannerResult.rows) {
+      const wk = String(row.week_start).slice(0, 10);
+      if (!plannerByWeek[wk]) plannerByWeek[wk] = {};
+      const dayKey = DAY_NAMES[row.day_index] || `Día${row.day_index}`;
+      if (!plannerByWeek[wk][dayKey]) plannerByWeek[wk][dayKey] = [];
+      if (row.content?.trim()) plannerByWeek[wk][dayKey].push(`${row.slot_time} ${row.content.trim()}`);
+    }
+    // Convert to sorted array of { week, days: {day: [slots]} }
+    const plannerSummary = Object.entries(plannerByWeek)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([week, days]) => ({ week, days }));
+
+    const pendingTodos = todosResult.rows.map(r => r.text);
     const decisions  = decisionsResult.rows;
     const sessions   = sessionsResult.rows;
 
@@ -305,6 +339,8 @@ advisorRouter.post('/advisor/chat', async (req, res) => {
         avg_study_session_minutes:    avgSessionMinutes,
         weeks_of_history:             recentWeekCounts.length,
       },
+      planner_schedule: plannerSummary,
+      pending_todos: pendingTodos,
     };
 
     const systemPrompt = `Sos un tutor universitario experto en planificación de estudio. Tenés acceso al perfil completo del estudiante para "${subject}".
@@ -314,8 +350,9 @@ ${JSON.stringify(context, null, 2)}
 
 INSTRUCCIONES:
 - Estimá el tiempo faltante para dominar los temas usando avg_days_card_to_mastery (días reales historizados) y avg_new_cards_added_per_week (ritmo real), no milisegundos por tarjeta.
-- Si te piden un cronograma, organizalo semana a semana hasta el próximo examen.
+- Si te piden un cronograma, organizalo semana a semana hasta el próximo examen, respetando los bloques ya agendados en planner_schedule y las tareas pendientes en pending_todos.
 - Citá los números reales del estudiante cuando sean relevantes (ej: "históricamente tardás X días en dominar una tarjeta").
+- Si el planificador tiene slots libres, proponé usarlos para el estudio.
 - Sé directo y accionable. Máximo 4 párrafos salvo que pidan cronograma detallado.
 - Respondé siempre en español.`;
 
