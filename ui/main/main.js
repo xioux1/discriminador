@@ -1279,35 +1279,9 @@ function sqlClientSideErrors(sql) {
     errors.push({ line: lines.length, message: `ORA-00907: paréntesis de cierre sin apertura`, hint: `Hay un ) de más` });
   }
 
-  // 4. IF / END IF balance (PL/SQL blocks)
-  if (hasPLSQL) {
-    // Strip single-line comments and string literals before counting
-    const normSql = sql.replace(/--[^\n]*/g, '').replace(/'([^']|'')*'/g, "''").toUpperCase();
-    // \bIF\b does NOT match inside ELSIF (no word boundary before I)
-    // so rawIfCount = number of IF blocks that need an END IF
-    const rawIfCount  = (normSql.match(/\bIF\b/g) || []).length;
-    const endIfCount  = (normSql.match(/\bEND\s+IF\b/g) || []).length;
-    if (rawIfCount > endIfCount) {
-      const missing = rawIfCount - endIfCount;
-      errors.push({
-        line: lines.length,
-        message: `PLS-00103: Falta${missing > 1 ? 'n' : ''} ${missing} END IF; — ${rawIfCount} IF pero solo ${endIfCount} END IF`,
-        hint: 'Cada IF...THEN debe cerrar con END IF;',
-      });
-    }
-
-    // LOOP / END LOOP balance
-    const loopCount    = (normSql.match(/\bLOOP\b/g) || []).length;
-    const endLoopCount = (normSql.match(/\bEND\s+LOOP\b/g) || []).length;
-    if (loopCount > endLoopCount) {
-      const missing = loopCount - endLoopCount;
-      errors.push({
-        line: lines.length,
-        message: `PLS-00103: Falta${missing > 1 ? 'n' : ''} ${missing} END LOOP; — ${loopCount} LOOP pero solo ${endLoopCount} END LOOP`,
-        hint: 'Cada LOOP debe cerrar con END LOOP;',
-      });
-    }
-  }
+  // Block structure (IF/END IF, LOOP/END LOOP, CASE/END CASE, BEGIN/END) is
+  // checked by the backend structural parser — not duplicated here to avoid
+  // false positives from the old regex-counting approach.
 
   return errors;
 }
