@@ -4546,6 +4546,10 @@ async function loadAdvisorAnalysis(subject) {
 
     if (data.error === 'no_config') {
       content.innerHTML = `<p style="color:var(--text-muted)">Esta materia no tiene plan de estudios. Configurala desde el Dashboard (⚙ Configurar).</p>`;
+      chat.classList.remove('hidden');
+      appendChatMsg('assistant',
+        `No hay programa configurado para ${subject}, pero igual puedo ayudarte. Podés pedirme un cronograma basado en tu historial, estimaciones de tiempo, o cualquier consulta sobre tu progreso.`
+      );
       return;
     }
 
@@ -4603,6 +4607,10 @@ async function loadAdvisorAnalysis(subject) {
   } catch (err) {
     loading.classList.add('hidden');
     content.innerHTML = `<p style="color:var(--fail-fg)">Error al analizar: ${err.message}</p>`;
+    chat.classList.remove('hidden');
+    appendChatMsg('assistant',
+      `Hubo un error al cargar el análisis de ${subject}, pero igual puedo ayudarte con el chat. Preguntame lo que necesites.`
+    );
   }
 }
 
