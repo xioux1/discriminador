@@ -3187,6 +3187,7 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
     }
     variantFeedback.classList.add('hidden');
     variantFeedback.textContent = '';
+    document.querySelector('#study-variant-preview')?.classList.add('hidden');
     nextBtn.disabled = true;
 
     if (decisionReason) decisionReason.value = '';
@@ -3362,12 +3363,21 @@ document.querySelector('#study-variant-btn').addEventListener('click', async () 
   variantBtn.textContent = 'Generando...';
   variantFb.classList.add('hidden');
 
+  const variantPreview = document.querySelector('#study-variant-preview');
+  const variantPreviewQ = document.querySelector('#study-variant-preview-q');
+  const variantPreviewA = document.querySelector('#study-variant-preview-a');
+
   try {
-    await postJson(`/scheduler/cards/${item.data.id}/variant`, {});
+    const resp = await postJson(`/scheduler/cards/${item.data.id}/variant`, {});
     variantBtn.classList.add('hidden');
-    variantFb.textContent = 'Variante guardada. Aparecerá en futuras revisiones.';
+    variantFb.textContent = 'Variante guardada.';
     variantFb.style.color = 'var(--pass-fg)';
     variantFb.classList.remove('hidden');
+    if (resp?.variant) {
+      variantPreviewQ.textContent = resp.variant.prompt_text || '';
+      variantPreviewA.textContent = resp.variant.expected_answer_text || '';
+      variantPreview.classList.remove('hidden');
+    }
   } catch (err) {
     variantBtn.disabled = false;
     variantBtn.textContent = '+ Guardar variante';
