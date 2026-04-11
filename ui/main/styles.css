@@ -2417,41 +2417,41 @@ textarea:focus, input[type="text"]:focus, select:focus {
 }
 .study-decision-misc-btn:hover { color: var(--text); border-color: var(--text-muted); }
 
-/* ─── Math Live Preview ───────────────────────────────────────────────────── */
-.math-preview-container {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  background: var(--primary-light);
-  border-left: 3px solid var(--primary);
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  padding: 6px 12px;
-  margin: 4px 0 8px;
-  color: var(--primary-dark);
-  font-family: 'Georgia', serif;
-  overflow-x: auto;
+/* ─── Math Inline Overlay ────────────────────────────────────────────────── */
+
+/* Wrapper makes the textarea the positioning context for the overlay. */
+.math-overlay-wrapper {
+  position: relative;
+  display: block;
+  width: 100%;
 }
 
-.math-preview-label {
-  font-size: 0.68rem;
-  font-family: var(--font);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--primary);
-  white-space: nowrap;
-  flex-shrink: 0;
-  padding-top: 3px;
-}
-
-.math-preview-content {
-  font-size: 1rem;
-  line-height: 2.2;
+/* The overlay sits on top of the textarea and shows the formatted content.
+   pointer-events:none lets all clicks and keystrokes reach the textarea. */
+.math-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  pointer-events: none;
+  white-space: pre-wrap;
   word-break: break-word;
-  flex: 1;
+  overflow: hidden;
+  /* Background transparent so the textarea border/bg shows through. */
+  background: transparent;
+  color: var(--text);
+  /* font/padding/border size are synced from textarea via JS */
 }
 
-/* Stacked fraction */
+.math-overlay--off { display: none; }
+
+/* When overlay is active: hide the raw textarea text, keep the caret. */
+textarea.math-textarea--active {
+  color: transparent !important;
+  caret-color: var(--text) !important;
+}
+
+/* ── Stacked fraction ────────────────────────── */
 .mp-frac {
   display: inline-flex;
   flex-direction: column;
