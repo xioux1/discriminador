@@ -106,7 +106,8 @@
     }
 
     if (role === 'den') { exitAfter(box.parentElement); return true; }
-    if (role === 'sup') { exitAfter(box); return true; }
+    // sup box is wrapped in a contentEditable="false" span — exit that wrapper.
+    if (role === 'sup') { exitAfter(box.parentElement); return true; }
 
     return false;
   }
@@ -135,11 +136,20 @@
   }
 
   function makeSup() {
+    // Wrap in contentEditable="false" so the browser treats it as atomic,
+    // just like the fraction wrapper. Without this, the browser doesn't know
+    // where the sup ends and keeps the cursor inside it indefinitely.
+    var wrapper = document.createElement('span');
+    wrapper.contentEditable = 'false';
+    wrapper.dataset.mathType = 'sup';
+
     var sup = document.createElement('sup');
     sup.className = 'mp-box mp-sup-box';
     sup.contentEditable = 'true';
     sup.dataset.boxRole = 'sup';
-    return sup;
+
+    wrapper.appendChild(sup);
+    return wrapper;
   }
 
   /* ── Text extraction ──────────────────────────────────────────────────── */
@@ -155,8 +165,9 @@
           var numEl = n.querySelector('[data-box-role="num"]');
           var denEl = n.querySelector('[data-box-role="den"]');
           out += '(' + extractText(numEl || n) + ')/(' + extractText(denEl || n) + ')';
-        } else if (tag === 'sup' && n.classList.contains('mp-box')) {
-          out += '^' + extractText(n);
+        } else if (n.dataset.mathType === 'sup') {
+          var supEl = n.querySelector('[data-box-role="sup"]');
+          out += '^' + extractText(supEl || n);
         } else if (tag === 'br') {
           out += '\n';
         } else if (tag === 'div') {
@@ -216,9 +227,9 @@
 
       if (e.key === '^') {
         e.preventDefault();
-        var sup = makeSup();
-        insertAtCursor(sup);
-        focusStart(sup);
+        var supWrapper = makeSup();
+        insertAtCursor(supWrapper);
+        focusStart(supWrapper.querySelector('[data-box-role="sup"]'));
         sync();
         return;
       }
