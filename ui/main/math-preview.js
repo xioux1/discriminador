@@ -180,6 +180,18 @@
     return out;
   }
 
+  /* ── Box detection via selection (reliable for nested contenteditable) ── */
+
+  function boxFromSelection(editor) {
+    var sel = window.getSelection();
+    var node = sel && sel.rangeCount ? sel.getRangeAt(0).startContainer : null;
+    while (node && node !== editor) {
+      if (node.classList && node.classList.contains('mp-box')) return node;
+      node = node.parentElement;
+    }
+    return null;
+  }
+
   /* ── Attach ──────────────────────────────────────────────────────────── */
 
   function attach(textarea, isActiveFn) {
@@ -212,9 +224,9 @@
     editor.addEventListener('keydown', function (e) {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
 
-      // Use e.target — reliable even with nested contenteditable.
-      var box = e.target.classList && e.target.classList.contains('mp-box')
-                ? e.target : null;
+      // Walk from cursor position up to find the nearest .mp-box ancestor.
+      // This is reliable even for nested contenteditable (unlike e.target).
+      var box = boxFromSelection(editor);
 
       if (e.key === '/') {
         e.preventDefault();
@@ -247,6 +259,42 @@
         if (handleBoxNav(box, false)) {
           e.preventDefault();
         }
+        return;
+      }
+
+      // Backspace inside an empty box: remove the whole math element and
+      // place cursor before where it was. This lets the user delete a
+      // fraction or superscript they no longer want.
+      if (e.key === 'Backspace' && box && box.textContent.replace(/\u200B/g, '') === '') {
+        e.preventDefault();
+        // The math element is either .mp-frac or the contentEditable=false wrapper
+        var mathEl = box.parentElement;
+        var parent = mathEl && mathEl.parentElement;
+        if (!parent) return;
+
+        // Place cursor at the text node just before mathEl, or create one.
+        var prev = mathEl.previousSibling;
+        var anchor, anchorOffset;
+        if (prev && prev.nodeType === 3) {
+          anchor = prev;
+          anchorOffset = prev.length;
+        } else {
+          anchor = document.createTextNode('\u200B');
+          parent.insertBefore(anchor, mathEl);
+          anchorOffset = 1;
+        }
+
+        parent.removeChild(mathEl);
+        parent.focus();
+        try {
+          var r = document.createRange();
+          r.setStart(anchor, anchorOffset);
+          r.collapse(true);
+          var s = window.getSelection();
+          s.removeAllRanges();
+          s.addRange(r);
+        } catch (_) {}
+        sync();
         return;
       }
     }, true /* capture */);
