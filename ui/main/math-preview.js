@@ -342,6 +342,7 @@
     }
 
     textarea._mathEditorUpdate = update;
+    textarea._mathEditorEl = editor;
     update();
   }
 
@@ -349,6 +350,12 @@
     attach: attach,
     refresh: function (ta) {
       if (ta && typeof ta._mathEditorUpdate === 'function') ta._mathEditorUpdate();
+    },
+    // Clear both the textarea value and the contenteditable editor content.
+    clear: function (ta) {
+      if (!ta) return;
+      ta.value = '';
+      if (ta._mathEditorEl) ta._mathEditorEl.innerHTML = '';
     }
   };
 })();

@@ -2796,7 +2796,7 @@ function showStudyCard() {
 
   // Reset answer + result blocks (refresh SQL layer to clear ghost text)
   const _studyInput = document.querySelector('#study-answer-input');
-  _studyInput.value = '';
+  MathPreview.clear(_studyInput);
   SqlEditor.refresh();
   document.querySelector('#study-answer-block').classList.remove('hidden');
   document.querySelector('#study-result-block').classList.add('hidden');
