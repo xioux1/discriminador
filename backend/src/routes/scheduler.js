@@ -289,27 +289,29 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
   }
 
   if (conceptGaps.length > 0) {
-    // Check subject-level cap before generating.
+    // Check subject-level cap and count existing active micro-cards.
     const configRes = await dbPool.query(
       `SELECT max_micro_cards_per_card FROM subject_configs WHERE subject = $1 AND user_id = $2`,
       [card.subject || '', userId]
     );
     const maxPerCard = configRes.rows[0]?.max_micro_cards_per_card ?? null;
 
-    if (maxPerCard !== null) {
-      const countRes = await dbPool.query(
-        `SELECT COUNT(*) AS cnt FROM micro_cards WHERE parent_card_id = $1 AND user_id = $2 AND status = 'active'`,
-        [cardId, userId]
-      );
-      if (parseInt(countRes.rows[0].cnt) >= maxPerCard) {
-        // Cap reached — skip generation entirely.
-        return res.status(200).json({ card: updated.rows[0], new_micro_cards: [] });
-      }
-    }
+    const countRes = await dbPool.query(
+      `SELECT COUNT(*) AS cnt FROM micro_cards WHERE parent_card_id = $1 AND user_id = $2 AND status = 'active'`,
+      [cardId, userId]
+    );
+    const existingCount = parseInt(countRes.rows[0].cnt);
 
-    // Generate one micro-card (highest-priority concept gap).
-    const topConcept = pickTopConcept(conceptGaps);
-    const targetConcepts = topConcept ? [topConcept] : [];
+    // How many can we still generate this session?
+    const slotsAvailable = maxPerCard === null
+      ? conceptGaps.length                       // no limit → one per gap (frontend sends top gaps)
+      : Math.max(0, maxPerCard - existingCount); // fill up to the cap
+
+    // Pick the top N valid concepts (N = slotsAvailable).
+    const targetConcepts = conceptGaps
+      .filter((c) => typeof c === 'string' && c.trim().length > 0)
+      .slice(0, slotsAvailable)
+      .map((c) => c.trim());
 
     for (const concept of targetConcepts) {
       try {
