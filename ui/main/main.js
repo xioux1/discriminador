@@ -2828,15 +2828,14 @@ function showStudyCard() {
   document.querySelector('#study-dictation-btn').dataset.subject = subject || '';
 
   // Math Palette + SQL Editor — use saved mode, explicit only (no auto-detect)
-  // Micro-cards are always plain text regardless of subject mode
   const studyAnswerInput = document.querySelector('#study-answer-input');
   MathPalette.setActiveTextarea(studyAnswerInput);
   const savedMode   = getSubjectMode(subject);
   const isMicro     = item.type === 'micro';
-  const studySqlMode = !isMicro && savedMode === 'sql';
-  studyState.currentInputMode = !isMicro && savedMode === 'math' ? 'math' : studySqlMode ? 'sql' : '';
+  const studySqlMode = savedMode === 'sql';
+  studyState.currentInputMode = savedMode === 'math' ? 'math' : studySqlMode ? 'sql' : '';
 
-  if (!isMicro && savedMode === 'math') {
+  if (savedMode === 'math') {
     MathPalette.show();
     SqlEditor.deactivate();
   } else if (studySqlMode) {
@@ -2858,44 +2857,40 @@ function showStudyCard() {
   }
   studyEvalBtn.disabled = false; // verification is always optional
 
-  // ── Mode toggle button (non-micro cards only) ──────────────────────────────
+  // ── Mode toggle button ────────────────────────────────────────────────────
   const modeToggleBtn = document.querySelector('#study-mode-toggle');
   if (modeToggleBtn) {
     const MODE_CYCLE  = ['', 'sql', 'math'];
     const MODE_LABELS = { '': 'Texto', 'sql': 'SQL/PL', 'math': 'Math' };
-    if (isMicro) {
-      modeToggleBtn.hidden = true;
-    } else {
-      modeToggleBtn.hidden = false;
-      modeToggleBtn.textContent = MODE_LABELS[savedMode] || MODE_LABELS[''];
-      modeToggleBtn.onclick = () => {
-        const cur  = getSubjectMode(subject);
-        const idx  = MODE_CYCLE.indexOf(cur);
-        const next = MODE_CYCLE[(idx + 1) % MODE_CYCLE.length];
-        saveSubjectMode(subject, next);
-        modeToggleBtn.textContent = MODE_LABELS[next];
-        const input = document.querySelector('#study-answer-input');
-        const panel = document.querySelector('#study-sql-compiler');
-        MathPalette.setActiveTextarea(input);
-        if (next === 'sql') {
-          studyState.currentInputMode = 'sql';
-          MathPalette.hide();
-          SqlEditor.activate(input);
-          panel?.classList.remove('hidden');
-        } else if (next === 'math') {
-          studyState.currentInputMode = 'math';
-          SqlEditor.deactivate();
-          MathPalette.show();
-          panel?.classList.add('hidden');
-        } else {
-          studyState.currentInputMode = '';
-          SqlEditor.deactivate();
-          MathPalette.updateSubject(subject || '');
-          panel?.classList.add('hidden');
-        }
-        MathPreview.refresh(input);
-      };
-    }
+    modeToggleBtn.hidden = false;
+    modeToggleBtn.textContent = MODE_LABELS[savedMode] || MODE_LABELS[''];
+    modeToggleBtn.onclick = () => {
+      const cur  = getSubjectMode(subject);
+      const idx  = MODE_CYCLE.indexOf(cur);
+      const next = MODE_CYCLE[(idx + 1) % MODE_CYCLE.length];
+      saveSubjectMode(subject, next);
+      modeToggleBtn.textContent = MODE_LABELS[next];
+      const input = document.querySelector('#study-answer-input');
+      const panel = document.querySelector('#study-sql-compiler');
+      MathPalette.setActiveTextarea(input);
+      if (next === 'sql') {
+        studyState.currentInputMode = 'sql';
+        MathPalette.hide();
+        SqlEditor.activate(input);
+        panel?.classList.remove('hidden');
+      } else if (next === 'math') {
+        studyState.currentInputMode = 'math';
+        SqlEditor.deactivate();
+        MathPalette.show();
+        panel?.classList.add('hidden');
+      } else {
+        studyState.currentInputMode = '';
+        SqlEditor.deactivate();
+        MathPalette.updateSubject(subject || '');
+        panel?.classList.add('hidden');
+      }
+      MathPreview.refresh(input);
+    };
   }
 
   // ── Flag / report button ───────────────────────────────────────────────────
