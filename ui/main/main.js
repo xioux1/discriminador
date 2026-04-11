@@ -94,8 +94,10 @@ if (!Auth.isLoggedIn()) {
       } else if (tab === 'browser' && !loaded.browser) {
         loaded.browser = true; initBrowserTab();
       } else if (tab === 'study' && !loaded.study) {
-        loaded.study = true; initStudyTab();
-        applyStudySubjectFilter(pendingStudySubject);
+        loaded.study = true;
+        applyStudySubjectFilter(pendingStudySubject); // set BEFORE init so restorePersistedStudySession sees it
+        initStudyTab();
+        applyStudySubjectFilter(pendingStudySubject); // re-apply AFTER in case restore overwrote it
       } else if (tab === 'study') {
         applyStudySubjectFilter(pendingStudySubject);
       } else if (tab === 'dashboard' && !loaded.dashboard) {
@@ -110,7 +112,10 @@ if (!Auth.isLoggedIn()) {
 
       // Dashboard "Estudiar" subject button → skip briefing, go straight to the
       // subject-filtered overview so the user can start reviewing immediately.
-      if (tab === 'study' && fromDashboard && briefingState.selectedSubject) {
+      // Use pendingStudySubject directly so this works even if initStudyTab threw.
+      const normalizedPending = typeof pendingStudySubject === 'string' ? pendingStudySubject.trim() : '';
+      if (tab === 'study' && fromDashboard && normalizedPending) {
+        applyStudySubjectFilter(normalizedPending); // guarantee the filter is set
         const sessionEl = document.querySelector('#study-session');
         if (sessionEl && sessionEl.classList.contains('hidden')) {
           document.querySelector('#study-briefing').classList.add('hidden');
@@ -2368,7 +2373,6 @@ function initStudyTab() {
     document.querySelector('#study-briefing').classList.remove('hidden');
   });
 
-  initBriefing();
   restorePersistedStudySession();
 }
 
