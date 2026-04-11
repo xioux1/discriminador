@@ -289,6 +289,24 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
   }
 
   if (conceptGaps.length > 0) {
+    // Check subject-level cap before generating.
+    const configRes = await dbPool.query(
+      `SELECT max_micro_cards_per_card FROM subject_configs WHERE subject = $1 AND user_id = $2`,
+      [card.subject || '', userId]
+    );
+    const maxPerCard = configRes.rows[0]?.max_micro_cards_per_card ?? null;
+
+    if (maxPerCard !== null) {
+      const countRes = await dbPool.query(
+        `SELECT COUNT(*) AS cnt FROM micro_cards WHERE parent_card_id = $1 AND user_id = $2 AND status = 'active'`,
+        [cardId, userId]
+      );
+      if (parseInt(countRes.rows[0].cnt) >= maxPerCard) {
+        // Cap reached — skip generation entirely.
+        return res.status(200).json({ card: updated.rows[0], new_micro_cards: [] });
+      }
+    }
+
     // Generate one micro-card (highest-priority concept gap).
     const topConcept = pickTopConcept(conceptGaps);
     const targetConcepts = topConcept ? [topConcept] : [];

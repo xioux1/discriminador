@@ -46,7 +46,7 @@ curriculumRouter.get('/curriculum/:subject', async (req, res) => {
 // PUT /curriculum/:subject — upserta subject_configs (solo syllabus ahora)
 curriculumRouter.put('/curriculum/:subject', async (req, res) => {
   const { subject } = req.params;
-  const { syllabus_text, notes_text, daily_new_cards_limit } = req.body || {};
+  const { syllabus_text, notes_text, daily_new_cards_limit, max_micro_cards_per_card } = req.body || {};
   const userId = req.user.id;
   const parsedDailyLimit = daily_new_cards_limit === null || daily_new_cards_limit === undefined || daily_new_cards_limit === ''
     ? null
@@ -58,18 +58,31 @@ curriculumRouter.put('/curriculum/:subject', async (req, res) => {
       message: 'daily_new_cards_limit debe ser un entero mayor o igual a 0 (o vacío para sin límite).'
     });
   }
+
+  const parsedMicroLimit = max_micro_cards_per_card === null || max_micro_cards_per_card === undefined || max_micro_cards_per_card === ''
+    ? null
+    : parseInt(max_micro_cards_per_card, 10);
+
+  if (parsedMicroLimit !== null && (!Number.isFinite(parsedMicroLimit) || parsedMicroLimit < 0)) {
+    return res.status(400).json({
+      error: 'validation_error',
+      message: 'max_micro_cards_per_card debe ser un entero mayor o igual a 0 (o vacío para sin límite).'
+    });
+  }
+
   try {
     const { rows } = await dbPool.query(
-      `INSERT INTO subject_configs (subject, syllabus_text, notes_text, daily_new_cards_limit, updated_at, user_id)
-       VALUES ($1, $2, $3, $4, now(), $5)
+      `INSERT INTO subject_configs (subject, syllabus_text, notes_text, daily_new_cards_limit, max_micro_cards_per_card, updated_at, user_id)
+       VALUES ($1, $2, $3, $4, $5, now(), $6)
        ON CONFLICT (subject, user_id) DO UPDATE SET
-         syllabus_text         = EXCLUDED.syllabus_text,
-         notes_text            = EXCLUDED.notes_text,
-         daily_new_cards_limit = EXCLUDED.daily_new_cards_limit,
-         user_id               = EXCLUDED.user_id,
-         updated_at            = now()
+         syllabus_text              = EXCLUDED.syllabus_text,
+         notes_text                 = EXCLUDED.notes_text,
+         daily_new_cards_limit      = EXCLUDED.daily_new_cards_limit,
+         max_micro_cards_per_card   = EXCLUDED.max_micro_cards_per_card,
+         user_id                    = EXCLUDED.user_id,
+         updated_at                 = now()
        RETURNING *`,
-      [subject, syllabus_text || null, notes_text || null, parsedDailyLimit, userId]
+      [subject, syllabus_text || null, notes_text || null, parsedDailyLimit, parsedMicroLimit, userId]
     );
     invalidateAdvisorCache(subject, userId);
     return res.json({ config: rows[0] });

@@ -4199,11 +4199,13 @@ async function openCurriculumModal(subject) {
     ]);
     document.querySelector('#curriculum-syllabus').value = data.config?.syllabus_text || '';
     document.querySelector('#curriculum-daily-new-limit').value = data.config?.daily_new_cards_limit ?? '';
+    document.querySelector('#curriculum-max-micro-per-card').value = data.config?.max_micro_cards_per_card ?? '';
     renderExamDatesList(data.exam_dates || [], subject);
     renderExamsList(data.exams || [], subject);
     renderClassNotesList(classNotesData.class_notes || [], subject);
   } catch (_e) {
     document.querySelector('#curriculum-daily-new-limit').value = '';
+    document.querySelector('#curriculum-max-micro-per-card').value = '';
     renderClassNotesList([], subject);
   }
 
@@ -4231,14 +4233,22 @@ document.querySelector('#curriculum-save-btn').addEventListener('click', async (
     return;
   }
 
+  const rawMicroLimit = document.querySelector('#curriculum-max-micro-per-card').value.trim();
+  const parsedMicroLimit = rawMicroLimit === '' ? null : parseInt(rawMicroLimit, 10);
+
+  if (rawMicroLimit !== '' && (!Number.isFinite(parsedMicroLimit) || parsedMicroLimit < 0)) {
+    fb.textContent = 'El límite de micro-tarjetas debe ser un entero mayor o igual a 0.';
+    fb.style.color = 'var(--fail-fg)';
+    return;
+  }
+
   try {
     await postJson(`/curriculum/${encodeURIComponent(subject)}`, {
-      syllabus_text:         document.querySelector('#curriculum-syllabus').value,
-      daily_new_cards_limit: parsedDailyLimit
+      syllabus_text:              document.querySelector('#curriculum-syllabus').value,
+      daily_new_cards_limit:      parsedDailyLimit,
+      max_micro_cards_per_card:   parsedMicroLimit
     }, 'PUT');
-    fb.textContent = parsedDailyLimit === null
-      ? 'Guardado. Sin límite de nuevas por día.'
-      : `Guardado. Máximo ${parsedDailyLimit} nuevas por día.`;
+    fb.textContent = 'Guardado.';
     fb.style.color = 'var(--pass-fg)';
   } catch (err) {
     fb.textContent = `Error: ${err.message}`;
