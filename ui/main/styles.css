@@ -2416,3 +2416,62 @@ textarea:focus, input[type="text"]:focus, select:focus {
   color: var(--text-muted); cursor: pointer; font-family: inherit;
 }
 .study-decision-misc-btn:hover { color: var(--text); border-color: var(--text-muted); }
+
+/* ─── Math Live Preview ───────────────────────────────────────────────────── */
+.math-preview-container {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--primary-light);
+  border-left: 3px solid var(--primary);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: 6px 12px;
+  margin: 4px 0 8px;
+  color: var(--primary-dark);
+  font-family: 'Georgia', serif;
+  overflow-x: auto;
+}
+
+.math-preview-label {
+  font-size: 0.68rem;
+  font-family: var(--font);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--primary);
+  white-space: nowrap;
+  flex-shrink: 0;
+  padding-top: 3px;
+}
+
+.math-preview-content {
+  font-size: 1rem;
+  line-height: 2.2;
+  word-break: break-word;
+  flex: 1;
+}
+
+/* Stacked fraction */
+.mp-frac {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  vertical-align: middle;
+  margin: 0 0.15em;
+  line-height: 1.2;
+}
+
+.mp-num {
+  border-bottom: 1.5px solid currentColor;
+  padding: 0 4px 2px;
+  text-align: center;
+  font-size: 0.88em;
+  min-width: 1ch;
+}
+
+.mp-den {
+  padding: 2px 4px 0;
+  text-align: center;
+  font-size: 0.88em;
+  min-width: 1ch;
+}

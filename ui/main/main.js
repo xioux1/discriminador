@@ -1155,6 +1155,7 @@ function attachMathTabInsertion(textarea, isMathModeFn) {
 }
 
 attachMathTabInsertion(_evalAnswerTextarea, () => (_editorModeSelect?.value || '') === 'math');
+MathPreview.attach(_evalAnswerTextarea, () => (_editorModeSelect?.value || '') === 'math');
 
 function _subjectModeKey(subject) {
   return 'editor-mode:' + (subject || '').trim().toLowerCase();
@@ -1199,6 +1200,7 @@ function applyEditorMode(mode, subject) {
     SqlEditor.deactivate();
     setEvalSqlCompilerVisible(false);
   }
+  MathPreview.refresh(_evalAnswerTextarea);
 }
 
 // When subject changes: load saved mode for that subject
@@ -2343,6 +2345,10 @@ function initStudyTab() {
     document.querySelector('#study-answer-input'),
     () => studyState.currentInputMode === 'math'
   );
+  MathPreview.attach(
+    document.querySelector('#study-answer-input'),
+    () => studyState.currentInputMode === 'math'
+  );
   bindStudyKeyboardShortcuts();
 
   document.querySelector('#study-again-btn').addEventListener('click', () => {
@@ -2840,6 +2846,7 @@ function showStudyCard() {
     MathPalette.updateSubject(subject || '');
     SqlEditor.deactivate();
   }
+  MathPreview.refresh(studyAnswerInput);
 
   // Show SQL compiler panel (optional, never blocks eval button)
   if (studyCompilerPanel) {
@@ -2886,6 +2893,7 @@ function showStudyCard() {
           MathPalette.updateSubject(subject || '');
           panel?.classList.add('hidden');
         }
+        MathPreview.refresh(input);
       };
     }
   }
