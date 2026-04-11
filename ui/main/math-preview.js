@@ -1,120 +1,120 @@
-/* ─── Math Live Preview ───────────────────────────────────────────────────── */
-/* Global script — exposes window.MathPreview                                  */
-/* Renders (num)/(den) as CSS fractions and base^exp as superscripts in a      */
-/* read-only preview div shown below the textarea when math mode is active.    */
+/* ─── Math Inline Overlay ───────────────────────────────────────────────────
+   Exposes window.MathPreview.
+   Positions a formatted div exactly over the textarea. The textarea text
+   becomes transparent (cursor stays visible) so the user sees formatted
+   math right where they type.                                              */
 
 (function () {
   'use strict';
 
   function escapeHtml(str) {
-    return str
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
-  // Renders one line with math patterns replaced by HTML.
-  // Supported patterns:
-  //   (num)/(den)   → CSS fraction
-  //   ^{exp}        → superscript (multi-char, e.g. ^{2x+1})
-  //   ^word         → superscript (e.g. ^x, ^12, ^alpha)
-  //   _{sub}        → subscript  (multi-char, e.g. _{n-1})
-  //   _word         → subscript  (e.g. _1, _n)
+  // Renders one line replacing math patterns with HTML.
+  // Patterns:
+  //   (num)/(den)  → stacked fraction
+  //   ^{exp}       → superscript, multi-char  e.g. ^{2x+1}
+  //   ^word        → superscript, single word  e.g. ^x  ^12
+  //   _{sub}       → subscript,  multi-char  e.g. _{n-1}
+  //   _word        → subscript,  single word  e.g. _1  _n
   function renderMathLine(line) {
     var pattern = /\(([^()]*)\)\/\(([^()]*)\)|\^{([^{}]*)}|\^([a-zA-Z0-9]+)|_{([^{}]*)}|_([a-zA-Z0-9]+)/g;
-    var result = '';
-    var lastIndex = 0;
-    var match;
-
+    var result = '', lastIndex = 0, match;
     while ((match = pattern.exec(line)) !== null) {
       result += escapeHtml(line.slice(lastIndex, match.index));
-
       if (match[1] !== undefined) {
-        // (num)/(den) — render as stacked fraction
-        result +=
-          '<span class="mp-frac">' +
-            '<span class="mp-num">' + renderMathLine(match[1]) + '</span>' +
-            '<span class="mp-den">' + renderMathLine(match[2]) + '</span>' +
-          '</span>';
+        result += '<span class="mp-frac"><span class="mp-num">' + renderMathLine(match[1]) +
+                  '</span><span class="mp-den">' + renderMathLine(match[2]) + '</span></span>';
       } else if (match[3] !== undefined) {
-        // ^{exp}
         result += '<sup>' + renderMathLine(match[3]) + '</sup>';
       } else if (match[4] !== undefined) {
-        // ^word
         result += '<sup>' + escapeHtml(match[4]) + '</sup>';
       } else if (match[5] !== undefined) {
-        // _{sub}
         result += '<sub>' + renderMathLine(match[5]) + '</sub>';
       } else if (match[6] !== undefined) {
-        // _word
         result += '<sub>' + escapeHtml(match[6]) + '</sub>';
       }
-
       lastIndex = pattern.lastIndex;
     }
-
-    result += escapeHtml(line.slice(lastIndex));
-    return result;
+    return result + escapeHtml(line.slice(lastIndex));
   }
 
   function renderMathText(text) {
     return text.split('\n').map(renderMathLine).join('<br>');
   }
 
-  // Returns true when the text contains at least one supported math pattern.
-  function hasMathPatterns(text) {
-    return /\([^()]*\)\/\([^()]*\)|\^[{a-zA-Z0-9]|_\{|_[a-zA-Z0-9]/.test(text);
+  // CSS properties copied from the textarea so the overlay text aligns exactly.
+  var COPY_PROPS = [
+    'fontFamily', 'fontSize', 'fontWeight', 'fontStyle',
+    'lineHeight', 'letterSpacing', 'wordSpacing', 'textIndent',
+    'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+    'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
+    'tabSize'
+  ];
+
+  function syncStyles(textarea, overlay) {
+    var cs = window.getComputedStyle(textarea);
+    COPY_PROPS.forEach(function (p) { overlay.style[p] = cs[p]; });
+    // Force border-box so offsetWidth/Height map directly to the overlay size.
+    overlay.style.boxSizing   = 'border-box';
+    overlay.style.borderStyle = 'solid';
+    overlay.style.borderColor = 'transparent'; // same border thickness, invisible
+    overlay.style.width       = textarea.offsetWidth  + 'px';
+    overlay.style.height      = textarea.offsetHeight + 'px';
   }
 
-  // Attaches a live preview div right after `textarea`.
-  // `isActiveFn` is called on each update to decide whether math mode is on.
-  function attachMathPreview(textarea, isActiveFn) {
-    if (!textarea) return;
+  function attach(textarea, isActiveFn) {
+    if (!textarea || textarea._mathOverlayAttached) return;
+    textarea._mathOverlayAttached = true;
 
-    var container = document.createElement('div');
-    container.className = 'math-preview-container hidden';
-    container.setAttribute('aria-hidden', 'true');
+    // Wrap the textarea so we can position the overlay relative to it.
+    var wrapper = document.createElement('div');
+    wrapper.className = 'math-overlay-wrapper';
+    textarea.parentNode.insertBefore(wrapper, textarea);
+    wrapper.appendChild(textarea);
 
-    var label = document.createElement('span');
-    label.className = 'math-preview-label';
-    label.textContent = 'Preview';
-
-    var content = document.createElement('div');
-    content.className = 'math-preview-content';
-
-    container.appendChild(label);
-    container.appendChild(content);
-
-    // Insert immediately after the textarea in the DOM
-    textarea.parentNode.insertBefore(container, textarea.nextSibling);
+    // Overlay sits on top; pointer-events:none lets typing reach the textarea.
+    var overlay = document.createElement('div');
+    overlay.className = 'math-overlay math-overlay--off';
+    overlay.setAttribute('aria-hidden', 'true');
+    wrapper.appendChild(overlay);
 
     function update() {
       if (!isActiveFn()) {
-        container.classList.add('hidden');
+        overlay.classList.add('math-overlay--off');
+        textarea.classList.remove('math-textarea--active');
         return;
       }
-      var text = textarea.value;
-      if (!text.trim() || !hasMathPatterns(text)) {
-        container.classList.add('hidden');
-        return;
-      }
-      content.innerHTML = renderMathText(text);
-      container.classList.remove('hidden');
+      syncStyles(textarea, overlay);
+      overlay.innerHTML = renderMathText(textarea.value || '');
+      overlay.scrollTop = textarea.scrollTop;
+      overlay.classList.remove('math-overlay--off');
+      textarea.classList.add('math-textarea--active');
     }
 
     textarea.addEventListener('input', update);
-    // Store reference so external code can trigger an update
-    textarea._mathPreviewUpdate = update;
+    textarea.addEventListener('scroll', function () {
+      overlay.scrollTop = textarea.scrollTop;
+    });
+
+    if (window.ResizeObserver) {
+      new ResizeObserver(function () {
+        if (!overlay.classList.contains('math-overlay--off')) {
+          overlay.style.width  = textarea.offsetWidth  + 'px';
+          overlay.style.height = textarea.offsetHeight + 'px';
+        }
+      }).observe(textarea);
+    }
+
+    textarea._mathOverlayUpdate = update;
   }
 
   window.MathPreview = {
-    attach: attachMathPreview,
+    attach: attach,
     render: renderMathText,
-    // Call after a programmatic value change or mode switch
-    refresh: function (textarea) {
-      if (textarea && typeof textarea._mathPreviewUpdate === 'function') {
-        textarea._mathPreviewUpdate();
-      }
+    refresh: function (ta) {
+      if (ta && typeof ta._mathOverlayUpdate === 'function') ta._mathOverlayUpdate();
     }
   };
 })();
