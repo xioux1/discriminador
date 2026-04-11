@@ -3,16 +3,14 @@
    When math mode is active, replaces the textarea with a rich contenteditable
    editor that supports structured math input:
 
-     /   →  inserts a fraction  ┌───┐   cursor goes to numerator
-                                 │num│
-                                 ├───┤   → moves to denominator
-                                 │den│
-                                 └───┘   → exits the fraction
+     /    →  inserts a fraction; cursor goes to numerator
+     Tab  →  numerator → denominator → exit fraction (always)
+     →    →  same as Tab but only at the end of a box
+     ^    →  inserts a superscript box
+     Tab/→  exits the superscript
 
-     ^   →  inserts a superscript box;  → exits it
-
-   Raw text is synced back to the hidden textarea in (num)/(den) / base^exp
-   format so the rest of the app works unmodified.                          */
+   Raw text is synced to the hidden textarea in (num)/(den) / base^exp format.
+*/
 
 (function () {
   'use strict';
@@ -31,19 +29,24 @@
     } catch (_) {}
   }
 
-  // Is the text cursor at the very end of el's content?
+  // Is the cursor at the very end of el?
+  // Uses e.target (the actual focused element) for the check.
   function atEnd(el) {
     var s = window.getSelection();
     if (!s || !s.rangeCount || !s.isCollapsed) return false;
-    var cur = s.getRangeAt(0).cloneRange();
-    var end = document.createRange();
-    end.selectNodeContents(el);
-    end.collapse(false);
-    try { return cur.compareBoundaryPoints(Range.END_TO_END, end) >= 0; }
-    catch (_) { return false; }
+    var r = s.getRangeAt(0);
+    if (!el.contains(r.startContainer)) return false;
+    try {
+      var beforeCursor = document.createRange();
+      beforeCursor.selectNodeContents(el);
+      beforeCursor.setEnd(r.startContainer, r.startOffset);
+      return beforeCursor.toString().length >= el.textContent.length;
+    } catch (_) {
+      return el.textContent.length === 0;
+    }
   }
 
-  // Insert `node` at the current cursor position in the active contenteditable.
+  // Insert `node` at the current selection point.
   function insertAtCursor(node) {
     var s = window.getSelection();
     if (!s || !s.rangeCount) return;
@@ -56,14 +59,29 @@
     s.addRange(r);
   }
 
-  // Move cursor to just after `mathEl` in its parent.
+  // Move cursor to just after `mathEl`, creating a text anchor if needed.
   function exitAfter(mathEl) {
     var parent = mathEl.parentElement;
     if (!parent) return;
+
+    // We need a real text node to place the cursor in — otherwise some
+    // browsers refuse to place the caret after a contentEditable="false" node.
+    var next = mathEl.nextSibling;
+    var anchor, anchorOffset;
+
+    if (next && next.nodeType === 3 /* TEXT_NODE */) {
+      anchor = next;
+      anchorOffset = 0;                 // right at the start of existing text
+    } else {
+      anchor = document.createTextNode('\u200B'); // zero-width space as anchor
+      parent.insertBefore(anchor, next || null);
+      anchorOffset = 1;                 // after the zero-width space
+    }
+
     parent.focus();
     try {
       var r = document.createRange();
-      r.setStartAfter(mathEl);
+      r.setStart(anchor, anchorOffset);
       r.collapse(true);
       var s = window.getSelection();
       s.removeAllRanges();
@@ -71,10 +89,26 @@
     } catch (_) {}
   }
 
-  // Returns the currently-focused .mp-box element, or null.
-  function focusedBox() {
-    var el = document.activeElement;
-    return el && el.classList.contains('mp-box') ? el : null;
+  /* ── Navigation: handle a box key (Tab always, Arrow only at end) ──── */
+
+  // `always`: true for Tab (navigate regardless of cursor position),
+  //            false for ArrowRight (only navigate at end of box).
+  // Returns true if navigation happened (caller should preventDefault).
+  function handleBoxNav(box, always) {
+    if (!always && !atEnd(box)) return false;
+
+    var role = box.dataset.boxRole;
+
+    if (role === 'num') {
+      var den = box.parentElement &&
+                box.parentElement.querySelector('[data-box-role="den"]');
+      if (den) { focusStart(den); return true; }
+    }
+
+    if (role === 'den') { exitAfter(box.parentElement); return true; }
+    if (role === 'sup') { exitAfter(box); return true; }
+
+    return false;
   }
 
   /* ── Element factories ───────────────────────────────────────────────── */
@@ -82,7 +116,7 @@
   function makeFrac() {
     var frac = document.createElement('span');
     frac.className = 'mp-frac';
-    frac.contentEditable = 'false';   // outer shell: not directly editable
+    frac.contentEditable = 'false';
     frac.dataset.mathType = 'frac';
 
     var num = document.createElement('span');
@@ -108,42 +142,14 @@
     return sup;
   }
 
-  /* ── Arrow-right: exit current box ──────────────────────────────────── */
-
-  function tryExit() {
-    var box = focusedBox();
-    if (!box || !atEnd(box)) return false;
-
-    var role = box.dataset.boxRole;
-
-    if (role === 'num') {
-      // Move to denominator
-      var den = box.parentElement &&
-                box.parentElement.querySelector('[data-box-role="den"]');
-      if (den) { focusStart(den); return true; }
-    }
-
-    if (role === 'den') {
-      exitAfter(box.parentElement); // exit the whole .mp-frac
-      return true;
-    }
-
-    if (role === 'sup') {
-      exitAfter(box);               // exit the <sup>
-      return true;
-    }
-
-    return false;
-  }
-
-  /* ── Extract raw text from editor DOM ───────────────────────────────── */
+  /* ── Text extraction ──────────────────────────────────────────────────── */
 
   function extractText(el) {
     var out = '';
     el.childNodes.forEach(function (n) {
-      if (n.nodeType === 3 /* TEXT_NODE */) {
-        out += n.textContent;
-      } else if (n.nodeType === 1 /* ELEMENT_NODE */) {
+      if (n.nodeType === 3) {
+        out += n.textContent.replace(/\u200B/g, ''); // strip cursor anchors
+      } else if (n.nodeType === 1) {
         var tag = n.tagName.toLowerCase();
         if (n.dataset.mathType === 'frac') {
           var numEl = n.querySelector('[data-box-role="num"]');
@@ -163,13 +169,12 @@
     return out;
   }
 
-  /* ── Main: attach structured editor to a textarea ───────────────────── */
+  /* ── Attach ──────────────────────────────────────────────────────────── */
 
   function attach(textarea, isActiveFn) {
     if (!textarea || textarea._mathEditorAttached) return;
     textarea._mathEditorAttached = true;
 
-    // Build the contenteditable editor — styled to look like the textarea.
     var editor = document.createElement('div');
     editor.className = 'math-ce-editor hidden';
     editor.contentEditable = 'true';
@@ -178,7 +183,6 @@
     editor.setAttribute('aria-multiline', 'true');
     textarea.parentNode.insertBefore(editor, textarea);
 
-    // Sync editor content → textarea value on every change.
     var _syncing = false;
     function sync() {
       if (_syncing) return;
@@ -193,10 +197,13 @@
 
     editor.addEventListener('input', sync);
 
-    // Keyboard handler — fires during CAPTURE so it intercepts keys even when
-    // focus is inside an inner .mp-box (nested fraction / superscript).
+    // capture:true so this fires even when an inner .mp-box has focus.
     editor.addEventListener('keydown', function (e) {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      // Use e.target — reliable even with nested contenteditable.
+      var box = e.target.classList && e.target.classList.contains('mp-box')
+                ? e.target : null;
 
       if (e.key === '/') {
         e.preventDefault();
@@ -216,23 +223,33 @@
         return;
       }
 
-      if (e.key === 'ArrowRight' && tryExit()) {
-        e.preventDefault();
+      // Tab inside a math box: always navigate to next section.
+      if (e.key === 'Tab' && box) {
+        if (handleBoxNav(box, true)) {
+          e.preventDefault();
+        }
+        return;
+      }
+
+      // ArrowRight inside a math box: navigate only when at the end.
+      if (e.key === 'ArrowRight' && box) {
+        if (handleBoxNav(box, false)) {
+          e.preventDefault();
+        }
+        return;
       }
     }, true /* capture */);
 
-    // Show/hide the editor and the textarea based on current mode.
     function update() {
       var active = isActiveFn();
       if (active) {
-        // Transfer textarea content to editor (plain text) on first activation.
         if (editor.classList.contains('hidden') && textarea.value.trim() && !editor.textContent.trim()) {
           editor.textContent = textarea.value;
         }
         editor.classList.remove('hidden');
         textarea.style.display = 'none';
       } else {
-        sync(); // push final value before hiding
+        sync();
         editor.classList.add('hidden');
         textarea.style.display = '';
       }
