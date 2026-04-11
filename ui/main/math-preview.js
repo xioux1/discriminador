@@ -228,6 +228,33 @@
       // This is reliable even for nested contenteditable (unlike e.target).
       var box = boxFromSelection(editor);
 
+      // Enter: insert <br> instead of letting the browser split the div,
+      // which would drag math elements to the new block.
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        var br = document.createElement('br');
+        insertAtCursor(br);
+        // Ensure there's a text node after the <br> so the cursor lands there.
+        var sel = window.getSelection();
+        var r2 = sel && sel.rangeCount ? sel.getRangeAt(0) : null;
+        if (r2) {
+          var afterBr = r2.startContainer;
+          // If we're at the end of a text node or the container has nothing
+          // after the <br>, insert a zero-width space so the cursor is visible.
+          if (r2.startContainer === br.parentNode &&
+              r2.startContainer.childNodes[r2.startOffset] === undefined) {
+            var zws = document.createTextNode('\u200B');
+            r2.startContainer.appendChild(zws);
+            r2.setStart(zws, 1);
+            r2.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(r2);
+          }
+        }
+        sync();
+        return;
+      }
+
       if (e.key === '/') {
         e.preventDefault();
         var frac = makeFrac();
