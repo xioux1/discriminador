@@ -3529,12 +3529,13 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
     document.querySelector('#study-variant-preview')?.classList.add('hidden');
     if (studyState.examMode) {
       // Exam mode: auto-accept LLM grade, no decision required, Next enabled immediately.
-      const autoGrade = normalizeSuggestedGrade(result.suggested_grade);
+      // Normalize to lowercase so comparisons and backend recalibration (expects lowercase) work.
+      const autoGrade = normalizeSuggestedGrade(result.suggested_grade).toLowerCase();
       studyState.currentDecision = { finalGrade: autoGrade, source: 'llm_auto' };
       if (decisionBlock) decisionBlock.classList.add('hidden');
       nextBtn.disabled = false;
       // Record result for end-of-exam summary
-      const passed = autoGrade === 'GOOD' || autoGrade === 'EASY';
+      const passed = autoGrade === 'good' || autoGrade === 'easy' || autoGrade === 'pass';
       studyState.examItemResults.push({
         grade: autoGrade,
         passed,
