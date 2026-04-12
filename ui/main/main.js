@@ -4435,6 +4435,29 @@ function truncate(str, max) {
 
 // ─── Curriculum modal ─────────────────────────────────────────────────────────
 
+const STRICTNESS_LEVELS = [
+  { max: 2,  name: 'Básica',    desc: 'Muy generosa. Si entendiste la idea, es GOOD.' },
+  { max: 4,  name: 'Moderada',  desc: 'Generosa. Detalles menores no se penalizan.' },
+  { max: 6,  name: 'Estándar',  desc: 'Equilibrada. Todos los elementos esenciales requeridos.' },
+  { max: 8,  name: 'Exigente',  desc: 'Estricta. Precisión técnica y vocabulario exacto requeridos.' },
+  { max: 10, name: 'Máxima',    desc: 'Implacable. Ante la duda, baja la nota. Busca fallas activamente.' }
+];
+
+function updateStrictnessDisplay(value) {
+  const n = parseInt(value, 10);
+  const level = STRICTNESS_LEVELS.find((l) => n <= l.max) || STRICTNESS_LEVELS[STRICTNESS_LEVELS.length - 1];
+  const badge = document.querySelector('#curriculum-strictness-badge');
+  const desc  = document.querySelector('#curriculum-strictness-desc');
+  if (!badge || !desc) return;
+  badge.textContent = `${level.name} (${n}/10)`;
+  badge.dataset.level = level.name.toLowerCase();
+  desc.textContent = level.desc;
+}
+
+document.querySelector('#curriculum-grading-strictness')?.addEventListener('input', (e) => {
+  updateStrictnessDisplay(e.target.value);
+});
+
 async function openCurriculumModal(subject) {
   document.querySelector('#curriculum-modal-title').textContent = `Configurar: ${subject}`;
   document.querySelector('#curriculum-modal').classList.remove('hidden');
@@ -4451,12 +4474,17 @@ async function openCurriculumModal(subject) {
     document.querySelector('#curriculum-syllabus').value = data.config?.syllabus_text || '';
     document.querySelector('#curriculum-daily-new-limit').value = data.config?.daily_new_cards_limit ?? '';
     document.querySelector('#curriculum-max-micro-per-card').value = data.config?.max_micro_cards_per_card ?? '';
+    const strictness = data.config?.grading_strictness ?? 5;
+    document.querySelector('#curriculum-grading-strictness').value = strictness;
+    updateStrictnessDisplay(strictness);
     renderExamDatesList(data.exam_dates || [], subject);
     renderExamsList(data.exams || [], subject);
     renderClassNotesList(classNotesData.class_notes || [], subject);
   } catch (_e) {
     document.querySelector('#curriculum-daily-new-limit').value = '';
     document.querySelector('#curriculum-max-micro-per-card').value = '';
+    document.querySelector('#curriculum-grading-strictness').value = 5;
+    updateStrictnessDisplay(5);
     renderClassNotesList([], subject);
   }
 
@@ -4494,10 +4522,12 @@ document.querySelector('#curriculum-save-btn').addEventListener('click', async (
   }
 
   try {
+    const strictness = parseInt(document.querySelector('#curriculum-grading-strictness').value, 10);
     await postJson(`/curriculum/${encodeURIComponent(subject)}`, {
       syllabus_text:              document.querySelector('#curriculum-syllabus').value,
       daily_new_cards_limit:      parsedDailyLimit,
-      max_micro_cards_per_card:   parsedMicroLimit
+      max_micro_cards_per_card:   parsedMicroLimit,
+      grading_strictness:         Number.isFinite(strictness) ? strictness : 5
     }, 'PUT');
     fb.textContent = 'Guardado.';
     fb.style.color = 'var(--pass-fg)';

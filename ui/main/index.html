@@ -104,6 +104,21 @@
 
               <hr style="margin:16px 0">
 
+              <!-- ── Exigencia de corrección ─────────────────────────────────── -->
+              <h4 class="curriculum-section-title">Exigencia de corrección</h4>
+              <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 10px">Define qué tan estricta es la IA al evaluar tus respuestas.</p>
+              <div class="strictness-slider-row">
+                <span class="strictness-label-min">Básica</span>
+                <input type="range" id="curriculum-grading-strictness" min="0" max="10" step="1" value="5" class="strictness-range">
+                <span class="strictness-label-max">Máxima</span>
+              </div>
+              <div class="strictness-badge-row">
+                <span id="curriculum-strictness-badge" class="strictness-badge"></span>
+                <span id="curriculum-strictness-desc" class="strictness-desc"></span>
+              </div>
+
+              <hr style="margin:16px 0">
+
               <!-- ── Plan de estudios ────────────────────────────────────────── -->
               <h4 class="curriculum-section-title">Plan de estudios</h4>
               <textarea id="curriculum-syllabus" rows="6" placeholder="Pegá el plan de estudios, índice del libro, o listado de temas..."></textarea>

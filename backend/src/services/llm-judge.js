@@ -57,7 +57,57 @@ export async function fetchFewShotExamples(pool, subject) {
   ].slice(0, FEW_SHOT_LIMIT);
 }
 
-function buildSystemPrompt(examples) {
+function buildStrictnessSection(strictness) {
+  if (strictness <= 2) {
+    return `
+━━━ NIVEL DE EXIGENCIA: BÁSICA (${strictness}/10) ━━━
+El docente configuró exigencia mínima. Evaluá con máxima generosidad:
+• Si el estudiante demuestra que entiende el concepto central, asignale GOOD aunque le falten detalles secundarios.
+• Usá HARD solo cuando falte un elemento verdaderamente indispensable para entender el tema.
+• Usá AGAIN solo si la respuesta es completamente equivocada o totalmente irrelevante.
+• Tolerá imprecisiones de vocabulario, omisiones de detalles, y formulaciones vagas o imprecisas.
+• Ante la duda entre dos notas, elegí la más alta.`;
+  }
+  if (strictness <= 4) {
+    return `
+━━━ NIVEL DE EXIGENCIA: MODERADA (${strictness}/10) ━━━
+Evaluá con generosidad pero sin resignar la comprensión del tema:
+• GOOD si el estudiante cubre los puntos principales, aunque le falten detalles menores.
+• HARD si falta un elemento importante pero la dirección conceptual es correcta.
+• Tolerá paráfrasis y omisiones de detalles claramente secundarios.
+• No es necesario vocabulario técnico exacto si la idea central es clara.
+• Ante la duda entre HARD y GOOD, elegí GOOD.`;
+  }
+  if (strictness <= 6) {
+    return `
+━━━ NIVEL DE EXIGENCIA: ESTÁNDAR (${strictness}/10) ━━━
+Aplicá los criterios base definidos arriba sin ajustes adicionales.`;
+  }
+  if (strictness <= 8) {
+    return `
+━━━ NIVEL DE EXIGENCIA: EXIGENTE (${strictness}/10) ━━━
+El docente configuró alta exigencia. Aplicá criterios estrictos:
+• GOOD solo si están presentes TODOS los elementos esenciales con formulación técnicamente precisa.
+• HARD si el vocabulario técnico es impreciso o ambiguo, aunque la idea general sea correcta.
+• HARD si falta cualquier elemento del expected answer, incluidos los secundarios.
+• No tolerés vaguedades: frases como "algo así" o "más o menos" no alcanzan para GOOD.
+• Ante la duda entre HARD y GOOD, siempre elegí HARD.
+• Para EASY: la respuesta debe superar claramente lo esperado en profundidad técnica o amplitud.`;
+  }
+  // 9-10
+  return `
+━━━ NIVEL DE EXIGENCIA: MÁXIMA (${strictness}/10) ━━━
+El docente configuró exigencia máxima. Evaluá como un profesor muy estricto en examen oral:
+• GOOD requiere: todos los elementos esenciales + vocabulario técnico preciso + formulación sin ambigüedades.
+• Si hay imprecisiones en la formulación aunque el concepto esté bien, asignale HARD.
+• Buscá activamente lo que falta: condiciones no mencionadas, excepciones omitidas, imprecisiones sutiles.
+• AGAIN si el estudiante solo nombra el concepto sin poder explicar su mecanismo o propósito.
+• EASY solo para respuestas que claramente superan el nivel universitario esperado en detalle y precisión.
+• Ante la duda entre cualquier par de notas consecutivas, bajá la nota.
+• Estándar de referencia: ¿con esta respuesta el estudiante sacaría 9 o 10 en un oral con un profesor exigente? Si no, bajá la nota.`;
+}
+
+function buildSystemPrompt(examples, strictness = 5) {
   let system = `Sos un evaluador académico calibrado. Tu tarea es clasificar la respuesta del estudiante en uno de 4 niveles.
 
 Respondé ÚNICAMENTE con este formato exacto (tres líneas, sin texto adicional):
@@ -65,7 +115,7 @@ GRADE: AGAIN|HARD|GOOD|EASY
 JUSTIFICATION: <una oración breve en español>
 MISSING: <concepto1>, <concepto2> | NONE
 
-━━━ CRITERIOS EXACTOS ━━━
+━━━ CRITERIOS BASE ━━━
 
 ▸ AGAIN — Sin respuesta útil o error conceptual grave.
   Usá AGAIN cuando:
@@ -100,6 +150,8 @@ MISSING: <concepto1>, <concepto2> | NONE
   Regla de desempate: si dudás entre GOOD y EASY, elegí GOOD. EASY es solo para respuestas claramente superiores.
 
 Para MISSING: listá los conceptos o ideas específicas que faltan o están incorrectos. Usá NONE si no falta nada relevante. Máximo 3 conceptos, sin oraciones largas.`;
+
+  system += buildStrictnessSection(strictness);
 
   if (examples.length > 0) {
     system += '\n\n━━━ EJEMPLOS DE CALIBRACIÓN ━━━\n';
@@ -159,17 +211,17 @@ function parseResponse(text) {
  * Evaluate a student answer using an LLM calibrated with past human decisions.
  *
  * @param {object} pool  - pg Pool (or PoolClient) for fetching few-shot examples
- * @param {object} payload - { prompt_text, user_answer_text, expected_answer_text, subject }
+ * @param {object} payload - { prompt_text, user_answer_text, expected_answer_text, subject, strictness }
  * @returns {{ suggested_grade, justification, few_shot_count, model }}
  */
-export async function judgeWithLLM(pool, { prompt_text, user_answer_text, expected_answer_text, subject }) {
+export async function judgeWithLLM(pool, { prompt_text, user_answer_text, expected_answer_text, subject, strictness = 5 }) {
   const examples = await fetchFewShotExamples(pool, subject);
 
   const response = await getClient().messages.create({
     model: LLM_MODEL,
     max_tokens: LLM_MAX_TOKENS,
     temperature: 0,
-    system: buildSystemPrompt(examples),
+    system: buildSystemPrompt(examples, strictness),
     messages: [{
       role: 'user',
       content: `Pregunta: ${prompt_text}

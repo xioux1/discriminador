@@ -117,6 +117,20 @@ evaluateRouter.post('/evaluate', async (req, res) => {
   const normalizedSubject = normalize(req.body.subject);
   const evaluationId = randomUUID();
 
+  // Look up grading_strictness configured for this subject (default 5 = standard).
+  let gradingStrictness = 5;
+  if (userId && normalizedSubject) {
+    try {
+      const { rows: cfgRows } = await dbPool.query(
+        'SELECT grading_strictness FROM subject_configs WHERE subject = $1 AND user_id = $2',
+        [normalizedSubject, userId]
+      );
+      if (cfgRows[0]?.grading_strictness != null) {
+        gradingStrictness = cfgRows[0].grading_strictness;
+      }
+    } catch (_) { /* non-critical — proceed with default */ }
+  }
+
   const heuristicResult = scoreEvaluation({
     prompt_text: normalizedFields.prompt_text,
     user_answer_text: normalizedFields.user_answer_text,
@@ -134,7 +148,8 @@ evaluateRouter.post('/evaluate', async (req, res) => {
         prompt_text: normalizedFields.prompt_text,
         user_answer_text: normalizedFields.user_answer_text,
         expected_answer_text: normalizedFields.expected_answer_text,
-        subject: normalizedSubject
+        subject: normalizedSubject,
+        strictness: gradingStrictness
       });
     } catch (llmError) {
       console.warn('LLM judge failed, falling back to heuristic.', {
