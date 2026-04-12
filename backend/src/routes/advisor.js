@@ -136,7 +136,18 @@ advisorRouter.get('/advisor/analysis/:subject', async (req, res) => {
       streak: null
     };
 
-    // 6. Call analyzeSubject
+    // 6. Fetch recent exam simulation logs (last 60 days)
+    const { rows: simLogs } = await dbPool.query(
+      `SELECT correct, total, score_pct, results, created_at
+       FROM exam_sim_logs
+       WHERE user_id = $1 AND subject = $2
+         AND created_at >= now() - interval '60 days'
+       ORDER BY created_at DESC
+       LIMIT 10`,
+      [userId, subject]
+    );
+
+    // 7. Call analyzeSubject
     const result = await analyzeSubject({
       subject,
       config,
@@ -144,7 +155,8 @@ advisorRouter.get('/advisor/analysis/:subject', async (req, res) => {
       cards,
       decisions,
       activityStats,
-      classNotes: classNotesResult.rows
+      classNotes: classNotesResult.rows,
+      examSimLogs: simLogs
     });
 
     // Store in cache

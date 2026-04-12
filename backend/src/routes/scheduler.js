@@ -386,6 +386,140 @@ async function reviewMicroCard(res, microCardId, grade, responseTimeMs, reviewTi
   });
 }
 
+// ─── Exam simulation: pick weakest cards for a subject ───────────────────────
+schedulerRouter.post('/scheduler/exam-sim', async (req, res) => {
+  const userId = req.user.id;
+  const { subject, count = 10 } = req.body || {};
+
+  if (!subject || typeof subject !== 'string' || !subject.trim()) {
+    return res.status(422).json({ error: 'validation_error', message: 'subject is required.' });
+  }
+
+  const parsedCount = Math.min(50, Math.max(1, parseInt(count, 10) || 10));
+
+  try {
+    const [cardsResult, simHistoryResult] = await Promise.all([
+      dbPool.query(
+        `SELECT c.id, c.prompt_text, c.expected_answer_text, c.subject,
+                c.interval_days, c.ease_factor, c.pass_count, c.review_count,
+                COUNT(mc.id) FILTER (WHERE mc.status = 'active') AS active_micro_count
+         FROM cards c
+         LEFT JOIN micro_cards mc ON mc.parent_card_id = c.id AND mc.user_id = c.user_id
+         WHERE c.user_id = $1
+           AND c.subject = $2
+           AND c.archived_at IS NULL
+           AND c.suspended_at IS NULL
+         GROUP BY c.id`,
+        [userId, subject.trim()]
+      ),
+      // Fetch recent sim logs (last 30 days) to recalibrate scores
+      dbPool.query(
+        `SELECT results, created_at FROM exam_sim_logs
+         WHERE user_id = $1 AND subject = $2
+           AND created_at >= now() - interval '30 days'
+         ORDER BY created_at DESC
+         LIMIT 10`,
+        [userId, subject.trim()]
+      )
+    ]);
+
+    const rows = cardsResult.rows;
+    if (!rows.length) {
+      return res.json({ cards: [], subject: subject.trim(), total_available: 0 });
+    }
+
+    // Build a map: card_id → {grade, daysAgo} for the most recent sim appearance
+    const recentSimByCard = {};
+    const now = Date.now();
+    for (const log of simHistoryResult.rows) {
+      const daysAgo = (now - new Date(log.created_at).getTime()) / 86400000;
+      for (const item of (log.results || [])) {
+        if (!item.card_id) continue;
+        const id = String(item.card_id);
+        if (!recentSimByCard[id] || recentSimByCard[id].daysAgo > daysAgo) {
+          recentSimByCard[id] = { grade: item.grade, daysAgo };
+        }
+      }
+    }
+
+    // Weakness score: combines pass rate, SM-2 ease factor, retention interval,
+    // active micro-gaps, and recent exam simulation performance.
+    const scored = rows.map((card) => {
+      const passCount    = parseInt(card.pass_count)   || 0;
+      const reviewCount  = parseInt(card.review_count) || 0;
+      const passRate     = reviewCount >= 2 ? passCount / reviewCount : 0.5;
+      const easeFactor   = Math.max(1.3, parseFloat(card.ease_factor) || 2.5);
+      const intervalDays = Math.max(1,   parseFloat(card.interval_days) || 1);
+      const hasMicros    = parseInt(card.active_micro_count) > 0 ? 1 : 0;
+
+      const base = (1 - passRate)                         * 0.40
+                 + Math.max(0, (2.5 - easeFactor) / 1.2) * 0.30
+                 + 1 / (intervalDays + 1)                 * 0.20
+                 + hasMicros                               * 0.10;
+
+      // Recalibrate based on recent sim performance:
+      // Passed recently → reduce score (avoid repetition, knowledge was demonstrated)
+      // Failed recently → boost score (confirmed weak area)
+      let simModifier = 1.0;
+      const sim = recentSimByCard[String(card.id)];
+      if (sim) {
+        const recency = Math.max(0, 1 - sim.daysAgo / 14); // 1 = today, 0 = 14+ days ago
+        if (sim.grade === 'easy')  simModifier = 1 - 0.55 * recency; // big reduction
+        else if (sim.grade === 'good')  simModifier = 1 - 0.40 * recency;
+        else if (sim.grade === 'hard')  simModifier = 1 + 0.20 * recency; // small boost
+        else if (sim.grade === 'again') simModifier = 1 + 0.35 * recency; // confirmed weak
+      }
+
+      const score = Math.max(0, base * simModifier);
+      return {
+        ...card,
+        weakness_score:  Math.round(score * 1000) / 1000,
+        sim_recalibrated: !!sim
+      };
+    });
+
+    scored.sort((a, b) => b.weakness_score - a.weakness_score);
+    const selected = scored.slice(0, parsedCount);
+
+    return res.json({
+      cards: selected,
+      subject: subject.trim(),
+      total_available: rows.length
+    });
+  } catch (err) {
+    console.error('POST /scheduler/exam-sim error', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+// ─── Exam simulation: save log ────────────────────────────────────────────────
+schedulerRouter.post('/scheduler/exam-sim/log', async (req, res) => {
+  const userId = req.user.id;
+  const { subject, correct, total, score_pct, results = [] } = req.body || {};
+
+  if (!subject || typeof subject !== 'string') {
+    return res.status(422).json({ error: 'validation_error', message: 'subject is required.' });
+  }
+  if (!Number.isFinite(Number(correct)) || !Number.isFinite(Number(total)) || Number(total) < 1) {
+    return res.status(422).json({ error: 'validation_error', message: 'correct and total are required.' });
+  }
+
+  try {
+    const { rows } = await dbPool.query(
+      `INSERT INTO exam_sim_logs (user_id, subject, correct, total, score_pct, results)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, created_at`,
+      [userId, subject.trim(), Number(correct), Number(total),
+       Number(score_pct) || Math.round((Number(correct) / Number(total)) * 100),
+       JSON.stringify(results)]
+    );
+    return res.json({ id: rows[0].id, created_at: rows[0].created_at });
+  } catch (err) {
+    console.error('POST /scheduler/exam-sim/log error', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
 // ─── Agenda: full schedule view ──────────────────────────────────────────────
 // Returns all cards + their micro-cards, grouped into time buckets.
 schedulerRouter.get('/scheduler/agenda', async (req, res) => {

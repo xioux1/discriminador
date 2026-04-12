@@ -23,7 +23,7 @@ function getClient() {
  * @param {object} params.activityStats - { total_reviews, pass_rate, streak }
  * @returns {object} JSON analizado por el LLM
  */
-export async function analyzeSubject({ subject, config, referenceExams, cards, decisions, activityStats, classNotes = [] }) {
+export async function analyzeSubject({ subject, config, referenceExams, cards, decisions, activityStats, classNotes = [], examSimLogs = [] }) {
   const client = getClient();
 
   const today = new Date().toISOString().slice(0, 10);
@@ -70,7 +70,40 @@ export async function analyzeSubject({ subject, config, referenceExams, cards, d
       grade: d.final_grade,
       date: d.decided_at
     })),
-    activity_stats: activityStats
+    activity_stats: activityStats,
+    exam_simulations: examSimLogs.length > 0
+      ? (() => {
+          // Summarize recent simulations for the advisor
+          const sims = examSimLogs.map(s => ({
+            date: s.created_at,
+            score_pct: s.score_pct,
+            correct: s.correct,
+            total: s.total,
+            // Cards that were answered wrong in this sim
+            failed_prompts: (s.results || [])
+              .filter(r => r.grade === 'again' || r.grade === 'hard')
+              .map(r => r.prompt_text)
+              .filter(Boolean)
+          }));
+
+          // Find prompts that failed across multiple sims (persistent gaps)
+          const failCounts = {};
+          sims.forEach(s => s.failed_prompts.forEach(p => {
+            failCounts[p] = (failCounts[p] || 0) + 1;
+          }));
+          const persistent_gaps = Object.entries(failCounts)
+            .filter(([, n]) => n >= 2)
+            .sort((a, b) => b[1] - a[1])
+            .map(([prompt, times]) => ({ prompt, times_failed: times }));
+
+          return {
+            total_simulations: sims.length,
+            average_score_pct: Math.round(sims.reduce((s, x) => s + x.score_pct, 0) / sims.length),
+            recent: sims.slice(0, 5),   // last 5 sims
+            persistent_gaps             // prompts consistently failed across sims
+          };
+        })()
+      : null
   }, null, 2);
 
   const response = await client.messages.create({
@@ -84,6 +117,11 @@ Tu análisis debe ser concreto, accionable y en español.
 Si el input incluye "class_notes" (apuntes del estudiante), usálos para identificar qué temas
 enfatizó el docente en clase — esos temas tienen mayor probabilidad de aparecer en el examen
 aunque no estén destacados en el programa oficial.
+
+Si el input incluye "exam_simulations" (historial de simulacros), usálo para recalibrar prioridades:
+- "persistent_gaps" lista preguntas que el estudiante falló en múltiples simulacros → son puntos ciegos reales, deben aparecer en "exam_gaps" y "priorities"
+- "average_score_pct" y "recent" permiten evaluar si los simulacros muestran mejora o estancamiento
+- Si el estudiante ya realizó simulacros con buena nota (≥75%) en áreas que de otro modo parecerían débiles por flashcards, NO las incluyas como "missing_topics" principales
 
 El input puede incluir "exam_schedule": lista de todos los parciales y final con su fecha,
 días restantes y scope_pct (% del temario que cubre ese examen).

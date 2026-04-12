@@ -3579,6 +3579,100 @@ function finishStudySession() {
   loadStudyOverview();
 }
 
+function finishExamSession() {
+  if (studyState.timerInterval) {
+    clearInterval(studyState.timerInterval);
+    studyState.timerInterval = null;
+  }
+  document.querySelector('#study-progress-fill').style.width = '100%';
+  document.querySelector('#study-session').classList.add('hidden');
+  document.querySelector('#exam-mode-badge').classList.add('hidden');
+  clearPersistedStudySession();
+
+  const items   = studyState.examItemResults;
+  const total   = items.length;
+  const correct = items.filter((r) => r.passed).length;
+  const pct     = total > 0 ? Math.round((correct / total) * 100) : 0;
+
+  // Persist simulation log in the background (no await — fire and forget)
+  if (total > 0) {
+    postJson('/scheduler/exam-sim/log', {
+      subject:   studyState.examSubject,
+      correct,
+      total,
+      score_pct: pct,
+      results: items.map((r) => ({
+        card_id:       r.cardData?.id   ?? null,
+        grade:         r.grade,
+        prompt_text:   r.prompt_text,
+        passed:        r.passed,
+        weakness_score: r.cardData?.weakness_score ?? null
+      }))
+    }).catch((err) => console.warn('[exam] Failed to save sim log:', err));
+  }
+
+  const { label, cls } = pct >= 90 ? { label: 'Excelente', cls: 'excellent' }
+                       : pct >= 75 ? { label: 'Aprobado',  cls: 'good' }
+                       : pct >= 60 ? { label: 'Ajustado',  cls: 'adjusted' }
+                       :             { label: 'Desaprobado', cls: 'fail' };
+
+  document.querySelector('#exam-complete-subject-tag').textContent = studyState.examSubject || '';
+  document.querySelector('#exam-score-fraction').textContent = `${correct} / ${total}`;
+  document.querySelector('#exam-score-pct').textContent = `${pct}%`;
+  const labelEl = document.querySelector('#exam-score-label');
+  labelEl.textContent = label;
+  labelEl.className = `exam-score-label ${cls}`;
+
+  // Per-card breakdown
+  const GRADE_ICON = { again: '✗', hard: '△', good: '✓', easy: '★', uncertain: '?' };
+  const breakdownEl = document.querySelector('#exam-breakdown');
+  breakdownEl.innerHTML = items.map((r) => {
+    const g    = (r.grade || 'uncertain').toLowerCase();
+    const icon = GRADE_ICON[g] || '?';
+    const prompt = escHtml((r.prompt_text || '').slice(0, 120));
+    return `<div class="exam-breakdown-item">
+      <span class="exam-breakdown-icon">${icon}</span>
+      <span class="exam-breakdown-prompt">${prompt}${r.prompt_text?.length > 120 ? '…' : ''}</span>
+      <span class="exam-breakdown-grade ${g}">${g.toUpperCase()}</span>
+    </div>`;
+  }).join('');
+
+  // "Para repasar" = failed + hard
+  const toReview = items.filter((r) => !r.passed);
+  const reviewSection = document.querySelector('#exam-review-section');
+  if (toReview.length > 0) {
+    const reviewList = document.querySelector('#exam-review-list');
+    reviewList.innerHTML = toReview.map((r) =>
+      `<div class="exam-review-item">${escHtml((r.prompt_text || '').slice(0, 150))}${r.prompt_text?.length > 150 ? '…' : ''}</div>`
+    ).join('');
+    reviewSection.classList.remove('hidden');
+
+    // "Estudiar estas ahora" — load failed cards into a regular study session
+    document.querySelector('#exam-study-failed-btn').onclick = () => {
+      const failedCards = toReview.map((r) => ({ type: 'card', data: r.cardData })).filter((c) => c.data);
+      if (!failedCards.length) return;
+      studyState.examMode        = false;
+      studyState.examItemResults = [];
+      studyState.queue           = failedCards;
+      studyState.index           = 0;
+      studyState.results         = [];
+      studyState.sessionStartTime = Date.now();
+      document.querySelector('#exam-complete').classList.add('hidden');
+      document.querySelector('#study-session').classList.remove('hidden');
+      persistStudySession();
+      showStudyCard();
+    };
+  } else {
+    reviewSection.classList.add('hidden');
+  }
+
+  document.querySelector('#exam-complete').classList.remove('hidden');
+
+  studyState.examMode         = false;
+  studyState.pendingMicroGeneration = 0;
+  renderStudyBackgroundStatus();
+}
+
 async function getJson(url) {
   const res = await fetch(url, {
     headers: Auth.getToken() ? { 'Authorization': 'Bearer ' + Auth.getToken() } : {}
