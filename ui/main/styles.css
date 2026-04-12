@@ -384,10 +384,13 @@ textarea:focus, input[type="text"]:focus, select:focus {
 .browser-type-pill.variant { background: #f0faf0; color: #2a7a2a; }
 
 .browser-detail-btn {
-  font-size: 0.8rem; padding: 1px 6px; opacity: 0.45;
-  transition: opacity .15s;
+  font-size: 0.75rem; padding: 3px 8px;
+  background: var(--bg-subtle); border: 1px solid var(--border-mid);
+  border-radius: 5px; color: var(--text-muted); cursor: pointer;
+  white-space: nowrap; font-weight: 600; letter-spacing: .02em;
+  transition: background .12s, color .12s;
 }
-.browser-data-row:hover .browser-detail-btn { opacity: 1; }
+.browser-detail-btn:hover { background: var(--primary-light); color: var(--primary); border-color: var(--primary); }
 
 /* ── Card detail popup ──────────────────────────────────────────────────── */
 .card-detail-overlay {

@@ -334,7 +334,7 @@ function renderBrowserTable() {
         <td><span class="browser-status-pill ${status}">${status}</span></td>
         <td>${passRate === '—' ? '—' : passRate + '%'}</td>
         <td>${lapses}</td>
-        <td><button class="browser-detail-btn btn-ghost" data-id="${card.id}" title="Ver detalle" tabindex="-1">↗</button></td>
+        <td><button class="browser-detail-btn" data-id="${card.id}" title="Ver detalle">Ver más</button></td>
       </tr>
     `;
   }).join('');
