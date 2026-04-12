@@ -534,6 +534,9 @@ textarea:focus, input[type="text"]:focus, select:focus {
   border-radius: 6px;
   background: #f8fafc;
   overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 .study-answer-compare-block code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;

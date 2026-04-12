@@ -1879,7 +1879,8 @@ function renderStudyPrompt(promptEl, promptText) {
 function looksLikeCodeBlock(text = '') {
   if (!text) return false;
   return /(^|\n)\s*(SELECT|WITH|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|BEGIN|DECLARE)\b/i.test(text)
-    || /[{};]/.test(text)
+    || /[{}]/.test(text)                                        // curly braces → code
+    || (text.match(/;/g) || []).length >= 2                     // 2+ semicolons → code (single ; is common prose)
     || /(^|\n)\s{2,}\S/.test(text);
 }
 
