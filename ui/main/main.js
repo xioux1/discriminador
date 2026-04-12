@@ -4474,8 +4474,10 @@ document.querySelector('#curriculum-grading-strictness')?.addEventListener('inpu
 });
 
 function updateMicroCardsLimitVisibility(enabled) {
-  const row = document.querySelector('#micro-cards-limit-row');
-  if (row) row.style.display = enabled ? '' : 'none';
+  const limitRow  = document.querySelector('#micro-cards-limit-row');
+  const spawnRow  = document.querySelector('#micro-spawn-row');
+  if (limitRow) limitRow.style.display = enabled ? '' : 'none';
+  if (spawnRow) spawnRow.style.display  = enabled ? '' : 'none';
 }
 
 document.querySelector('#curriculum-micro-cards-enabled')?.addEventListener('change', (e) => {

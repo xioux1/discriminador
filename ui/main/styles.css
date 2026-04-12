@@ -2689,3 +2689,24 @@ textarea:focus, input[type="text"]:focus, select:focus {
   font-weight: 500;
   color: var(--text-main);
 }
+
+/* ── Micro-cards options grid (two side-by-side option cards) ────────────── */
+
+.micro-options-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+.micro-option-row {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+.micro-option-desc {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin: 4px 0 0;
+  line-height: 1.4;
+}
