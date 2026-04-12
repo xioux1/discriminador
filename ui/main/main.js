@@ -4629,7 +4629,7 @@ function appendClassNoteCard(note, subject, container) {
       <button type="button" class="class-note-delete btn-ghost" style="font-size:0.72rem;padding:1px 7px">Eliminar</button>
     </div>
     <div class="class-note-body">
-      <textarea class="class-note-content" placeholder="Contenido de la clase..." maxlength="5000">${escHtml(note.content || '')}</textarea>
+      <textarea class="class-note-content" placeholder="Contenido de la clase...">${escHtml(note.content || '')}</textarea>
       <span class="class-note-save-status"></span>
     </div>`;
 
