@@ -261,7 +261,7 @@ schedulerRouter.post('/scheduler/review', async (req, res) => {
 
   try {
     if (micro_card_id) {
-      return await reviewMicroCard(res, Number(micro_card_id), effectiveGrade, rtMs, rvtMs, userId);
+      return await reviewMicroCard(res, Number(micro_card_id), effectiveGrade, concept_gaps, user_answer, rtMs, rvtMs, userId);
     } else if (card_id) {
       return await reviewCard(res, Number(card_id), effectiveGrade, concept_gaps, rtMs, rvtMs, userId, user_answer);
     }
@@ -389,7 +389,7 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
 }
 
 // ─── Internal: review a micro-card ───────────────────────────────────────────
-async function reviewMicroCard(res, microCardId, grade, responseTimeMs, reviewTimeMs, userId) {
+async function reviewMicroCard(res, microCardId, grade, conceptGaps, userAnswer, responseTimeMs, reviewTimeMs, userId) {
   const { rows } = await dbPool.query('SELECT * FROM micro_cards WHERE id = $1 AND user_id = $2', [microCardId, userId]);
   if (!rows.length) {
     return res.status(404).json({ error: 'not_found', message: 'Micro-card not found.' });
@@ -445,9 +445,75 @@ async function reviewMicroCard(res, microCardId, grade, responseTimeMs, reviewTi
     [micro.parent_subject || null, grade, responseTimeMs, reviewTimeMs, userId]
   ).catch((e) => console.warn('[activity log]', e.message));
 
+  // ── Sibling micro-card generation ─────────────────────────────────────────
+  // When the subject has micro_cards_spawn_siblings enabled and the student
+  // failed (non-pass grade), generate new sibling micros for the concept gaps,
+  // using the parent card as knowledge context.
+  let newMicroCards = [];
+
+  const gaps = Array.isArray(conceptGaps) ? conceptGaps : [];
+  if (!isPassGrade(grade) && gaps.length > 0) {
+    const configRes = await dbPool.query(
+      `SELECT micro_cards_spawn_siblings, micro_cards_enabled, max_micro_cards_per_card
+       FROM subject_configs WHERE subject = $1 AND user_id = $2`,
+      [micro.subject || '', userId]
+    );
+    const spawnSiblings  = configRes.rows[0]?.micro_cards_spawn_siblings ?? false;
+    const microEnabled   = configRes.rows[0]?.micro_cards_enabled ?? true;
+
+    if (spawnSiblings && microEnabled) {
+      // Fetch parent card for generation context.
+      const { rows: parentRows } = await dbPool.query(
+        'SELECT prompt_text, expected_answer_text, subject FROM cards WHERE id = $1',
+        [micro.parent_card_id]
+      );
+      const parent = parentRows[0];
+
+      if (parent) {
+        const maxPerCard    = configRes.rows[0]?.max_micro_cards_per_card ?? null;
+        const { rows: cnt } = await dbPool.query(
+          `SELECT COUNT(*) AS n FROM micro_cards WHERE parent_card_id = $1 AND user_id = $2 AND status = 'active'`,
+          [micro.parent_card_id, userId]
+        );
+        const existingCount  = parseInt(cnt[0].n);
+        const slotsAvailable = maxPerCard === null
+          ? gaps.length
+          : Math.max(0, maxPerCard - existingCount);
+
+        const targetConcepts = gaps
+          .filter((c) => typeof c === 'string' && c.trim().length > 0)
+          .slice(0, slotsAvailable)
+          .map((c) => c.trim());
+
+        for (const concept of targetConcepts) {
+          try {
+            const sibling = await generateMicroCard({
+              prompt_text:          parent.prompt_text,
+              expected_answer_text: parent.expected_answer_text,
+              subject:              micro.subject || parent.subject,
+              concept,
+              user_answer:          userAnswer || ''
+            });
+            const inserted = await dbPool.query(
+              `INSERT INTO micro_cards (parent_card_id, concept, question, expected_answer, user_id, subject)
+               VALUES ($1, $2, $3, $4, $5, $6)
+               ON CONFLICT DO NOTHING
+               RETURNING *`,
+              [micro.parent_card_id, concept, sibling.question, sibling.expected_answer, userId, micro.subject || parent.subject || null]
+            );
+            if (inserted.rows.length) newMicroCards.push(inserted.rows[0]);
+          } catch (err) {
+            console.warn(`Failed to generate sibling micro-card for concept "${concept}":`, err.message);
+          }
+        }
+      }
+    }
+  }
+
   return res.status(200).json({
     micro_card: updated.rows[0],
-    parent_unblocked: parentUnblocked
+    parent_unblocked: parentUnblocked,
+    new_micro_cards: newMicroCards
   });
 }
 

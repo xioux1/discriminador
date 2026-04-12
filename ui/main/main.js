@@ -3707,23 +3707,37 @@ async function handleStudyNextCard() {
   const grade  = decision.finalGrade;
   const gaps   = evalResult.missing_concepts ?? [];
   const shouldGenerateMicros = Boolean(grade && item.type === 'card');
+  // Micro-card review: send concept_gaps so backend can spawn siblings if configured.
+  const shouldSpawnSiblings  = Boolean(grade && item.type === 'micro' && gaps.length > 0);
 
-  if (shouldGenerateMicros) {
+  if (shouldGenerateMicros || shouldSpawnSiblings) {
     studyState.pendingMicroGeneration += 1;
     renderStudyBackgroundStatus();
   }
 
   if (grade && item.type === 'micro') {
-    try {
-      await postJson('/scheduler/review', {
-        micro_card_id: item.data.id,
-        grade,
-        response_time_ms: studyState.responseTimeMs || undefined,
-        review_time_ms:   studyState.reviewTimeMs   || undefined
-      });
-    } catch (err) {
-      console.warn('Review record failed:', err.message);
-    }
+    postJson('/scheduler/review', {
+      micro_card_id:    item.data.id,
+      grade,
+      concept_gaps:     gaps,
+      user_answer:      studyState.currentEvalContext?.user_answer_text || '',
+      response_time_ms: studyState.responseTimeMs || undefined,
+      review_time_ms:   studyState.reviewTimeMs   || undefined
+    }).then((reviewResp) => {
+      const newSiblings = (reviewResp?.new_micro_cards ?? []).map((m) => ({ type: 'micro', data: m }));
+      if (newSiblings.length) {
+        studyState.queue.splice(studyState.index + 1, 0, ...newSiblings);
+        persistStudySession();
+      }
+      loadAgenda();
+    }).catch((err) => {
+      console.warn('Micro review record failed:', err.message);
+    }).finally(() => {
+      if (shouldSpawnSiblings) {
+        studyState.pendingMicroGeneration = Math.max(0, (studyState.pendingMicroGeneration || 0) - 1);
+        renderStudyBackgroundStatus();
+      }
+    });
   }
 
   studyState.results.push({
@@ -4489,6 +4503,7 @@ async function openCurriculumModal(subject) {
     updateStrictnessDisplay(strictness);
     const microEnabled = data.config?.micro_cards_enabled ?? true;
     document.querySelector('#curriculum-micro-cards-enabled').checked = microEnabled;
+    document.querySelector('#curriculum-micro-spawn-siblings').checked = data.config?.micro_cards_spawn_siblings ?? false;
     updateMicroCardsLimitVisibility(microEnabled);
     renderExamDatesList(data.exam_dates || [], subject);
     renderExamsList(data.exams || [], subject);
@@ -4499,6 +4514,7 @@ async function openCurriculumModal(subject) {
     document.querySelector('#curriculum-grading-strictness').value = 5;
     updateStrictnessDisplay(5);
     document.querySelector('#curriculum-micro-cards-enabled').checked = true;
+    document.querySelector('#curriculum-micro-spawn-siblings').checked = false;
     updateMicroCardsLimitVisibility(true);
     renderClassNotesList([], subject);
   }
@@ -4538,13 +4554,15 @@ document.querySelector('#curriculum-save-btn').addEventListener('click', async (
 
   try {
     const strictness = parseInt(document.querySelector('#curriculum-grading-strictness').value, 10);
-    const microEnabled = document.querySelector('#curriculum-micro-cards-enabled').checked;
+    const microEnabled    = document.querySelector('#curriculum-micro-cards-enabled').checked;
+    const spawnSiblings   = document.querySelector('#curriculum-micro-spawn-siblings').checked;
     await postJson(`/curriculum/${encodeURIComponent(subject)}`, {
-      syllabus_text:              document.querySelector('#curriculum-syllabus').value,
-      daily_new_cards_limit:      parsedDailyLimit,
-      max_micro_cards_per_card:   parsedMicroLimit,
-      grading_strictness:         Number.isFinite(strictness) ? strictness : 5,
-      micro_cards_enabled:        microEnabled
+      syllabus_text:                document.querySelector('#curriculum-syllabus').value,
+      daily_new_cards_limit:        parsedDailyLimit,
+      max_micro_cards_per_card:     parsedMicroLimit,
+      grading_strictness:           Number.isFinite(strictness) ? strictness : 5,
+      micro_cards_enabled:          microEnabled,
+      micro_cards_spawn_siblings:   spawnSiblings
     }, 'PUT');
     fb.textContent = 'Guardado.';
     fb.style.color = 'var(--pass-fg)';
