@@ -306,22 +306,35 @@ function renderBrowserTable() {
   const rows = getFilteredBrowserCards();
 
   if (!rows.length) {
-    body.innerHTML = '<tr><td colspan="7" style="color:var(--text-muted)">No hay tarjetas para este filtro.</td></tr>';
+    body.innerHTML = '<tr><td colspan="10" style="color:var(--text-muted)">No hay tarjetas para este filtro.</td></tr>';
     return;
   }
 
   body.innerHTML = rows.map((card) => {
-    const status = getCardStatus(card);
-    const lapses = Math.max(0, Number(card.review_count || 0) - Number(card.pass_count || 0));
+    const status    = getCardStatus(card);
+    const reviews   = Number(card.review_count || 0);
+    const passes    = Number(card.pass_count   || 0);
+    const lapses    = Math.max(0, reviews - passes);
+    const passRate  = reviews > 0 ? Math.round((passes / reviews) * 100) : '—';
+    const intervalD = card.interval_days != null ? Math.round(Number(card.interval_days)) : '—';
+    const micros    = Number(card.active_micro_count || 0);
+    const variants  = Number(card.variant_count || 0);
+    const typePills = [];
+    if (micros > 0) typePills.push(`<span class="browser-type-pill micro">${micros} micro</span>`);
+    if (variants > 0) typePills.push(`<span class="browser-type-pill variant">${variants} var.</span>`);
+    if (!typePills.length) typePills.push('<span class="browser-type-pill base">Base</span>');
     return `
-      <tr>
+      <tr class="browser-data-row" data-id="${card.id}">
         <td><input type="checkbox" class="browser-row-check" data-id="${card.id}" ${browserState.selected.has(card.id) ? 'checked' : ''}></td>
         <td>${escHtml(card.subject || '(sin materia)')}</td>
         <td class="browser-prompt">${escHtml(card.prompt_text || '')}</td>
+        <td>${typePills.join(' ')}</td>
         <td>${formatNextReview(card.next_review_at)}</td>
+        <td>${intervalD === '—' ? '—' : intervalD + 'd'}</td>
         <td><span class="browser-status-pill ${status}">${status}</span></td>
+        <td>${passRate === '—' ? '—' : passRate + '%'}</td>
         <td>${lapses}</td>
-        <td>${card.flagged ? '⚑' : ''}</td>
+        <td><button class="browser-detail-btn btn-ghost" data-id="${card.id}" title="Ver detalle" tabindex="-1">↗</button></td>
       </tr>
     `;
   }).join('');
@@ -333,7 +346,161 @@ function renderBrowserTable() {
       else browserState.selected.delete(id);
     });
   });
+
+  body.querySelectorAll('.browser-detail-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id   = Number(btn.dataset.id);
+      const card = browserState.cards.find((c) => c.id === id);
+      if (card) showCardDetail(card);
+    });
+  });
 }
+
+/* ── Card detail popup ───────────────────────────────────────────────────── */
+
+function forgettingCurveSVG(intervalDays, lastReviewedAt, nextReviewAt) {
+  const W = 400, H = 130, PAD_L = 36, PAD_B = 24, PAD_T = 10, PAD_R = 10;
+  const plotW = W - PAD_L - PAD_R;
+  const plotH = H - PAD_B - PAD_T;
+
+  // Stability: at t = interval_days, retention ≈ 90 %
+  const stability = intervalDays > 0 ? -intervalDays / Math.log(0.9) : 10;
+  const totalDays = Math.max(intervalDays * 2.5, 14);
+
+  const retention = (t) => Math.exp(-t / stability);
+  const xScale    = (t) => PAD_L + (t / totalDays) * plotW;
+  const yScale    = (r) => PAD_T + (1 - r) * plotH;
+
+  // Build curve path
+  const pts = [];
+  for (let i = 0; i <= 80; i++) {
+    const t = (i / 80) * totalDays;
+    pts.push(`${xScale(t).toFixed(1)},${yScale(retention(t)).toFixed(1)}`);
+  }
+
+  // Today marker
+  const now = new Date();
+  let todayX = null;
+  if (lastReviewedAt) {
+    const daysSince = (now - new Date(lastReviewedAt)) / 86400000;
+    if (daysSince >= 0 && daysSince <= totalDays) {
+      todayX = xScale(daysSince);
+    }
+  }
+
+  // Next review marker
+  let nextX = null, nextRetention = null;
+  if (nextReviewAt) {
+    const daysToNext = (new Date(nextReviewAt) - (lastReviewedAt ? new Date(lastReviewedAt) : now)) / 86400000;
+    if (daysToNext >= 0 && daysToNext <= totalDays) {
+      nextX = xScale(daysToNext);
+      nextRetention = retention(daysToNext);
+    }
+  }
+
+  // X-axis labels
+  const tickCount = 5;
+  const ticks = Array.from({ length: tickCount + 1 }, (_, i) => {
+    const t = (i / tickCount) * totalDays;
+    return `<text x="${xScale(t).toFixed(1)}" y="${H - 4}" text-anchor="middle" font-size="9" fill="#999">${Math.round(t)}d</text>`;
+  }).join('');
+
+  // Y-axis labels
+  const yLabels = [100, 90, 70, 50].map((pct) => {
+    const y = yScale(pct / 100).toFixed(1);
+    return `<text x="${PAD_L - 3}" y="${y}" text-anchor="end" dominant-baseline="middle" font-size="9" fill="#bbb">${pct}%</text>
+            <line x1="${PAD_L}" y1="${y}" x2="${W - PAD_R}" y2="${y}" stroke="#eee" stroke-width="0.5"/>`;
+  }).join('');
+
+  // Shade danger zone (below 70%)
+  const y70 = yScale(0.7).toFixed(1);
+  const dangerPath = `M${PAD_L},${y70} L${W - PAD_R},${y70} L${W - PAD_R},${PAD_T + plotH} L${PAD_L},${PAD_T + plotH} Z`;
+
+  const todayMarker = todayX
+    ? `<line x1="${todayX.toFixed(1)}" y1="${PAD_T}" x2="${todayX.toFixed(1)}" y2="${PAD_T + plotH}" stroke="#e67e22" stroke-width="1.5" stroke-dasharray="3,2"/>
+       <circle cx="${todayX.toFixed(1)}" cy="${yScale(retention((now - new Date(lastReviewedAt)) / 86400000)).toFixed(1)}" r="3.5" fill="#e67e22"/>`
+    : '';
+
+  const nextMarker = nextX != null
+    ? `<line x1="${nextX.toFixed(1)}" y1="${PAD_T}" x2="${nextX.toFixed(1)}" y2="${PAD_T + plotH}" stroke="#27ae60" stroke-width="1.5" stroke-dasharray="3,2"/>
+       <circle cx="${nextX.toFixed(1)}" cy="${yScale(nextRetention).toFixed(1)}" r="3.5" fill="#27ae60"/>`
+    : '';
+
+  return `
+    <defs>
+      <clipPath id="cdp-clip"><rect x="${PAD_L}" y="${PAD_T}" width="${plotW}" height="${plotH}"/></clipPath>
+    </defs>
+    ${yLabels}
+    <path d="${dangerPath}" fill="#fff0f0" opacity="0.7" clip-path="url(#cdp-clip)"/>
+    <polyline points="${pts.join(' ')}" fill="none" stroke="#4a90d9" stroke-width="2" clip-path="url(#cdp-clip)"/>
+    ${todayMarker}
+    ${nextMarker}
+    ${ticks}
+    <line x1="${PAD_L}" y1="${PAD_T}" x2="${PAD_L}" y2="${PAD_T + plotH}" stroke="#ccc" stroke-width="1"/>
+    <line x1="${PAD_L}" y1="${PAD_T + plotH}" x2="${W - PAD_R}" y2="${PAD_T + plotH}" stroke="#ccc" stroke-width="1"/>
+  `;
+}
+
+function showCardDetail(card) {
+  const overlay = document.querySelector('#card-detail-overlay');
+  if (!overlay) return;
+
+  const reviews  = Number(card.review_count || 0);
+  const passes   = Number(card.pass_count   || 0);
+  const lapses   = Math.max(0, reviews - passes);
+  const passRate = reviews > 0 ? Math.round((passes / reviews) * 100) + '%' : '—';
+  const status   = getCardStatus(card);
+  const intervalD = card.interval_days != null ? Math.round(Number(card.interval_days)) : 1;
+
+  document.querySelector('#cdp-badge').textContent = status;
+  document.querySelector('#cdp-badge').className = `browser-status-pill ${status}`;
+  document.querySelector('#cdp-subject').textContent = card.subject ? ` · ${card.subject}` : '';
+  document.querySelector('#cdp-prompt').textContent  = card.prompt_text || '';
+  document.querySelector('#cdp-answer').textContent  = card.expected_answer_text || '';
+
+  document.querySelector('#cdp-reviews').textContent  = reviews;
+  document.querySelector('#cdp-pass-rate').textContent = passRate;
+  document.querySelector('#cdp-lapses').textContent   = lapses;
+  document.querySelector('#cdp-interval').textContent = intervalD + 'd';
+  document.querySelector('#cdp-ease').textContent     = card.ease_factor != null ? Number(card.ease_factor).toFixed(2) : '—';
+  document.querySelector('#cdp-micros').textContent   = Number(card.active_micro_count || 0);
+  document.querySelector('#cdp-variants').textContent = Number(card.variant_count || 0);
+  document.querySelector('#cdp-created').textContent  = card.created_at
+    ? new Date(card.created_at).toLocaleDateString('es-AR') : '—';
+
+  const fmt = (v) => v ? new Date(v).toLocaleString('es-AR', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+  document.querySelector('#cdp-last-reviewed').textContent = fmt(card.last_reviewed_at);
+  document.querySelector('#cdp-next-review').textContent   = fmt(card.next_review_at);
+
+  // Forgetting curve
+  const svg = document.querySelector('#cdp-curve-svg');
+  svg.innerHTML = forgettingCurveSVG(intervalD, card.last_reviewed_at, card.next_review_at);
+
+  // Notes
+  const notesEl = document.querySelector('#cdp-notes');
+  if (card.notes) {
+    notesEl.textContent = card.notes;
+    notesEl.classList.remove('hidden');
+  } else {
+    notesEl.classList.add('hidden');
+  }
+
+  overlay.classList.remove('hidden');
+  document.querySelector('#card-detail-close').focus();
+}
+
+function hideCardDetail() {
+  document.querySelector('#card-detail-overlay')?.classList.add('hidden');
+}
+
+document.querySelector('#card-detail-close')?.addEventListener('click', hideCardDetail);
+document.querySelector('#card-detail-overlay')?.addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) hideCardDetail();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') hideCardDetail();
+});
 
 async function loadBrowserCards() {
   const response = await getJson('/cards/browser');

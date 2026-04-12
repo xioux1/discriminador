@@ -479,16 +479,64 @@
                 <th><input type="checkbox" id="browser-select-all" aria-label="Seleccionar todo"></th>
                 <th>Materia</th>
                 <th>Prompt</th>
+                <th>Tipo</th>
                 <th>Próximo repaso</th>
+                <th>Intervalo</th>
                 <th>Estado</th>
+                <th>% Acierto</th>
                 <th>Lapses</th>
-                <th>Flags</th>
+                <th></th>
               </tr>
             </thead>
             <tbody id="browser-table-body"></tbody>
           </table>
         </div>
       </section>
+
+      <!-- ═══ Card detail popup ══════════════════════════════════════════════ -->
+      <div id="card-detail-overlay" class="card-detail-overlay hidden" role="dialog" aria-modal="true" aria-label="Detalle de tarjeta">
+        <div class="card-detail-popup">
+          <div class="card-detail-header">
+            <div>
+              <span id="cdp-badge" class="browser-status-pill"></span>
+              <span id="cdp-subject" class="cdp-subject"></span>
+            </div>
+            <button type="button" id="card-detail-close" class="btn-ghost" aria-label="Cerrar">✕</button>
+          </div>
+
+          <div class="cdp-prompt" id="cdp-prompt"></div>
+          <div class="cdp-answer-label">Respuesta esperada</div>
+          <div class="cdp-answer" id="cdp-answer"></div>
+
+          <div class="cdp-stats-grid">
+            <div class="cdp-stat"><div class="cdp-stat-val" id="cdp-reviews"></div><div class="cdp-stat-label">Repasos</div></div>
+            <div class="cdp-stat"><div class="cdp-stat-val" id="cdp-pass-rate"></div><div class="cdp-stat-label">% Acierto</div></div>
+            <div class="cdp-stat"><div class="cdp-stat-val" id="cdp-lapses"></div><div class="cdp-stat-label">Lapses</div></div>
+            <div class="cdp-stat"><div class="cdp-stat-val" id="cdp-interval"></div><div class="cdp-stat-label">Intervalo</div></div>
+            <div class="cdp-stat"><div class="cdp-stat-val" id="cdp-ease"></div><div class="cdp-stat-label">Factor facilidad</div></div>
+            <div class="cdp-stat"><div class="cdp-stat-val" id="cdp-micros"></div><div class="cdp-stat-label">Micro-tarjetas</div></div>
+            <div class="cdp-stat"><div class="cdp-stat-val" id="cdp-variants"></div><div class="cdp-stat-label">Variantes</div></div>
+            <div class="cdp-stat"><div class="cdp-stat-val" id="cdp-created"></div><div class="cdp-stat-label">Creada</div></div>
+          </div>
+
+          <div class="cdp-dates">
+            <div><span class="cdp-date-label">Último repaso:</span> <span id="cdp-last-reviewed"></span></div>
+            <div><span class="cdp-date-label">Próximo repaso:</span> <span id="cdp-next-review"></span></div>
+          </div>
+
+          <div class="cdp-curve-section">
+            <div class="cdp-curve-title">Curva del olvido</div>
+            <svg id="cdp-curve-svg" class="cdp-curve-svg" viewBox="0 0 400 130" preserveAspectRatio="none"></svg>
+            <div class="cdp-curve-legend">
+              <span class="cdp-legend-dot" style="background:#4a90d9"></span>Retención estimada
+              <span class="cdp-legend-dot" style="background:#e67e22;margin-left:12px"></span>Hoy
+              <span class="cdp-legend-dot" style="background:#27ae60;margin-left:12px"></span>Próximo repaso
+            </div>
+          </div>
+
+          <div id="cdp-notes" class="cdp-notes hidden"></div>
+        </div>
+      </div>
 
       <!-- ═══ TAB: PLANIFICAR ══════════════════════════════════════════════ -->
       <section id="tab-planner" class="hidden">
