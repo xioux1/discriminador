@@ -775,9 +775,9 @@ async function loadDashboard() {
   content.innerHTML = '';
 
   try {
-    const [overview, session, calendarData] = await Promise.all([
+    const [overview, dueCounts, calendarData] = await Promise.all([
       getJson('/stats/overview').catch(() => ({ subjects: [] })),
-      getJson('/scheduler/session').catch(() => ({ cards: [], micro_cards: [] })),
+      getJson('/scheduler/due-counts').catch(() => ({ cards: {}, micros: {} })),
       getJson('/exam-calendar').catch(() => ({ exams: [] }))
     ]);
 
@@ -797,17 +797,9 @@ async function loadDashboard() {
       return;
     }
 
-    // Build pending cards and active micro-consignas per subject from session
-    const pendingCardsBySubject = {};
-    const activeMicrosBySubject = {};
-    for (const card of session.cards ?? []) {
-      const s = normalizeSubject(card.subject);
-      pendingCardsBySubject[s] = (pendingCardsBySubject[s] || 0) + 1;
-    }
-    for (const mc of session.micro_cards ?? []) {
-      const s = normalizeSubject(mc.parent_subject);
-      activeMicrosBySubject[s] = (activeMicrosBySubject[s] || 0) + 1;
-    }
+    // Due counts per subject from the dedicated counts endpoint (no LIMIT).
+    const pendingCardsBySubject  = dueCounts.cards  || {};
+    const activeMicrosBySubject  = dueCounts.micros || {};
     const totalPendingCards = Object.values(pendingCardsBySubject).reduce((a, b) => a + b, 0);
     const totalActiveMicros = Object.values(activeMicrosBySubject).reduce((a, b) => a + b, 0);
     const totalDue = totalPendingCards + totalActiveMicros;

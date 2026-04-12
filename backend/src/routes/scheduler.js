@@ -84,6 +84,47 @@ async function computeNewCardReleaseAt(userId, subject, dailyLimit) {
   return null;
 }
 
+// ─── Due counts per subject (for dashboard) ───────────────────────────────────
+// GET /scheduler/due-counts — returns per-subject counts of due cards/micros.
+// No LIMIT — intended for display only, not for building a study queue.
+schedulerRouter.get('/scheduler/due-counts', async (req, res) => {
+  const userId = req.user.id;
+  try {
+    const [cardsRes, microsRes] = await Promise.all([
+      dbPool.query(
+        `SELECT subject, COUNT(*) AS cnt
+         FROM cards
+         WHERE user_id = $1
+           AND archived_at IS NULL
+           AND suspended_at IS NULL
+           AND next_review_at <= now()
+         GROUP BY subject`,
+        [userId]
+      ),
+      dbPool.query(
+        `SELECT c.subject, COUNT(*) AS cnt
+         FROM micro_cards mc
+         JOIN cards c ON mc.parent_card_id = c.id
+         WHERE mc.user_id = $1
+           AND mc.status = 'active'
+           AND mc.next_review_at <= now()
+           AND c.archived_at IS NULL
+           AND c.suspended_at IS NULL
+         GROUP BY c.subject`,
+        [userId]
+      )
+    ]);
+    const cards  = {};
+    const micros = {};
+    cardsRes.rows.forEach(({ subject, cnt }) => { cards[subject  || '(sin materia)'] = Number(cnt); });
+    microsRes.rows.forEach(({ subject, cnt }) => { micros[subject || '(sin materia)'] = Number(cnt); });
+    return res.json({ cards, micros });
+  } catch (err) {
+    console.error('GET /scheduler/due-counts', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
 // ─── List all cards ───────────────────────────────────────────────────────────
 schedulerRouter.get('/scheduler/cards', async (req, res) => {
   const { subject } = req.query;
