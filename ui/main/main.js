@@ -3970,7 +3970,9 @@ function finishExamSession() {
   const total   = items.length;
   // Compute pass from grade directly (don't rely on the stored `passed` flag)
   const isPassGrade = (g) => { const s = (g || '').toLowerCase(); return s === 'good' || s === 'easy' || s === 'pass'; };
+  console.log('[exam] finishExamSession items:', JSON.stringify(items.map(r => ({grade: r.grade, passed: r.passed}))));
   const correct = items.filter((r) => isPassGrade(r.grade)).length;
+  console.log('[exam] correct:', correct, 'total:', total);
   const pct     = total > 0 ? Math.round((correct / total) * 100) : 0;
 
   // Persist simulation log in the background (no await — fire and forget)
