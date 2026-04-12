@@ -248,6 +248,22 @@ textarea:focus, input[type="text"]:focus, select:focus {
 }
 .code-wrap-btn:hover { background: #f0f4ff; color: var(--primary); border-color: var(--primary); }
 
+/* Rendered code blocks inside card prompts / answers */
+.card-code-block {
+  background: #1e1e2e; color: #cdd6f4;
+  font-family: 'Consolas', 'Fira Mono', 'Courier New', monospace;
+  font-size: 0.84rem; line-height: 1.6;
+  padding: 10px 14px; border-radius: 7px;
+  overflow-x: auto; margin: 6px 0;
+  white-space: pre;
+}
+.card-code-block code { background: none; color: inherit; font-size: inherit; padding: 0; }
+.card-code-inline {
+  background: #f0f0f5; color: #c0392b;
+  font-family: 'Consolas', 'Fira Mono', 'Courier New', monospace;
+  font-size: 0.88em; padding: 1px 5px; border-radius: 4px;
+}
+
 /* ─── Grade badges & pills ───────────────────────────────────────────────────── */
 .grade-badge {
   display: inline-block;

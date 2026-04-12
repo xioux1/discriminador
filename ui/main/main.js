@@ -500,8 +500,8 @@ function showCardDetail(card) {
   document.querySelector('#cdp-badge').textContent = status;
   document.querySelector('#cdp-badge').className = `browser-status-pill ${status}`;
   document.querySelector('#cdp-subject').textContent = card.subject ? ` · ${card.subject}` : '';
-  document.querySelector('#cdp-prompt').textContent  = card.prompt_text || '';
-  document.querySelector('#cdp-answer').textContent  = card.expected_answer_text || '';
+  document.querySelector('#cdp-prompt').innerHTML  = formatPromptForDisplay(card.prompt_text || '');
+  document.querySelector('#cdp-answer').innerHTML  = renderCodeMarkdown(card.expected_answer_text || '');
 
   document.querySelector('#cdp-reviews').textContent  = reviews;
   document.querySelector('#cdp-pass-rate').textContent = passRate;
@@ -1819,12 +1819,40 @@ function escapePreserve(text) {
 
 const MATH_LINE_RE = /[=²³⁰¹⁴⁵⁶⁷⁸⁹₀₁₂₃₄₅₆₇₈₉αβγδεζηθλμνξπρστφψωΔΩ∑∫∂∞±√∝∈∉∩∪⊂⊃≤≥≠≈]|[a-zA-Z][₀₁₂₃]|[a-zA-Z]\d*[²³]|\b(cos|sin|tan|log|ln|lim|sup|inf|max|min|det|div|rot|grad)\b/;
 
+// Renders fenced ``` blocks and inline `code` in arbitrary text → safe HTML.
+function renderCodeMarkdown(text) {
+  const normalized = String(text ?? '').replace(/\r\n?/g, '\n');
+
+  // 1. Fenced code blocks (``` ... ```)
+  const parts = normalized.split(/(```[\s\S]*?```)/g);
+  return parts.map((part, i) => {
+    if (i % 2 === 1) {
+      // Inside a fenced block
+      const inner = part.slice(3, -3).replace(/^\n/, '').replace(/\n$/, '');
+      return `<pre class="card-code-block"><code>${escHtml(inner)}</code></pre>`;
+    }
+    // Outside: handle inline `code` and preserve newlines
+    return part
+      .split(/(`[^`\n]+`)/g)
+      .map((s, j) => {
+        if (j % 2 === 1) return `<code class="card-code-inline">${escHtml(s.slice(1, -1))}</code>`;
+        return escHtml(s).replace(/\n/g, '<br>');
+      })
+      .join('');
+  }).join('');
+}
+
 function formatPromptForDisplay(text) {
   const normalized = String(text ?? '')
     .replace(/\r\n?/g, '\n')
     .replace(/:\s+([•●▪◦])/g, ':\n$1')
     .replace(/\s+([•●▪◦])\s+/g, '\n$1 ')
     .trim();
+
+  // If text has code blocks/inline code, delegate to the markdown renderer.
+  if (/```|`[^`]/.test(normalized)) {
+    return renderCodeMarkdown(normalized);
+  }
 
   // Detect if text contains math — if so, wrap equation-heavy lines visually
   const lines = normalized.split('\n');
@@ -1856,6 +1884,10 @@ function looksLikeCodeBlock(text = '') {
 function formatAnswerBlock(label, text) {
   const raw = String(text ?? '').trim();
   if (!raw) return '';
+  const hasMarkdownCode = /```|`[^`]/.test(raw);
+  if (hasMarkdownCode) {
+    return `<div class="study-answer-compare-block"><strong>${label}:</strong><div class="study-answer-compare-text">${renderCodeMarkdown(raw)}</div></div>`;
+  }
   if (looksLikeCodeBlock(raw)) {
     return `<div class="study-answer-compare-block"><strong>${label}:</strong><pre><code>${escHtml(raw)}</code></pre></div>`;
   }
