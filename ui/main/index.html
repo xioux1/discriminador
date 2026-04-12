@@ -97,6 +97,43 @@
               <label for="curriculum-daily-new-limit" style="display:block;font-size:0.84rem;color:var(--text-muted);margin-bottom:6px">Máximo de tarjetas nuevas por día (0/vacío = sin límite)</label>
               <input type="number" id="curriculum-daily-new-limit" min="0" step="1" placeholder="Ej: 10" style="max-width:180px">
 
+              <div class="micro-options-grid" id="micro-options-grid">
+                <div class="micro-option-row">
+                  <label class="toggle-row">
+                    <input type="checkbox" id="curriculum-micro-cards-enabled" checked>
+                    <span class="toggle-label">Generar micro-tarjetas al repasar</span>
+                  </label>
+                  <p class="micro-option-desc">Cuando errás una pregunta, la IA genera consignas focalizadas en los conceptos faltantes.</p>
+                  <div id="micro-cards-limit-row" style="margin-top:8px">
+                    <label for="curriculum-max-micro-per-card" style="display:block;font-size:0.82rem;color:var(--text-muted);margin-bottom:4px">Máximo por pregunta (vacío = sin límite)</label>
+                    <input type="number" id="curriculum-max-micro-per-card" min="0" step="1" placeholder="Ej: 3" style="max-width:160px">
+                  </div>
+                </div>
+
+                <div class="micro-option-row" id="micro-spawn-row">
+                  <label class="toggle-row">
+                    <input type="checkbox" id="curriculum-micro-spawn-siblings">
+                    <span class="toggle-label">Las micro-tarjetas generan hermanas al fallarlas</span>
+                  </label>
+                  <p class="micro-option-desc">Si fallás una micro-tarjeta, genera nuevas micro-tarjetas para los conceptos faltantes (mismo padre, mismo límite).</p>
+                </div>
+              </div>
+
+              <hr style="margin:16px 0">
+
+              <!-- ── Exigencia de corrección ─────────────────────────────────── -->
+              <h4 class="curriculum-section-title">Exigencia de corrección</h4>
+              <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 10px">Define qué tan estricta es la IA al evaluar tus respuestas.</p>
+              <div class="strictness-slider-row">
+                <span class="strictness-label-min">Básica</span>
+                <input type="range" id="curriculum-grading-strictness" min="0" max="10" step="1" value="5" class="strictness-range">
+                <span class="strictness-label-max">Máxima</span>
+              </div>
+              <div class="strictness-badge-row">
+                <span id="curriculum-strictness-badge" class="strictness-badge"></span>
+                <span id="curriculum-strictness-desc" class="strictness-desc"></span>
+              </div>
+
               <hr style="margin:16px 0">
 
               <!-- ── Plan de estudios ────────────────────────────────────────── -->
@@ -199,7 +236,57 @@
           </div>
           <div class="study-overview-actions hidden" id="study-overview-actions">
             <button type="button" id="study-start-btn" class="btn-primary">Iniciar sesión</button>
+            <button type="button" id="exam-sim-open-btn" class="btn-secondary">Simulacro de examen</button>
             <button type="button" id="study-overview-back-btn" class="btn-ghost">← Volver</button>
+          </div>
+        </div>
+
+        <!-- Exam simulation config modal -->
+        <div id="exam-sim-modal" class="exam-sim-modal hidden">
+          <div class="exam-sim-backdrop"></div>
+          <div class="exam-sim-box">
+            <div class="exam-sim-header">
+              <h3>Simulacro de examen</h3>
+              <button type="button" id="exam-sim-close-btn" class="btn-ghost">✕</button>
+            </div>
+            <p class="exam-sim-subtitle">Seleccioná las tarjetas más débiles de una materia, respondé sin feedback inmediato y recibí tu nota al final.</p>
+            <label class="exam-sim-label" for="exam-sim-subject-input">Materia</label>
+            <input type="text" id="exam-sim-subject-input" list="subjects-list" placeholder="Escribí o elegí una materia..." autocomplete="off">
+            <label class="exam-sim-label" style="margin-top:14px">Cantidad de preguntas</label>
+            <div class="exam-count-pills" id="exam-count-pills">
+              <button type="button" class="exam-count-pill" data-count="5">5</button>
+              <button type="button" class="exam-count-pill active" data-count="10">10</button>
+              <button type="button" class="exam-count-pill" data-count="15">15</button>
+              <button type="button" class="exam-count-pill" data-count="20">20</button>
+            </div>
+            <p id="exam-sim-feedback" class="exam-sim-feedback hidden"></p>
+            <div class="exam-sim-actions">
+              <button type="button" id="exam-sim-start-btn" class="btn-primary">Comenzar simulacro</button>
+              <button type="button" id="exam-sim-cancel-btn" class="btn-ghost">Cancelar</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Exam complete screen -->
+        <div id="exam-complete" class="card hidden">
+          <div class="exam-complete-header">
+            <h3>Simulacro completado</h3>
+            <span id="exam-complete-subject-tag" class="exam-subject-tag"></span>
+          </div>
+          <div id="exam-score-display" class="exam-score-display">
+            <div class="exam-score-fraction" id="exam-score-fraction"></div>
+            <div class="exam-score-pct" id="exam-score-pct"></div>
+            <div class="exam-score-label" id="exam-score-label"></div>
+          </div>
+          <div id="exam-breakdown" class="exam-breakdown"></div>
+          <div id="exam-review-section" class="exam-review-section hidden">
+            <h4 class="exam-review-title">Para repasar antes del examen</h4>
+            <div id="exam-review-list" class="exam-review-list"></div>
+            <button type="button" id="exam-study-failed-btn" class="btn-primary" style="margin-top:10px">Estudiar estas ahora</button>
+          </div>
+          <div class="exam-complete-actions">
+            <button type="button" id="exam-again-btn" class="btn-secondary">Otro simulacro</button>
+            <button type="button" id="exam-back-btn" class="btn-ghost">Volver al inicio</button>
           </div>
         </div>
 
@@ -217,6 +304,7 @@
         <div id="study-session" class="hidden study-session-overlay">
           <div class="study-session-header">
             <button type="button" id="study-exit-btn" class="btn-ghost">Cerrar sesión</button>
+            <span id="exam-mode-badge" class="exam-mode-badge hidden">Simulacro</span>
             <div id="study-progress-bar" class="study-progress-bar">
               <div id="study-progress-fill" class="study-progress-fill"></div>
             </div>
@@ -290,6 +378,11 @@
                 <button type="button" id="study-variant-btn" class="btn-ghost study-variant-btn hidden">+ Guardar variante</button>
               </div>
               <p id="study-variant-feedback" class="hidden" style="font-size:0.82rem;margin-top:6px"></p>
+              <div id="study-variant-preview" class="hidden" style="margin-top:10px;padding:10px 12px;border:1px solid var(--border-mid);border-radius:6px;font-size:0.84rem;background:var(--bg-subtle)">
+                <div style="font-weight:600;margin-bottom:4px;color:var(--text-muted);font-size:0.78rem;text-transform:uppercase;letter-spacing:.04em">Variante generada</div>
+                <div style="margin-bottom:6px"><span style="color:var(--text-muted)">P: </span><span id="study-variant-preview-q"></span></div>
+                <div><span style="color:var(--text-muted)">R: </span><span id="study-variant-preview-a"></span></div>
+              </div>
 
               <!-- ── Duda post-respuesta ──────────────────────────────────── -->
               <div id="study-doubt-section" class="study-doubt-section hidden">
@@ -321,7 +414,10 @@
         <section class="card">
           <h2>Evaluación manual</h2>
           <form id="evaluation-form" novalidate>
-            <label for="prompt_text">Consigna</label>
+            <div class="textarea-label-row">
+              <label for="prompt_text">Consigna</label>
+              <button type="button" class="code-wrap-btn" data-target="prompt_text" title="Envolver selección en bloque de código">{ } Código</button>
+            </div>
             <textarea id="prompt_text" name="prompt_text" rows="4" required></textarea>
             <p class="field-error" data-error-for="prompt_text"></p>
 
@@ -339,7 +435,10 @@
 
             <div class="field-header">
               <label for="expected_answer_text">Respuesta esperada</label>
-              <button type="button" id="fill-expected-btn" class="dictation-btn hidden">Hay una respuesta guardada. ¿Completar?</button>
+              <div style="display:flex;gap:6px;align-items:center">
+                <button type="button" class="code-wrap-btn" data-target="expected_answer_text" title="Envolver selección en bloque de código">{ } Código</button>
+                <button type="button" id="fill-expected-btn" class="dictation-btn hidden">Hay una respuesta guardada. ¿Completar?</button>
+              </div>
             </div>
             <textarea id="expected_answer_text" name="expected_answer_text" rows="4" required></textarea>
             <p class="field-error" data-error-for="expected_answer_text"></p>
@@ -428,9 +527,15 @@
           <h3>Nueva tarjeta</h3>
           <label for="card-subject">Materia</label>
           <input id="card-subject" type="text" list="subjects-list" autocomplete="off" />
-          <label for="card-prompt">Pregunta / consigna</label>
+          <div class="textarea-label-row">
+            <label for="card-prompt">Pregunta / consigna</label>
+            <button type="button" class="code-wrap-btn" data-target="card-prompt" title="Envolver selección en bloque de código">{ } Código</button>
+          </div>
           <textarea id="card-prompt" rows="3"></textarea>
-          <label for="card-expected">Respuesta esperada</label>
+          <div class="textarea-label-row">
+            <label for="card-expected">Respuesta esperada</label>
+            <button type="button" class="code-wrap-btn" data-target="card-expected" title="Envolver selección en bloque de código">{ } Código</button>
+          </div>
           <textarea id="card-expected" rows="3"></textarea>
           <div style="display:flex;gap:8px;margin-top:8px">
             <button type="button" id="card-save-btn" class="btn-primary">Guardar tarjeta</button>
@@ -469,16 +574,64 @@
                 <th><input type="checkbox" id="browser-select-all" aria-label="Seleccionar todo"></th>
                 <th>Materia</th>
                 <th>Prompt</th>
+                <th>Tipo</th>
                 <th>Próximo repaso</th>
+                <th>Intervalo</th>
                 <th>Estado</th>
+                <th>% Acierto</th>
                 <th>Lapses</th>
-                <th>Flags</th>
+                <th></th>
               </tr>
             </thead>
             <tbody id="browser-table-body"></tbody>
           </table>
         </div>
       </section>
+
+      <!-- ═══ Card detail popup ══════════════════════════════════════════════ -->
+      <div id="card-detail-overlay" class="card-detail-overlay hidden" role="dialog" aria-modal="true" aria-label="Detalle de tarjeta">
+        <div class="card-detail-popup">
+          <div class="card-detail-header">
+            <div>
+              <span id="cdp-badge" class="browser-status-pill"></span>
+              <span id="cdp-subject" class="cdp-subject"></span>
+            </div>
+            <button type="button" id="card-detail-close" class="btn-ghost" aria-label="Cerrar">✕</button>
+          </div>
+
+          <div class="cdp-prompt" id="cdp-prompt"></div>
+          <div class="cdp-answer-label">Respuesta esperada</div>
+          <div class="cdp-answer" id="cdp-answer"></div>
+
+          <div class="cdp-stats-grid">
+            <div class="cdp-stat"><div class="cdp-stat-val" id="cdp-reviews"></div><div class="cdp-stat-label">Repasos</div></div>
+            <div class="cdp-stat"><div class="cdp-stat-val" id="cdp-pass-rate"></div><div class="cdp-stat-label">% Acierto</div></div>
+            <div class="cdp-stat"><div class="cdp-stat-val" id="cdp-lapses"></div><div class="cdp-stat-label">Lapses</div></div>
+            <div class="cdp-stat"><div class="cdp-stat-val" id="cdp-interval"></div><div class="cdp-stat-label">Intervalo</div></div>
+            <div class="cdp-stat"><div class="cdp-stat-val" id="cdp-ease"></div><div class="cdp-stat-label">Factor facilidad</div></div>
+            <div class="cdp-stat"><div class="cdp-stat-val" id="cdp-micros"></div><div class="cdp-stat-label">Micro-tarjetas</div></div>
+            <div class="cdp-stat"><div class="cdp-stat-val" id="cdp-variants"></div><div class="cdp-stat-label">Variantes</div></div>
+            <div class="cdp-stat"><div class="cdp-stat-val" id="cdp-created"></div><div class="cdp-stat-label">Creada</div></div>
+          </div>
+
+          <div class="cdp-dates">
+            <div><span class="cdp-date-label">Último repaso:</span> <span id="cdp-last-reviewed"></span></div>
+            <div><span class="cdp-date-label">Próximo repaso:</span> <span id="cdp-next-review"></span></div>
+          </div>
+
+          <div class="cdp-curve-section">
+            <div class="cdp-curve-title">Curva del olvido</div>
+            <svg id="cdp-curve-svg" class="cdp-curve-svg" viewBox="0 0 400 130" preserveAspectRatio="none"></svg>
+            <div class="cdp-curve-legend">
+              <span class="cdp-legend-dot" style="background:#4a90d9"></span>Retención estimada
+              <span class="cdp-legend-dot" style="background:#e67e22;margin-left:12px"></span>Hoy
+              <span class="cdp-legend-dot" style="background:#27ae60;margin-left:12px"></span>Próximo repaso
+            </div>
+          </div>
+
+          <div id="cdp-notes" class="cdp-notes hidden"></div>
+        </div>
+      </div>
 
       <!-- ═══ TAB: PLANIFICAR ══════════════════════════════════════════════ -->
       <section id="tab-planner" class="hidden">

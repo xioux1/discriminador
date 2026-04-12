@@ -15,18 +15,29 @@ cardsRouter.get('/cards/browser', async (req, res) => {
   const userId = req.user.id;
   const { rows } = await dbPool.query(
     `SELECT
-       id,
-       subject,
-       prompt_text,
-       next_review_at,
-       review_count,
-       pass_count,
-       flagged,
-       suspended_at
-     FROM cards
-     WHERE user_id = $1
-       AND archived_at IS NULL
-     ORDER BY next_review_at ASC, id ASC`,
+       c.id,
+       c.subject,
+       c.prompt_text,
+       c.expected_answer_text,
+       c.next_review_at,
+       c.last_reviewed_at,
+       c.created_at,
+       c.review_count,
+       c.pass_count,
+       c.interval_days,
+       c.ease_factor,
+       c.flagged,
+       c.notes,
+       c.suspended_at,
+       COUNT(mc.id) FILTER (WHERE mc.status = 'active')  AS active_micro_count,
+       COUNT(cv.id)                                       AS variant_count
+     FROM cards c
+     LEFT JOIN micro_cards mc ON mc.parent_card_id = c.id AND mc.user_id = c.user_id
+     LEFT JOIN card_variants cv ON cv.card_id = c.id
+     WHERE c.user_id = $1
+       AND c.archived_at IS NULL
+     GROUP BY c.id
+     ORDER BY c.next_review_at ASC, c.id ASC`,
     [userId]
   );
   return res.json({ cards: rows });

@@ -94,8 +94,13 @@ if (!Auth.isLoggedIn()) {
       } else if (tab === 'browser' && !loaded.browser) {
         loaded.browser = true; initBrowserTab();
       } else if (tab === 'study' && !loaded.study) {
-        loaded.study = true; initStudyTab();
-        applyStudySubjectFilter(pendingStudySubject);
+        loaded.study = true;
+        // When the user intentionally navigates from the dashboard to a specific subject,
+        // discard any stale persisted session so they get the current full queue.
+        if (fromDashboard && pendingStudySubject) clearPersistedStudySession();
+        applyStudySubjectFilter(pendingStudySubject); // set BEFORE init so restorePersistedStudySession sees it
+        initStudyTab();
+        applyStudySubjectFilter(pendingStudySubject); // re-apply AFTER in case restore overwrote it
       } else if (tab === 'study') {
         applyStudySubjectFilter(pendingStudySubject);
       } else if (tab === 'dashboard' && !loaded.dashboard) {
@@ -110,14 +115,16 @@ if (!Auth.isLoggedIn()) {
 
       // Dashboard "Estudiar" subject button → skip briefing, go straight to the
       // subject-filtered overview so the user can start reviewing immediately.
-      if (tab === 'study' && fromDashboard && briefingState.selectedSubject) {
-        const sessionEl = document.querySelector('#study-session');
-        if (sessionEl && sessionEl.classList.contains('hidden')) {
-          document.querySelector('#study-briefing').classList.add('hidden');
-          document.querySelector('#study-complete').classList.add('hidden');
-          document.querySelector('#study-overview').classList.remove('hidden');
-          loadStudyOverview();
-        }
+      // Always clear any stale persisted session and force a fresh overview load.
+      const normalizedPending = typeof pendingStudySubject === 'string' ? pendingStudySubject.trim() : '';
+      if (tab === 'study' && fromDashboard && normalizedPending) {
+        clearPersistedStudySession(); // discard any stale session that may have been restored
+        applyStudySubjectFilter(normalizedPending); // guarantee the filter is set
+        document.querySelector('#study-session').classList.add('hidden');
+        document.querySelector('#study-briefing').classList.add('hidden');
+        document.querySelector('#study-complete').classList.add('hidden');
+        document.querySelector('#study-overview').classList.remove('hidden');
+        loadStudyOverview();
       }
     });
   });
@@ -129,6 +136,50 @@ if (!Auth.isLoggedIn()) {
 })();
 
 initNotes();
+
+/* ── Code-wrap buttons ───────────────────────────────────────────────────────
+   Any button with class "code-wrap-btn" and data-target="<textarea-id>"
+   wraps the current selection (or inserts a blank block) in triple backticks.
+   Works for inline snippets too: if the selection has no newlines, wraps in
+   single backticks instead.
+*/
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.code-wrap-btn');
+  if (!btn) return;
+  const ta = document.getElementById(btn.dataset.target);
+  if (!ta) return;
+
+  const start = ta.selectionStart;
+  const end   = ta.selectionEnd;
+  const sel   = ta.value.slice(start, end);
+
+  let before, after, newSel;
+  if (!sel) {
+    // Nothing selected — insert an empty code block and park cursor inside.
+    before  = '```\n';
+    newSel  = '';
+    after   = '\n```';
+  } else if (sel.includes('\n')) {
+    // Multi-line → fenced block.
+    before = '```\n';
+    newSel = sel;
+    after  = '\n```';
+  } else {
+    // Single line → inline backtick.
+    before = '`';
+    newSel = sel;
+    after  = '`';
+  }
+
+  ta.focus();
+  ta.setRangeText(before + newSel + after, start, end, 'select');
+  // Place cursor just after the opening fence (inside the block).
+  if (!sel) {
+    const cur = start + before.length;
+    ta.setSelectionRange(cur, cur);
+  }
+  ta.dispatchEvent(new Event('input', { bubbles: true }));
+});
 
 const DIM_LABELS_OVERVIEW = {
   core_idea: 'Idea central',
@@ -301,22 +352,35 @@ function renderBrowserTable() {
   const rows = getFilteredBrowserCards();
 
   if (!rows.length) {
-    body.innerHTML = '<tr><td colspan="7" style="color:var(--text-muted)">No hay tarjetas para este filtro.</td></tr>';
+    body.innerHTML = '<tr><td colspan="10" style="color:var(--text-muted)">No hay tarjetas para este filtro.</td></tr>';
     return;
   }
 
   body.innerHTML = rows.map((card) => {
-    const status = getCardStatus(card);
-    const lapses = Math.max(0, Number(card.review_count || 0) - Number(card.pass_count || 0));
+    const status    = getCardStatus(card);
+    const reviews   = Number(card.review_count || 0);
+    const passes    = Number(card.pass_count   || 0);
+    const lapses    = Math.max(0, reviews - passes);
+    const passRate  = reviews > 0 ? Math.round((passes / reviews) * 100) : '—';
+    const intervalD = card.interval_days != null ? Math.round(Number(card.interval_days)) : '—';
+    const micros    = Number(card.active_micro_count || 0);
+    const variants  = Number(card.variant_count || 0);
+    const typePills = [];
+    if (micros > 0) typePills.push(`<span class="browser-type-pill micro">${micros} micro</span>`);
+    if (variants > 0) typePills.push(`<span class="browser-type-pill variant">${variants} var.</span>`);
+    if (!typePills.length) typePills.push('<span class="browser-type-pill base">Base</span>');
     return `
-      <tr>
+      <tr class="browser-data-row" data-id="${card.id}">
         <td><input type="checkbox" class="browser-row-check" data-id="${card.id}" ${browserState.selected.has(card.id) ? 'checked' : ''}></td>
         <td>${escHtml(card.subject || '(sin materia)')}</td>
         <td class="browser-prompt">${escHtml(card.prompt_text || '')}</td>
+        <td>${typePills.join(' ')}</td>
         <td>${formatNextReview(card.next_review_at)}</td>
+        <td>${intervalD === '—' ? '—' : intervalD + 'd'}</td>
         <td><span class="browser-status-pill ${status}">${status}</span></td>
+        <td>${passRate === '—' ? '—' : passRate + '%'}</td>
         <td>${lapses}</td>
-        <td>${card.flagged ? '⚑' : ''}</td>
+        <td><button class="browser-detail-btn" data-id="${card.id}" title="Ver detalle">Ver más</button></td>
       </tr>
     `;
   }).join('');
@@ -328,7 +392,161 @@ function renderBrowserTable() {
       else browserState.selected.delete(id);
     });
   });
+
+  body.querySelectorAll('.browser-detail-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id   = Number(btn.dataset.id);
+      const card = browserState.cards.find((c) => c.id === id);
+      if (card) showCardDetail(card);
+    });
+  });
 }
+
+/* ── Card detail popup ───────────────────────────────────────────────────── */
+
+function forgettingCurveSVG(intervalDays, lastReviewedAt, nextReviewAt) {
+  const W = 400, H = 130, PAD_L = 36, PAD_B = 24, PAD_T = 10, PAD_R = 10;
+  const plotW = W - PAD_L - PAD_R;
+  const plotH = H - PAD_B - PAD_T;
+
+  // Stability: at t = interval_days, retention ≈ 90 %
+  const stability = intervalDays > 0 ? -intervalDays / Math.log(0.9) : 10;
+  const totalDays = Math.max(intervalDays * 2.5, 14);
+
+  const retention = (t) => Math.exp(-t / stability);
+  const xScale    = (t) => PAD_L + (t / totalDays) * plotW;
+  const yScale    = (r) => PAD_T + (1 - r) * plotH;
+
+  // Build curve path
+  const pts = [];
+  for (let i = 0; i <= 80; i++) {
+    const t = (i / 80) * totalDays;
+    pts.push(`${xScale(t).toFixed(1)},${yScale(retention(t)).toFixed(1)}`);
+  }
+
+  // Today marker
+  const now = new Date();
+  let todayX = null;
+  if (lastReviewedAt) {
+    const daysSince = (now - new Date(lastReviewedAt)) / 86400000;
+    if (daysSince >= 0 && daysSince <= totalDays) {
+      todayX = xScale(daysSince);
+    }
+  }
+
+  // Next review marker
+  let nextX = null, nextRetention = null;
+  if (nextReviewAt) {
+    const daysToNext = (new Date(nextReviewAt) - (lastReviewedAt ? new Date(lastReviewedAt) : now)) / 86400000;
+    if (daysToNext >= 0 && daysToNext <= totalDays) {
+      nextX = xScale(daysToNext);
+      nextRetention = retention(daysToNext);
+    }
+  }
+
+  // X-axis labels
+  const tickCount = 5;
+  const ticks = Array.from({ length: tickCount + 1 }, (_, i) => {
+    const t = (i / tickCount) * totalDays;
+    return `<text x="${xScale(t).toFixed(1)}" y="${H - 4}" text-anchor="middle" font-size="9" fill="#999">${Math.round(t)}d</text>`;
+  }).join('');
+
+  // Y-axis labels
+  const yLabels = [100, 90, 70, 50].map((pct) => {
+    const y = yScale(pct / 100).toFixed(1);
+    return `<text x="${PAD_L - 3}" y="${y}" text-anchor="end" dominant-baseline="middle" font-size="9" fill="#bbb">${pct}%</text>
+            <line x1="${PAD_L}" y1="${y}" x2="${W - PAD_R}" y2="${y}" stroke="#eee" stroke-width="0.5"/>`;
+  }).join('');
+
+  // Shade danger zone (below 70%)
+  const y70 = yScale(0.7).toFixed(1);
+  const dangerPath = `M${PAD_L},${y70} L${W - PAD_R},${y70} L${W - PAD_R},${PAD_T + plotH} L${PAD_L},${PAD_T + plotH} Z`;
+
+  const todayMarker = todayX
+    ? `<line x1="${todayX.toFixed(1)}" y1="${PAD_T}" x2="${todayX.toFixed(1)}" y2="${PAD_T + plotH}" stroke="#e67e22" stroke-width="1.5" stroke-dasharray="3,2"/>
+       <circle cx="${todayX.toFixed(1)}" cy="${yScale(retention((now - new Date(lastReviewedAt)) / 86400000)).toFixed(1)}" r="3.5" fill="#e67e22"/>`
+    : '';
+
+  const nextMarker = nextX != null
+    ? `<line x1="${nextX.toFixed(1)}" y1="${PAD_T}" x2="${nextX.toFixed(1)}" y2="${PAD_T + plotH}" stroke="#27ae60" stroke-width="1.5" stroke-dasharray="3,2"/>
+       <circle cx="${nextX.toFixed(1)}" cy="${yScale(nextRetention).toFixed(1)}" r="3.5" fill="#27ae60"/>`
+    : '';
+
+  return `
+    <defs>
+      <clipPath id="cdp-clip"><rect x="${PAD_L}" y="${PAD_T}" width="${plotW}" height="${plotH}"/></clipPath>
+    </defs>
+    ${yLabels}
+    <path d="${dangerPath}" fill="#fff0f0" opacity="0.7" clip-path="url(#cdp-clip)"/>
+    <polyline points="${pts.join(' ')}" fill="none" stroke="#4a90d9" stroke-width="2" clip-path="url(#cdp-clip)"/>
+    ${todayMarker}
+    ${nextMarker}
+    ${ticks}
+    <line x1="${PAD_L}" y1="${PAD_T}" x2="${PAD_L}" y2="${PAD_T + plotH}" stroke="#ccc" stroke-width="1"/>
+    <line x1="${PAD_L}" y1="${PAD_T + plotH}" x2="${W - PAD_R}" y2="${PAD_T + plotH}" stroke="#ccc" stroke-width="1"/>
+  `;
+}
+
+function showCardDetail(card) {
+  const overlay = document.querySelector('#card-detail-overlay');
+  if (!overlay) return;
+
+  const reviews  = Number(card.review_count || 0);
+  const passes   = Number(card.pass_count   || 0);
+  const lapses   = Math.max(0, reviews - passes);
+  const passRate = reviews > 0 ? Math.round((passes / reviews) * 100) + '%' : '—';
+  const status   = getCardStatus(card);
+  const intervalD = card.interval_days != null ? Math.round(Number(card.interval_days)) : 1;
+
+  document.querySelector('#cdp-badge').textContent = status;
+  document.querySelector('#cdp-badge').className = `browser-status-pill ${status}`;
+  document.querySelector('#cdp-subject').textContent = card.subject ? ` · ${card.subject}` : '';
+  document.querySelector('#cdp-prompt').innerHTML  = formatPromptForDisplay(card.prompt_text || '');
+  document.querySelector('#cdp-answer').innerHTML  = renderCodeMarkdown(card.expected_answer_text || '');
+
+  document.querySelector('#cdp-reviews').textContent  = reviews;
+  document.querySelector('#cdp-pass-rate').textContent = passRate;
+  document.querySelector('#cdp-lapses').textContent   = lapses;
+  document.querySelector('#cdp-interval').textContent = intervalD + 'd';
+  document.querySelector('#cdp-ease').textContent     = card.ease_factor != null ? Number(card.ease_factor).toFixed(2) : '—';
+  document.querySelector('#cdp-micros').textContent   = Number(card.active_micro_count || 0);
+  document.querySelector('#cdp-variants').textContent = Number(card.variant_count || 0);
+  document.querySelector('#cdp-created').textContent  = card.created_at
+    ? new Date(card.created_at).toLocaleDateString('es-AR') : '—';
+
+  const fmt = (v) => v ? new Date(v).toLocaleString('es-AR', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+  document.querySelector('#cdp-last-reviewed').textContent = fmt(card.last_reviewed_at);
+  document.querySelector('#cdp-next-review').textContent   = fmt(card.next_review_at);
+
+  // Forgetting curve
+  const svg = document.querySelector('#cdp-curve-svg');
+  svg.innerHTML = forgettingCurveSVG(intervalD, card.last_reviewed_at, card.next_review_at);
+
+  // Notes
+  const notesEl = document.querySelector('#cdp-notes');
+  if (card.notes) {
+    notesEl.textContent = card.notes;
+    notesEl.classList.remove('hidden');
+  } else {
+    notesEl.classList.add('hidden');
+  }
+
+  overlay.classList.remove('hidden');
+  document.querySelector('#card-detail-close').focus();
+}
+
+function hideCardDetail() {
+  document.querySelector('#card-detail-overlay')?.classList.add('hidden');
+}
+
+document.querySelector('#card-detail-close')?.addEventListener('click', hideCardDetail);
+document.querySelector('#card-detail-overlay')?.addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) hideCardDetail();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') hideCardDetail();
+});
 
 async function loadBrowserCards() {
   const response = await getJson('/cards/browser');
@@ -603,9 +821,9 @@ async function loadDashboard() {
   content.innerHTML = '';
 
   try {
-    const [overview, session, calendarData] = await Promise.all([
+    const [overview, dueCounts, calendarData] = await Promise.all([
       getJson('/stats/overview').catch(() => ({ subjects: [] })),
-      getJson('/scheduler/session').catch(() => ({ cards: [], micro_cards: [] })),
+      getJson('/scheduler/due-counts').catch(() => ({ cards: {}, micros: {} })),
       getJson('/exam-calendar').catch(() => ({ exams: [] }))
     ]);
 
@@ -625,17 +843,9 @@ async function loadDashboard() {
       return;
     }
 
-    // Build pending cards and active micro-consignas per subject from session
-    const pendingCardsBySubject = {};
-    const activeMicrosBySubject = {};
-    for (const card of session.cards ?? []) {
-      const s = normalizeSubject(card.subject);
-      pendingCardsBySubject[s] = (pendingCardsBySubject[s] || 0) + 1;
-    }
-    for (const mc of session.micro_cards ?? []) {
-      const s = normalizeSubject(mc.parent_subject);
-      activeMicrosBySubject[s] = (activeMicrosBySubject[s] || 0) + 1;
-    }
+    // Due counts per subject from the dedicated counts endpoint (no LIMIT).
+    const pendingCardsBySubject  = dueCounts.cards  || {};
+    const activeMicrosBySubject  = dueCounts.micros || {};
     const totalPendingCards = Object.values(pendingCardsBySubject).reduce((a, b) => a + b, 0);
     const totalActiveMicros = Object.values(activeMicrosBySubject).reduce((a, b) => a + b, 0);
     const totalDue = totalPendingCards + totalActiveMicros;
@@ -1611,12 +1821,40 @@ function escapePreserve(text) {
 
 const MATH_LINE_RE = /[=²³⁰¹⁴⁵⁶⁷⁸⁹₀₁₂₃₄₅₆₇₈₉αβγδεζηθλμνξπρστφψωΔΩ∑∫∂∞±√∝∈∉∩∪⊂⊃≤≥≠≈]|[a-zA-Z][₀₁₂₃]|[a-zA-Z]\d*[²³]|\b(cos|sin|tan|log|ln|lim|sup|inf|max|min|det|div|rot|grad)\b/;
 
+// Renders fenced ``` blocks and inline `code` in arbitrary text → safe HTML.
+function renderCodeMarkdown(text) {
+  const normalized = String(text ?? '').replace(/\r\n?/g, '\n');
+
+  // 1. Fenced code blocks (``` ... ```)
+  const parts = normalized.split(/(```[\s\S]*?```)/g);
+  return parts.map((part, i) => {
+    if (i % 2 === 1) {
+      // Inside a fenced block
+      const inner = part.slice(3, -3).replace(/^\n/, '').replace(/\n$/, '');
+      return `<pre class="card-code-block"><code>${escHtml(inner)}</code></pre>`;
+    }
+    // Outside: handle inline `code` and preserve newlines
+    return part
+      .split(/(`[^`\n]+`)/g)
+      .map((s, j) => {
+        if (j % 2 === 1) return `<code class="card-code-inline">${escHtml(s.slice(1, -1))}</code>`;
+        return escHtml(s).replace(/\n/g, '<br>');
+      })
+      .join('');
+  }).join('');
+}
+
 function formatPromptForDisplay(text) {
   const normalized = String(text ?? '')
     .replace(/\r\n?/g, '\n')
     .replace(/:\s+([•●▪◦])/g, ':\n$1')
     .replace(/\s+([•●▪◦])\s+/g, '\n$1 ')
     .trim();
+
+  // If text has code blocks/inline code, delegate to the markdown renderer.
+  if (/```|`[^`]/.test(normalized)) {
+    return renderCodeMarkdown(normalized);
+  }
 
   // Detect if text contains math — if so, wrap equation-heavy lines visually
   const lines = normalized.split('\n');
@@ -1641,13 +1879,18 @@ function renderStudyPrompt(promptEl, promptText) {
 function looksLikeCodeBlock(text = '') {
   if (!text) return false;
   return /(^|\n)\s*(SELECT|WITH|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|BEGIN|DECLARE)\b/i.test(text)
-    || /[{};]/.test(text)
+    || /[{}]/.test(text)                                        // curly braces → code
+    || (text.match(/;/g) || []).length >= 2                     // 2+ semicolons → code (single ; is common prose)
     || /(^|\n)\s{2,}\S/.test(text);
 }
 
 function formatAnswerBlock(label, text) {
   const raw = String(text ?? '').trim();
   if (!raw) return '';
+  const hasMarkdownCode = /```|`[^`]/.test(raw);
+  if (hasMarkdownCode) {
+    return `<div class="study-answer-compare-block"><strong>${label}:</strong><div class="study-answer-compare-text">${renderCodeMarkdown(raw)}</div></div>`;
+  }
   if (looksLikeCodeBlock(raw)) {
     return `<div class="study-answer-compare-block"><strong>${label}:</strong><pre><code>${escHtml(raw)}</code></pre></div>`;
   }
@@ -2320,6 +2563,69 @@ function initStudyTab() {
     document.querySelector('#study-overview').classList.add('hidden');
     document.querySelector('#study-briefing').classList.remove('hidden');
   });
+
+  // ── Exam simulation modal ────────────────────────────────────────────────
+  let _examSelectedCount = 10;
+
+  function openExamModal() {
+    const input = document.querySelector('#exam-sim-subject-input');
+    if (briefingState.selectedSubject) input.value = briefingState.selectedSubject;
+    document.querySelector('#exam-sim-feedback').classList.add('hidden');
+    document.querySelector('#exam-sim-modal').classList.remove('hidden');
+    input.focus();
+  }
+  function closeExamModal() {
+    document.querySelector('#exam-sim-modal').classList.add('hidden');
+  }
+
+  document.querySelector('#exam-sim-open-btn').addEventListener('click', openExamModal);
+  document.querySelector('#exam-sim-close-btn').addEventListener('click', closeExamModal);
+  document.querySelector('#exam-sim-cancel-btn').addEventListener('click', closeExamModal);
+  document.querySelector('.exam-sim-backdrop').addEventListener('click', closeExamModal);
+
+  document.querySelectorAll('.exam-count-pill').forEach((pill) => {
+    pill.addEventListener('click', () => {
+      document.querySelectorAll('.exam-count-pill').forEach((p) => p.classList.remove('active'));
+      pill.classList.add('active');
+      _examSelectedCount = parseInt(pill.dataset.count, 10);
+    });
+  });
+
+  document.querySelector('#exam-sim-start-btn').addEventListener('click', async () => {
+    const subject = (document.querySelector('#exam-sim-subject-input').value || '').trim();
+    const fb = document.querySelector('#exam-sim-feedback');
+    if (!subject) {
+      fb.textContent = 'Elegí una materia para el simulacro.';
+      fb.classList.remove('hidden');
+      return;
+    }
+    const startBtn = document.querySelector('#exam-sim-start-btn');
+    startBtn.disabled = true;
+    startBtn.textContent = 'Cargando...';
+    fb.classList.add('hidden');
+    try {
+      const data = await postJson('/scheduler/exam-sim', { subject, count: _examSelectedCount });
+      if (!data.cards?.length) {
+        fb.textContent = `Sin tarjetas disponibles para "${subject}". Creá tarjetas primero.`;
+        fb.classList.remove('hidden');
+        return;
+      }
+      closeExamModal();
+      startExamSession(data.cards, subject);
+    } catch (err) {
+      fb.textContent = `Error: ${err.message}`;
+      fb.classList.remove('hidden');
+    } finally {
+      startBtn.disabled = false;
+      startBtn.textContent = 'Comenzar simulacro';
+    }
+  });
+
+  document.querySelector('#exam-again-btn').addEventListener('click', openExamModal);
+  document.querySelector('#exam-back-btn').addEventListener('click', () => {
+    document.querySelector('#exam-complete').classList.add('hidden');
+    document.querySelector('#study-briefing').classList.remove('hidden');
+  });
   document.querySelector('#study-start-btn').addEventListener('click', startStudySession);
   document.querySelector('#study-exit-btn').addEventListener('click', exitStudySession);
   document.querySelector('#study-edit-prompt-btn').addEventListener('click', toggleStudyPromptEdit);
@@ -2368,7 +2674,6 @@ function initStudyTab() {
     document.querySelector('#study-briefing').classList.remove('hidden');
   });
 
-  initBriefing();
   restorePersistedStudySession();
 }
 
@@ -2675,7 +2980,11 @@ const studyState = {
   sessionId: null,
   sessionStartTime: 0,
   sessionLimitMs: null,
-  sessionEnergyLevel: null
+  sessionEnergyLevel: null,
+  // Exam mode extras
+  examMode: false,
+  examSubject: null,
+  examItemResults: []  // {grade, prompt_text, expected_answer_text, passed}
 };
 
 function renderStudyBackgroundStatus() {
@@ -2707,6 +3016,29 @@ function setStudyPromptFeedback(message, type = 'info') {
   feedbackEl.textContent = message || '';
   feedbackEl.classList.toggle('hidden', !message);
   feedbackEl.style.color = type === 'error' ? '#c00' : type === 'success' ? '#2f7d32' : '';
+}
+
+function startExamSession(cards, subject) {
+  studyState.queue              = cards.map((c) => ({ type: 'card', data: c }));
+  studyState.index              = 0;
+  studyState.results            = [];
+  studyState.examMode           = true;
+  studyState.examSubject        = subject;
+  studyState.examItemResults    = [];
+  studyState.pendingMicroGeneration = 0;
+  studyState.sessionId          = null;
+  studyState.sessionStartTime   = Date.now();
+  studyState.sessionLimitMs     = null;
+
+  document.querySelector('#study-overview').classList.add('hidden');
+  document.querySelector('#study-complete').classList.add('hidden');
+  document.querySelector('#exam-complete').classList.add('hidden');
+  document.querySelector('#study-briefing').classList.add('hidden');
+  document.querySelector('#study-session').classList.remove('hidden');
+  document.querySelector('#exam-mode-badge').classList.remove('hidden');
+
+  persistStudySession();
+  showStudyCard();
 }
 
 async function startStudySession() {
@@ -2796,11 +3128,18 @@ function showStudyCard() {
 
   // Reset answer + result blocks (refresh SQL layer to clear ghost text)
   const _studyInput = document.querySelector('#study-answer-input');
-  _studyInput.value = '';
+  MathPreview.clear(_studyInput);
   SqlEditor.refresh();
   document.querySelector('#study-answer-block').classList.remove('hidden');
   document.querySelector('#study-result-block').classList.add('hidden');
   document.querySelector('#study-doubt-section')?.classList.add('hidden');
+  // In exam mode hide secondary controls that don't belong in a simulation
+  const studyFlagBtn   = document.querySelector('#study-flag-btn');
+  const studyClarify   = document.querySelector('#study-clarify-prompt-btn');
+  const studyEditPrompt = document.querySelector('#study-edit-prompt-btn');
+  if (studyFlagBtn)    studyFlagBtn.hidden   = studyState.examMode;
+  if (studyClarify)    studyClarify.hidden   = studyState.examMode;
+  if (studyEditPrompt) studyEditPrompt.hidden = studyState.examMode;
   const studyEvalBtn = document.querySelector('#study-eval-btn');
   studyEvalBtn.disabled = false;
   studyState.currentEvalResult = null;
@@ -2828,15 +3167,14 @@ function showStudyCard() {
   document.querySelector('#study-dictation-btn').dataset.subject = subject || '';
 
   // Math Palette + SQL Editor — use saved mode, explicit only (no auto-detect)
-  // Micro-cards are always plain text regardless of subject mode
   const studyAnswerInput = document.querySelector('#study-answer-input');
   MathPalette.setActiveTextarea(studyAnswerInput);
   const savedMode   = getSubjectMode(subject);
   const isMicro     = item.type === 'micro';
-  const studySqlMode = !isMicro && savedMode === 'sql';
-  studyState.currentInputMode = !isMicro && savedMode === 'math' ? 'math' : studySqlMode ? 'sql' : '';
+  const studySqlMode = savedMode === 'sql';
+  studyState.currentInputMode = savedMode === 'math' ? 'math' : studySqlMode ? 'sql' : '';
 
-  if (!isMicro && savedMode === 'math') {
+  if (savedMode === 'math') {
     MathPalette.show();
     SqlEditor.deactivate();
   } else if (studySqlMode) {
@@ -2858,44 +3196,40 @@ function showStudyCard() {
   }
   studyEvalBtn.disabled = false; // verification is always optional
 
-  // ── Mode toggle button (non-micro cards only) ──────────────────────────────
+  // ── Mode toggle button ────────────────────────────────────────────────────
   const modeToggleBtn = document.querySelector('#study-mode-toggle');
   if (modeToggleBtn) {
     const MODE_CYCLE  = ['', 'sql', 'math'];
     const MODE_LABELS = { '': 'Texto', 'sql': 'SQL/PL', 'math': 'Math' };
-    if (isMicro) {
-      modeToggleBtn.hidden = true;
-    } else {
-      modeToggleBtn.hidden = false;
-      modeToggleBtn.textContent = MODE_LABELS[savedMode] || MODE_LABELS[''];
-      modeToggleBtn.onclick = () => {
-        const cur  = getSubjectMode(subject);
-        const idx  = MODE_CYCLE.indexOf(cur);
-        const next = MODE_CYCLE[(idx + 1) % MODE_CYCLE.length];
-        saveSubjectMode(subject, next);
-        modeToggleBtn.textContent = MODE_LABELS[next];
-        const input = document.querySelector('#study-answer-input');
-        const panel = document.querySelector('#study-sql-compiler');
-        MathPalette.setActiveTextarea(input);
-        if (next === 'sql') {
-          studyState.currentInputMode = 'sql';
-          MathPalette.hide();
-          SqlEditor.activate(input);
-          panel?.classList.remove('hidden');
-        } else if (next === 'math') {
-          studyState.currentInputMode = 'math';
-          SqlEditor.deactivate();
-          MathPalette.show();
-          panel?.classList.add('hidden');
-        } else {
-          studyState.currentInputMode = '';
-          SqlEditor.deactivate();
-          MathPalette.updateSubject(subject || '');
-          panel?.classList.add('hidden');
-        }
-        MathPreview.refresh(input);
-      };
-    }
+    modeToggleBtn.hidden = false;
+    modeToggleBtn.textContent = MODE_LABELS[savedMode] || MODE_LABELS[''];
+    modeToggleBtn.onclick = () => {
+      const cur  = getSubjectMode(subject);
+      const idx  = MODE_CYCLE.indexOf(cur);
+      const next = MODE_CYCLE[(idx + 1) % MODE_CYCLE.length];
+      saveSubjectMode(subject, next);
+      modeToggleBtn.textContent = MODE_LABELS[next];
+      const input = document.querySelector('#study-answer-input');
+      const panel = document.querySelector('#study-sql-compiler');
+      MathPalette.setActiveTextarea(input);
+      if (next === 'sql') {
+        studyState.currentInputMode = 'sql';
+        MathPalette.hide();
+        SqlEditor.activate(input);
+        panel?.classList.remove('hidden');
+      } else if (next === 'math') {
+        studyState.currentInputMode = 'math';
+        SqlEditor.deactivate();
+        MathPalette.show();
+        panel?.classList.add('hidden');
+      } else {
+        studyState.currentInputMode = '';
+        SqlEditor.deactivate();
+        MathPalette.updateSubject(subject || '');
+        panel?.classList.add('hidden');
+      }
+      MathPreview.refresh(input);
+    };
   }
 
   // ── Flag / report button ───────────────────────────────────────────────────
@@ -3192,18 +3526,35 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
     }
     variantFeedback.classList.add('hidden');
     variantFeedback.textContent = '';
-    nextBtn.disabled = true;
-
-    if (decisionReason) decisionReason.value = '';
-    if (decisionFb) {
-      decisionFb.textContent = 'Firmá esta evaluación para continuar.';
-      decisionFb.className = 'feedback';
-    }
-    if (decisionBlock) {
-      decisionBlock.classList.remove('hidden');
-      decisionBlock.querySelectorAll('button').forEach((btn) => { btn.disabled = false; });
-      const archiveBtn = decisionBlock.querySelector('#study-archive-card-btn');
-      if (archiveBtn) archiveBtn.hidden = !currentItem || currentItem.type !== 'card';
+    document.querySelector('#study-variant-preview')?.classList.add('hidden');
+    if (studyState.examMode) {
+      // Exam mode: auto-accept LLM grade, no decision required, Next enabled immediately.
+      const autoGrade = normalizeSuggestedGrade(result.suggested_grade);
+      studyState.currentDecision = { finalGrade: autoGrade, source: 'llm_auto' };
+      if (decisionBlock) decisionBlock.classList.add('hidden');
+      nextBtn.disabled = false;
+      // Record result for end-of-exam summary
+      const passed = autoGrade === 'GOOD' || autoGrade === 'EASY';
+      studyState.examItemResults.push({
+        grade: autoGrade,
+        passed,
+        prompt_text:          currentItem?.data?.prompt_text || currentItem?.data?.question || '',
+        expected_answer_text: currentItem?.data?.expected_answer_text || currentItem?.data?.expected_answer || '',
+        cardData:             currentItem?.data
+      });
+    } else {
+      nextBtn.disabled = true;
+      if (decisionReason) decisionReason.value = '';
+      if (decisionFb) {
+        decisionFb.textContent = 'Firmá esta evaluación para continuar.';
+        decisionFb.className = 'feedback';
+      }
+      if (decisionBlock) {
+        decisionBlock.classList.remove('hidden');
+        decisionBlock.querySelectorAll('button').forEach((btn) => { btn.disabled = false; });
+        const archiveBtn = decisionBlock.querySelector('#study-archive-card-btn');
+        if (archiveBtn) archiveBtn.hidden = !currentItem || currentItem.type !== 'card';
+      }
     }
 
     document.querySelector('#study-answer-block').classList.add('hidden');
@@ -3367,12 +3718,21 @@ document.querySelector('#study-variant-btn').addEventListener('click', async () 
   variantBtn.textContent = 'Generando...';
   variantFb.classList.add('hidden');
 
+  const variantPreview = document.querySelector('#study-variant-preview');
+  const variantPreviewQ = document.querySelector('#study-variant-preview-q');
+  const variantPreviewA = document.querySelector('#study-variant-preview-a');
+
   try {
-    await postJson(`/scheduler/cards/${item.data.id}/variant`, {});
+    const resp = await postJson(`/scheduler/cards/${item.data.id}/variant`, {});
     variantBtn.classList.add('hidden');
-    variantFb.textContent = 'Variante guardada. Aparecerá en futuras revisiones.';
+    variantFb.textContent = 'Variante guardada.';
     variantFb.style.color = 'var(--pass-fg)';
     variantFb.classList.remove('hidden');
+    if (resp?.variant) {
+      variantPreviewQ.textContent = resp.variant.prompt_text || '';
+      variantPreviewA.textContent = resp.variant.expected_answer_text || '';
+      variantPreview.classList.remove('hidden');
+    }
   } catch (err) {
     variantBtn.disabled = false;
     variantBtn.textContent = '+ Guardar variante';
@@ -3459,24 +3819,38 @@ async function handleStudyNextCard() {
 
   const grade  = decision.finalGrade;
   const gaps   = evalResult.missing_concepts ?? [];
-  const shouldGenerateMicros = Boolean(grade && item.type === 'card');
+  // In exam mode: skip all micro-card generation (evaluation only).
+  const shouldGenerateMicros = Boolean(grade && item.type === 'card' && !studyState.examMode);
+  const shouldSpawnSiblings  = Boolean(grade && item.type === 'micro' && gaps.length > 0 && !studyState.examMode);
 
-  if (shouldGenerateMicros) {
+  if (shouldGenerateMicros || shouldSpawnSiblings) {
     studyState.pendingMicroGeneration += 1;
     renderStudyBackgroundStatus();
   }
 
   if (grade && item.type === 'micro') {
-    try {
-      await postJson('/scheduler/review', {
-        micro_card_id: item.data.id,
-        grade,
-        response_time_ms: studyState.responseTimeMs || undefined,
-        review_time_ms:   studyState.reviewTimeMs   || undefined
-      });
-    } catch (err) {
-      console.warn('Review record failed:', err.message);
-    }
+    postJson('/scheduler/review', {
+      micro_card_id:    item.data.id,
+      grade,
+      concept_gaps:     gaps,
+      user_answer:      studyState.currentEvalContext?.user_answer_text || '',
+      response_time_ms: studyState.responseTimeMs || undefined,
+      review_time_ms:   studyState.reviewTimeMs   || undefined
+    }).then((reviewResp) => {
+      const newSiblings = (reviewResp?.new_micro_cards ?? []).map((m) => ({ type: 'micro', data: m }));
+      if (newSiblings.length) {
+        studyState.queue.splice(studyState.index + 1, 0, ...newSiblings);
+        persistStudySession();
+      }
+      loadAgenda();
+    }).catch((err) => {
+      console.warn('Micro review record failed:', err.message);
+    }).finally(() => {
+      if (shouldSpawnSiblings) {
+        studyState.pendingMicroGeneration = Math.max(0, (studyState.pendingMicroGeneration || 0) - 1);
+        renderStudyBackgroundStatus();
+      }
+    });
   }
 
   studyState.results.push({
@@ -3533,6 +3907,8 @@ function advanceStudyCard() {
 }
 
 function finishStudySession() {
+  if (studyState.examMode) { finishExamSession(); return; }
+
   if (studyState.timerInterval) {
     clearInterval(studyState.timerInterval);
     studyState.timerInterval = null;
@@ -4283,6 +4659,40 @@ function truncate(str, max) {
 
 // ─── Curriculum modal ─────────────────────────────────────────────────────────
 
+const STRICTNESS_LEVELS = [
+  { max: 2,  name: 'Básica',    desc: 'Muy generosa. Si entendiste la idea, es GOOD.' },
+  { max: 4,  name: 'Moderada',  desc: 'Generosa. Detalles menores no se penalizan.' },
+  { max: 6,  name: 'Estándar',  desc: 'Equilibrada. Todos los elementos esenciales requeridos.' },
+  { max: 8,  name: 'Exigente',  desc: 'Estricta. Precisión técnica y vocabulario exacto requeridos.' },
+  { max: 10, name: 'Máxima',    desc: 'Implacable. Ante la duda, baja la nota. Busca fallas activamente.' }
+];
+
+function updateStrictnessDisplay(value) {
+  const n = parseInt(value, 10);
+  const level = STRICTNESS_LEVELS.find((l) => n <= l.max) || STRICTNESS_LEVELS[STRICTNESS_LEVELS.length - 1];
+  const badge = document.querySelector('#curriculum-strictness-badge');
+  const desc  = document.querySelector('#curriculum-strictness-desc');
+  if (!badge || !desc) return;
+  badge.textContent = `${level.name} (${n}/10)`;
+  badge.dataset.level = level.name.toLowerCase();
+  desc.textContent = level.desc;
+}
+
+document.querySelector('#curriculum-grading-strictness')?.addEventListener('input', (e) => {
+  updateStrictnessDisplay(e.target.value);
+});
+
+function updateMicroCardsLimitVisibility(enabled) {
+  const limitRow  = document.querySelector('#micro-cards-limit-row');
+  const spawnRow  = document.querySelector('#micro-spawn-row');
+  if (limitRow) limitRow.style.display = enabled ? '' : 'none';
+  if (spawnRow) spawnRow.style.display  = enabled ? '' : 'none';
+}
+
+document.querySelector('#curriculum-micro-cards-enabled')?.addEventListener('change', (e) => {
+  updateMicroCardsLimitVisibility(e.target.checked);
+});
+
 async function openCurriculumModal(subject) {
   document.querySelector('#curriculum-modal-title').textContent = `Configurar: ${subject}`;
   document.querySelector('#curriculum-modal').classList.remove('hidden');
@@ -4298,11 +4708,25 @@ async function openCurriculumModal(subject) {
     ]);
     document.querySelector('#curriculum-syllabus').value = data.config?.syllabus_text || '';
     document.querySelector('#curriculum-daily-new-limit').value = data.config?.daily_new_cards_limit ?? '';
+    document.querySelector('#curriculum-max-micro-per-card').value = data.config?.max_micro_cards_per_card ?? '';
+    const strictness = data.config?.grading_strictness ?? 5;
+    document.querySelector('#curriculum-grading-strictness').value = strictness;
+    updateStrictnessDisplay(strictness);
+    const microEnabled = data.config?.micro_cards_enabled ?? true;
+    document.querySelector('#curriculum-micro-cards-enabled').checked = microEnabled;
+    document.querySelector('#curriculum-micro-spawn-siblings').checked = data.config?.micro_cards_spawn_siblings ?? false;
+    updateMicroCardsLimitVisibility(microEnabled);
     renderExamDatesList(data.exam_dates || [], subject);
     renderExamsList(data.exams || [], subject);
     renderClassNotesList(classNotesData.class_notes || [], subject);
   } catch (_e) {
     document.querySelector('#curriculum-daily-new-limit').value = '';
+    document.querySelector('#curriculum-max-micro-per-card').value = '';
+    document.querySelector('#curriculum-grading-strictness').value = 5;
+    updateStrictnessDisplay(5);
+    document.querySelector('#curriculum-micro-cards-enabled').checked = true;
+    document.querySelector('#curriculum-micro-spawn-siblings').checked = false;
+    updateMicroCardsLimitVisibility(true);
     renderClassNotesList([], subject);
   }
 
@@ -4330,14 +4754,28 @@ document.querySelector('#curriculum-save-btn').addEventListener('click', async (
     return;
   }
 
+  const rawMicroLimit = document.querySelector('#curriculum-max-micro-per-card').value.trim();
+  const parsedMicroLimit = rawMicroLimit === '' ? null : parseInt(rawMicroLimit, 10);
+
+  if (rawMicroLimit !== '' && (!Number.isFinite(parsedMicroLimit) || parsedMicroLimit < 0)) {
+    fb.textContent = 'El límite de micro-tarjetas debe ser un entero mayor o igual a 0.';
+    fb.style.color = 'var(--fail-fg)';
+    return;
+  }
+
   try {
+    const strictness = parseInt(document.querySelector('#curriculum-grading-strictness').value, 10);
+    const microEnabled    = document.querySelector('#curriculum-micro-cards-enabled').checked;
+    const spawnSiblings   = document.querySelector('#curriculum-micro-spawn-siblings').checked;
     await postJson(`/curriculum/${encodeURIComponent(subject)}`, {
-      syllabus_text:         document.querySelector('#curriculum-syllabus').value,
-      daily_new_cards_limit: parsedDailyLimit
+      syllabus_text:                document.querySelector('#curriculum-syllabus').value,
+      daily_new_cards_limit:        parsedDailyLimit,
+      max_micro_cards_per_card:     parsedMicroLimit,
+      grading_strictness:           Number.isFinite(strictness) ? strictness : 5,
+      micro_cards_enabled:          microEnabled,
+      micro_cards_spawn_siblings:   spawnSiblings
     }, 'PUT');
-    fb.textContent = parsedDailyLimit === null
-      ? 'Guardado. Sin límite de nuevas por día.'
-      : `Guardado. Máximo ${parsedDailyLimit} nuevas por día.`;
+    fb.textContent = 'Guardado.';
     fb.style.color = 'var(--pass-fg)';
   } catch (err) {
     fb.textContent = `Error: ${err.message}`;
@@ -4545,7 +4983,7 @@ function appendClassNoteCard(note, subject, container) {
       <button type="button" class="class-note-delete btn-ghost" style="font-size:0.72rem;padding:1px 7px">Eliminar</button>
     </div>
     <div class="class-note-body">
-      <textarea class="class-note-content" placeholder="Contenido de la clase..." maxlength="5000">${escHtml(note.content || '')}</textarea>
+      <textarea class="class-note-content" placeholder="Contenido de la clase...">${escHtml(note.content || '')}</textarea>
       <span class="class-note-save-status"></span>
     </div>`;
 

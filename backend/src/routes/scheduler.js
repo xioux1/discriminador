@@ -84,6 +84,47 @@ async function computeNewCardReleaseAt(userId, subject, dailyLimit) {
   return null;
 }
 
+// ─── Due counts per subject (for dashboard) ───────────────────────────────────
+// GET /scheduler/due-counts — returns per-subject counts of due cards/micros.
+// No LIMIT — intended for display only, not for building a study queue.
+schedulerRouter.get('/scheduler/due-counts', async (req, res) => {
+  const userId = req.user.id;
+  try {
+    const [cardsRes, microsRes] = await Promise.all([
+      dbPool.query(
+        `SELECT subject, COUNT(*) AS cnt
+         FROM cards
+         WHERE user_id = $1
+           AND archived_at IS NULL
+           AND suspended_at IS NULL
+           AND next_review_at <= now()
+         GROUP BY subject`,
+        [userId]
+      ),
+      dbPool.query(
+        `SELECT c.subject, COUNT(*) AS cnt
+         FROM micro_cards mc
+         JOIN cards c ON mc.parent_card_id = c.id
+         WHERE mc.user_id = $1
+           AND mc.status = 'active'
+           AND mc.next_review_at <= now()
+           AND c.archived_at IS NULL
+           AND c.suspended_at IS NULL
+         GROUP BY c.subject`,
+        [userId]
+      )
+    ]);
+    const cards  = {};
+    const micros = {};
+    cardsRes.rows.forEach(({ subject, cnt }) => { cards[subject  || '(sin materia)'] = Number(cnt); });
+    microsRes.rows.forEach(({ subject, cnt }) => { micros[subject || '(sin materia)'] = Number(cnt); });
+    return res.json({ cards, micros });
+  } catch (err) {
+    console.error('GET /scheduler/due-counts', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
 // ─── List all cards ───────────────────────────────────────────────────────────
 schedulerRouter.get('/scheduler/cards', async (req, res) => {
   const { subject } = req.query;
@@ -220,7 +261,7 @@ schedulerRouter.post('/scheduler/review', async (req, res) => {
 
   try {
     if (micro_card_id) {
-      return await reviewMicroCard(res, Number(micro_card_id), effectiveGrade, rtMs, rvtMs, userId);
+      return await reviewMicroCard(res, Number(micro_card_id), effectiveGrade, concept_gaps, user_answer, rtMs, rvtMs, userId);
     } else if (card_id) {
       return await reviewCard(res, Number(card_id), effectiveGrade, concept_gaps, rtMs, rvtMs, userId, user_answer);
     }
@@ -289,9 +330,33 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
   }
 
   if (conceptGaps.length > 0) {
-    // Generate one micro-card (highest-priority concept gap).
-    const topConcept = pickTopConcept(conceptGaps);
-    const targetConcepts = topConcept ? [topConcept] : [];
+    // Check subject-level config: enabled flag and per-card cap.
+    const configRes = await dbPool.query(
+      `SELECT micro_cards_enabled, max_micro_cards_per_card FROM subject_configs WHERE subject = $1 AND user_id = $2`,
+      [card.subject || '', userId]
+    );
+    const microCardsEnabled = configRes.rows[0]?.micro_cards_enabled ?? true;
+    if (!microCardsEnabled) {
+      return res.status(200).json({ card: updated.rows[0], new_micro_cards: [] });
+    }
+    const maxPerCard = configRes.rows[0]?.max_micro_cards_per_card ?? null;
+
+    const countRes = await dbPool.query(
+      `SELECT COUNT(*) AS cnt FROM micro_cards WHERE parent_card_id = $1 AND user_id = $2 AND status = 'active'`,
+      [cardId, userId]
+    );
+    const existingCount = parseInt(countRes.rows[0].cnt);
+
+    // How many can we still generate this session?
+    const slotsAvailable = maxPerCard === null
+      ? conceptGaps.length                       // no limit → one per gap (frontend sends top gaps)
+      : Math.max(0, maxPerCard - existingCount); // fill up to the cap
+
+    // Pick the top N valid concepts (N = slotsAvailable).
+    const targetConcepts = conceptGaps
+      .filter((c) => typeof c === 'string' && c.trim().length > 0)
+      .slice(0, slotsAvailable)
+      .map((c) => c.trim());
 
     for (const concept of targetConcepts) {
       try {
@@ -324,7 +389,7 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
 }
 
 // ─── Internal: review a micro-card ───────────────────────────────────────────
-async function reviewMicroCard(res, microCardId, grade, responseTimeMs, reviewTimeMs, userId) {
+async function reviewMicroCard(res, microCardId, grade, conceptGaps, userAnswer, responseTimeMs, reviewTimeMs, userId) {
   const { rows } = await dbPool.query('SELECT * FROM micro_cards WHERE id = $1 AND user_id = $2', [microCardId, userId]);
   if (!rows.length) {
     return res.status(404).json({ error: 'not_found', message: 'Micro-card not found.' });
@@ -380,9 +445,75 @@ async function reviewMicroCard(res, microCardId, grade, responseTimeMs, reviewTi
     [micro.parent_subject || null, grade, responseTimeMs, reviewTimeMs, userId]
   ).catch((e) => console.warn('[activity log]', e.message));
 
+  // ── Sibling micro-card generation ─────────────────────────────────────────
+  // When the subject has micro_cards_spawn_siblings enabled and the student
+  // failed (non-pass grade), generate new sibling micros for the concept gaps,
+  // using the parent card as knowledge context.
+  let newMicroCards = [];
+
+  const gaps = Array.isArray(conceptGaps) ? conceptGaps : [];
+  if (!isPassGrade(grade) && gaps.length > 0) {
+    const configRes = await dbPool.query(
+      `SELECT micro_cards_spawn_siblings, micro_cards_enabled, max_micro_cards_per_card
+       FROM subject_configs WHERE subject = $1 AND user_id = $2`,
+      [micro.subject || '', userId]
+    );
+    const spawnSiblings  = configRes.rows[0]?.micro_cards_spawn_siblings ?? false;
+    const microEnabled   = configRes.rows[0]?.micro_cards_enabled ?? true;
+
+    if (spawnSiblings && microEnabled) {
+      // Fetch parent card for generation context.
+      const { rows: parentRows } = await dbPool.query(
+        'SELECT prompt_text, expected_answer_text, subject FROM cards WHERE id = $1',
+        [micro.parent_card_id]
+      );
+      const parent = parentRows[0];
+
+      if (parent) {
+        const maxPerCard    = configRes.rows[0]?.max_micro_cards_per_card ?? null;
+        const { rows: cnt } = await dbPool.query(
+          `SELECT COUNT(*) AS n FROM micro_cards WHERE parent_card_id = $1 AND user_id = $2 AND status = 'active'`,
+          [micro.parent_card_id, userId]
+        );
+        const existingCount  = parseInt(cnt[0].n);
+        const slotsAvailable = maxPerCard === null
+          ? gaps.length
+          : Math.max(0, maxPerCard - existingCount);
+
+        const targetConcepts = gaps
+          .filter((c) => typeof c === 'string' && c.trim().length > 0)
+          .slice(0, slotsAvailable)
+          .map((c) => c.trim());
+
+        for (const concept of targetConcepts) {
+          try {
+            const sibling = await generateMicroCard({
+              prompt_text:          parent.prompt_text,
+              expected_answer_text: parent.expected_answer_text,
+              subject:              micro.subject || parent.subject,
+              concept,
+              user_answer:          userAnswer || ''
+            });
+            const inserted = await dbPool.query(
+              `INSERT INTO micro_cards (parent_card_id, concept, question, expected_answer, user_id, subject)
+               VALUES ($1, $2, $3, $4, $5, $6)
+               ON CONFLICT DO NOTHING
+               RETURNING *`,
+              [micro.parent_card_id, concept, sibling.question, sibling.expected_answer, userId, micro.subject || parent.subject || null]
+            );
+            if (inserted.rows.length) newMicroCards.push(inserted.rows[0]);
+          } catch (err) {
+            console.warn(`Failed to generate sibling micro-card for concept "${concept}":`, err.message);
+          }
+        }
+      }
+    }
+  }
+
   return res.status(200).json({
     micro_card: updated.rows[0],
-    parent_unblocked: parentUnblocked
+    parent_unblocked: parentUnblocked,
+    new_micro_cards: newMicroCards
   });
 }
 
