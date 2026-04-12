@@ -1642,7 +1642,7 @@ textarea:focus, input[type="text"]:focus, select:focus {
   word-break: break-word;
 }
 .advisor-chat-msg.user {
-  background: var(--accent);
+  background: var(--primary);
   color: #fff;
   align-self: flex-end;
   border-bottom-right-radius: 3px;
