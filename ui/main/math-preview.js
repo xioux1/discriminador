@@ -234,29 +234,30 @@
         e.preventDefault();
         var br = document.createElement('br');
         insertAtCursor(br);
-        var sel = window.getSelection();
-        var r2 = sel && sel.rangeCount ? sel.getRangeAt(0) : null;
-        if (r2 && r2.startContainer === br.parentNode) {
-          var nextNode = r2.startContainer.childNodes[r2.startOffset];
-          if (!nextNode) {
-            // br is the last child — browsers won't render a visible new line
-            // unless there's a sentinel. Insert a second <br> and position
-            // cursor between the two so typing lands on the new line.
-            var sentinel = document.createElement('br');
-            br.parentNode.appendChild(sentinel);
-            var brIdx = Array.prototype.indexOf.call(br.parentNode.childNodes, sentinel);
-            r2.setStart(br.parentNode, brIdx);
-            r2.collapse(true);
-            sel.removeAllRanges();
-            sel.addRange(r2);
-          } else if (nextNode.nodeType === 3) {
-            // There's a text node after br — move cursor to its start.
-            r2.setStart(nextNode, 0);
-            r2.collapse(true);
-            sel.removeAllRanges();
-            sel.addRange(r2);
+        // Always place the cursor inside a text node right after <br>.
+        // Element-level cursor offsets are unreliable: browsers may visually
+        // show the cursor on line 2 but insert typed text on line 1.
+        // ZWS text nodes give the cursor a reliable home; extractText strips them.
+        var brParent = br.parentNode;
+        if (brParent) {
+          var nextSib = br.nextSibling;
+          var anchor, anchorOff;
+          if (nextSib && nextSib.nodeType === 3 /* TEXT_NODE */) {
+            anchor = nextSib;
+            anchorOff = 0;          // start of existing text on new line
+          } else {
+            anchor = document.createTextNode('\u200B');
+            brParent.insertBefore(anchor, nextSib || null);
+            anchorOff = 1;          // after the ZWS (invisible cursor anchor)
           }
-          // Otherwise (next sibling is an element) keep cursor where insertAtCursor left it.
+          try {
+            var r3 = document.createRange();
+            r3.setStart(anchor, anchorOff);
+            r3.collapse(true);
+            var sel3 = window.getSelection();
+            sel3.removeAllRanges();
+            sel3.addRange(r3);
+          } catch (_) {}
         }
         sync();
         return;
