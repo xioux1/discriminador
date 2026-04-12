@@ -209,7 +209,7 @@
     var _syncing = false;
     function sync() {
       if (_syncing) return;
-      var text = extractText(editor);
+      var text = extractText(editor).replace(/\n+$/, '');
       if (textarea.value !== text) {
         textarea.value = text;
         _syncing = true;
@@ -234,22 +234,29 @@
         e.preventDefault();
         var br = document.createElement('br');
         insertAtCursor(br);
-        // Ensure there's a text node after the <br> so the cursor lands there.
         var sel = window.getSelection();
         var r2 = sel && sel.rangeCount ? sel.getRangeAt(0) : null;
-        if (r2) {
-          var afterBr = r2.startContainer;
-          // If we're at the end of a text node or the container has nothing
-          // after the <br>, insert a zero-width space so the cursor is visible.
-          if (r2.startContainer === br.parentNode &&
-              r2.startContainer.childNodes[r2.startOffset] === undefined) {
-            var zws = document.createTextNode('\u200B');
-            r2.startContainer.appendChild(zws);
-            r2.setStart(zws, 1);
+        if (r2 && r2.startContainer === br.parentNode) {
+          var nextNode = r2.startContainer.childNodes[r2.startOffset];
+          if (!nextNode) {
+            // br is the last child — browsers won't render a visible new line
+            // unless there's a sentinel. Insert a second <br> and position
+            // cursor between the two so typing lands on the new line.
+            var sentinel = document.createElement('br');
+            br.parentNode.appendChild(sentinel);
+            var brIdx = Array.prototype.indexOf.call(br.parentNode.childNodes, sentinel);
+            r2.setStart(br.parentNode, brIdx);
+            r2.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(r2);
+          } else if (nextNode.nodeType === 3) {
+            // There's a text node after br — move cursor to its start.
+            r2.setStart(nextNode, 0);
             r2.collapse(true);
             sel.removeAllRanges();
             sel.addRange(r2);
           }
+          // Otherwise (next sibling is an element) keep cursor where insertAtCursor left it.
         }
         sync();
         return;
