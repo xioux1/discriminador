@@ -95,6 +95,9 @@ if (!Auth.isLoggedIn()) {
         loaded.browser = true; initBrowserTab();
       } else if (tab === 'study' && !loaded.study) {
         loaded.study = true;
+        // When the user intentionally navigates from the dashboard to a specific subject,
+        // discard any stale persisted session so they get the current full queue.
+        if (fromDashboard && pendingStudySubject) clearPersistedStudySession();
         applyStudySubjectFilter(pendingStudySubject); // set BEFORE init so restorePersistedStudySession sees it
         initStudyTab();
         applyStudySubjectFilter(pendingStudySubject); // re-apply AFTER in case restore overwrote it
@@ -112,17 +115,16 @@ if (!Auth.isLoggedIn()) {
 
       // Dashboard "Estudiar" subject button → skip briefing, go straight to the
       // subject-filtered overview so the user can start reviewing immediately.
-      // Use pendingStudySubject directly so this works even if initStudyTab threw.
+      // Always clear any stale persisted session and force a fresh overview load.
       const normalizedPending = typeof pendingStudySubject === 'string' ? pendingStudySubject.trim() : '';
       if (tab === 'study' && fromDashboard && normalizedPending) {
+        clearPersistedStudySession(); // discard any stale session that may have been restored
         applyStudySubjectFilter(normalizedPending); // guarantee the filter is set
-        const sessionEl = document.querySelector('#study-session');
-        if (sessionEl && sessionEl.classList.contains('hidden')) {
-          document.querySelector('#study-briefing').classList.add('hidden');
-          document.querySelector('#study-complete').classList.add('hidden');
-          document.querySelector('#study-overview').classList.remove('hidden');
-          loadStudyOverview();
-        }
+        document.querySelector('#study-session').classList.add('hidden');
+        document.querySelector('#study-briefing').classList.add('hidden');
+        document.querySelector('#study-complete').classList.add('hidden');
+        document.querySelector('#study-overview').classList.remove('hidden');
+        loadStudyOverview();
       }
     });
   });
