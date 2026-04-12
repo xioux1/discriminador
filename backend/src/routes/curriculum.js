@@ -46,7 +46,7 @@ curriculumRouter.get('/curriculum/:subject', async (req, res) => {
 // PUT /curriculum/:subject — upserta subject_configs (solo syllabus ahora)
 curriculumRouter.put('/curriculum/:subject', async (req, res) => {
   const { subject } = req.params;
-  const { syllabus_text, notes_text, daily_new_cards_limit, max_micro_cards_per_card, grading_strictness } = req.body || {};
+  const { syllabus_text, notes_text, daily_new_cards_limit, max_micro_cards_per_card, grading_strictness, micro_cards_enabled } = req.body || {};
   const userId = req.user.id;
   const parsedDailyLimit = daily_new_cards_limit === null || daily_new_cards_limit === undefined || daily_new_cards_limit === ''
     ? null
@@ -81,20 +81,24 @@ curriculumRouter.put('/curriculum/:subject', async (req, res) => {
     });
   }
 
+  // micro_cards_enabled defaults to true when not sent
+  const parsedMicroEnabled = micro_cards_enabled === false || micro_cards_enabled === 'false' ? false : true;
+
   try {
     const { rows } = await dbPool.query(
-      `INSERT INTO subject_configs (subject, syllabus_text, notes_text, daily_new_cards_limit, max_micro_cards_per_card, grading_strictness, updated_at, user_id)
-       VALUES ($1, $2, $3, $4, $5, $6, now(), $7)
+      `INSERT INTO subject_configs (subject, syllabus_text, notes_text, daily_new_cards_limit, max_micro_cards_per_card, grading_strictness, micro_cards_enabled, updated_at, user_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, now(), $8)
        ON CONFLICT (subject, user_id) DO UPDATE SET
          syllabus_text              = EXCLUDED.syllabus_text,
          notes_text                 = EXCLUDED.notes_text,
          daily_new_cards_limit      = EXCLUDED.daily_new_cards_limit,
          max_micro_cards_per_card   = EXCLUDED.max_micro_cards_per_card,
          grading_strictness         = EXCLUDED.grading_strictness,
+         micro_cards_enabled        = EXCLUDED.micro_cards_enabled,
          user_id                    = EXCLUDED.user_id,
          updated_at                 = now()
        RETURNING *`,
-      [subject, syllabus_text || null, notes_text || null, parsedDailyLimit, parsedMicroLimit, parsedStrictness, userId]
+      [subject, syllabus_text || null, notes_text || null, parsedDailyLimit, parsedMicroLimit, parsedStrictness, parsedMicroEnabled, userId]
     );
     invalidateAdvisorCache(subject, userId);
     return res.json({ config: rows[0] });

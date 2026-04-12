@@ -4459,6 +4459,15 @@ document.querySelector('#curriculum-grading-strictness')?.addEventListener('inpu
   updateStrictnessDisplay(e.target.value);
 });
 
+function updateMicroCardsLimitVisibility(enabled) {
+  const row = document.querySelector('#micro-cards-limit-row');
+  if (row) row.style.display = enabled ? '' : 'none';
+}
+
+document.querySelector('#curriculum-micro-cards-enabled')?.addEventListener('change', (e) => {
+  updateMicroCardsLimitVisibility(e.target.checked);
+});
+
 async function openCurriculumModal(subject) {
   document.querySelector('#curriculum-modal-title').textContent = `Configurar: ${subject}`;
   document.querySelector('#curriculum-modal').classList.remove('hidden');
@@ -4478,6 +4487,9 @@ async function openCurriculumModal(subject) {
     const strictness = data.config?.grading_strictness ?? 5;
     document.querySelector('#curriculum-grading-strictness').value = strictness;
     updateStrictnessDisplay(strictness);
+    const microEnabled = data.config?.micro_cards_enabled ?? true;
+    document.querySelector('#curriculum-micro-cards-enabled').checked = microEnabled;
+    updateMicroCardsLimitVisibility(microEnabled);
     renderExamDatesList(data.exam_dates || [], subject);
     renderExamsList(data.exams || [], subject);
     renderClassNotesList(classNotesData.class_notes || [], subject);
@@ -4486,6 +4498,8 @@ async function openCurriculumModal(subject) {
     document.querySelector('#curriculum-max-micro-per-card').value = '';
     document.querySelector('#curriculum-grading-strictness').value = 5;
     updateStrictnessDisplay(5);
+    document.querySelector('#curriculum-micro-cards-enabled').checked = true;
+    updateMicroCardsLimitVisibility(true);
     renderClassNotesList([], subject);
   }
 
@@ -4524,11 +4538,13 @@ document.querySelector('#curriculum-save-btn').addEventListener('click', async (
 
   try {
     const strictness = parseInt(document.querySelector('#curriculum-grading-strictness').value, 10);
+    const microEnabled = document.querySelector('#curriculum-micro-cards-enabled').checked;
     await postJson(`/curriculum/${encodeURIComponent(subject)}`, {
       syllabus_text:              document.querySelector('#curriculum-syllabus').value,
       daily_new_cards_limit:      parsedDailyLimit,
       max_micro_cards_per_card:   parsedMicroLimit,
-      grading_strictness:         Number.isFinite(strictness) ? strictness : 5
+      grading_strictness:         Number.isFinite(strictness) ? strictness : 5,
+      micro_cards_enabled:        microEnabled
     }, 'PUT');
     fb.textContent = 'Guardado.';
     fb.style.color = 'var(--pass-fg)';

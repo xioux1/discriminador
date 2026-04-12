@@ -330,11 +330,15 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
   }
 
   if (conceptGaps.length > 0) {
-    // Check subject-level cap and count existing active micro-cards.
+    // Check subject-level config: enabled flag and per-card cap.
     const configRes = await dbPool.query(
-      `SELECT max_micro_cards_per_card FROM subject_configs WHERE subject = $1 AND user_id = $2`,
+      `SELECT micro_cards_enabled, max_micro_cards_per_card FROM subject_configs WHERE subject = $1 AND user_id = $2`,
       [card.subject || '', userId]
     );
+    const microCardsEnabled = configRes.rows[0]?.micro_cards_enabled ?? true;
+    if (!microCardsEnabled) {
+      return res.status(200).json({ card: updated.rows[0], new_micro_cards: [] });
+    }
     const maxPerCard = configRes.rows[0]?.max_micro_cards_per_card ?? null;
 
     const countRes = await dbPool.query(

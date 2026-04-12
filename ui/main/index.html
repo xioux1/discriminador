@@ -98,7 +98,15 @@
               <input type="number" id="curriculum-daily-new-limit" min="0" step="1" placeholder="Ej: 10" style="max-width:180px">
 
               <div style="margin-top:12px">
-                <label for="curriculum-max-micro-per-card" style="display:block;font-size:0.84rem;color:var(--text-muted);margin-bottom:6px">Máximo de micro-tarjetas por pregunta (vacío = sin límite)</label>
+                <label class="toggle-row">
+                  <input type="checkbox" id="curriculum-micro-cards-enabled" checked>
+                  <span class="toggle-label">Generar micro-tarjetas al repasar</span>
+                </label>
+                <p style="font-size:0.78rem;color:var(--text-muted);margin:4px 0 8px 28px">Cuando errás una pregunta, la IA genera consignas focalizadas en los conceptos faltantes.</p>
+              </div>
+
+              <div id="micro-cards-limit-row" style="margin-top:8px;padding-left:28px">
+                <label for="curriculum-max-micro-per-card" style="display:block;font-size:0.84rem;color:var(--text-muted);margin-bottom:6px">Máximo por pregunta (vacío = sin límite)</label>
                 <input type="number" id="curriculum-max-micro-per-card" min="0" step="1" placeholder="Ej: 3" style="max-width:180px">
               </div>
 
