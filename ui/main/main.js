@@ -3968,7 +3968,9 @@ function finishExamSession() {
 
   const items   = studyState.examItemResults;
   const total   = items.length;
-  const correct = items.filter((r) => r.passed).length;
+  // Compute pass from grade directly (don't rely on the stored `passed` flag)
+  const isPassGrade = (g) => { const s = (g || '').toLowerCase(); return s === 'good' || s === 'easy' || s === 'pass'; };
+  const correct = items.filter((r) => isPassGrade(r.grade)).length;
   const pct     = total > 0 ? Math.round((correct / total) * 100) : 0;
 
   // Persist simulation log in the background (no await — fire and forget)
@@ -3982,7 +3984,7 @@ function finishExamSession() {
         card_id:       r.cardData?.id   ?? null,
         grade:         r.grade,
         prompt_text:   r.prompt_text,
-        passed:        r.passed,
+        passed:        isPassGrade(r.grade),
         weakness_score: r.cardData?.weakness_score ?? null
       }))
     }).catch((err) => console.warn('[exam] Failed to save sim log:', err));
@@ -4015,7 +4017,7 @@ function finishExamSession() {
   }).join('');
 
   // "Para repasar" = failed + hard
-  const toReview = items.filter((r) => !r.passed);
+  const toReview = items.filter((r) => !isPassGrade(r.grade));
   const reviewSection = document.querySelector('#exam-review-section');
   if (toReview.length > 0) {
     const reviewList = document.querySelector('#exam-review-list');
