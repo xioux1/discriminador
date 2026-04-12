@@ -236,6 +236,18 @@ textarea:focus, input[type="text"]:focus, select:focus {
 .field-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
 .field-header label { margin-bottom: 0; }
 
+.textarea-label-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.textarea-label-row label { margin-bottom: 0; }
+
+.code-wrap-btn {
+  font-size: 0.72rem; padding: 2px 8px; cursor: pointer;
+  background: var(--bg-subtle); border: 1px solid var(--border-mid);
+  border-radius: 4px; color: var(--text-muted); font-family: monospace;
+  font-weight: 600; white-space: nowrap;
+  transition: background .12s, color .12s;
+}
+.code-wrap-btn:hover { background: #f0f4ff; color: var(--primary); border-color: var(--primary); }
+
 /* ─── Grade badges & pills ───────────────────────────────────────────────────── */
 .grade-badge {
   display: inline-block;

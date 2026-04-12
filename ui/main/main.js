@@ -135,6 +135,50 @@ if (!Auth.isLoggedIn()) {
 
 initNotes();
 
+/* ── Code-wrap buttons ───────────────────────────────────────────────────────
+   Any button with class "code-wrap-btn" and data-target="<textarea-id>"
+   wraps the current selection (or inserts a blank block) in triple backticks.
+   Works for inline snippets too: if the selection has no newlines, wraps in
+   single backticks instead.
+*/
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.code-wrap-btn');
+  if (!btn) return;
+  const ta = document.getElementById(btn.dataset.target);
+  if (!ta) return;
+
+  const start = ta.selectionStart;
+  const end   = ta.selectionEnd;
+  const sel   = ta.value.slice(start, end);
+
+  let before, after, newSel;
+  if (!sel) {
+    // Nothing selected — insert an empty code block and park cursor inside.
+    before  = '```\n';
+    newSel  = '';
+    after   = '\n```';
+  } else if (sel.includes('\n')) {
+    // Multi-line → fenced block.
+    before = '```\n';
+    newSel = sel;
+    after  = '\n```';
+  } else {
+    // Single line → inline backtick.
+    before = '`';
+    newSel = sel;
+    after  = '`';
+  }
+
+  ta.focus();
+  ta.setRangeText(before + newSel + after, start, end, 'select');
+  // Place cursor just after the opening fence (inside the block).
+  if (!sel) {
+    const cur = start + before.length;
+    ta.setSelectionRange(cur, cur);
+  }
+  ta.dispatchEvent(new Event('input', { bubbles: true }));
+});
+
 const DIM_LABELS_OVERVIEW = {
   core_idea: 'Idea central',
   conceptual_accuracy: 'Precisión conceptual',

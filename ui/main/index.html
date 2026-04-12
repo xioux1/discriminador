@@ -331,7 +331,10 @@
         <section class="card">
           <h2>Evaluación manual</h2>
           <form id="evaluation-form" novalidate>
-            <label for="prompt_text">Consigna</label>
+            <div class="textarea-label-row">
+              <label for="prompt_text">Consigna</label>
+              <button type="button" class="code-wrap-btn" data-target="prompt_text" title="Envolver selección en bloque de código">{ } Código</button>
+            </div>
             <textarea id="prompt_text" name="prompt_text" rows="4" required></textarea>
             <p class="field-error" data-error-for="prompt_text"></p>
 
@@ -349,7 +352,10 @@
 
             <div class="field-header">
               <label for="expected_answer_text">Respuesta esperada</label>
-              <button type="button" id="fill-expected-btn" class="dictation-btn hidden">Hay una respuesta guardada. ¿Completar?</button>
+              <div style="display:flex;gap:6px;align-items:center">
+                <button type="button" class="code-wrap-btn" data-target="expected_answer_text" title="Envolver selección en bloque de código">{ } Código</button>
+                <button type="button" id="fill-expected-btn" class="dictation-btn hidden">Hay una respuesta guardada. ¿Completar?</button>
+              </div>
             </div>
             <textarea id="expected_answer_text" name="expected_answer_text" rows="4" required></textarea>
             <p class="field-error" data-error-for="expected_answer_text"></p>
@@ -438,9 +444,15 @@
           <h3>Nueva tarjeta</h3>
           <label for="card-subject">Materia</label>
           <input id="card-subject" type="text" list="subjects-list" autocomplete="off" />
-          <label for="card-prompt">Pregunta / consigna</label>
+          <div class="textarea-label-row">
+            <label for="card-prompt">Pregunta / consigna</label>
+            <button type="button" class="code-wrap-btn" data-target="card-prompt" title="Envolver selección en bloque de código">{ } Código</button>
+          </div>
           <textarea id="card-prompt" rows="3"></textarea>
-          <label for="card-expected">Respuesta esperada</label>
+          <div class="textarea-label-row">
+            <label for="card-expected">Respuesta esperada</label>
+            <button type="button" class="code-wrap-btn" data-target="card-expected" title="Envolver selección en bloque de código">{ } Código</button>
+          </div>
           <textarea id="card-expected" rows="3"></textarea>
           <div style="display:flex;gap:8px;margin-top:8px">
             <button type="button" id="card-save-btn" class="btn-primary">Guardar tarjeta</button>
