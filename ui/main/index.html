@@ -236,7 +236,57 @@
           </div>
           <div class="study-overview-actions hidden" id="study-overview-actions">
             <button type="button" id="study-start-btn" class="btn-primary">Iniciar sesión</button>
+            <button type="button" id="exam-sim-open-btn" class="btn-secondary">Simulacro de examen</button>
             <button type="button" id="study-overview-back-btn" class="btn-ghost">← Volver</button>
+          </div>
+        </div>
+
+        <!-- Exam simulation config modal -->
+        <div id="exam-sim-modal" class="exam-sim-modal hidden">
+          <div class="exam-sim-backdrop"></div>
+          <div class="exam-sim-box">
+            <div class="exam-sim-header">
+              <h3>Simulacro de examen</h3>
+              <button type="button" id="exam-sim-close-btn" class="btn-ghost">✕</button>
+            </div>
+            <p class="exam-sim-subtitle">Seleccioná las tarjetas más débiles de una materia, respondé sin feedback inmediato y recibí tu nota al final.</p>
+            <label class="exam-sim-label" for="exam-sim-subject-input">Materia</label>
+            <input type="text" id="exam-sim-subject-input" list="subjects-list" placeholder="Escribí o elegí una materia..." autocomplete="off">
+            <label class="exam-sim-label" style="margin-top:14px">Cantidad de preguntas</label>
+            <div class="exam-count-pills" id="exam-count-pills">
+              <button type="button" class="exam-count-pill" data-count="5">5</button>
+              <button type="button" class="exam-count-pill active" data-count="10">10</button>
+              <button type="button" class="exam-count-pill" data-count="15">15</button>
+              <button type="button" class="exam-count-pill" data-count="20">20</button>
+            </div>
+            <p id="exam-sim-feedback" class="exam-sim-feedback hidden"></p>
+            <div class="exam-sim-actions">
+              <button type="button" id="exam-sim-start-btn" class="btn-primary">Comenzar simulacro</button>
+              <button type="button" id="exam-sim-cancel-btn" class="btn-ghost">Cancelar</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Exam complete screen -->
+        <div id="exam-complete" class="card hidden">
+          <div class="exam-complete-header">
+            <h3>Simulacro completado</h3>
+            <span id="exam-complete-subject-tag" class="exam-subject-tag"></span>
+          </div>
+          <div id="exam-score-display" class="exam-score-display">
+            <div class="exam-score-fraction" id="exam-score-fraction"></div>
+            <div class="exam-score-pct" id="exam-score-pct"></div>
+            <div class="exam-score-label" id="exam-score-label"></div>
+          </div>
+          <div id="exam-breakdown" class="exam-breakdown"></div>
+          <div id="exam-review-section" class="exam-review-section hidden">
+            <h4 class="exam-review-title">Para repasar antes del examen</h4>
+            <div id="exam-review-list" class="exam-review-list"></div>
+            <button type="button" id="exam-study-failed-btn" class="btn-primary" style="margin-top:10px">Estudiar estas ahora</button>
+          </div>
+          <div class="exam-complete-actions">
+            <button type="button" id="exam-again-btn" class="btn-secondary">Otro simulacro</button>
+            <button type="button" id="exam-back-btn" class="btn-ghost">Volver al inicio</button>
           </div>
         </div>
 
@@ -254,6 +304,7 @@
         <div id="study-session" class="hidden study-session-overlay">
           <div class="study-session-header">
             <button type="button" id="study-exit-btn" class="btn-ghost">Cerrar sesión</button>
+            <span id="exam-mode-badge" class="exam-mode-badge hidden">Simulacro</span>
             <div id="study-progress-bar" class="study-progress-bar">
               <div id="study-progress-fill" class="study-progress-fill"></div>
             </div>

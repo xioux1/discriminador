@@ -2710,3 +2710,147 @@ textarea:focus, input[type="text"]:focus, select:focus {
   margin: 4px 0 0;
   line-height: 1.4;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   EXAM SIMULATION
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Config modal ────────────────────────────────────────────────────────── */
+
+.exam-sim-modal {
+  position: fixed; inset: 0; z-index: 1100;
+  display: flex; align-items: center; justify-content: center;
+}
+.exam-sim-modal.hidden { display: none; }
+.exam-sim-backdrop {
+  position: absolute; inset: 0;
+  background: rgba(0,0,0,.45);
+}
+.exam-sim-box {
+  position: relative; z-index: 1;
+  background: var(--surface);
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius);
+  padding: 24px 28px;
+  width: min(480px, 92vw);
+  box-shadow: 0 8px 32px rgba(0,0,0,.18);
+}
+.exam-sim-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 6px;
+}
+.exam-sim-header h3 { margin: 0; font-size: 1.1rem; }
+.exam-sim-subtitle {
+  font-size: 0.82rem; color: var(--text-muted);
+  margin: 0 0 16px; line-height: 1.5;
+}
+.exam-sim-label {
+  display: block; font-size: 0.84rem;
+  color: var(--text-muted); margin-bottom: 6px;
+}
+#exam-sim-subject-input {
+  width: 100%; box-sizing: border-box;
+}
+.exam-count-pills {
+  display: flex; gap: 8px; flex-wrap: wrap;
+}
+.exam-count-pill {
+  padding: 5px 18px; border-radius: 999px;
+  border: 1.5px solid var(--border-mid);
+  background: var(--bg-subtle); color: var(--text-main);
+  font-size: 0.9rem; cursor: pointer;
+  transition: background .12s, border-color .12s, color .12s;
+}
+.exam-count-pill:hover  { border-color: var(--primary); color: var(--primary); }
+.exam-count-pill.active { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 600; }
+.exam-sim-feedback {
+  margin-top: 10px; font-size: 0.84rem;
+  color: var(--fail-fg); padding: 6px 10px;
+  background: #fff3f3; border-radius: 4px;
+  border-left: 3px solid var(--fail-fg);
+}
+.exam-sim-feedback.hidden { display: none; }
+.exam-sim-actions {
+  display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap;
+}
+
+/* ── Exam mode badge in session header ───────────────────────────────────── */
+
+.exam-mode-badge {
+  font-size: 0.72rem; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase;
+  background: #fff0e0; color: #b85a00;
+  border: 1.5px solid #e08830;
+  border-radius: 999px; padding: 2px 10px;
+}
+.exam-mode-badge.hidden { display: none; }
+
+/* ── Exam complete screen ────────────────────────────────────────────────── */
+
+.exam-complete-header {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 16px;
+}
+.exam-complete-header h3 { margin: 0; }
+.exam-subject-tag {
+  font-size: 0.8rem; color: var(--text-muted);
+  padding: 2px 8px; border: 1px solid var(--border);
+  border-radius: 999px; background: var(--bg-subtle);
+}
+
+.exam-score-display {
+  display: flex; align-items: baseline; gap: 12px;
+  padding: 16px 20px; border-radius: var(--radius);
+  margin-bottom: 18px;
+  background: var(--bg-subtle); border: 1px solid var(--border);
+}
+.exam-score-fraction { font-size: 2rem; font-weight: 700; color: var(--text-main); }
+.exam-score-pct      { font-size: 1.4rem; font-weight: 600; color: var(--text-muted); }
+.exam-score-label    {
+  font-size: 0.88rem; font-weight: 700; padding: 3px 12px;
+  border-radius: 999px; margin-left: auto;
+}
+.exam-score-label.excellent { background: #e6faf0; color: #1a7a4a; }
+.exam-score-label.good      { background: #e8f4fd; color: #1a5ea8; }
+.exam-score-label.adjusted  { background: #fff8e0; color: #7a5a00; }
+.exam-score-label.fail      { background: #fdf0f0; color: #8a0000; }
+
+/* ── Breakdown list ──────────────────────────────────────────────────────── */
+
+.exam-breakdown { margin-bottom: 16px; }
+.exam-breakdown-item {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  gap: 8px; align-items: start;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+.exam-breakdown-item:last-child { border-bottom: none; }
+.exam-breakdown-icon { font-size: 1rem; text-align: center; padding-top: 1px; }
+.exam-breakdown-prompt { color: var(--text-main); line-height: 1.4; }
+.exam-breakdown-grade {
+  font-size: 0.75rem; font-weight: 700; padding: 2px 8px;
+  border-radius: 999px; white-space: nowrap;
+}
+.exam-breakdown-grade.again { background: #fde8e8; color: #8a0000; }
+.exam-breakdown-grade.hard  { background: #fff3e0; color: #7a4a00; }
+.exam-breakdown-grade.good  { background: #e8faf0; color: #1a7a4a; }
+.exam-breakdown-grade.easy  { background: #e8f4fd; color: #1a5ea8; }
+
+/* ── Review recommendations ──────────────────────────────────────────────── */
+
+.exam-review-section { margin-bottom: 16px; }
+.exam-review-title   { margin: 0 0 8px; font-size: 0.9rem; color: var(--text-main); }
+.exam-review-list {
+  display: flex; flex-direction: column; gap: 4px;
+}
+.exam-review-item {
+  font-size: 0.84rem; padding: 5px 10px;
+  background: #fff8e8; border-left: 3px solid #e09820;
+  border-radius: 0 4px 4px 0; color: var(--text-main);
+}
+
+.exam-complete-actions {
+  display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px;
+}

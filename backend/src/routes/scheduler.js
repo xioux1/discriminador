@@ -517,6 +517,68 @@ async function reviewMicroCard(res, microCardId, grade, conceptGaps, userAnswer,
   });
 }
 
+// ─── Exam simulation: pick weakest cards for a subject ───────────────────────
+schedulerRouter.post('/scheduler/exam-sim', async (req, res) => {
+  const userId = req.user.id;
+  const { subject, count = 10 } = req.body || {};
+
+  if (!subject || typeof subject !== 'string' || !subject.trim()) {
+    return res.status(422).json({ error: 'validation_error', message: 'subject is required.' });
+  }
+
+  const parsedCount = Math.min(50, Math.max(1, parseInt(count, 10) || 10));
+
+  try {
+    const { rows } = await dbPool.query(
+      `SELECT c.id, c.prompt_text, c.expected_answer_text, c.subject,
+              c.interval_days, c.ease_factor, c.pass_count, c.review_count,
+              COUNT(mc.id) FILTER (WHERE mc.status = 'active') AS active_micro_count
+       FROM cards c
+       LEFT JOIN micro_cards mc ON mc.parent_card_id = c.id AND mc.user_id = c.user_id
+       WHERE c.user_id = $1
+         AND c.subject = $2
+         AND c.archived_at IS NULL
+         AND c.suspended_at IS NULL
+       GROUP BY c.id`,
+      [userId, subject.trim()]
+    );
+
+    if (!rows.length) {
+      return res.json({ cards: [], subject: subject.trim(), total_available: 0 });
+    }
+
+    // Weakness score: combines pass rate, SM-2 ease factor, and retention interval.
+    // Cards with active micro-cards get a bonus (explicit concept gaps).
+    const scored = rows.map((card) => {
+      const passCount    = parseInt(card.pass_count)   || 0;
+      const reviewCount  = parseInt(card.review_count) || 0;
+      const passRate     = reviewCount >= 2 ? passCount / reviewCount : 0.5; // few reviews → treat as unknown
+      const easeFactor   = Math.max(1.3, parseFloat(card.ease_factor) || 2.5);
+      const intervalDays = Math.max(1,   parseFloat(card.interval_days) || 1);
+      const hasMicros    = parseInt(card.active_micro_count) > 0 ? 1 : 0;
+
+      const score = (1 - passRate)                         * 0.40   // low pass rate → weak
+                  + Math.max(0, (2.5 - easeFactor) / 1.2) * 0.30   // low ease → hard card
+                  + 1 / (intervalDays + 1)                 * 0.20   // short interval → fragile
+                  + hasMicros                               * 0.10;  // active gaps → bonus
+
+      return { ...card, weakness_score: Math.round(score * 1000) / 1000 };
+    });
+
+    scored.sort((a, b) => b.weakness_score - a.weakness_score);
+    const selected = scored.slice(0, parsedCount);
+
+    return res.json({
+      cards: selected,
+      subject: subject.trim(),
+      total_available: rows.length
+    });
+  } catch (err) {
+    console.error('POST /scheduler/exam-sim error', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
 // ─── Agenda: full schedule view ──────────────────────────────────────────────
 // Returns all cards + their micro-cards, grouped into time buckets.
 schedulerRouter.get('/scheduler/agenda', async (req, res) => {

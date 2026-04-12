@@ -2563,6 +2563,69 @@ function initStudyTab() {
     document.querySelector('#study-overview').classList.add('hidden');
     document.querySelector('#study-briefing').classList.remove('hidden');
   });
+
+  // ── Exam simulation modal ────────────────────────────────────────────────
+  let _examSelectedCount = 10;
+
+  function openExamModal() {
+    const input = document.querySelector('#exam-sim-subject-input');
+    if (briefingState.selectedSubject) input.value = briefingState.selectedSubject;
+    document.querySelector('#exam-sim-feedback').classList.add('hidden');
+    document.querySelector('#exam-sim-modal').classList.remove('hidden');
+    input.focus();
+  }
+  function closeExamModal() {
+    document.querySelector('#exam-sim-modal').classList.add('hidden');
+  }
+
+  document.querySelector('#exam-sim-open-btn').addEventListener('click', openExamModal);
+  document.querySelector('#exam-sim-close-btn').addEventListener('click', closeExamModal);
+  document.querySelector('#exam-sim-cancel-btn').addEventListener('click', closeExamModal);
+  document.querySelector('.exam-sim-backdrop').addEventListener('click', closeExamModal);
+
+  document.querySelectorAll('.exam-count-pill').forEach((pill) => {
+    pill.addEventListener('click', () => {
+      document.querySelectorAll('.exam-count-pill').forEach((p) => p.classList.remove('active'));
+      pill.classList.add('active');
+      _examSelectedCount = parseInt(pill.dataset.count, 10);
+    });
+  });
+
+  document.querySelector('#exam-sim-start-btn').addEventListener('click', async () => {
+    const subject = (document.querySelector('#exam-sim-subject-input').value || '').trim();
+    const fb = document.querySelector('#exam-sim-feedback');
+    if (!subject) {
+      fb.textContent = 'Elegí una materia para el simulacro.';
+      fb.classList.remove('hidden');
+      return;
+    }
+    const startBtn = document.querySelector('#exam-sim-start-btn');
+    startBtn.disabled = true;
+    startBtn.textContent = 'Cargando...';
+    fb.classList.add('hidden');
+    try {
+      const data = await postJson('/scheduler/exam-sim', { subject, count: _examSelectedCount });
+      if (!data.cards?.length) {
+        fb.textContent = `Sin tarjetas disponibles para "${subject}". Creá tarjetas primero.`;
+        fb.classList.remove('hidden');
+        return;
+      }
+      closeExamModal();
+      startExamSession(data.cards, subject);
+    } catch (err) {
+      fb.textContent = `Error: ${err.message}`;
+      fb.classList.remove('hidden');
+    } finally {
+      startBtn.disabled = false;
+      startBtn.textContent = 'Comenzar simulacro';
+    }
+  });
+
+  document.querySelector('#exam-again-btn').addEventListener('click', openExamModal);
+  document.querySelector('#exam-back-btn').addEventListener('click', () => {
+    document.querySelector('#exam-complete').classList.add('hidden');
+    document.querySelector('#study-briefing').classList.remove('hidden');
+  });
   document.querySelector('#study-start-btn').addEventListener('click', startStudySession);
   document.querySelector('#study-exit-btn').addEventListener('click', exitStudySession);
   document.querySelector('#study-edit-prompt-btn').addEventListener('click', toggleStudyPromptEdit);
@@ -2917,7 +2980,11 @@ const studyState = {
   sessionId: null,
   sessionStartTime: 0,
   sessionLimitMs: null,
-  sessionEnergyLevel: null
+  sessionEnergyLevel: null,
+  // Exam mode extras
+  examMode: false,
+  examSubject: null,
+  examItemResults: []  // {grade, prompt_text, expected_answer_text, passed}
 };
 
 function renderStudyBackgroundStatus() {
@@ -2949,6 +3016,29 @@ function setStudyPromptFeedback(message, type = 'info') {
   feedbackEl.textContent = message || '';
   feedbackEl.classList.toggle('hidden', !message);
   feedbackEl.style.color = type === 'error' ? '#c00' : type === 'success' ? '#2f7d32' : '';
+}
+
+function startExamSession(cards, subject) {
+  studyState.queue              = cards.map((c) => ({ type: 'card', data: c }));
+  studyState.index              = 0;
+  studyState.results            = [];
+  studyState.examMode           = true;
+  studyState.examSubject        = subject;
+  studyState.examItemResults    = [];
+  studyState.pendingMicroGeneration = 0;
+  studyState.sessionId          = null;
+  studyState.sessionStartTime   = Date.now();
+  studyState.sessionLimitMs     = null;
+
+  document.querySelector('#study-overview').classList.add('hidden');
+  document.querySelector('#study-complete').classList.add('hidden');
+  document.querySelector('#exam-complete').classList.add('hidden');
+  document.querySelector('#study-briefing').classList.add('hidden');
+  document.querySelector('#study-session').classList.remove('hidden');
+  document.querySelector('#exam-mode-badge').classList.remove('hidden');
+
+  persistStudySession();
+  showStudyCard();
 }
 
 async function startStudySession() {
@@ -3043,6 +3133,13 @@ function showStudyCard() {
   document.querySelector('#study-answer-block').classList.remove('hidden');
   document.querySelector('#study-result-block').classList.add('hidden');
   document.querySelector('#study-doubt-section')?.classList.add('hidden');
+  // In exam mode hide secondary controls that don't belong in a simulation
+  const studyFlagBtn   = document.querySelector('#study-flag-btn');
+  const studyClarify   = document.querySelector('#study-clarify-prompt-btn');
+  const studyEditPrompt = document.querySelector('#study-edit-prompt-btn');
+  if (studyFlagBtn)    studyFlagBtn.hidden   = studyState.examMode;
+  if (studyClarify)    studyClarify.hidden   = studyState.examMode;
+  if (studyEditPrompt) studyEditPrompt.hidden = studyState.examMode;
   const studyEvalBtn = document.querySelector('#study-eval-btn');
   studyEvalBtn.disabled = false;
   studyState.currentEvalResult = null;
@@ -3430,18 +3527,34 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
     variantFeedback.classList.add('hidden');
     variantFeedback.textContent = '';
     document.querySelector('#study-variant-preview')?.classList.add('hidden');
-    nextBtn.disabled = true;
-
-    if (decisionReason) decisionReason.value = '';
-    if (decisionFb) {
-      decisionFb.textContent = 'Firmá esta evaluación para continuar.';
-      decisionFb.className = 'feedback';
-    }
-    if (decisionBlock) {
-      decisionBlock.classList.remove('hidden');
-      decisionBlock.querySelectorAll('button').forEach((btn) => { btn.disabled = false; });
-      const archiveBtn = decisionBlock.querySelector('#study-archive-card-btn');
-      if (archiveBtn) archiveBtn.hidden = !currentItem || currentItem.type !== 'card';
+    if (studyState.examMode) {
+      // Exam mode: auto-accept LLM grade, no decision required, Next enabled immediately.
+      const autoGrade = normalizeSuggestedGrade(result.suggested_grade);
+      studyState.currentDecision = { finalGrade: autoGrade, source: 'llm_auto' };
+      if (decisionBlock) decisionBlock.classList.add('hidden');
+      nextBtn.disabled = false;
+      // Record result for end-of-exam summary
+      const passed = autoGrade === 'good' || autoGrade === 'easy';
+      studyState.examItemResults.push({
+        grade: autoGrade,
+        passed,
+        prompt_text:          currentItem?.data?.prompt_text || currentItem?.data?.question || '',
+        expected_answer_text: currentItem?.data?.expected_answer_text || currentItem?.data?.expected_answer || '',
+        cardData:             currentItem?.data
+      });
+    } else {
+      nextBtn.disabled = true;
+      if (decisionReason) decisionReason.value = '';
+      if (decisionFb) {
+        decisionFb.textContent = 'Firmá esta evaluación para continuar.';
+        decisionFb.className = 'feedback';
+      }
+      if (decisionBlock) {
+        decisionBlock.classList.remove('hidden');
+        decisionBlock.querySelectorAll('button').forEach((btn) => { btn.disabled = false; });
+        const archiveBtn = decisionBlock.querySelector('#study-archive-card-btn');
+        if (archiveBtn) archiveBtn.hidden = !currentItem || currentItem.type !== 'card';
+      }
     }
 
     document.querySelector('#study-answer-block').classList.add('hidden');
@@ -3706,9 +3819,9 @@ async function handleStudyNextCard() {
 
   const grade  = decision.finalGrade;
   const gaps   = evalResult.missing_concepts ?? [];
-  const shouldGenerateMicros = Boolean(grade && item.type === 'card');
-  // Micro-card review: send concept_gaps so backend can spawn siblings if configured.
-  const shouldSpawnSiblings  = Boolean(grade && item.type === 'micro' && gaps.length > 0);
+  // In exam mode: skip all micro-card generation (evaluation only).
+  const shouldGenerateMicros = Boolean(grade && item.type === 'card' && !studyState.examMode);
+  const shouldSpawnSiblings  = Boolean(grade && item.type === 'micro' && gaps.length > 0 && !studyState.examMode);
 
   if (shouldGenerateMicros || shouldSpawnSiblings) {
     studyState.pendingMicroGeneration += 1;
@@ -3794,6 +3907,8 @@ function advanceStudyCard() {
 }
 
 function finishStudySession() {
+  if (studyState.examMode) { finishExamSession(); return; }
+
   if (studyState.timerInterval) {
     clearInterval(studyState.timerInterval);
     studyState.timerInterval = null;
@@ -3838,6 +3953,83 @@ function finishStudySession() {
   clearPersistedStudySession();
 
   loadStudyOverview();
+}
+
+function finishExamSession() {
+  if (studyState.timerInterval) {
+    clearInterval(studyState.timerInterval);
+    studyState.timerInterval = null;
+  }
+  document.querySelector('#study-progress-fill').style.width = '100%';
+  document.querySelector('#study-session').classList.add('hidden');
+  document.querySelector('#exam-mode-badge').classList.add('hidden');
+  clearPersistedStudySession();
+
+  const items   = studyState.examItemResults;
+  const total   = items.length;
+  const correct = items.filter((r) => r.passed).length;
+  const pct     = total > 0 ? Math.round((correct / total) * 100) : 0;
+
+  const { label, cls } = pct >= 90 ? { label: 'Excelente', cls: 'excellent' }
+                       : pct >= 75 ? { label: 'Aprobado',  cls: 'good' }
+                       : pct >= 60 ? { label: 'Ajustado',  cls: 'adjusted' }
+                       :             { label: 'Desaprobado', cls: 'fail' };
+
+  document.querySelector('#exam-complete-subject-tag').textContent = studyState.examSubject || '';
+  document.querySelector('#exam-score-fraction').textContent = `${correct} / ${total}`;
+  document.querySelector('#exam-score-pct').textContent = `${pct}%`;
+  const labelEl = document.querySelector('#exam-score-label');
+  labelEl.textContent = label;
+  labelEl.className = `exam-score-label ${cls}`;
+
+  // Per-card breakdown
+  const GRADE_ICON = { again: '✗', hard: '△', good: '✓', easy: '★', uncertain: '?' };
+  const breakdownEl = document.querySelector('#exam-breakdown');
+  breakdownEl.innerHTML = items.map((r) => {
+    const g    = (r.grade || 'uncertain').toLowerCase();
+    const icon = GRADE_ICON[g] || '?';
+    const prompt = escHtml((r.prompt_text || '').slice(0, 120));
+    return `<div class="exam-breakdown-item">
+      <span class="exam-breakdown-icon">${icon}</span>
+      <span class="exam-breakdown-prompt">${prompt}${r.prompt_text?.length > 120 ? '…' : ''}</span>
+      <span class="exam-breakdown-grade ${g}">${g.toUpperCase()}</span>
+    </div>`;
+  }).join('');
+
+  // "Para repasar" = failed + hard
+  const toReview = items.filter((r) => !r.passed);
+  const reviewSection = document.querySelector('#exam-review-section');
+  if (toReview.length > 0) {
+    const reviewList = document.querySelector('#exam-review-list');
+    reviewList.innerHTML = toReview.map((r) =>
+      `<div class="exam-review-item">${escHtml((r.prompt_text || '').slice(0, 150))}${r.prompt_text?.length > 150 ? '…' : ''}</div>`
+    ).join('');
+    reviewSection.classList.remove('hidden');
+
+    // "Estudiar estas ahora" — load failed cards into a regular study session
+    document.querySelector('#exam-study-failed-btn').onclick = () => {
+      const failedCards = toReview.map((r) => ({ type: 'card', data: r.cardData })).filter((c) => c.data);
+      if (!failedCards.length) return;
+      studyState.examMode        = false;
+      studyState.examItemResults = [];
+      studyState.queue           = failedCards;
+      studyState.index           = 0;
+      studyState.results         = [];
+      studyState.sessionStartTime = Date.now();
+      document.querySelector('#exam-complete').classList.add('hidden');
+      document.querySelector('#study-session').classList.remove('hidden');
+      persistStudySession();
+      showStudyCard();
+    };
+  } else {
+    reviewSection.classList.add('hidden');
+  }
+
+  document.querySelector('#exam-complete').classList.remove('hidden');
+
+  studyState.examMode         = false;
+  studyState.pendingMicroGeneration = 0;
+  renderStudyBackgroundStatus();
 }
 
 async function getJson(url) {
