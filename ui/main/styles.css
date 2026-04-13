@@ -2929,3 +2929,9 @@ textarea:focus, input[type="text"]:focus, select:focus {
 .study-tts-btn:disabled {
   opacity: .6; cursor: default;
 }
+
+/* Larger font when typing Chinese characters */
+textarea.chinese-input {
+  font-size: 1.5rem;
+  line-height: 1.6;
+}
