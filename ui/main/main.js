@@ -1913,11 +1913,12 @@ function hasChinese(text) {
   return /[\u4e00-\u9fff\u3400-\u4dbf\u{20000}-\u{2a6df}]/u.test(text || '');
 }
 
-let _ttsAudio = null; // keep reference to stop previous playback
+let _ttsAudio = null;                    // keep reference to stop previous playback
+const _ttsCache = new Map();             // text → base64 audio string (session cache)
 
 /**
- * Calls POST /tts, decodes the base64 MP3 and plays it.
- * Updates the #study-tts-btn state while loading/playing.
+ * Plays the TTS audio for the given Hanzi text.
+ * Fetches from POST /tts on first use; subsequent calls use the in-memory cache.
  */
 async function playChineseTTS(text) {
   const btn = document.querySelector('#study-tts-btn');
@@ -1931,14 +1932,19 @@ async function playChineseTTS(text) {
 
   if (btn) {
     btn.disabled = true;
-    btn.textContent = '⏳ Cargando...';
+    btn.textContent = _ttsCache.has(text) ? '🔊 Reproduciendo...' : '⏳ Cargando...';
   }
 
   try {
-    const data = await postJson('/tts', { text });
-    if (!data?.audio) throw new Error('Sin audio en la respuesta');
+    let audioB64 = _ttsCache.get(text);
+    if (!audioB64) {
+      const data = await postJson('/tts', { text });
+      if (!data?.audio) throw new Error('Sin audio en la respuesta');
+      audioB64 = data.audio;
+      _ttsCache.set(text, audioB64);   // cache for the rest of the session
+    }
 
-    const byteChars = atob(data.audio);
+    const byteChars = atob(audioB64);
     const byteArr = new Uint8Array(byteChars.length);
     for (let i = 0; i < byteChars.length; i++) byteArr[i] = byteChars.charCodeAt(i);
     const blob = new Blob([byteArr], { type: 'audio/mpeg' });
