@@ -2908,3 +2908,24 @@ textarea:focus, input[type="text"]:focus, select:focus {
 .gratitude-actions {
   display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap;
 }
+
+/* ── Chinese TTS bar ─────────────────────────────────────────────────────── */
+
+.study-tts-bar {
+  margin: 8px 0 4px;
+}
+.study-tts-bar.hidden { display: none; }
+.study-tts-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 14px; border-radius: 999px;
+  border: 1.5px solid var(--border-mid);
+  background: var(--bg-subtle); color: var(--text-main);
+  font-size: 0.88rem; cursor: pointer;
+  transition: background .12s, border-color .12s;
+}
+.study-tts-btn:hover:not(:disabled) {
+  border-color: var(--primary); color: var(--primary);
+}
+.study-tts-btn:disabled {
+  opacity: .6; cursor: default;
+}

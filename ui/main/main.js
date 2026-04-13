@@ -1906,6 +1906,74 @@ async function deleteJson(url) {
   try { return await response.json(); } catch (_e) { return {}; }
 }
 
+// ── Chinese TTS helpers ───────────────────────────────────────────────────────
+
+/** Returns true if text contains CJK Unified Ideographs (Hanzi). */
+function hasChinese(text) {
+  return /[\u4e00-\u9fff\u3400-\u4dbf\u{20000}-\u{2a6df}]/u.test(text || '');
+}
+
+let _ttsAudio = null;                    // keep reference to stop previous playback
+let _ttsCurrentText = null;             // Hanzi text of the currently shown card
+const _ttsCache = new Map();             // text → base64 audio string (session cache)
+
+/**
+ * Plays the TTS audio for the given Hanzi text.
+ * Fetches from POST /tts on first use; subsequent calls use the in-memory cache.
+ * If autoplay is blocked by the browser, the button stays enabled for manual replay.
+ */
+async function playChineseTTS(text) {
+  const btn = document.querySelector('#study-tts-btn');
+  if (!text || !hasChinese(text)) return;
+
+  // Stop any currently playing audio
+  if (_ttsAudio) {
+    _ttsAudio.pause();
+    _ttsAudio = null;
+  }
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = _ttsCache.has(text) ? '🔊 Cargando...' : '⏳ Cargando...';
+  }
+
+  try {
+    let audioB64 = _ttsCache.get(text);
+    if (!audioB64) {
+      const data = await postJson('/tts', { text });
+      if (!data?.audio) throw new Error('Sin audio en la respuesta');
+      audioB64 = data.audio;
+      _ttsCache.set(text, audioB64);
+    }
+
+    const byteChars = atob(audioB64);
+    const byteArr = new Uint8Array(byteChars.length);
+    for (let i = 0; i < byteChars.length; i++) byteArr[i] = byteChars.charCodeAt(i);
+    const blob = new Blob([byteArr], { type: 'audio/mpeg' });
+    const url  = URL.createObjectURL(blob);
+
+    _ttsAudio = new Audio(url);
+    _ttsAudio.onended = () => {
+      URL.revokeObjectURL(url);
+      if (btn) { btn.disabled = false; btn.textContent = '🔊 Escuchar'; }
+    };
+    _ttsAudio.onerror = () => {
+      if (btn) { btn.disabled = false; btn.textContent = '🔊 Escuchar'; }
+    };
+
+    if (btn) btn.textContent = '🔊 Reproduciendo...';
+
+    // play() returns a Promise — catch rejection so autoplay block doesn't silence everything
+    _ttsAudio.play().catch(() => {
+      // Autoplay blocked or load error: re-enable button so user can tap manually
+      if (btn) { btn.disabled = false; btn.textContent = '🔊 Escuchar'; }
+    });
+  } catch (err) {
+    console.error('TTS error:', err.message);
+    if (btn) { btn.disabled = false; btn.textContent = '🔊 Escuchar'; }
+  }
+}
+
 async function postJson(url, body, method = 'POST') {
   const headers = { 'Content-Type': 'application/json' };
   if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
@@ -2656,6 +2724,11 @@ function initStudyTab() {
     () => studyState.currentInputMode === 'math'
   );
   bindStudyKeyboardShortcuts();
+
+  // Single TTS replay button listener (registered once; _ttsCurrentText drives which text to play)
+  document.querySelector('#study-tts-btn')?.addEventListener('click', () => {
+    if (_ttsCurrentText) playChineseTTS(_ttsCurrentText);
+  });
 
   document.querySelector('#study-again-btn').addEventListener('click', () => {
     clearPersistedStudySession();
@@ -3642,6 +3715,17 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
 
     document.querySelector('#study-answer-block').classList.add('hidden');
     document.querySelector('#study-result-block').classList.remove('hidden');
+
+    // Chinese TTS: auto-play if expected answer contains Hanzi
+    const ttsBar = document.querySelector('#study-tts-bar');
+    if (hasChinese(expected_answer_text)) {
+      _ttsCurrentText = expected_answer_text;
+      if (ttsBar) ttsBar.classList.remove('hidden');
+      playChineseTTS(expected_answer_text);
+    } else {
+      _ttsCurrentText = null;
+      if (ttsBar) ttsBar.classList.add('hidden');
+    }
 
     // Start review timer (time spent reading the answer/feedback)
     studyState.reviewStartTime = Date.now();
