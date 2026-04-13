@@ -1590,7 +1590,7 @@ const uiState = {
 
 const minRules = {
   prompt_text: 10,
-  user_answer_text: 5,
+  user_answer_text: 1,
   expected_answer_text: 1,
 };
 
@@ -3285,6 +3285,10 @@ function showStudyCard() {
   const _studyInput = document.querySelector('#study-answer-input');
   MathPreview.clear(_studyInput);
   SqlEditor.refresh();
+
+  // Enlarge textarea font for Chinese cards so Hanzi are readable while typing
+  const _expectedForFont = item.type === 'micro' ? item.data.expected_answer : item.data.expected_answer_text;
+  _studyInput.classList.toggle('chinese-input', hasChinese(_expectedForFont));
   document.querySelector('#study-answer-block').classList.remove('hidden');
   document.querySelector('#study-result-block').classList.add('hidden');
   document.querySelector('#study-doubt-section')?.classList.add('hidden');
@@ -3553,7 +3557,7 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
   if (answer.length < minRules.user_answer_text) {
     evalBtn.disabled = false;
     evalBtn.textContent = 'Evaluar';
-    alert('Tu respuesta debe tener al menos 5 caracteres para poder evaluarse.');
+    alert('Escribí tu respuesta antes de evaluar.');
     return;
   }
   if (normalizedExpected.length < minRules.expected_answer_text) {
