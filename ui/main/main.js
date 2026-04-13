@@ -3900,8 +3900,8 @@ document.querySelector('#study-variant-btn').addEventListener('click', async () 
     variantFb.style.color = 'var(--pass-fg)';
     variantFb.classList.remove('hidden');
     if (resp?.variant) {
-      variantPreviewQ.textContent = resp.variant.prompt_text || '';
-      variantPreviewA.textContent = resp.variant.expected_answer_text || '';
+      renderStudyPrompt(variantPreviewQ, resp.variant.prompt_text || '');
+      variantPreviewA.innerHTML = renderCodeMarkdown(resp.variant.expected_answer_text || '');
       variantPreview.classList.remove('hidden');
     }
   } catch (err) {
