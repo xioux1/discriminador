@@ -1914,11 +1914,13 @@ function hasChinese(text) {
 }
 
 let _ttsAudio = null;                    // keep reference to stop previous playback
+let _ttsCurrentText = null;             // Hanzi text of the currently shown card
 const _ttsCache = new Map();             // text → base64 audio string (session cache)
 
 /**
  * Plays the TTS audio for the given Hanzi text.
  * Fetches from POST /tts on first use; subsequent calls use the in-memory cache.
+ * If autoplay is blocked by the browser, the button stays enabled for manual replay.
  */
 async function playChineseTTS(text) {
   const btn = document.querySelector('#study-tts-btn');
@@ -1932,7 +1934,7 @@ async function playChineseTTS(text) {
 
   if (btn) {
     btn.disabled = true;
-    btn.textContent = _ttsCache.has(text) ? '🔊 Reproduciendo...' : '⏳ Cargando...';
+    btn.textContent = _ttsCache.has(text) ? '🔊 Cargando...' : '⏳ Cargando...';
   }
 
   try {
@@ -1941,7 +1943,7 @@ async function playChineseTTS(text) {
       const data = await postJson('/tts', { text });
       if (!data?.audio) throw new Error('Sin audio en la respuesta');
       audioB64 = data.audio;
-      _ttsCache.set(text, audioB64);   // cache for the rest of the session
+      _ttsCache.set(text, audioB64);
     }
 
     const byteChars = atob(audioB64);
@@ -1958,8 +1960,14 @@ async function playChineseTTS(text) {
     _ttsAudio.onerror = () => {
       if (btn) { btn.disabled = false; btn.textContent = '🔊 Escuchar'; }
     };
+
     if (btn) btn.textContent = '🔊 Reproduciendo...';
-    _ttsAudio.play();
+
+    // play() returns a Promise — catch rejection so autoplay block doesn't silence everything
+    _ttsAudio.play().catch(() => {
+      // Autoplay blocked or load error: re-enable button so user can tap manually
+      if (btn) { btn.disabled = false; btn.textContent = '🔊 Escuchar'; }
+    });
   } catch (err) {
     console.error('TTS error:', err.message);
     if (btn) { btn.disabled = false; btn.textContent = '🔊 Escuchar'; }
@@ -2716,6 +2724,11 @@ function initStudyTab() {
     () => studyState.currentInputMode === 'math'
   );
   bindStudyKeyboardShortcuts();
+
+  // Single TTS replay button listener (registered once; _ttsCurrentText drives which text to play)
+  document.querySelector('#study-tts-btn')?.addEventListener('click', () => {
+    if (_ttsCurrentText) playChineseTTS(_ttsCurrentText);
+  });
 
   document.querySelector('#study-again-btn').addEventListener('click', () => {
     clearPersistedStudySession();
@@ -3705,17 +3718,12 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
 
     // Chinese TTS: auto-play if expected answer contains Hanzi
     const ttsBar = document.querySelector('#study-tts-bar');
-    const ttsBtn = document.querySelector('#study-tts-btn');
     if (hasChinese(expected_answer_text)) {
+      _ttsCurrentText = expected_answer_text;
       if (ttsBar) ttsBar.classList.remove('hidden');
-      if (ttsBtn) {
-        // Replace listener to avoid duplicates
-        const freshBtn = ttsBtn.cloneNode(true);
-        ttsBtn.parentNode.replaceChild(freshBtn, ttsBtn);
-        freshBtn.addEventListener('click', () => playChineseTTS(expected_answer_text));
-      }
       playChineseTTS(expected_answer_text);
     } else {
+      _ttsCurrentText = null;
       if (ttsBar) ttsBar.classList.add('hidden');
     }
 
