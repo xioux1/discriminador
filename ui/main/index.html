@@ -267,6 +267,32 @@
           </div>
         </div>
 
+        <!-- Gratitude modal — shown before each study session -->
+        <div id="gratitude-modal" class="gratitude-modal hidden">
+          <div class="gratitude-backdrop"></div>
+          <div class="gratitude-box">
+            <div class="gratitude-header">
+              <h3>Antes de estudiar...</h3>
+            </div>
+            <p class="gratitude-subtitle">¿Por qué estás agradecido hoy? Tomá un segundo para pensarlo.</p>
+            <textarea
+              id="gratitude-input"
+              class="gratitude-textarea"
+              placeholder="Estoy agradecido/a por..."
+              rows="3"
+              maxlength="500"
+            ></textarea>
+            <p id="gratitude-error" class="gratitude-error hidden"></p>
+            <div id="gratitude-response-area" class="gratitude-response-area hidden">
+              <p id="gratitude-response-text" class="gratitude-response-text"></p>
+            </div>
+            <div class="gratitude-actions">
+              <button type="button" id="gratitude-submit-btn" class="btn-primary">Continuar</button>
+              <button type="button" id="gratitude-start-btn" class="btn-primary hidden">Comenzar sesión</button>
+            </div>
+          </div>
+        </div>
+
         <!-- Exam complete screen -->
         <div id="exam-complete" class="card hidden">
           <div class="exam-complete-header">

@@ -2854,3 +2854,57 @@ textarea:focus, input[type="text"]:focus, select:focus {
 .exam-complete-actions {
   display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px;
 }
+
+/* ── Gratitude modal ─────────────────────────────────────────────────────── */
+
+.gratitude-modal {
+  position: fixed; inset: 0; z-index: 1200;
+  display: flex; align-items: center; justify-content: center;
+}
+.gratitude-modal.hidden { display: none; }
+.gratitude-backdrop {
+  position: absolute; inset: 0;
+  background: rgba(0,0,0,.5);
+}
+.gratitude-box {
+  position: relative; z-index: 1;
+  background: var(--surface);
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius);
+  padding: 28px 30px;
+  width: min(500px, 94vw);
+  box-shadow: 0 8px 36px rgba(0,0,0,.22);
+}
+.gratitude-header { margin-bottom: 6px; }
+.gratitude-header h3 { margin: 0; font-size: 1.15rem; }
+.gratitude-subtitle {
+  font-size: 0.85rem; color: var(--text-muted);
+  margin: 0 0 14px; line-height: 1.5;
+}
+.gratitude-textarea {
+  width: 100%; box-sizing: border-box;
+  resize: vertical; min-height: 76px;
+  font-size: 0.95rem; line-height: 1.5;
+}
+.gratitude-error {
+  margin-top: 8px; font-size: 0.83rem;
+  color: var(--fail-fg); padding: 6px 10px;
+  background: #fff3f3; border-radius: 4px;
+  border-left: 3px solid var(--fail-fg);
+}
+.gratitude-error.hidden { display: none; }
+.gratitude-response-area {
+  margin-top: 14px; padding: 12px 14px;
+  background: var(--bg-subtle);
+  border-radius: var(--radius);
+  border-left: 3px solid var(--primary);
+}
+.gratitude-response-area.hidden { display: none; }
+.gratitude-response-text {
+  margin: 0; font-size: 0.9rem;
+  line-height: 1.6; color: var(--text-main);
+  white-space: pre-wrap;
+}
+.gratitude-actions {
+  display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap;
+}

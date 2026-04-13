@@ -2830,7 +2830,7 @@ async function fetchSessionPlan() {
   }
 }
 
-function startPlannedSession() {
+function _doStartPlannedSession() {
   const plan = briefingState.plan;
   if (!plan || !plan.planned?.length) return;
 
@@ -2874,6 +2874,10 @@ function startPlannedSession() {
 
   persistStudySession();
   showStudyCard();
+}
+
+function startPlannedSession() {
+  showGratitudeModal(() => _doStartPlannedSession());
 }
 
 function exitStudySession() {
@@ -3041,7 +3045,81 @@ function startExamSession(cards, subject) {
   showStudyCard();
 }
 
-async function startStudySession() {
+// ── Gratitude modal ───────────────────────────────────────────────────────────
+// Shows the gratitude modal and resolves once the user has submitted and
+// acknowledged the response.  Pass a callback that starts the actual session.
+function showGratitudeModal(onConfirm) {
+  const modal      = document.querySelector('#gratitude-modal');
+  const input      = document.querySelector('#gratitude-input');
+  const submitBtn  = document.querySelector('#gratitude-submit-btn');
+  const startBtn   = document.querySelector('#gratitude-start-btn');
+  const errorEl    = document.querySelector('#gratitude-error');
+  const responseArea = document.querySelector('#gratitude-response-area');
+  const responseText = document.querySelector('#gratitude-response-text');
+
+  // Reset state
+  input.value = '';
+  errorEl.classList.add('hidden');
+  responseArea.classList.add('hidden');
+  submitBtn.classList.remove('hidden');
+  submitBtn.disabled = false;
+  submitBtn.textContent = 'Continuar';
+  startBtn.classList.add('hidden');
+
+  modal.classList.remove('hidden');
+  input.focus();
+
+  function close() {
+    modal.classList.add('hidden');
+    submitBtn.removeEventListener('click', handleSubmit);
+    startBtn.removeEventListener('click', handleStart);
+  }
+
+  async function handleSubmit() {
+    const text = input.value.trim();
+    if (text.length < 3) {
+      errorEl.textContent = 'Escribí al menos unas palabras por las que estés agradecido.';
+      errorEl.classList.remove('hidden');
+      return;
+    }
+    errorEl.classList.add('hidden');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Enviando...';
+
+    try {
+      const data = await postJson('/gratitude', { text });
+      if (data.response) {
+        responseText.textContent = data.response;
+        responseArea.classList.remove('hidden');
+      }
+      submitBtn.classList.add('hidden');
+      startBtn.classList.remove('hidden');
+    } catch (err) {
+      errorEl.textContent = `Error al guardar: ${err.message}`;
+      errorEl.classList.remove('hidden');
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Continuar';
+    }
+  }
+
+  function handleStart() {
+    close();
+    onConfirm();
+  }
+
+  submitBtn.addEventListener('click', handleSubmit);
+  startBtn.addEventListener('click', handleStart);
+
+  // Allow submitting with Enter (Ctrl+Enter for textarea)
+  input.addEventListener('keydown', function onKey(e) {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      input.removeEventListener('keydown', onKey);
+      handleSubmit();
+    }
+  });
+}
+
+async function _doStartStudySession() {
   const subjectQuery = briefingState.selectedSubject
     ? `?subject=${encodeURIComponent(briefingState.selectedSubject)}`
     : '';
@@ -3073,6 +3151,10 @@ async function startStudySession() {
 
   persistStudySession();
   showStudyCard();
+}
+
+function startStudySession() {
+  showGratitudeModal(() => _doStartStudySession());
 }
 
 function showStudyCard() {
