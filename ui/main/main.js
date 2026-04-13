@@ -1906,6 +1906,60 @@ async function deleteJson(url) {
   try { return await response.json(); } catch (_e) { return {}; }
 }
 
+// ── Chinese TTS helpers ───────────────────────────────────────────────────────
+
+/** Returns true if text contains CJK Unified Ideographs (Hanzi). */
+function hasChinese(text) {
+  return /[\u4e00-\u9fff\u3400-\u4dbf\u{20000}-\u{2a6df}]/u.test(text || '');
+}
+
+let _ttsAudio = null; // keep reference to stop previous playback
+
+/**
+ * Calls POST /tts, decodes the base64 MP3 and plays it.
+ * Updates the #study-tts-btn state while loading/playing.
+ */
+async function playChineseTTS(text) {
+  const btn = document.querySelector('#study-tts-btn');
+  if (!text || !hasChinese(text)) return;
+
+  // Stop any currently playing audio
+  if (_ttsAudio) {
+    _ttsAudio.pause();
+    _ttsAudio = null;
+  }
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '⏳ Cargando...';
+  }
+
+  try {
+    const data = await postJson('/tts', { text });
+    if (!data?.audio) throw new Error('Sin audio en la respuesta');
+
+    const byteChars = atob(data.audio);
+    const byteArr = new Uint8Array(byteChars.length);
+    for (let i = 0; i < byteChars.length; i++) byteArr[i] = byteChars.charCodeAt(i);
+    const blob = new Blob([byteArr], { type: 'audio/mpeg' });
+    const url  = URL.createObjectURL(blob);
+
+    _ttsAudio = new Audio(url);
+    _ttsAudio.onended = () => {
+      URL.revokeObjectURL(url);
+      if (btn) { btn.disabled = false; btn.textContent = '🔊 Escuchar'; }
+    };
+    _ttsAudio.onerror = () => {
+      if (btn) { btn.disabled = false; btn.textContent = '🔊 Escuchar'; }
+    };
+    if (btn) btn.textContent = '🔊 Reproduciendo...';
+    _ttsAudio.play();
+  } catch (err) {
+    console.error('TTS error:', err.message);
+    if (btn) { btn.disabled = false; btn.textContent = '🔊 Escuchar'; }
+  }
+}
+
 async function postJson(url, body, method = 'POST') {
   const headers = { 'Content-Type': 'application/json' };
   if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
@@ -3642,6 +3696,22 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
 
     document.querySelector('#study-answer-block').classList.add('hidden');
     document.querySelector('#study-result-block').classList.remove('hidden');
+
+    // Chinese TTS: auto-play if expected answer contains Hanzi
+    const ttsBar = document.querySelector('#study-tts-bar');
+    const ttsBtn = document.querySelector('#study-tts-btn');
+    if (hasChinese(expected_answer_text)) {
+      if (ttsBar) ttsBar.classList.remove('hidden');
+      if (ttsBtn) {
+        // Replace listener to avoid duplicates
+        const freshBtn = ttsBtn.cloneNode(true);
+        ttsBtn.parentNode.replaceChild(freshBtn, ttsBtn);
+        freshBtn.addEventListener('click', () => playChineseTTS(expected_answer_text));
+      }
+      playChineseTTS(expected_answer_text);
+    } else {
+      if (ttsBar) ttsBar.classList.add('hidden');
+    }
 
     // Start review timer (time spent reading the answer/feedback)
     studyState.reviewStartTime = Date.now();

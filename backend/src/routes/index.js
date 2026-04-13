@@ -20,6 +20,7 @@ import githubImportRouter from './github-import.js';
 import plannerRouter from './planner.js';
 import notesRouter from './notes.js';
 import gratitudeRouter from './gratitude.js';
+import ttsRouter from './tts.js';
 
 const router = Router();
 
@@ -44,5 +45,6 @@ router.use(sessionPlannerRouter);
 router.use(sqlValidateRouter);
 router.use(notesRouter);
 router.use(gratitudeRouter);
+router.use(ttsRouter);
 
 export default router;
