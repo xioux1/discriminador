@@ -2540,7 +2540,7 @@ textarea:focus, input[type="text"]:focus, select:focus {
   border: var(--bw-ui) solid var(--border-mid);
   border-radius: var(--radius-sm);
   font-family: var(--font);
-  font-size: var(--fs-base);
+  font-size: 1.3rem;
   line-height: 1.9;         /* extra room so stacked fractions don't overlap */
   background: rgba(255, 255, 255, 0.72);
   backdrop-filter: blur(8px);
