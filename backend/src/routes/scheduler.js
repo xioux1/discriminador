@@ -543,13 +543,13 @@ schedulerRouter.post('/scheduler/exam-sim', async (req, res) => {
          GROUP BY c.id`,
         [userId, subject.trim()]
       ),
-      // Fetch recent sim logs (last 30 days) to recalibrate scores
+      // Fetch recent sim logs (last 60 days) to recalibrate scores
       dbPool.query(
         `SELECT results, created_at FROM exam_sim_logs
          WHERE user_id = $1 AND subject = $2
-           AND created_at >= now() - interval '30 days'
+           AND created_at >= now() - interval '60 days'
          ORDER BY created_at DESC
-         LIMIT 10`,
+         LIMIT 20`,
         [userId, subject.trim()]
       )
     ]);
@@ -559,22 +559,22 @@ schedulerRouter.post('/scheduler/exam-sim', async (req, res) => {
       return res.json({ cards: [], subject: subject.trim(), total_available: 0 });
     }
 
-    // Build a map: card_id → {grade, daysAgo} for the most recent sim appearance
-    const recentSimByCard = {};
+    // Build a map: card_id → [{grade, daysAgo}, ...] sorted most-recent-first.
+    // We iterate logs already sorted DESC so each push preserves that order.
+    const simHistoryByCard = {};
     const now = Date.now();
     for (const log of simHistoryResult.rows) {
       const daysAgo = (now - new Date(log.created_at).getTime()) / 86400000;
       for (const item of (log.results || [])) {
         if (!item.card_id) continue;
         const id = String(item.card_id);
-        if (!recentSimByCard[id] || recentSimByCard[id].daysAgo > daysAgo) {
-          recentSimByCard[id] = { grade: item.grade, daysAgo };
-        }
+        if (!simHistoryByCard[id]) simHistoryByCard[id] = [];
+        simHistoryByCard[id].push({ grade: item.grade, daysAgo });
       }
     }
 
     // Weakness score: combines pass rate, SM-2 ease factor, retention interval,
-    // active micro-gaps, and recent exam simulation performance.
+    // active micro-gaps, and cumulative exam simulation performance.
     const scored = rows.map((card) => {
       const passCount    = parseInt(card.pass_count)   || 0;
       const reviewCount  = parseInt(card.review_count) || 0;
@@ -588,24 +588,38 @@ schedulerRouter.post('/scheduler/exam-sim', async (req, res) => {
                  + 1 / (intervalDays + 1)                 * 0.20
                  + hasMicros                               * 0.10;
 
-      // Recalibrate based on recent sim performance:
-      // Passed recently → reduce score (avoid repetition, knowledge was demonstrated)
-      // Failed recently → boost score (confirmed weak area)
+      // Recalibrate based on cumulative sim performance.
+      // Count consecutive passes from most-recent backwards; a fail breaks the streak.
+      // More consecutive passes → stronger and longer-lasting reduction.
+      // A fail resets the streak and boosts the score (confirmed weak area).
       let simModifier = 1.0;
-      const sim = recentSimByCard[String(card.id)];
-      if (sim) {
-        const recency = Math.max(0, 1 - sim.daysAgo / 14); // 1 = today, 0 = 14+ days ago
-        if (sim.grade === 'easy')  simModifier = 1 - 0.55 * recency; // big reduction
-        else if (sim.grade === 'good')  simModifier = 1 - 0.40 * recency;
-        else if (sim.grade === 'hard')  simModifier = 1 + 0.20 * recency; // small boost
-        else if (sim.grade === 'again') simModifier = 1 + 0.35 * recency; // confirmed weak
+      const simHistory = simHistoryByCard[String(card.id)];
+      if (simHistory && simHistory.length > 0) {
+        const mostRecent = simHistory[0];
+        // Decay window scales with streak: 1 pass = 14d, 2 = 21d, 3+ = 30d
+        let passStreak = 0;
+        for (const entry of simHistory) {
+          if (entry.grade === 'easy' || entry.grade === 'good') passStreak++;
+          else break;
+        }
+        const decayDays = passStreak >= 3 ? 30 : passStreak === 2 ? 21 : 14;
+        const recency = Math.max(0, 1 - mostRecent.daysAgo / decayDays);
+
+        if (passStreak >= 3)     simModifier = 1 - 0.70 * recency; // strong mastery
+        else if (passStreak === 2) simModifier = 1 - 0.60 * recency;
+        else if (passStreak === 1) simModifier = 1 - 0.45 * recency;
+        else {
+          // Most recent was a fail — boost
+          const boost = mostRecent.grade === 'again' ? 0.35 : 0.20;
+          simModifier = 1 + boost * recency;
+        }
       }
 
       const score = Math.max(0, base * simModifier);
       return {
         ...card,
         weakness_score:  Math.round(score * 1000) / 1000,
-        sim_recalibrated: !!sim
+        sim_recalibrated: simHistory ? simHistory.length > 0 : false
       };
     });
 
