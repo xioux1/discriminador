@@ -82,6 +82,6 @@ Aplicá el árbol de decisión y generá la micro-pregunta.`
 
   return {
     question:        questionMatch?.[1]?.trim() ?? `¿Qué es "${concept}" y por qué es importante?`,
-    expected_answer: answerMatch?.[1]?.trim() ?? ''
+    expected_answer: answerMatch?.[1]?.trim() || expected_answer_text
   };
 }

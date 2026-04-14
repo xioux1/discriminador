@@ -3472,7 +3472,7 @@ async function clarifyStudyPrompt() {
   setStudyPromptFeedback('Generando versión más clara...', 'info');
 
   const expectedAnswer = (item.type === 'micro'
-    ? item.data.expected_answer
+    ? (item.data.expected_answer || item.data.parent_expected)
     : item.data.expected_answer_text
   ) || '';
 
@@ -3538,7 +3538,7 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
 
   if (item.type === 'micro') {
     prompt_text          = getStudyPromptText(item);
-    expected_answer_text = item.data.expected_answer;
+    expected_answer_text = item.data.expected_answer || item.data.parent_expected;
     subject              = item.data.parent_subject;
   } else {
     prompt_text          = getStudyPromptText(item);
@@ -3933,7 +3933,7 @@ document.querySelector('#study-doubt-btn').addEventListener('click', async () =>
 
   const isMicro = item?.type === 'micro';
   const cardPrompt    = isMicro ? item.data.question    : item.data.prompt_text;
-  const expectedAns   = isMicro ? item.data.expected_answer : item.data.expected_answer_text;
+  const expectedAns   = isMicro ? (item.data.expected_answer || item.data.parent_expected) : item.data.expected_answer_text;
   const subject       = isMicro ? item.data.parent_subject  : item.data.subject;
   const userAnswer    = (document.querySelector('#study-answer-input').value || '').trim();
   const grade         = evalResult ? String(evalResult.suggested_grade || '').toLowerCase() : '';
