@@ -18,7 +18,7 @@ promptToolsRouter.post('/prompts/clarify', async (req, res) => {
     return res.status(200).json({ clarified_prompt: clarified });
   } catch (err) {
     console.error('POST /prompts/clarify', err.message);
-    return res.status(500).json({ error: 'server_error', message: 'Failed to clarify prompt.' });
+    return res.status(422).json({ error: 'clarify_error', message: err.message });
   }
 });
 

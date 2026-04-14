@@ -36,5 +36,7 @@ Output: "Escribí un cursor en Oracle PL/SQL que recorra la tabla EMPLEADOS, fil
 
   const text = response.content.find((b) => b.type === 'text')?.text?.trim() ?? '';
   if (!text) throw new Error('El modelo no devolvió una consigna válida.');
+  // Reject if the model inserted placeholder brackets (e.g. "[Aquí va la ecuación]")
+  if (/\[.{3,}\]/.test(text)) throw new Error('La consigna original está incompleta y no puede aclararse.');
   return text;
 }

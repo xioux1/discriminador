@@ -45,7 +45,7 @@ Generá una variante conservadora.`
   });
 
   const text = response.content.find((b) => b.type === 'text')?.text ?? '';
-  const questionMatch = text.match(/QUESTION:\s*(.+)/i);
+  const questionMatch = text.match(/QUESTION:\s*([\s\S]+?)(?=\nANSWER:)/i);
   const answerMatch   = text.match(/ANSWER:\s*([\s\S]+)/i);
 
   if (!questionMatch || !answerMatch) {
