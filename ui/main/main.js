@@ -2639,6 +2639,10 @@ function initStudyTab() {
     const input = document.querySelector('#exam-sim-subject-input');
     if (briefingState.selectedSubject) input.value = briefingState.selectedSubject;
     document.querySelector('#exam-sim-feedback').classList.add('hidden');
+    // Reset focus panel to collapsed state each time the modal opens
+    document.querySelector('#exam-focus-panel').classList.add('hidden');
+    document.querySelector('#exam-focus-toggle').textContent = '+ Enfocar en temas específicos del examen';
+    document.querySelector('#exam-focus-input').value = '';
     document.querySelector('#exam-sim-modal').classList.remove('hidden');
     input.focus();
   }
@@ -2650,6 +2654,16 @@ function initStudyTab() {
   document.querySelector('#exam-sim-close-btn').addEventListener('click', closeExamModal);
   document.querySelector('#exam-sim-cancel-btn').addEventListener('click', closeExamModal);
   document.querySelector('.exam-sim-backdrop').addEventListener('click', closeExamModal);
+
+  document.querySelector('#exam-focus-toggle').addEventListener('click', () => {
+    const panel = document.querySelector('#exam-focus-panel');
+    const toggle = document.querySelector('#exam-focus-toggle');
+    const isHidden = panel.classList.toggle('hidden');
+    toggle.textContent = isHidden
+      ? '+ Enfocar en temas específicos del examen'
+      : '− Enfocar en temas específicos del examen';
+    if (!isHidden) document.querySelector('#exam-focus-input').focus();
+  });
 
   document.querySelectorAll('.exam-count-pill').forEach((pill) => {
     pill.addEventListener('click', () => {
@@ -2667,12 +2681,15 @@ function initStudyTab() {
       fb.classList.remove('hidden');
       return;
     }
+    const examFocusPrompt = (document.querySelector('#exam-focus-input').value || '').trim();
     const startBtn = document.querySelector('#exam-sim-start-btn');
     startBtn.disabled = true;
-    startBtn.textContent = 'Cargando...';
+    startBtn.textContent = examFocusPrompt ? 'Analizando temas...' : 'Cargando...';
     fb.classList.add('hidden');
     try {
-      const data = await postJson('/scheduler/exam-sim', { subject, count: _examSelectedCount });
+      const payload = { subject, count: _examSelectedCount };
+      if (examFocusPrompt) payload.examFocusPrompt = examFocusPrompt;
+      const data = await postJson('/scheduler/exam-sim', payload);
       if (!data.cards?.length) {
         fb.textContent = `Sin tarjetas disponibles para "${subject}". Creá tarjetas primero.`;
         fb.classList.remove('hidden');
