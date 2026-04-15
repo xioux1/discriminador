@@ -2777,6 +2777,38 @@ textarea:focus, input[type="text"]:focus, select:focus {
 .exam-sim-actions {
   display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap;
 }
+.exam-focus-section {
+  margin-top: 14px;
+}
+.exam-focus-toggle {
+  background: none; border: none; padding: 0;
+  font-size: 0.82rem; color: var(--primary);
+  cursor: pointer; text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.exam-focus-toggle:hover { opacity: 0.75; }
+.exam-focus-panel {
+  margin-top: 8px;
+}
+.exam-focus-panel.hidden { display: none; }
+.exam-focus-textarea {
+  width: 100%; box-sizing: border-box;
+  resize: vertical; min-height: 70px;
+  font-family: inherit; font-size: 0.88rem;
+  padding: 8px 10px;
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+  color: var(--text-main);
+  line-height: 1.45;
+}
+.exam-focus-textarea:focus {
+  outline: none; border-color: var(--primary);
+}
+.exam-focus-hint {
+  margin: 5px 0 0; font-size: 0.78rem;
+  color: var(--text-muted); line-height: 1.4;
+}
 
 /* ── Exam mode badge in session header ───────────────────────────────────── */
 

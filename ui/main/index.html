@@ -259,6 +259,20 @@
               <button type="button" class="exam-count-pill" data-count="15">15</button>
               <button type="button" class="exam-count-pill" data-count="20">20</button>
             </div>
+            <div class="exam-focus-section">
+              <button type="button" id="exam-focus-toggle" class="exam-focus-toggle">+ Enfocar en temas específicos del examen</button>
+              <div id="exam-focus-panel" class="exam-focus-panel hidden">
+                <label class="exam-sim-label" for="exam-focus-input" style="margin-top:10px">¿Qué temas entran en el examen?</label>
+                <textarea
+                  id="exam-focus-input"
+                  class="exam-focus-textarea"
+                  placeholder="Ej: Solo entran matrices y determinantes. Ignorar derivadas e integrales."
+                  rows="3"
+                  maxlength="600"
+                ></textarea>
+                <p class="exam-focus-hint">El simulacro priorizará las tarjetas relacionadas con estos temas e ignorará las demás.</p>
+              </div>
+            </div>
             <p id="exam-sim-feedback" class="exam-sim-feedback hidden"></p>
             <div class="exam-sim-actions">
               <button type="button" id="exam-sim-start-btn" class="btn-primary">Comenzar simulacro</button>

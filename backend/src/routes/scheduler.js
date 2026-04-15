@@ -3,6 +3,60 @@ import { dbPool } from '../db/client.js';
 import { computeNextReview, isPassGrade } from '../services/scheduler.js';
 import { generateMicroCard } from '../services/micro-generator.js';
 import { generateVariant } from '../services/variant-generator.js';
+import Anthropic from '@anthropic-ai/sdk';
+
+const LLM_MODEL = 'claude-haiku-4-5-20251001';
+let _aiClient = null;
+function getAiClient() {
+  if (!_aiClient) _aiClient = new Anthropic();
+  return _aiClient;
+}
+
+/**
+ * Uses the LLM to score each card's relevance to the exam focus prompt.
+ * Returns a map: card_id (string) → multiplier (number).
+ * high=3.0, medium=1.5, low=0.05 — falls back to 1.0 for all on error.
+ */
+async function scoreCardsByExamFocus(cards, examFocusPrompt) {
+  // Cap at 100 cards to keep the prompt within token limits
+  const subset = cards.slice(0, 100);
+  const cardList = subset.map((c) => ({
+    id: c.id,
+    text: String(c.prompt_text || '').slice(0, 120),
+  }));
+
+  const userMessage = `TEMAS DEL EXAMEN:\n${examFocusPrompt}\n\nTARJETAS:\n${JSON.stringify(cardList)}`;
+
+  try {
+    const response = await getAiClient().messages.create({
+      model: LLM_MODEL,
+      max_tokens: 1024,
+      temperature: 0,
+      system: `Sos un asistente de estudio. El estudiante indicó qué temas estarán en su próximo examen.
+Tu tarea: para cada tarjeta de la lista, determiná si su contenido es RELEVANTE ("high"), POSIBLEMENTE RELEVANTE ("medium"), o NO RELEVANTE ("low") para los temas del examen.
+
+Respondé ÚNICAMENTE con JSON válido, sin explicaciones:
+{"relevance": [{"id": <number>, "level": "high"|"medium"|"low"}, ...]}
+
+Incluí TODAS las tarjetas de la lista. No omitas ninguna.`,
+      messages: [{ role: 'user', content: userMessage }],
+    });
+
+    const text = response.content.find((b) => b.type === 'text')?.text ?? '';
+    const jsonText = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+    const parsed = JSON.parse(jsonText);
+
+    const multiplierMap = {};
+    const MULTIPLIERS = { high: 3.0, medium: 1.5, low: 0.05 };
+    for (const item of (parsed.relevance || [])) {
+      multiplierMap[String(item.id)] = MULTIPLIERS[item.level] ?? 1.0;
+    }
+    return multiplierMap;
+  } catch (_err) {
+    // Graceful fallback: treat all cards as equally relevant
+    return {};
+  }
+}
 
 const schedulerRouter = Router();
 
@@ -520,7 +574,7 @@ async function reviewMicroCard(res, microCardId, grade, conceptGaps, userAnswer,
 // ─── Exam simulation: pick weakest cards for a subject ───────────────────────
 schedulerRouter.post('/scheduler/exam-sim', async (req, res) => {
   const userId = req.user.id;
-  const { subject, count = 10 } = req.body || {};
+  const { subject, count = 10, examFocusPrompt } = req.body || {};
 
   if (!subject || typeof subject !== 'string' || !subject.trim()) {
     return res.status(422).json({ error: 'validation_error', message: 'subject is required.' });
@@ -623,13 +677,26 @@ schedulerRouter.post('/scheduler/exam-sim', async (req, res) => {
       };
     });
 
+    // If the user provided an exam focus prompt, apply LLM-based relevance multipliers.
+    // Cards matching the exam topics get boosted; off-topic cards get heavily suppressed.
+    const focusText = typeof examFocusPrompt === 'string' ? examFocusPrompt.trim() : '';
+    if (focusText) {
+      const relevanceMap = await scoreCardsByExamFocus(scored, focusText);
+      for (const card of scored) {
+        const multiplier = relevanceMap[String(card.id)] ?? 1.0;
+        card.weakness_score = Math.round(card.weakness_score * multiplier * 1000) / 1000;
+        card.exam_focus_relevance = multiplier >= 2.0 ? 'high' : multiplier >= 1.0 ? 'medium' : 'low';
+      }
+    }
+
     scored.sort((a, b) => b.weakness_score - a.weakness_score);
     const selected = scored.slice(0, parsedCount);
 
     return res.json({
       cards: selected,
       subject: subject.trim(),
-      total_available: rows.length
+      total_available: rows.length,
+      exam_focus_active: !!focusText,
     });
   } catch (err) {
     console.error('POST /scheduler/exam-sim error', err.message);
