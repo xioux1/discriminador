@@ -3,11 +3,12 @@
    When math mode is active, replaces the textarea with a rich contenteditable
    editor that supports structured math input:
 
-     /    →  inserts a fraction; cursor goes to numerator
-     Tab  →  numerator → denominator → exit fraction (always)
-     →    →  same as Tab but only at the end of a box
-     ^    →  inserts a superscript box
+     /      →  inserts a fraction; cursor goes to numerator
+     Tab    →  numerator → denominator → exit fraction (always)
+     →      →  same as Tab but only at the end of a box
+     ^      →  inserts a superscript box
      Tab/→  exits the superscript
+     Ctrl+H →  highlight / remove highlight on selection or current block
 
    Raw text is synced to the hidden textarea in (num)/(den) / base^exp format.
 */
@@ -112,6 +113,63 @@
     return false;
   }
 
+  /* ── Highlight helpers ───────────────────────────────────────────────── */
+
+  // Find the nearest .mp-highlight ancestor of the cursor (or null).
+  function highlightFromSelection(editor) {
+    var sel = window.getSelection();
+    var node = sel && sel.rangeCount ? sel.getRangeAt(0).startContainer : null;
+    while (node && node !== editor) {
+      if (node.nodeType === 1 && node.classList.contains('mp-highlight')) return node;
+      node = node.parentNode;
+    }
+    return null;
+  }
+
+  // Apply or remove a highlight on the current selection.
+  // - If there is a non-collapsed selection: wrap it in .mp-highlight.
+  // - If the cursor sits inside an existing highlight: remove that highlight.
+  function applyHighlight(editor) {
+    var sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+    var range = sel.getRangeAt(0);
+    if (!editor.contains(range.commonAncestorContainer)) return;
+
+    // Toggle OFF: cursor or selection inside an existing highlight
+    var existing = highlightFromSelection(editor);
+    if (existing) {
+      var parent = existing.parentNode;
+      while (existing.firstChild) parent.insertBefore(existing.firstChild, existing);
+      parent.removeChild(existing);
+      return;
+    }
+
+    // Nothing selected — nothing to do
+    if (sel.isCollapsed) return;
+
+    var hl = document.createElement('span');
+    hl.className = 'mp-highlight';
+    hl.dataset.mathType = 'highlight';
+
+    try {
+      range.surroundContents(hl);
+    } catch (_) {
+      // Selection spans partial element boundaries (e.g. inside a fraction box).
+      // Extract what we can and wrap it.
+      hl.appendChild(range.extractContents());
+      range.insertNode(hl);
+    }
+
+    // Collapse cursor to end of highlight
+    try {
+      var r2 = document.createRange();
+      r2.setStartAfter(hl);
+      r2.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(r2);
+    } catch (_) {}
+  }
+
   /* ── Element factories ───────────────────────────────────────────────── */
 
   function makeFrac() {
@@ -168,6 +226,8 @@
         } else if (n.dataset.mathType === 'sup') {
           var supEl = n.querySelector('[data-box-role="sup"]');
           out += '^' + extractText(supEl || n);
+        } else if (n.dataset.mathType === 'highlight') {
+          out += extractText(n); // visual only — transparent to serialisation
         } else if (tag === 'br') {
           out += '\n';
         } else if (tag === 'div') {
@@ -198,6 +258,32 @@
     if (!textarea || textarea._mathEditorAttached) return;
     textarea._mathEditorAttached = true;
 
+    /* ── Mini toolbar ──────────────────────────────────────────────────── */
+    var toolbar = document.createElement('div');
+    toolbar.className = 'math-mini-toolbar hidden';
+
+    var hlBtn = document.createElement('button');
+    hlBtn.type = 'button';
+    hlBtn.className = 'math-toolbar-btn';
+    hlBtn.title = 'Resaltar selección (Ctrl+H)';
+    hlBtn.innerHTML = '<span class="math-toolbar-btn-icon"></span>Resaltar';
+    toolbar.appendChild(hlBtn);
+    textarea.parentNode.insertBefore(toolbar, textarea);
+
+    // Keep highlight button state in sync with cursor position
+    function updateHlBtn() {
+      var inHl = !!highlightFromSelection(editor);
+      hlBtn.classList.toggle('math-toolbar-btn--active', inHl);
+    }
+
+    hlBtn.addEventListener('mousedown', function (e) {
+      e.preventDefault(); // don't steal focus from editor
+      applyHighlight(editor);
+      updateHlBtn();
+      sync();
+    });
+
+    /* ── Editor ─────────────────────────────────────────────────────────── */
     var editor = document.createElement('div');
     editor.className = 'math-ce-editor hidden';
     editor.contentEditable = 'true';
@@ -205,6 +291,9 @@
     editor.setAttribute('role', 'textbox');
     editor.setAttribute('aria-multiline', 'true');
     textarea.parentNode.insertBefore(editor, textarea);
+
+    editor.addEventListener('keyup', updateHlBtn);
+    editor.addEventListener('mouseup', updateHlBtn);
 
     var _syncing = false;
     function sync() {
@@ -222,6 +311,15 @@
 
     // capture:true so this fires even when an inner .mp-box has focus.
     editor.addEventListener('keydown', function (e) {
+      // Ctrl+H / Cmd+H — toggle highlight on selection
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key === 'h') {
+        e.preventDefault();
+        applyHighlight(editor);
+        updateHlBtn();
+        sync();
+        return;
+      }
+
       if (e.ctrlKey || e.metaKey || e.altKey) return;
 
       // Walk from cursor position up to find the nearest .mp-box ancestor.
@@ -333,10 +431,12 @@
           editor.textContent = textarea.value;
         }
         editor.classList.remove('hidden');
+        toolbar.classList.remove('hidden');
         textarea.style.display = 'none';
       } else {
         sync();
         editor.classList.add('hidden');
+        toolbar.classList.add('hidden');
         textarea.style.display = '';
       }
     }
