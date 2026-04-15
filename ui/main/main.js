@@ -2803,6 +2803,55 @@ function initStudyTab() {
     if (_ttsCurrentText) playChineseTTS(_ttsCurrentText);
   });
 
+  // ── Binary check button ────────────────────────────────────────────────────
+  document.querySelector('#study-binary-check-btn')?.addEventListener('click', async () => {
+    const item = studyState.queue[studyState.index];
+    if (!item || item.type !== 'card') return;
+
+    const answer = document.querySelector('#study-answer-input').value.trim();
+    if (!answer) return;
+
+    const btn = document.querySelector('#study-binary-check-btn');
+    const fb  = document.querySelector('#study-check-feedback');
+    btn.disabled = true;
+    btn.textContent = 'Verificando…';
+    fb.textContent = '';
+    fb.className = 'study-check-feedback';
+
+    try {
+      const resp = await postJson('/evaluate/binary-check', {
+        card_id:              item.data.id,
+        prompt_text:          item.data.prompt_text,
+        user_answer_text:     answer,
+        expected_answer_text: item.data.expected_answer_text,
+        subject:              item.data.subject || undefined
+      });
+      if (resp.result === 'ok') {
+        fb.textContent = '✓ Va bien';
+        fb.className = 'study-check-feedback study-check-ok';
+      } else {
+        fb.textContent = '✕ Hay un error';
+        fb.className = 'study-check-feedback study-check-error';
+        if (resp.check_id) studyState.checkFails.push(resp.check_id);
+      }
+    } catch (_) {
+      fb.textContent = 'Error al verificar';
+      fb.className = 'study-check-feedback study-check-error';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Verificar';
+    }
+  });
+
+  // Clear check feedback when the user modifies their answer
+  document.querySelector('#study-answer-input')?.addEventListener('input', () => {
+    const fb = document.querySelector('#study-check-feedback');
+    if (fb && fb.textContent) {
+      fb.textContent = '';
+      fb.className = 'study-check-feedback';
+    }
+  });
+
   document.querySelector('#study-again-btn').addEventListener('click', () => {
     clearPersistedStudySession();
     document.querySelector('#study-complete').classList.add('hidden');
@@ -3134,7 +3183,9 @@ const studyState = {
   // Exam mode extras
   examMode: false,
   examSubject: null,
-  examItemResults: []  // {grade, prompt_text, expected_answer_text, passed}
+  examItemResults: [],  // {grade, prompt_text, expected_answer_text, passed}
+  // Binary check tool
+  checkFails: []        // IDs from binary_check_log for negative checks this card
 };
 
 function renderStudyBackgroundStatus() {
@@ -3150,6 +3201,14 @@ function renderStudyBackgroundStatus() {
     ? 'Espere, generando microconsignas…'
     : `Espere, generando microconsignas… (${pending})`;
   statusEl.classList.remove('hidden');
+}
+
+// Show the binary check row only when the active editor is Math or SQL.
+function syncCheckBtn() {
+  const row = document.querySelector('#study-check-row');
+  if (!row) return;
+  const active = studyState.currentInputMode === 'math' || studyState.currentInputMode === 'sql';
+  row.classList.toggle('hidden', !active);
 }
 
 function getStudyPromptText(item) {
@@ -3377,6 +3436,9 @@ function showStudyCard() {
   studyState.currentEvalResult = null;
   studyState.currentEvalContext = null;
   studyState.currentDecision = null;
+  studyState.checkFails = [];
+  const _checkFb = document.querySelector('#study-check-feedback');
+  if (_checkFb) { _checkFb.textContent = ''; _checkFb.className = 'study-check-feedback'; }
   // Reset SQL compiler panel for study session
   const studyCompilerPanel = document.querySelector('#study-sql-compiler');
   const studyCompilerOut   = document.querySelector('#study-compiler-output');
@@ -3405,6 +3467,7 @@ function showStudyCard() {
   const isMicro     = item.type === 'micro';
   const studySqlMode = savedMode === 'sql';
   studyState.currentInputMode = savedMode === 'math' ? 'math' : studySqlMode ? 'sql' : '';
+  syncCheckBtn();
 
   if (savedMode === 'math') {
     MathPalette.show();
@@ -3446,16 +3509,19 @@ function showStudyCard() {
       MathPalette.setActiveTextarea(input);
       if (next === 'sql') {
         studyState.currentInputMode = 'sql';
+        syncCheckBtn();
         MathPalette.hide();
         SqlEditor.activate(input);
         panel?.classList.remove('hidden');
       } else if (next === 'math') {
         studyState.currentInputMode = 'math';
+        syncCheckBtn();
         SqlEditor.deactivate();
         MathPalette.show();
         panel?.classList.add('hidden');
       } else {
         studyState.currentInputMode = '';
+        syncCheckBtn();
         SqlEditor.deactivate();
         MathPalette.updateSubject(subject || '');
         panel?.classList.add('hidden');
@@ -4106,12 +4172,13 @@ async function handleStudyNextCard() {
 
   if (shouldGenerateMicros) {
     postJson('/scheduler/review', {
-      card_id: item.data.id,
+      card_id:          item.data.id,
       grade,
-      concept_gaps: gaps,
+      concept_gaps:     gaps,
+      check_fail_ids:   studyState.checkFails,
       response_time_ms: studyState.responseTimeMs || undefined,
       review_time_ms:   studyState.reviewTimeMs   || undefined,
-      user_answer: studyState.currentEvalContext?.user_answer_text || ''
+      user_answer:      studyState.currentEvalContext?.user_answer_text || ''
     }).then((reviewResp) => {
       // Insert generated micro-cards *after* the card currently on screen.
       // If we insert at `studyState.index`, we would silently replace the logical

@@ -2706,6 +2706,47 @@ textarea:focus, input[type="text"]:focus, select:focus {
   display: inline;
 }
 
+/* ── Binary check tool ───────────────────────────────────────────────────── */
+
+.study-check-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.study-check-row.hidden { display: none; }
+
+.study-binary-check-btn {
+  padding: 5px 16px;
+  font-size: 0.82rem;
+  font-family: var(--font);
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1.5px solid var(--border-mid);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+  white-space: nowrap;
+}
+.study-binary-check-btn:hover:not(:disabled) {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-light);
+}
+.study-binary-check-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.study-check-feedback {
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+.study-check-ok    { color: var(--pass-fg); }
+.study-check-error { color: var(--fail-fg); }
+
 /* ── Highlight span ──────────────────────────────────────────────────────── */
 
 .mp-highlight {

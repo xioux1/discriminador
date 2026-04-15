@@ -1,9 +1,17 @@
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
+import Anthropic from '@anthropic-ai/sdk';
 import { scoreEvaluation } from '../services/scoring.js';
 import { judgeWithLLM } from '../services/llm-judge.js';
 import { isLLMJudgeEnabled } from '../config/env.js';
 import { dbPool } from '../db/client.js';
+
+// Lazy Anthropic client for binary check (reused across requests).
+let _checkClient = null;
+function getCheckClient() {
+  if (!_checkClient) _checkClient = new Anthropic();
+  return _checkClient;
+}
 
 const evaluateRouter = Router();
 
@@ -369,6 +377,55 @@ evaluateRouter.post('/evaluate', async (req, res) => {
     if (client) {
       client.release();
     }
+  }
+});
+
+// ─── Binary check ─────────────────────────────────────────────────────────────
+// POST /evaluate/binary-check
+// Uses the most powerful model available to give a binary yes/no verdict on
+// whether the student's current answer is correct.  No details are leaked.
+// Negative results are logged to binary_check_log to feed the penalty system
+// and micro-card generation.
+evaluateRouter.post('/evaluate/binary-check', async (req, res) => {
+  const userId = req.user?.id ?? null;
+  const { card_id, prompt_text, user_answer_text, expected_answer_text, subject } = req.body || {};
+
+  if (!prompt_text || !user_answer_text || !expected_answer_text) {
+    return res.status(422).json({ error: 'validation_error', message: 'Missing required fields.' });
+  }
+
+  try {
+    const response = await getCheckClient().messages.create({
+      model: 'claude-opus-4-6',
+      max_tokens: 16,
+      system: `Sos un verificador de ejercicios académicos.
+Analizá si la respuesta del estudiante resuelve correctamente el ejercicio.
+Respondé ÚNICAMENTE con una de estas dos líneas, sin agregar nada más:
+RESULTADO: OK
+RESULTADO: ERROR`,
+      messages: [{
+        role: 'user',
+        content: `Ejercicio:\n${prompt_text}\n\nRespuesta esperada:\n${expected_answer_text}\n\nRespuesta del estudiante:\n${user_answer_text}`
+      }]
+    });
+
+    const text    = response.content.find((b) => b.type === 'text')?.text ?? '';
+    const result  = /RESULTADO:\s*OK/i.test(text) ? 'ok' : 'error';
+
+    let checkId = null;
+    if (result === 'error' && userId) {
+      const logRes = await dbPool.query(
+        `INSERT INTO binary_check_log (user_id, card_id, subject, user_answer, result)
+         VALUES ($1, $2, $3, $4, 'error') RETURNING id`,
+        [userId, card_id ? Number(card_id) : null, subject || null, user_answer_text]
+      );
+      checkId = logRes.rows[0]?.id ?? null;
+    }
+
+    return res.json({ result, check_id: checkId });
+  } catch (err) {
+    console.error('POST /evaluate/binary-check', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
   }
 });
 
