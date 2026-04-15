@@ -297,10 +297,13 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
 });
 
 // ─── Record a review result ───────────────────────────────────────────────────
-// Body: { card_id?, micro_card_id?, grade, concept_gaps?, response_time_ms?, review_time_ms? }
+// Body: { card_id?, micro_card_id?, grade, concept_gaps?, response_time_ms?,
+//         review_time_ms?, user_answer?, check_fail_ids? }
 // Accepted grades: again|hard|good|easy (+ legacy pass|fail|review)
+// check_fail_ids: IDs from binary_check_log for negative in-session checks.
+//   When non-empty and final grade is negative, an extra ease penalty applies.
 schedulerRouter.post('/scheduler/review', async (req, res) => {
-  const { card_id, micro_card_id, grade, concept_gaps = [], response_time_ms, review_time_ms, user_answer = '' } = req.body || {};
+  const { card_id, micro_card_id, grade, concept_gaps = [], response_time_ms, review_time_ms, user_answer = '', check_fail_ids = [] } = req.body || {};
   const userId = req.user.id;
 
   const VALID_GRADES = new Set(['pass', 'fail', 'review', 'again', 'hard', 'good', 'easy']);
@@ -322,7 +325,8 @@ schedulerRouter.post('/scheduler/review', async (req, res) => {
     if (micro_card_id) {
       return await reviewMicroCard(res, Number(micro_card_id), effectiveGrade, concept_gaps, user_answer, rtMs, rvtMs, userId);
     } else if (card_id) {
-      return await reviewCard(res, Number(card_id), effectiveGrade, concept_gaps, rtMs, rvtMs, userId, user_answer);
+      const checkFailCount = Array.isArray(check_fail_ids) ? check_fail_ids.length : 0;
+      return await reviewCard(res, Number(card_id), effectiveGrade, concept_gaps, rtMs, rvtMs, userId, user_answer, checkFailCount);
     }
     return res.status(422).json({
       error: 'validation_error',
@@ -335,7 +339,7 @@ schedulerRouter.post('/scheduler/review', async (req, res) => {
 });
 
 // ─── Internal: review a full card ────────────────────────────────────────────
-async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, reviewTimeMs, userId, userAnswer = '') {
+async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, reviewTimeMs, userId, userAnswer = '', checkFailCount = 0) {
   const { rows } = await dbPool.query(
     'SELECT * FROM cards WHERE id = $1 AND user_id = $2 AND archived_at IS NULL AND suspended_at IS NULL',
     [cardId, userId]
@@ -345,11 +349,22 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
   }
 
   const card = rows[0];
-  const schedule = computeNextReview(
+  let schedule = computeNextReview(
     parseFloat(card.interval_days),
     parseFloat(card.ease_factor),
     grade
   );
+
+  // Extra penalty when the student received a negative binary check during this
+  // card but still submitted an incorrect answer.  The ease_factor drops an
+  // additional 0.20 (floor: 1.0 instead of the normal 1.3), making the card
+  // resurface more aggressively in future sessions.
+  if (checkFailCount > 0 && isFailGrade(grade)) {
+    schedule = {
+      ...schedule,
+      ease_factor: Math.max(1.0, schedule.ease_factor - 0.20)
+    };
+  }
 
   const updated = await dbPool.query(
     `UPDATE cards
