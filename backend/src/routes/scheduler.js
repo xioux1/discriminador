@@ -257,25 +257,30 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
       params
     );
 
-    // For each card that has variants, randomly pick one to show
-    // (50% chance to use a variant; always use original if no variants exist)
+    // For each card that has variants, pick uniformly at random from the full
+    // pool: [original, variant_1, variant_2, ...].  Every member of the pool
+    // has exactly 1/(N+1) probability — the original card gets no special weight.
     const cards = await Promise.all(cardsResult.rows.map(async (card) => {
-      if (parseInt(card.variant_count) > 0 && Math.random() < 0.5) {
-        const vRes = await dbPool.query(
-          `SELECT * FROM card_variants WHERE card_id = $1 ORDER BY random() LIMIT 1`,
-          [card.id]
-        );
-        if (vRes.rows.length > 0) {
-          const v = vRes.rows[0];
-          return {
-            ...card,
-            prompt_text: v.prompt_text,
-            expected_answer_text: v.expected_answer_text,
-            variant_id: v.id
-          };
-        }
-      }
-      return card;
+      if (parseInt(card.variant_count) === 0) return card;
+
+      const vRes = await dbPool.query(
+        `SELECT id, prompt_text, expected_answer_text FROM card_variants WHERE card_id = $1`,
+        [card.id]
+      );
+      const variants = vRes.rows;
+      if (variants.length === 0) return card;
+
+      // pick = 0 → original; pick ≥ 1 → variants[pick-1]
+      const pick = Math.floor(Math.random() * (variants.length + 1));
+      if (pick === 0) return card;
+
+      const v = variants[pick - 1];
+      return {
+        ...card,
+        prompt_text:          v.prompt_text,
+        expected_answer_text: v.expected_answer_text,
+        variant_id:           v.id
+      };
     }));
 
     const totalDue = microResult.rows.length + cards.length;
