@@ -2625,6 +2625,72 @@ textarea:focus, input[type="text"]:focus, select:focus {
   display: inline;
 }
 
+/* ── Highlight span ──────────────────────────────────────────────────────── */
+
+.mp-highlight {
+  display: inline;
+  background: rgba(255, 210, 50, 0.32);
+  border: 1.5px solid rgba(190, 145, 0, 0.40);
+  border-radius: 3px;
+  padding: 0 3px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+/* ── Math mini-toolbar ───────────────────────────────────────────────────── */
+
+.math-mini-toolbar {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.math-mini-toolbar.hidden { display: none; }
+
+.math-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 11px 3px 8px;
+  font-size: 0.78rem;
+  font-family: var(--font);
+  font-weight: 500;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1.5px solid var(--border-mid);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+  user-select: none;
+}
+
+.math-toolbar-btn:hover {
+  color: var(--text);
+  border-color: rgba(190, 145, 0, 0.55);
+  background: rgba(255, 210, 50, 0.10);
+}
+
+.math-toolbar-btn--active {
+  color: #7a5a00;
+  background: rgba(255, 210, 50, 0.28);
+  border-color: rgba(190, 145, 0, 0.55);
+}
+
+.math-toolbar-btn-icon {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: rgba(255, 210, 50, 0.65);
+  border: 1.5px solid rgba(190, 145, 0, 0.55);
+  flex-shrink: 0;
+}
+
+.math-toolbar-btn--active .math-toolbar-btn-icon {
+  background: rgba(255, 180, 0, 0.75);
+}
+
 /* ── Grading strictness slider ───────────────────────────────────────────── */
 
 .strictness-slider-row {
