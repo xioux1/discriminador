@@ -855,4 +855,35 @@ schedulerRouter.post('/scheduler/cards/:id/variant', async (req, res) => {
   }
 });
 
+// GET /scheduler/cards/:id/variants
+// Returns the parent card + all its variants for tree visualisation.
+schedulerRouter.get('/scheduler/cards/:id/variants', async (req, res) => {
+  const cardId = parseInt(req.params.id);
+  const userId = req.user.id;
+  if (!cardId) return res.status(422).json({ error: 'validation_error', message: 'Invalid card id.' });
+
+  try {
+    const cardRes = await dbPool.query(
+      `SELECT id, subject, prompt_text, expected_answer_text, created_at
+       FROM cards
+       WHERE id = $1 AND user_id = $2 AND archived_at IS NULL`,
+      [cardId, userId]
+    );
+    if (!cardRes.rows.length) return res.status(404).json({ error: 'not_found', message: 'Card not found.' });
+
+    const variantsRes = await dbPool.query(
+      `SELECT id, prompt_text, expected_answer_text, created_at
+       FROM card_variants
+       WHERE card_id = $1
+       ORDER BY created_at ASC`,
+      [cardId]
+    );
+
+    return res.json({ card: cardRes.rows[0], variants: variantsRes.rows });
+  } catch (err) {
+    console.error('GET /scheduler/cards/:id/variants', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
 export default schedulerRouter;

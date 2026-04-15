@@ -532,12 +532,68 @@ function showCardDetail(card) {
     notesEl.classList.add('hidden');
   }
 
+  loadVariantsTree(card.id, Number(card.variant_count || 0));
+
   overlay.classList.remove('hidden');
   document.querySelector('#card-detail-close').focus();
 }
 
 function hideCardDetail() {
   document.querySelector('#card-detail-overlay')?.classList.add('hidden');
+}
+
+async function loadVariantsTree(cardId, variantCount) {
+  const section = document.querySelector('#cdp-variants-section');
+  const treeEl  = document.querySelector('#cdp-variants-tree');
+  if (!section || !treeEl) return;
+
+  if (variantCount === 0) {
+    section.classList.add('hidden');
+    treeEl.innerHTML = '';
+    return;
+  }
+
+  section.classList.remove('hidden');
+  treeEl.innerHTML = '<div class="cvt-loading">Cargando…</div>';
+
+  try {
+    const data = await getJson(`/scheduler/cards/${cardId}/variants`);
+    treeEl.innerHTML = renderVariantsTreeHTML(data.card, data.variants);
+    treeEl.querySelectorAll('.cvt-node').forEach((node) => {
+      node.querySelector('.cvt-node-head').addEventListener('click', () => {
+        node.classList.toggle('cvt-node--expanded');
+      });
+    });
+  } catch (_) {
+    treeEl.innerHTML = '<div class="cvt-error">No se pudieron cargar las variantes.</div>';
+  }
+}
+
+function renderVariantsTreeHTML(card, variants) {
+  const trunc = (s, n) => s.length > n ? s.slice(0, n) + '…' : s;
+
+  const nodeHTML = (label, prompt, answer, isRoot) => `
+    <div class="cvt-node${isRoot ? ' cvt-node--root' : ''}">
+      <div class="cvt-node-head">
+        <span class="cvt-node-badge">${escHtml(label)}</span>
+        <span class="cvt-node-prompt">${escHtml(trunc(prompt, 72))}</span>
+        <span class="cvt-chevron" aria-hidden="true">▾</span>
+      </div>
+      <div class="cvt-node-body">
+        <div class="cvt-node-full-prompt">${escHtml(prompt)}</div>
+        <div class="cvt-node-answer-label">Respuesta esperada</div>
+        <div class="cvt-node-answer">${escHtml(answer)}</div>
+      </div>
+    </div>`;
+
+  const rootHTML = nodeHTML(`#${card.id} · Original`, card.prompt_text, card.expected_answer_text, true);
+
+  const childrenHTML = variants.map((v, i) => `
+    <div class="cvt-branch">
+      ${nodeHTML(`#${v.id} · Variante ${i + 1}`, v.prompt_text, v.expected_answer_text, false)}
+    </div>`).join('');
+
+  return `<div class="cvt-root">${rootHTML}${variants.length ? `<div class="cvt-children">${childrenHTML}</div>` : ''}</div>`;
 }
 
 document.querySelector('#card-detail-close')?.addEventListener('click', hideCardDetail);
