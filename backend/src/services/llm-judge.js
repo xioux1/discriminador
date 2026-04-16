@@ -191,35 +191,39 @@ const LEGACY_GRADE_MAP = { PASS: 'GOOD', FAIL: 'AGAIN', REVIEW: 'HARD' };
 const VALID_GRADES = new Set(['AGAIN', 'HARD', 'GOOD', 'EASY']);
 
 function parseResponse(text) {
-  const gradeMatch   = text.match(/GRADE:\s*(AGAIN|HARD|GOOD|EASY|PASS|FAIL|REVIEW)/i);
-  // Use [\s\S]+ to capture multiline content up to the next labelled field or end of string.
-  const justMatch    = text.match(/JUSTIFICATION:\s*([\s\S]+?)(?:\n[A-Z_]+:|$)/i);
-  const missingMatch = text.match(/MISSING:\s*([\s\S]+?)(?:\n[A-Z_]+:|$)/i);
+  // Normalise line endings, strip surrounding whitespace, discard blank lines.
+  const lines = text.replace(/\r\n/g, '\n').trim().split('\n').map((l) => l.trim()).filter(Boolean);
 
-  if (!gradeMatch) {
-    throw new Error(`LLM judge: cannot parse grade from response: "${text}"`);
+  // Locate the three expected label lines regardless of extra blank lines inserted by the model.
+  const gradeLine   = lines.find((l) => /^GRADE:/i.test(l));
+  const justLine    = lines.find((l) => /^JUSTIFICATION:/i.test(l));
+  const missingLine = lines.find((l) => /^MISSING:/i.test(l));
+
+  if (!gradeLine) {
+    throw new Error(`LLM judge: cannot parse grade from response: "${text.slice(0, 200)}"`);
   }
 
-  const raw = gradeMatch[1].toUpperCase();
+  const raw   = gradeLine.replace(/^GRADE:\s*/i, '').trim().toUpperCase();
   const grade = LEGACY_GRADE_MAP[raw] || raw;
 
   if (!VALID_GRADES.has(grade)) {
-    throw new Error(`LLM judge: unexpected grade value "${grade}"`);
+    throw new Error(`LLM judge: unexpected grade value "${grade}" in: "${text.slice(0, 200)}"`);
   }
 
+  const justification = justLine
+    ? (justLine.replace(/^JUSTIFICATION:\s*/i, '').trim() || 'Evaluación automática.')
+    : 'Evaluación automática.';
+
   let missing_concepts = [];
-  if (missingMatch) {
-    const rawMissing = missingMatch[1].trim();
+  if (missingLine) {
+    const rawMissing = missingLine.replace(/^MISSING:\s*/i, '').trim();
     if (rawMissing.toUpperCase() !== 'NONE') {
-      missing_concepts = rawMissing.split(',').map((s) => s.trim()).filter(Boolean);
+      // Cap at 5 to guard against runaway comma-separated lists.
+      missing_concepts = rawMissing.split(',').map((s) => s.trim()).filter(Boolean).slice(0, 5);
     }
   }
 
-  return {
-    suggested_grade: grade,
-    justification: justMatch ? justMatch[1].trim() : 'Evaluación automática.',
-    missing_concepts
-  };
+  return { suggested_grade: grade, justification, missing_concepts };
 }
 
 /**

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { createHash } from 'crypto';
 import OpenAI from 'openai';
 import { dbPool } from '../db/client.js';
+import { llmRateLimit } from '../middleware/llm-rate-limit.js';
 
 const ttsRouter = Router();
 
@@ -14,7 +15,7 @@ function getClient() {
 // POST /tts — convert Chinese text to speech (MP3, base64-encoded)
 // Results are cached permanently in the tts_cache table so the OpenAI API
 // is only called once per unique text string.
-ttsRouter.post('/tts', async (req, res) => {
+ttsRouter.post('/tts', llmRateLimit, async (req, res) => {
   if (!process.env.OPENAI_API_KEY) {
     return res.status(503).json({ error: 'service_unavailable', message: 'OPENAI_API_KEY not configured.' });
   }

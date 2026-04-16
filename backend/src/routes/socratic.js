@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { dbPool } from '../db/client.js';
 import { isLLMJudgeEnabled } from '../config/env.js';
 import { generateSocraticQuestions, judgeWithSocraticContext, generateSocraticFeedback } from '../services/socratic.js';
+import { llmRateLimit } from '../middleware/llm-rate-limit.js';
 
 const socraticRouter = Router();
 
@@ -13,7 +14,7 @@ function llmGuard(res) {
   return false;
 }
 
-socraticRouter.post('/socratic/questions', async (req, res) => {
+socraticRouter.post('/socratic/questions', llmRateLimit, async (req, res) => {
   if (llmGuard(res)) return;
 
   const { prompt_text, user_answer_text, expected_answer_text, subject, dimensions, justification, mode } = req.body;
@@ -39,7 +40,7 @@ socraticRouter.post('/socratic/questions', async (req, res) => {
   }
 });
 
-socraticRouter.post('/socratic/evaluate', async (req, res) => {
+socraticRouter.post('/socratic/evaluate', llmRateLimit, async (req, res) => {
   if (llmGuard(res)) return;
 
   const { prompt_text, user_answer_text, expected_answer_text, subject, socratic_qa, evaluation_id } = req.body;
@@ -73,7 +74,7 @@ socraticRouter.post('/socratic/evaluate', async (req, res) => {
   }
 });
 
-socraticRouter.post('/socratic/feedback', async (req, res) => {
+socraticRouter.post('/socratic/feedback', llmRateLimit, async (req, res) => {
   if (llmGuard(res)) return;
 
   const { prompt_text, user_answer_text, expected_answer_text, subject, socratic_qa } = req.body;

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import OpenAI, { toFile } from 'openai';
+import { llmRateLimit } from '../middleware/llm-rate-limit.js';
 
 const transcribeRouter = Router();
 
@@ -19,7 +20,7 @@ function mimeToExt(mimeType) {
   return 'webm';
 }
 
-transcribeRouter.post('/transcribe', async (req, res) => {
+transcribeRouter.post('/transcribe', llmRateLimit, async (req, res) => {
   if (!process.env.OPENAI_API_KEY) {
     return res.status(503).json({
       error: 'service_unavailable',

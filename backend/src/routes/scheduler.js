@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { dbPool } from '../db/client.js';
-import { computeNextReview, isPassGrade } from '../services/scheduler.js';
+import { computeNextReview, isPassGrade, isFailGrade } from '../services/scheduler.js';
 import { generateMicroCard } from '../services/micro-generator.js';
 import { generateVariant } from '../services/variant-generator.js';
 import Anthropic from '@anthropic-ai/sdk';

@@ -282,7 +282,13 @@ decisionRouter.post('/decision', async (req, res) => {
     dbPool.query(
       `INSERT INTO activity_log (activity_type, subject, grade, user_id) VALUES ('evaluate', $1, $2, $3)`,
       [inputSubject || null, finalGrade, userId]
-    ).catch((e) => console.warn('[activity log]', e.message));
+    ).catch((e) => console.error('[activity log] INSERT failed (non-blocking)', {
+      userId,
+      finalGrade,
+      subject: inputSubject,
+      message: e.message,
+      code: e.code,
+    }));
 
     // Bridge: keep scheduler in sync (best-effort, non-blocking)
     if (action !== 'uncertain' && inputPrompt && inputExpectedAnswer && ALLOWED_FINAL_GRADES.has(finalGrade)) {
@@ -294,7 +300,15 @@ decisionRouter.post('/decision', async (req, res) => {
         evaluation_item_id: evaluationItemId,
         user_id: userId,
         decision_action: action
-      }).catch((e) => console.warn('[scheduler sync] failed (non-blocking):', e.message));
+      }).catch((e) => console.error('[scheduler sync] failed (non-blocking)', {
+        userId,
+        evaluationItemId,
+        action,
+        finalGrade,
+        message: e.message,
+        code: e.code,
+        stack: e.stack,
+      }));
     }
 
     return res.status(201).json({
