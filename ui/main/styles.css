@@ -828,6 +828,36 @@ textarea:focus, input[type="text"]:focus, select:focus {
   padding: 6px 10px;
 }
 
+/* Pause button in study header */
+.study-pause-btn { order: -1; }
+.study-pause-btn--active {
+  color: var(--primary) !important;
+  font-weight: 600;
+}
+
+/* Pause overlay on top of the card content */
+.study-pause-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(238, 242, 247, 0.92);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  border-radius: var(--radius);
+}
+.study-pause-message {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+}
+.study-pause-icon { font-size: 2.5rem; line-height: 1; }
+.study-pause-message p { font-size: 1.1rem; font-weight: 600; color: var(--text); margin: 0; }
+
 .study-card-panel {
   flex: 1;
   overflow-y: auto;
@@ -835,6 +865,7 @@ textarea:focus, input[type="text"]:focus, select:focus {
   width: 100%;
   margin: 0 auto;
   padding: 28px 16px;
+  position: relative;
 }
 
 .study-card-subject {
