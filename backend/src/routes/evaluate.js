@@ -453,7 +453,7 @@ ERROR_LABEL: descripción breve (solo si conceptual)`,
     const errorTypeLine = lines.find((l) => /^ERROR_TYPE:/i.test(l));
     const errorLblLine  = lines.find((l) => /^ERROR_LABEL:/i.test(l));
 
-    const result     = (resultLine && /OK/i.test(resultLine)) ? 'ok' : 'error';
+    const result     = /RESULTADO:\s*OK/i.test(text) ? 'ok' : 'error';
     const errorType  = errorTypeLine ? errorTypeLine.replace(/^ERROR_TYPE:\s*/i, '').trim().toLowerCase() : null;
     const errorLabel = errorLblLine  ? (errorLblLine.replace(/^ERROR_LABEL:\s*/i, '').trim() || null) : null;
 
