@@ -355,6 +355,7 @@
         <!-- Active session (full-screen overlay) -->
         <div id="study-session" class="hidden study-session-overlay">
           <div class="study-session-header">
+            <button type="button" id="study-pause-btn" class="btn-ghost study-pause-btn">Pausar</button>
             <button type="button" id="study-exit-btn" class="btn-ghost">Cerrar sesión</button>
             <span id="exam-mode-badge" class="exam-mode-badge hidden">Simulacro</span>
             <div id="study-progress-bar" class="study-progress-bar">
@@ -365,6 +366,13 @@
           <p id="study-background-status" class="study-background-status hidden"></p>
 
           <div id="study-card" class="study-card-panel">
+            <div id="study-pause-overlay" class="study-pause-overlay hidden">
+              <div class="study-pause-message">
+                <span class="study-pause-icon">⏸</span>
+                <p>Sesión en pausa</p>
+                <button type="button" id="study-resume-btn" class="btn-primary">Reanudar</button>
+              </div>
+            </div>
             <div id="study-card-subject" class="study-card-subject"></div>
             <div id="study-card-badge" class="study-card-badge hidden"></div>
             <div id="study-card-parent-context" class="study-card-parent-context hidden">
