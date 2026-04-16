@@ -3520,43 +3520,43 @@ function showStudyCard() {
   }
   studyEvalBtn.disabled = false; // verification is always optional
 
-  // ── Mode toggle button ────────────────────────────────────────────────────
-  const modeToggleBtn = document.querySelector('#study-mode-toggle');
-  if (modeToggleBtn) {
-    const MODE_CYCLE  = ['', 'sql', 'math'];
-    const MODE_LABELS = { '': 'Texto', 'sql': 'SQL/PL', 'math': 'Math' };
-    modeToggleBtn.hidden = false;
-    modeToggleBtn.textContent = MODE_LABELS[savedMode] || MODE_LABELS[''];
-    modeToggleBtn.onclick = () => {
-      const cur  = getSubjectMode(subject);
-      const idx  = MODE_CYCLE.indexOf(cur);
-      const next = MODE_CYCLE[(idx + 1) % MODE_CYCLE.length];
-      saveSubjectMode(subject, next);
-      modeToggleBtn.textContent = MODE_LABELS[next];
+  // ── Mode buttons (segmented control: Texto / SQL/PL / Math) ─────────────
+  const modeBtnsContainer = document.querySelector('#study-mode-btns');
+  if (modeBtnsContainer) {
+    modeBtnsContainer.hidden = false;
+
+    function applyMode(mode) {
+      saveSubjectMode(subject, mode);
+      studyState.currentInputMode = mode;
+      syncCheckBtn();
       const input = document.querySelector('#study-answer-input');
       const panel = document.querySelector('#study-sql-compiler');
       MathPalette.setActiveTextarea(input);
-      if (next === 'sql') {
-        studyState.currentInputMode = 'sql';
-        syncCheckBtn();
+      if (mode === 'sql') {
         MathPalette.hide();
         SqlEditor.activate(input);
         panel?.classList.remove('hidden');
-      } else if (next === 'math') {
-        studyState.currentInputMode = 'math';
-        syncCheckBtn();
+      } else if (mode === 'math') {
         SqlEditor.deactivate();
         MathPalette.show();
         panel?.classList.add('hidden');
       } else {
-        studyState.currentInputMode = '';
-        syncCheckBtn();
         SqlEditor.deactivate();
         MathPalette.updateSubject(subject || '');
         panel?.classList.add('hidden');
       }
       MathPreview.refresh(input);
-    };
+      // Update active state on buttons
+      modeBtnsContainer.querySelectorAll('.study-mode-btn').forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.mode === mode);
+      });
+    }
+
+    // Set initial active state (mode already applied above)
+    modeBtnsContainer.querySelectorAll('.study-mode-btn').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.mode === savedMode);
+      btn.onclick = () => applyMode(btn.dataset.mode);
+    });
   }
 
   // ── Flag / report button ───────────────────────────────────────────────────

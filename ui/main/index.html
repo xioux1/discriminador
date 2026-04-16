@@ -386,7 +386,11 @@
                 <label for="study-answer-input">Tu respuesta</label>
                 <div class="study-answer-actions">
                   <span id="study-timer" class="study-timer">0s</span>
-                  <button type="button" id="study-mode-toggle" class="btn-ghost study-mode-toggle" title="Cambiar modo de entrada" hidden></button>
+                  <div id="study-mode-btns" class="study-mode-btns" hidden>
+                    <button type="button" class="study-mode-btn" data-mode="">Texto</button>
+                    <button type="button" class="study-mode-btn" data-mode="sql">SQL/PL</button>
+                    <button type="button" class="study-mode-btn" data-mode="math">Math</button>
+                  </div>
                   <button type="button" id="study-dictation-btn" class="dictation-btn" hidden>Dictar</button>
                 </div>
               </div>
