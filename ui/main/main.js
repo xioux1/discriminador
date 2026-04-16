@@ -2804,27 +2804,6 @@ function initStudyTab() {
   });
 
   // ── Binary check button ────────────────────────────────────────────────────
-  function addCheckErrorTag(label) {
-    const container = document.querySelector('#study-check-error-tags');
-    if (!container) return;
-    // Avoid duplicate tags for the same label
-    const existing = Array.from(container.querySelectorAll('.check-error-tag-label'))
-      .map((el) => el.textContent);
-    if (existing.includes(label)) return;
-    const tag = document.createElement('span');
-    tag.className = 'check-error-tag';
-    tag.innerHTML = `<span>⚠</span><span class="check-error-tag-label">${label}</span><span class="check-error-tag-hint">→ micro-tarjeta</span>`;
-    container.appendChild(tag);
-    container.classList.remove('hidden');
-  }
-
-  function clearCheckErrorTags() {
-    const container = document.querySelector('#study-check-error-tags');
-    if (!container) return;
-    container.innerHTML = '';
-    container.classList.add('hidden');
-  }
-
   document.querySelector('#study-binary-check-btn')?.addEventListener('click', async () => {
     const item = studyState.queue[studyState.index];
     if (!item || item.type !== 'card') return;
@@ -3389,6 +3368,26 @@ function startStudySession() {
   showGratitudeModal(() => _doStartStudySession());
 }
 
+function addCheckErrorTag(label) {
+  const container = document.querySelector('#study-check-error-tags');
+  if (!container) return;
+  const existing = Array.from(container.querySelectorAll('.check-error-tag-label'))
+    .map((el) => el.textContent);
+  if (existing.includes(label)) return;
+  const tag = document.createElement('span');
+  tag.className = 'check-error-tag';
+  tag.innerHTML = `<span>⚠</span><span class="check-error-tag-label">${label}</span><span class="check-error-tag-hint">→ micro-tarjeta</span>`;
+  container.appendChild(tag);
+  container.classList.remove('hidden');
+}
+
+function clearCheckErrorTags() {
+  const container = document.querySelector('#study-check-error-tags');
+  if (!container) return;
+  container.innerHTML = '';
+  container.classList.add('hidden');
+}
+
 function showStudyCard() {
   const item = studyState.queue[studyState.index];
   if (!item) { finishStudySession(); return; }
@@ -3525,7 +3524,7 @@ function showStudyCard() {
   if (modeBtnsContainer) {
     modeBtnsContainer.hidden = false;
 
-    function applyMode(mode) {
+    const applyMode = (mode) => {
       saveSubjectMode(subject, mode);
       studyState.currentInputMode = mode;
       syncCheckBtn();
@@ -3550,7 +3549,7 @@ function showStudyCard() {
       modeBtnsContainer.querySelectorAll('.study-mode-btn').forEach((btn) => {
         btn.classList.toggle('active', btn.dataset.mode === mode);
       });
-    }
+    };
 
     // Set initial active state (mode already applied above)
     modeBtnsContainer.querySelectorAll('.study-mode-btn').forEach((btn) => {
