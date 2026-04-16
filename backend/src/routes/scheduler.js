@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { dbPool } from '../db/client.js';
 import { computeNextReview, isPassGrade, isFailGrade } from '../services/scheduler.js';
-import { generateMicroCard } from '../services/micro-generator.js';
+import { generateMicroCard, generateMicroCardFromCheckError } from '../services/micro-generator.js';
 import { generateVariant } from '../services/variant-generator.js';
 import Anthropic from '@anthropic-ai/sdk';
 
@@ -325,8 +325,8 @@ schedulerRouter.post('/scheduler/review', async (req, res) => {
     if (micro_card_id) {
       return await reviewMicroCard(res, Number(micro_card_id), effectiveGrade, concept_gaps, user_answer, rtMs, rvtMs, userId);
     } else if (card_id) {
-      const checkFailCount = Array.isArray(check_fail_ids) ? check_fail_ids.length : 0;
-      return await reviewCard(res, Number(card_id), effectiveGrade, concept_gaps, rtMs, rvtMs, userId, user_answer, checkFailCount);
+      const checkFailIds = Array.isArray(check_fail_ids) ? check_fail_ids.map(Number).filter(Boolean) : [];
+      return await reviewCard(res, Number(card_id), effectiveGrade, concept_gaps, rtMs, rvtMs, userId, user_answer, checkFailIds);
     }
     return res.status(422).json({
       error: 'validation_error',
@@ -339,7 +339,8 @@ schedulerRouter.post('/scheduler/review', async (req, res) => {
 });
 
 // ─── Internal: review a full card ────────────────────────────────────────────
-async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, reviewTimeMs, userId, userAnswer = '', checkFailCount = 0) {
+async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, reviewTimeMs, userId, userAnswer = '', checkFailIds = []) {
+  const checkFailCount = checkFailIds.length;
   const { rows } = await dbPool.query(
     'SELECT * FROM cards WHERE id = $1 AND user_id = $2 AND archived_at IS NULL AND suspended_at IS NULL',
     [cardId, userId]
@@ -452,6 +453,65 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
         if (inserted.rows.length) newMicroCards.push(inserted.rows[0]);
       } catch (microErr) {
         console.warn(`Failed to generate micro-card for concept "${concept}":`, microErr.message);
+      }
+    }
+  }
+
+  // ── Micro-cards from binary check conceptual errors ───────────────────────
+  // Even when the final grade is GOOD/EASY, if the student made conceptual
+  // mistakes during "Verificar", generate targeted micro-cards for those errors.
+  if (checkFailIds.length > 0) {
+    const checkErrorRes = await dbPool.query(
+      `SELECT DISTINCT ON (error_label) id, error_label, user_answer
+       FROM binary_check_log
+       WHERE id = ANY($1) AND error_type = 'conceptual' AND error_label IS NOT NULL
+       ORDER BY error_label, id DESC`,
+      [checkFailIds]
+    );
+
+    if (checkErrorRes.rows.length > 0) {
+      // Respect subject-level config (same as conceptGap micro-cards)
+      const cfgRes = await dbPool.query(
+        `SELECT micro_cards_enabled, max_micro_cards_per_card FROM subject_configs WHERE subject = $1 AND user_id = $2`,
+        [card.subject || '', userId]
+      );
+      const microCardsEnabled = cfgRes.rows[0]?.micro_cards_enabled ?? true;
+
+      if (microCardsEnabled) {
+        const maxPerCard = cfgRes.rows[0]?.max_micro_cards_per_card ?? null;
+        const countRes   = await dbPool.query(
+          `SELECT COUNT(*) AS cnt FROM micro_cards WHERE parent_card_id = $1 AND user_id = $2 AND status = 'active'`,
+          [cardId, userId]
+        );
+        const existingCount  = parseInt(countRes.rows[0].cnt) + newMicroCards.length;
+        const slotsAvailable = maxPerCard === null
+          ? checkErrorRes.rows.length
+          : Math.max(0, maxPerCard - existingCount);
+
+        const targetErrors = checkErrorRes.rows.slice(0, slotsAvailable);
+
+        for (const errRow of targetErrors) {
+          try {
+            const micro = await generateMicroCardFromCheckError({
+              prompt_text:          card.prompt_text,
+              expected_answer_text: card.expected_answer_text,
+              subject:              card.subject,
+              error_label:          errRow.error_label,
+              user_answer:          errRow.user_answer || userAnswer,
+            });
+
+            const inserted = await dbPool.query(
+              `INSERT INTO micro_cards (parent_card_id, concept, question, expected_answer, user_id, subject)
+               VALUES ($1, $2, $3, $4, $5, $6)
+               ON CONFLICT DO NOTHING
+               RETURNING *`,
+              [cardId, errRow.error_label, micro.question, micro.expected_answer, userId, card.subject || null]
+            );
+            if (inserted.rows.length) newMicroCards.push(inserted.rows[0]);
+          } catch (microErr) {
+            console.error(`[check micro] Failed to generate micro-card for error "${errRow.error_label}":`, microErr.message);
+          }
+        }
       }
     }
   }

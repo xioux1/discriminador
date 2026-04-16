@@ -1,7 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { LLM_MODELS } from '../config/env.js';
 
-const LLM_MODEL = LLM_MODELS.micro;
+const LLM_MODEL        = LLM_MODELS.micro;
+const LLM_MODEL_STRONG = LLM_MODELS.socratic; // Sonnet — for check-error micro-cards
 
 let _client = null;
 function getClient() {
@@ -84,5 +85,55 @@ Aplicá el árbol de decisión y generá la micro-pregunta.`
   return {
     question:        questionMatch?.[1]?.trim() ?? `¿Qué es "${concept}" y por qué es importante?`,
     expected_answer: answerMatch?.[1]?.trim() || expected_answer_text
+  };
+}
+
+/**
+ * Generate a targeted micro-card from a conceptual error detected by the binary verifier.
+ * Uses a stronger model (Sonnet) since the error label already tells us exactly what went wrong.
+ *
+ * @param {{ prompt_text, expected_answer_text, subject, error_label, user_answer }} params
+ * @returns {{ question, expected_answer }}
+ */
+export async function generateMicroCardFromCheckError({ prompt_text, expected_answer_text, subject, error_label, user_answer = '' }) {
+  const response = await getClient().messages.create({
+    model: LLM_MODEL_STRONG,
+    max_tokens: 400,
+    temperature: 0,
+    system: `Sos un tutor experto en diseño de micro-preguntas de estudio.
+El estudiante estaba resolviendo un ejercicio y el verificador detectó un error CONCEPTUAL específico mientras escribía.
+Tu tarea es generar UNA micro-pregunta que ataque directamente ese error conceptual y lleve al estudiante a construir el conocimiento correcto.
+
+PRINCIPIOS:
+- La pregunta debe ser autónoma: entendible sin ver el ejercicio original.
+- Forzá GENERACIÓN desde memoria, no reconocimiento.
+- Apuntá al concepto mal aplicado, no a los detalles de sintaxis.
+- Si el error es de orden lógico (ej: validar después de operar en lugar de antes), preguntá sobre el orden correcto y por qué.
+- Si el error es de concepto equivocado (ej: usó función X cuando correspondía Y), preguntá sobre la diferencia y cuándo usar cada una.
+- Si el error es de condición invertida (ej: actualizó cuando no debería), preguntá cuál es la condición correcta.
+- La respuesta esperada debe ser concisa y conceptual (1-3 oraciones), no código completo.
+
+Respondé ÚNICAMENTE en este formato (dos líneas):
+QUESTION: <micro-pregunta en español>
+ANSWER: <respuesta esperada concisa>`,
+    messages: [{
+      role: 'user',
+      content: `Materia: ${subject || 'no especificada'}
+Ejercicio original: ${prompt_text}
+Respuesta esperada de referencia: ${expected_answer_text}
+Respuesta del estudiante al momento del error: "${user_answer || '(no disponible)'}"
+Error conceptual detectado por el verificador: "${error_label}"
+
+Generá la micro-pregunta que remedie este error conceptual específico.`
+    }]
+  });
+
+  const text         = response.content.find((b) => b.type === 'text')?.text ?? '';
+  const questionMatch = text.match(/QUESTION:\s*(.+)/i);
+  const answerMatch   = text.match(/ANSWER:\s*([\s\S]+)/i);
+
+  return {
+    question:        questionMatch?.[1]?.trim() ?? `¿Cómo se aplica correctamente: "${error_label}"?`,
+    expected_answer: answerMatch?.[1]?.trim() || expected_answer_text,
   };
 }
