@@ -361,9 +361,12 @@ function installSchedulerFlowDbMock() {
         user_id: userId,
         interval_days: 1,
         ease_factor: 2.5,
+        stability: 3.1262,
+        difficulty: 5.0,
         next_review_at: new Date().toISOString(),
         review_count: 0,
         pass_count: 0,
+        last_reviewed_at: null,
         archived_at: null,
         suspended_at: null
       };
@@ -372,14 +375,17 @@ function installSchedulerFlowDbMock() {
     }
 
     if (compactSql.startsWith('UPDATE cards SET interval_days = $1')) {
-      const cardId = params[4];
+      // params: [interval_days, ease_factor, next_review_at, stability, difficulty, pass_delta, card_id]
+      const cardId = params[6];
       const card = state.cards.find((row) => row.id === cardId);
       if (card) {
         card.interval_days = params[0];
         card.ease_factor = params[1];
         card.next_review_at = params[2];
+        card.stability = params[3];
+        card.difficulty = params[4];
         card.review_count += 1;
-        card.pass_count += params[3];
+        card.pass_count += params[5];
       }
       return { rows: [], rowCount: card ? 1 : 0 };
     }
@@ -543,7 +549,10 @@ test('ruta /decision sobre micro-card no crea tarjeta principal ni micro-cards h
     status: 'active',
     interval_days: 1,
     ease_factor: 2.5,
+    stability: 3.1262,
+    difficulty: 5.0,
     review_count: 0,
+    last_reviewed_at: null,
     next_review_at: new Date(Date.now() - 1000).toISOString()
   });
 
