@@ -1555,11 +1555,12 @@ textarea:focus, input[type="text"]:focus, select:focus {
 /* sql-textarea-active: applied to the textarea when SQL mode is on */
 .sql-textarea-active {
   font-family: 'Courier New', monospace;
-  font-size: 0.9rem;
+  font-size: 1rem;
   border: none !important;
   border-radius: 0 !important;
   margin-bottom: 0 !important;
-  resize: none !important;   /* vertical resize breaks gutter alignment */
+  resize: vertical;   /* allow vertical resize by the user */
+  min-height: 280px;
   flex: 1;
 }
 
