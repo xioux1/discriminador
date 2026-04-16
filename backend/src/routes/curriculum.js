@@ -46,7 +46,7 @@ curriculumRouter.get('/curriculum/:subject', async (req, res) => {
 // PUT /curriculum/:subject — upserta subject_configs (solo syllabus ahora)
 curriculumRouter.put('/curriculum/:subject', async (req, res) => {
   const { subject } = req.params;
-  const { syllabus_text, notes_text, daily_new_cards_limit, max_micro_cards_per_card, grading_strictness, micro_cards_enabled, micro_cards_spawn_siblings } = req.body || {};
+  const { syllabus_text, notes_text, daily_new_cards_limit, max_micro_cards_per_card, grading_strictness, micro_cards_enabled, micro_cards_spawn_siblings, auto_variants_enabled, max_variants_per_card } = req.body || {};
   const userId = req.user.id;
   const parsedDailyLimit = daily_new_cards_limit === null || daily_new_cards_limit === undefined || daily_new_cards_limit === ''
     ? null
@@ -84,11 +84,23 @@ curriculumRouter.put('/curriculum/:subject', async (req, res) => {
   // micro_cards_enabled defaults to true when not sent
   const parsedMicroEnabled   = micro_cards_enabled   === false || micro_cards_enabled   === 'false' ? false : true;
   const parsedSpawnSiblings  = micro_cards_spawn_siblings === true  || micro_cards_spawn_siblings === 'true'  ? true  : false;
+  const parsedAutoVariants   = auto_variants_enabled === true || auto_variants_enabled === 'true' ? true : false;
+
+  const parsedMaxVariants = max_variants_per_card === null || max_variants_per_card === undefined || max_variants_per_card === ''
+    ? null
+    : parseInt(max_variants_per_card, 10);
+
+  if (parsedMaxVariants !== null && (!Number.isFinite(parsedMaxVariants) || parsedMaxVariants < 1)) {
+    return res.status(400).json({
+      error: 'validation_error',
+      message: 'max_variants_per_card debe ser un entero mayor o igual a 1 (o vacío para sin límite).'
+    });
+  }
 
   try {
     const { rows } = await dbPool.query(
-      `INSERT INTO subject_configs (subject, syllabus_text, notes_text, daily_new_cards_limit, max_micro_cards_per_card, grading_strictness, micro_cards_enabled, micro_cards_spawn_siblings, updated_at, user_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), $9)
+      `INSERT INTO subject_configs (subject, syllabus_text, notes_text, daily_new_cards_limit, max_micro_cards_per_card, grading_strictness, micro_cards_enabled, micro_cards_spawn_siblings, auto_variants_enabled, max_variants_per_card, updated_at, user_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now(), $11)
        ON CONFLICT (subject, user_id) DO UPDATE SET
          syllabus_text                = EXCLUDED.syllabus_text,
          notes_text                   = EXCLUDED.notes_text,
@@ -97,10 +109,12 @@ curriculumRouter.put('/curriculum/:subject', async (req, res) => {
          grading_strictness           = EXCLUDED.grading_strictness,
          micro_cards_enabled          = EXCLUDED.micro_cards_enabled,
          micro_cards_spawn_siblings   = EXCLUDED.micro_cards_spawn_siblings,
+         auto_variants_enabled        = EXCLUDED.auto_variants_enabled,
+         max_variants_per_card        = EXCLUDED.max_variants_per_card,
          user_id                      = EXCLUDED.user_id,
          updated_at                   = now()
        RETURNING *`,
-      [subject, syllabus_text || null, notes_text || null, parsedDailyLimit, parsedMicroLimit, parsedStrictness, parsedMicroEnabled, parsedSpawnSiblings, userId]
+      [subject, syllabus_text || null, notes_text || null, parsedDailyLimit, parsedMicroLimit, parsedStrictness, parsedMicroEnabled, parsedSpawnSiblings, parsedAutoVariants, parsedMaxVariants, userId]
     );
     invalidateAdvisorCache(subject, userId);
     return res.json({ config: rows[0] });

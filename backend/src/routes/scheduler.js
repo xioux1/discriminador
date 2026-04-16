@@ -338,6 +338,38 @@ schedulerRouter.post('/scheduler/review', async (req, res) => {
   }
 });
 
+// ─── Background: auto-generate a variant if the subject config requires it ───
+async function autoGenerateVariant(cardId, card, userId) {
+  const cfgRes = await dbPool.query(
+    `SELECT auto_variants_enabled, max_variants_per_card
+     FROM subject_configs WHERE subject = $1 AND user_id = $2`,
+    [card.subject || '', userId]
+  );
+  if (!cfgRes.rows[0]?.auto_variants_enabled) return;
+
+  const maxVariants = cfgRes.rows[0].max_variants_per_card; // null = unlimited
+
+  const countRes = await dbPool.query(
+    'SELECT COUNT(*) AS cnt FROM card_variants WHERE card_id = $1',
+    [cardId]
+  );
+  const existing = parseInt(countRes.rows[0].cnt, 10);
+  if (maxVariants !== null && existing >= maxVariants) return;
+
+  const variant = await generateVariant({
+    prompt_text:          card.prompt_text,
+    expected_answer_text: card.expected_answer_text,
+    subject:              card.subject
+  });
+
+  await dbPool.query(
+    `INSERT INTO card_variants (card_id, prompt_text, expected_answer_text) VALUES ($1, $2, $3)`,
+    [cardId, variant.prompt_text, variant.expected_answer_text]
+  );
+
+  console.info('[auto-variant] generated', { cardId, subject: card.subject });
+}
+
 // ─── Internal: review a full card ────────────────────────────────────────────
 async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, reviewTimeMs, userId, userAnswer = '', checkFailIds = []) {
   const checkFailCount = checkFailIds.length;
@@ -515,6 +547,11 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
       }
     }
   }
+
+  // Auto-variant generation (fire-and-forget, non-blocking).
+  autoGenerateVariant(cardId, card, userId).catch((e) =>
+    console.warn('[auto-variant] failed', { cardId, message: e.message })
+  );
 
   return res.status(200).json({
     card: updated.rows[0],

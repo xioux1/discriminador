@@ -117,6 +117,18 @@
                   </label>
                   <p class="micro-option-desc">Si fallás una micro-tarjeta, genera nuevas micro-tarjetas para los conceptos faltantes (mismo padre, mismo límite).</p>
                 </div>
+
+                <div class="micro-option-row">
+                  <label class="toggle-row">
+                    <input type="checkbox" id="curriculum-auto-variants-enabled">
+                    <span class="toggle-label">Generar variantes automáticamente al repasar</span>
+                  </label>
+                  <p class="micro-option-desc">Después de cada repaso, la IA genera una variante de la tarjeta (misma dificultad, distintos detalles) sin que tengas que tocar ningún botón.</p>
+                  <div id="auto-variants-limit-row" style="margin-top:8px;display:none">
+                    <label for="curriculum-max-variants-per-card" style="display:block;font-size:0.82rem;color:var(--text-muted);margin-bottom:4px">Máximo de variantes por tarjeta (vacío = sin límite)</label>
+                    <input type="number" id="curriculum-max-variants-per-card" min="1" step="1" placeholder="Ej: 5" style="max-width:160px">
+                  </div>
+                </div>
               </div>
 
               <hr style="margin:16px 0">
