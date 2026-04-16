@@ -2605,6 +2605,7 @@ function persistStudySession() {
       sessionStartTime: studyState.sessionStartTime,
       sessionLimitMs: studyState.sessionLimitMs ?? null,
       sessionEnergyLevel: studyState.sessionEnergyLevel ?? null,
+      sessionPausedMs: studyState.sessionPausedMs ?? 0,
       selectedTime: briefingState.selectedTime,
       selectedEnergy: briefingState.selectedEnergy,
       selectedSubject: briefingState.selectedSubject
@@ -2645,6 +2646,10 @@ function restorePersistedStudySession() {
     studyState.sessionStartTime   = Number(saved.sessionStartTime);
     studyState.sessionLimitMs     = saved.sessionLimitMs ? Number(saved.sessionLimitMs) : null;
     studyState.sessionEnergyLevel = saved.sessionEnergyLevel || null;
+    studyState.sessionPausedMs    = Number(saved.sessionPausedMs) || 0;
+    studyState.isPaused = false;
+    studyState.pausedAt = 0;
+    studyState.cardPausedMs = 0;
 
     document.querySelector('#study-briefing').classList.add('hidden');
     document.querySelector('#study-overview').classList.add('hidden');
@@ -2769,6 +2774,8 @@ function initStudyTab() {
   });
   document.querySelector('#study-start-btn').addEventListener('click', startStudySession);
   document.querySelector('#study-exit-btn').addEventListener('click', exitStudySession);
+  document.querySelector('#study-pause-btn').addEventListener('click', toggleStudyPause);
+  document.querySelector('#study-resume-btn').addEventListener('click', toggleStudyPause);
   document.querySelector('#study-edit-prompt-btn').addEventListener('click', toggleStudyPromptEdit);
   document.querySelector('#study-clarify-prompt-btn').addEventListener('click', clarifyStudyPrompt);
   document.querySelector('#study-delete-btn').addEventListener('click', deleteCurrentStudyCardFromFront);
@@ -3059,6 +3066,9 @@ function _doStartPlannedSession() {
   studyState.sessionStartTime      = Date.now();
   studyState.sessionLimitMs        = briefingState.selectedTime * 60 * 1000;
   studyState.sessionEnergyLevel    = briefingState.selectedEnergy;
+  studyState.sessionPausedMs       = 0;
+  studyState.isPaused              = false;
+  studyState.pausedAt              = 0;
 
   // Record session start for calibration
   postJson('/study/sessions', {
@@ -3081,6 +3091,11 @@ function startPlannedSession() {
 }
 
 function exitStudySession() {
+  if (studyState.isPaused) {
+    studyState.sessionPausedMs += Date.now() - studyState.pausedAt;
+    studyState.isPaused = false;
+    studyState.pausedAt = 0;
+  }
   if (studyState.timerInterval) {
     clearInterval(studyState.timerInterval);
     studyState.timerInterval = null;
@@ -3088,6 +3103,53 @@ function exitStudySession() {
   document.querySelector('#study-session').classList.add('hidden');
   document.querySelector('#study-overview').classList.remove('hidden');
   persistStudySession();
+}
+
+function toggleStudyPause() {
+  if (studyState.isPaused) {
+    resumeStudySession();
+  } else {
+    pauseStudySession();
+  }
+}
+
+function pauseStudySession() {
+  if (studyState.isPaused) return;
+  if (studyState.timerInterval) {
+    clearInterval(studyState.timerInterval);
+    studyState.timerInterval = null;
+  }
+  studyState.isPaused = true;
+  studyState.pausedAt = Date.now();
+
+  const pauseBtn = document.querySelector('#study-pause-btn');
+  if (pauseBtn) { pauseBtn.textContent = 'Reanudar'; pauseBtn.classList.add('study-pause-btn--active'); }
+  document.querySelector('#study-pause-overlay')?.classList.remove('hidden');
+  document.querySelector('#study-answer-input').disabled = true;
+  const evalBtn = document.querySelector('#study-eval-btn');
+  if (evalBtn) evalBtn.disabled = true;
+}
+
+function resumeStudySession() {
+  if (!studyState.isPaused) return;
+  const pauseDuration = Date.now() - studyState.pausedAt;
+  studyState.cardPausedMs += pauseDuration;
+  studyState.sessionPausedMs += pauseDuration;
+  studyState.isPaused = false;
+  studyState.pausedAt = 0;
+
+  const pauseBtn = document.querySelector('#study-pause-btn');
+  if (pauseBtn) { pauseBtn.textContent = 'Pausar'; pauseBtn.classList.remove('study-pause-btn--active'); }
+  document.querySelector('#study-pause-overlay')?.classList.add('hidden');
+  document.querySelector('#study-answer-input').disabled = false;
+  const evalBtn = document.querySelector('#study-eval-btn');
+  if (evalBtn) evalBtn.disabled = false;
+
+  const timerEl = document.querySelector('#study-timer');
+  studyState.timerInterval = setInterval(() => {
+    const elapsed = Math.round((Date.now() - studyState.cardStartTime - studyState.cardPausedMs) / 1000);
+    timerEl.textContent = `${elapsed}s`;
+  }, 1000);
 }
 
 async function loadStudyOverview() {
@@ -3181,6 +3243,10 @@ const studyState = {
   reviewTimeMs: 0,
   pendingMicroGeneration: 0,
   timerInterval: null,
+  isPaused: false,
+  pausedAt: 0,
+  cardPausedMs: 0,
+  sessionPausedMs: 0,
   sessionId: null,
   sessionStartTime: 0,
   sessionLimitMs: null,
@@ -3244,6 +3310,9 @@ function startExamSession(cards, subject) {
   studyState.sessionId          = null;
   studyState.sessionStartTime   = Date.now();
   studyState.sessionLimitMs     = null;
+  studyState.sessionPausedMs    = 0;
+  studyState.isPaused           = false;
+  studyState.pausedAt           = 0;
 
   document.querySelector('#study-overview').classList.add('hidden');
   document.querySelector('#study-complete').classList.add('hidden');
@@ -3348,6 +3417,9 @@ async function _doStartStudySession() {
   studyState.sessionStartTime   = Date.now();
   studyState.sessionLimitMs     = null; // ad-hoc: no time limit (8 h expiry)
   studyState.sessionEnergyLevel = briefingState.selectedEnergy || null;
+  studyState.sessionPausedMs    = 0;
+  studyState.isPaused           = false;
+  studyState.pausedAt           = 0;
   renderStudyBackgroundStatus();
 
   if (studyState.queue.length === 0) {
@@ -3472,8 +3544,14 @@ function showStudyCard() {
   const studyCompilerOut   = document.querySelector('#study-compiler-output');
   if (studyCompilerOut) { studyCompilerOut.className = 'sql-compiler-output hidden'; studyCompilerOut.textContent = ''; }
 
-  // Start timer
+  // Start timer (reset pause state for new card)
   if (studyState.timerInterval) clearInterval(studyState.timerInterval);
+  if (studyState.isPaused) {
+    studyState.sessionPausedMs += Date.now() - studyState.pausedAt;
+    studyState.isPaused = false;
+    studyState.pausedAt = 0;
+  }
+  studyState.cardPausedMs = 0;
   studyState.cardStartTime = Date.now();
   studyState.responseTimeMs = 0;
   studyState.reviewStartTime = 0;
@@ -3481,9 +3559,13 @@ function showStudyCard() {
   const timerEl = document.querySelector('#study-timer');
   timerEl.textContent = '0s';
   studyState.timerInterval = setInterval(() => {
-    const elapsed = Math.round((Date.now() - studyState.cardStartTime) / 1000);
+    const elapsed = Math.round((Date.now() - studyState.cardStartTime - studyState.cardPausedMs) / 1000);
     timerEl.textContent = `${elapsed}s`;
   }, 1000);
+  const _pauseBtn = document.querySelector('#study-pause-btn');
+  if (_pauseBtn) { _pauseBtn.textContent = 'Pausar'; _pauseBtn.classList.remove('study-pause-btn--active'); }
+  document.querySelector('#study-pause-overlay')?.classList.add('hidden');
+  document.querySelector('#study-answer-input').disabled = false;
 
   // Update subject for dictation (attached once in initStudyTab)
   document.querySelector('#study-dictation-btn').dataset.subject = subject || '';
@@ -3696,7 +3778,7 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
     clearInterval(studyState.timerInterval);
     studyState.timerInterval = null;
   }
-  studyState.responseTimeMs = Date.now() - studyState.cardStartTime;
+  studyState.responseTimeMs = Date.now() - studyState.cardStartTime - studyState.cardPausedMs;
 
   evalBtn.disabled = true;
   evalBtn.textContent = 'Evaluando...';
@@ -4274,9 +4356,9 @@ function finishStudySession() {
     ${microsPassed > 0 ? `<p style="color:#4a7;font-size:0.9rem">${microsPassed} micro-concepto${microsPassed !== 1 ? 's' : ''} superado${microsPassed !== 1 ? 's' : ''}.</p>` : ''}
   `;
 
-  // Record actual session time for calibration
+  // Record actual session time for calibration (exclude paused time)
   if (studyState.sessionId && studyState.sessionStartTime) {
-    const actualMinutes = (Date.now() - studyState.sessionStartTime) / 60000;
+    const actualMinutes = (Date.now() - studyState.sessionStartTime - studyState.sessionPausedMs) / 60000;
     postJson(`/study/sessions/${studyState.sessionId}`, {
       actual_minutes:    Math.round(actualMinutes * 100) / 100,
       actual_card_count: results.length
