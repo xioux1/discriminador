@@ -473,7 +473,12 @@ ERROR_LABEL: descripción breve (solo si conceptual)`,
       checkId = logRes.rows[0]?.id ?? null;
     }
 
-    return res.json({ result, check_id: checkId });
+    return res.json({
+      result,
+      check_id:    checkId,
+      error_type:  safeErrorType,
+      error_label: safeErrorType === 'conceptual' ? errorLabel : null
+    });
   } catch (err) {
     console.error('POST /evaluate/binary-check', err.message);
     return res.status(500).json({ error: 'server_error', message: err.message });

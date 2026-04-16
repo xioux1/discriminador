@@ -2804,6 +2804,27 @@ function initStudyTab() {
   });
 
   // ── Binary check button ────────────────────────────────────────────────────
+  function addCheckErrorTag(label) {
+    const container = document.querySelector('#study-check-error-tags');
+    if (!container) return;
+    // Avoid duplicate tags for the same label
+    const existing = Array.from(container.querySelectorAll('.check-error-tag-label'))
+      .map((el) => el.textContent);
+    if (existing.includes(label)) return;
+    const tag = document.createElement('span');
+    tag.className = 'check-error-tag';
+    tag.innerHTML = `<span>⚠</span><span class="check-error-tag-label">${label}</span><span class="check-error-tag-hint">→ micro-tarjeta</span>`;
+    container.appendChild(tag);
+    container.classList.remove('hidden');
+  }
+
+  function clearCheckErrorTags() {
+    const container = document.querySelector('#study-check-error-tags');
+    if (!container) return;
+    container.innerHTML = '';
+    container.classList.add('hidden');
+  }
+
   document.querySelector('#study-binary-check-btn')?.addEventListener('click', async () => {
     const item = studyState.queue[studyState.index];
     if (!item || item.type !== 'card') return;
@@ -2833,6 +2854,9 @@ function initStudyTab() {
         fb.textContent = '✕ Hay un error';
         fb.className = 'study-check-feedback study-check-error';
         if (resp.check_id) studyState.checkFails.push(resp.check_id);
+        if (resp.error_type === 'conceptual' && resp.error_label) {
+          addCheckErrorTag(resp.error_label);
+        }
       }
     } catch (_) {
       fb.textContent = 'Error al verificar';
@@ -2850,6 +2874,7 @@ function initStudyTab() {
       fb.textContent = '';
       fb.className = 'study-check-feedback';
     }
+    // Keep error tags visible — they represent accumulated errors from this session
   });
 
   document.querySelector('#study-again-btn').addEventListener('click', () => {
@@ -3439,6 +3464,7 @@ function showStudyCard() {
   studyState.checkFails = [];
   const _checkFb = document.querySelector('#study-check-feedback');
   if (_checkFb) { _checkFb.textContent = ''; _checkFb.className = 'study-check-feedback'; }
+  clearCheckErrorTags();
   // Reset SQL compiler panel for study session
   const studyCompilerPanel = document.querySelector('#study-sql-compiler');
   const studyCompilerOut   = document.querySelector('#study-compiler-output');
