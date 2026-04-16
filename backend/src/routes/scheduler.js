@@ -382,39 +382,44 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
   }
 
   const card = rows[0];
-  let schedule = computeNextReview(
-    parseFloat(card.interval_days),
-    parseFloat(card.ease_factor),
-    grade
-  );
+  let schedule = computeNextReview({
+    stability:     parseFloat(card.stability),
+    difficulty:    parseFloat(card.difficulty),
+    lastReviewedAt: card.last_reviewed_at,
+    grade,
+    isNew: card.review_count === 0
+  });
 
   // Extra penalty when the student received a negative binary check during this
-  // card but still submitted an incorrect answer.  The ease_factor drops an
-  // additional 0.20 (floor: 1.0 instead of the normal 1.3), making the card
-  // resurface more aggressively in future sessions.
+  // card but still submitted an incorrect answer.  Difficulty increases by 0.5
+  // making the card resurface more aggressively in future sessions.
   if (checkFailCount > 0 && isFailGrade(grade)) {
+    const penalizedDifficulty = Math.min(10, schedule.difficulty + 0.5);
     schedule = {
       ...schedule,
-      ease_factor: Math.max(1.0, schedule.ease_factor - 0.20)
+      difficulty:  penalizedDifficulty,
+      ease_factor: Math.max(1.0, (10 - penalizedDifficulty) / 9 * 1.7 + 1.3)
     };
   }
 
   const updated = await dbPool.query(
     `UPDATE cards
      SET interval_days = $1, ease_factor = $2, next_review_at = $3,
+         stability = $4, difficulty = $5,
          review_count = review_count + 1,
-         pass_count   = pass_count + $4,
-         avg_response_time_ms = CASE WHEN $5::int IS NOT NULL THEN
-           COALESCE(ROUND((COALESCE(avg_response_time_ms, $5::int) + $5::int) / 2.0), $5::int)
+         pass_count   = pass_count + $6,
+         avg_response_time_ms = CASE WHEN $7::int IS NOT NULL THEN
+           COALESCE(ROUND((COALESCE(avg_response_time_ms, $7::int) + $7::int) / 2.0), $7::int)
            ELSE avg_response_time_ms END,
-         avg_review_time_ms = CASE WHEN $6::int IS NOT NULL THEN
-           COALESCE(ROUND((COALESCE(avg_review_time_ms, $6::int) + $6::int) / 2.0), $6::int)
+         avg_review_time_ms = CASE WHEN $8::int IS NOT NULL THEN
+           COALESCE(ROUND((COALESCE(avg_review_time_ms, $8::int) + $8::int) / 2.0), $8::int)
            ELSE avg_review_time_ms END,
          last_reviewed_at = now(),
          updated_at = now()
-     WHERE id = $7
+     WHERE id = $9
      RETURNING *`,
     [schedule.interval_days, schedule.ease_factor, schedule.next_review_at,
+     schedule.stability, schedule.difficulty,
      isPassGrade(grade) ? 1 : 0, responseTimeMs, reviewTimeMs, cardId]
   );
 
@@ -567,11 +572,13 @@ async function reviewMicroCard(res, microCardId, grade, conceptGaps, userAnswer,
   }
 
   const micro = rows[0];
-  const schedule = computeNextReview(
-    parseFloat(micro.interval_days),
-    parseFloat(micro.ease_factor),
-    grade
-  );
+  const schedule = computeNextReview({
+    stability:     parseFloat(micro.stability),
+    difficulty:    parseFloat(micro.difficulty),
+    lastReviewedAt: micro.last_reviewed_at,
+    grade,
+    isNew: micro.review_count === 0
+  });
 
   // Archive immediately on any pass-grade (good/easy).
   const newStatus = isPassGrade(grade) ? 'archived' : micro.status;
@@ -579,11 +586,12 @@ async function reviewMicroCard(res, microCardId, grade, conceptGaps, userAnswer,
   const updated = await dbPool.query(
     `UPDATE micro_cards
      SET interval_days = $1, ease_factor = $2, next_review_at = $3,
-         status = $4, review_count = review_count + 1, updated_at = now()
-     WHERE id = $5
+         stability = $4, difficulty = $5, status = $6,
+         review_count = review_count + 1, updated_at = now()
+     WHERE id = $7
      RETURNING *`,
     [schedule.interval_days, schedule.ease_factor, schedule.next_review_at,
-     newStatus, microCardId]
+     schedule.stability, schedule.difficulty, newStatus, microCardId]
   );
 
   let parentUnblocked = false;

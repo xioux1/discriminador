@@ -377,11 +377,13 @@ async function syncSchedulerCard(pool, {
 
   if (microMatch.rows.length) {
     const micro = microMatch.rows[0];
-    const schedule = computeNextReview(
-      parseFloat(micro.interval_days),
-      parseFloat(micro.ease_factor),
-      final_grade
-    );
+    const schedule = computeNextReview({
+      stability:     parseFloat(micro.stability),
+      difficulty:    parseFloat(micro.difficulty),
+      lastReviewedAt: micro.last_reviewed_at,
+      grade:         final_grade,
+      isNew:         micro.review_count === 0
+    });
 
     // Archive immediately on any pass-grade (good/easy)
     const nextStatus = isPassGrade(final_grade) ? 'archived' : micro.status;
@@ -389,9 +391,11 @@ async function syncSchedulerCard(pool, {
     await pool.query(
       `UPDATE micro_cards
        SET interval_days = $1, ease_factor = $2, next_review_at = $3,
-           status = $4, review_count = review_count + 1, updated_at = now()
-       WHERE id = $5`,
-      [schedule.interval_days, schedule.ease_factor, schedule.next_review_at, nextStatus, micro.id]
+           stability = $4, difficulty = $5, status = $6,
+           review_count = review_count + 1, updated_at = now()
+       WHERE id = $7`,
+      [schedule.interval_days, schedule.ease_factor, schedule.next_review_at,
+       schedule.stability, schedule.difficulty, nextStatus, micro.id]
     );
 
     return;
@@ -443,22 +447,26 @@ async function syncSchedulerCard(pool, {
     card = inserted.rows[0];
   }
 
-  // Apply SM-2
-  const schedule = computeNextReview(
-    parseFloat(card.interval_days),
-    parseFloat(card.ease_factor),
-    final_grade
-  );
+  // Apply FSRS
+  const schedule = computeNextReview({
+    stability:     parseFloat(card.stability),
+    difficulty:    parseFloat(card.difficulty),
+    lastReviewedAt: card.last_reviewed_at,
+    grade:         final_grade,
+    isNew:         card.review_count === 0
+  });
 
   await pool.query(
     `UPDATE cards
      SET interval_days = $1, ease_factor = $2, next_review_at = $3,
+         stability = $4, difficulty = $5,
          review_count = review_count + 1,
-         pass_count   = pass_count + $4,
+         pass_count   = pass_count + $6,
          last_reviewed_at = now(),
          updated_at = now()
-     WHERE id = $5`,
+     WHERE id = $7`,
     [schedule.interval_days, schedule.ease_factor, schedule.next_review_at,
+     schedule.stability, schedule.difficulty,
      isPassGrade(final_grade) ? 1 : 0, card.id]
   );
 
