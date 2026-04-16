@@ -9,8 +9,8 @@ const SALT_ROUNDS = 12;
 // POST /auth/register
 authRouter.post('/auth/register', async (req, res) => {
   const { username, password } = req.body || {};
-  if (!username?.trim() || !password || password.length < 6) {
-    return res.status(422).json({ error: 'validation_error', message: 'username y contraseña (mín. 6 caracteres) son requeridos.' });
+  if (!username?.trim() || !password || password.length < 8) {
+    return res.status(422).json({ error: 'validation_error', message: 'username y contraseña (mín. 8 caracteres) son requeridos.' });
   }
   try {
     const hash = await bcrypt.hash(password, SALT_ROUNDS);

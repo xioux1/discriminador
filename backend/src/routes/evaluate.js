@@ -5,6 +5,7 @@ import { scoreEvaluation } from '../services/scoring.js';
 import { judgeWithLLM } from '../services/llm-judge.js';
 import { isLLMJudgeEnabled, LLM_MODELS } from '../config/env.js';
 import { dbPool } from '../db/client.js';
+import { llmRateLimit } from '../middleware/llm-rate-limit.js';
 
 // Lazy Anthropic client for binary check (reused across requests).
 let _checkClient = null;
@@ -16,9 +17,9 @@ function getCheckClient() {
 const evaluateRouter = Router();
 
 const REQUIRED_FIELDS = [
-  { key: 'prompt_text', minLength: 10 },
-  { key: 'user_answer_text', minLength: 1 },
-  { key: 'expected_answer_text', minLength: 1 }
+  { key: 'prompt_text',          minLength: 10, maxLength: 2000  },
+  { key: 'user_answer_text',     minLength: 1,  maxLength: 10000 },
+  { key: 'expected_answer_text', minLength: 1,  maxLength: 5000  },
 ];
 
 function normalize(value) {
@@ -42,7 +43,7 @@ function validationError(res, details) {
   });
 }
 
-evaluateRouter.post('/evaluate', async (req, res) => {
+evaluateRouter.post('/evaluate', llmRateLimit, async (req, res) => {
   const userId = req.user?.id ?? null;
   if (!req.is('application/json')) {
     return badRequest(res, [
@@ -90,7 +91,7 @@ evaluateRouter.post('/evaluate', async (req, res) => {
     REQUIRED_FIELDS.map(({ key }) => [key, normalize(req.body[key])])
   );
 
-  for (const { key, minLength } of REQUIRED_FIELDS) {
+  for (const { key, minLength, maxLength } of REQUIRED_FIELDS) {
     if (!(key in req.body)) {
       validationErrors.push({
         field: key,
@@ -99,10 +100,17 @@ evaluateRouter.post('/evaluate', async (req, res) => {
       continue;
     }
 
-    if (normalizedFields[key].length < minLength) {
+    const val = normalizedFields[key];
+    if (val.length < minLength) {
       validationErrors.push({
         field: key,
         issue: `Must contain at least ${minLength} non-whitespace characters.`
+      });
+    }
+    if (val.length > maxLength) {
+      validationErrors.push({
+        field: key,
+        issue: `Must not exceed ${maxLength} characters.`
       });
     }
   }
@@ -134,7 +142,8 @@ evaluateRouter.post('/evaluate', async (req, res) => {
         [normalizedSubject, userId]
       );
       if (cfgRows[0]?.grading_strictness != null) {
-        gradingStrictness = cfgRows[0].grading_strictness;
+        const raw = Number(cfgRows[0].grading_strictness);
+        gradingStrictness = Number.isFinite(raw) ? Math.min(10, Math.max(0, raw)) : 5;
       }
     } catch (_) { /* non-critical — proceed with default */ }
   }
@@ -395,12 +404,16 @@ evaluateRouter.post('/evaluate', async (req, res) => {
 // whether the student's current answer is correct.  No details are leaked.
 // Negative results are logged to binary_check_log to feed the penalty system
 // and micro-card generation.
-evaluateRouter.post('/evaluate/binary-check', async (req, res) => {
+evaluateRouter.post('/evaluate/binary-check', llmRateLimit, async (req, res) => {
   const userId = req.user?.id ?? null;
   const { card_id, prompt_text, user_answer_text, expected_answer_text, subject } = req.body || {};
 
   if (!prompt_text || !user_answer_text || !expected_answer_text) {
     return res.status(422).json({ error: 'validation_error', message: 'Missing required fields.' });
+  }
+
+  if (String(prompt_text).length > 2000 || String(user_answer_text).length > 10000 || String(expected_answer_text).length > 5000) {
+    return res.status(422).json({ error: 'validation_error', message: 'One or more fields exceed the maximum allowed length.' });
   }
 
   try {
