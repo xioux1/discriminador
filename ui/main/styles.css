@@ -2738,6 +2738,17 @@ textarea:focus, input[type="text"]:focus, select:focus {
   opacity: 0.5;
   cursor: default;
 }
+.study-binary-check-btn--loading {
+  border-color: var(--primary) !important;
+  color: var(--primary) !important;
+  background: var(--primary-light) !important;
+  opacity: 1 !important;
+  animation: check-btn-pulse 0.9s ease-in-out infinite;
+}
+@keyframes check-btn-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.45; }
+}
 
 .study-check-feedback {
   font-size: 0.85rem;

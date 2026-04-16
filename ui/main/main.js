@@ -2814,6 +2814,7 @@ function initStudyTab() {
     const btn = document.querySelector('#study-binary-check-btn');
     const fb  = document.querySelector('#study-check-feedback');
     btn.disabled = true;
+    btn.classList.add('study-binary-check-btn--loading');
     btn.textContent = 'Verificando…';
     fb.textContent = '';
     fb.className = 'study-check-feedback';
@@ -2839,6 +2840,7 @@ function initStudyTab() {
       fb.className = 'study-check-feedback study-check-error';
     } finally {
       btn.disabled = false;
+      btn.classList.remove('study-binary-check-btn--loading');
       btn.textContent = 'Verificar';
     }
   });
