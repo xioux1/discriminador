@@ -390,15 +390,21 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
     isNew: card.review_count === 0
   });
 
-  // Extra penalty when the student received a negative binary check during this
-  // card but still submitted an incorrect answer.  Difficulty increases by 0.5
-  // making the card resurface more aggressively in future sessions.
-  if (checkFailCount > 0 && isFailGrade(grade)) {
-    const penalizedDifficulty = Math.min(10, schedule.difficulty + 0.5);
+  // Penalty when the student got binary-check errors during this card.
+  // Applied regardless of final grade: a "good" with multiple Verificar errors
+  // is not the same as a clean "good".
+  // Pass grade: +0.15 per error, capped at +0.5 (mild but real).
+  // Fail grade: flat +0.5 (same as before, stronger signal).
+  if (checkFailCount > 0) {
+    const difficultyPenalty = isFailGrade(grade)
+      ? 0.5
+      : Math.min(0.5, checkFailCount * 0.15);
+    const minEase = isFailGrade(grade) ? 1.0 : 1.3;
+    const penalizedDifficulty = Math.min(10, schedule.difficulty + difficultyPenalty);
     schedule = {
       ...schedule,
       difficulty:  penalizedDifficulty,
-      ease_factor: Math.max(1.0, (10 - penalizedDifficulty) / 9 * 1.7 + 1.3)
+      ease_factor: Math.max(minEase, (10 - penalizedDifficulty) / 9 * 1.7 + 1.3)
     };
   }
 
