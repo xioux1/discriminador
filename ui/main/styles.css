@@ -2748,6 +2748,34 @@ textarea:focus, input[type="text"]:focus, select:focus {
 .study-check-ok    { color: var(--pass-fg); }
 .study-check-error { color: var(--fail-fg); }
 
+.study-check-error-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.study-check-error-tags.hidden { display: none; }
+
+.check-error-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 8px;
+  background: var(--fail-bg);
+  border: 1px solid var(--fail-fg);
+  border-radius: 20px;
+  font-size: 0.78rem;
+  color: var(--fail-fg);
+}
+.check-error-tag-hint {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-style: italic;
+  padding-left: 2px;
+  border-left: 1px solid var(--border-mid);
+  margin-left: 2px;
+}
+
 /* ── Highlight span ──────────────────────────────────────────────────────── */
 
 .mp-highlight {
