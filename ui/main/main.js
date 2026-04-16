@@ -2854,8 +2854,9 @@ function initStudyTab() {
         fb.textContent = '✕ Hay un error';
         fb.className = 'study-check-feedback study-check-error';
         if (resp.check_id) studyState.checkFails.push(resp.check_id);
-        if (resp.error_type === 'conceptual' && resp.error_label) {
-          addCheckErrorTag(resp.error_label);
+        if (resp.error_type === 'conceptual' && resp.error_label &&
+            !studyState.checkErrorLabels.includes(resp.error_label)) {
+          studyState.checkErrorLabels.push(resp.error_label);
         }
       }
     } catch (_) {
@@ -3210,7 +3211,8 @@ const studyState = {
   examSubject: null,
   examItemResults: [],  // {grade, prompt_text, expected_answer_text, passed}
   // Binary check tool
-  checkFails: []        // IDs from binary_check_log for negative checks this card
+  checkFails: [],       // IDs from binary_check_log for negative checks this card
+  checkErrorLabels: []  // conceptual error labels to show in result block
 };
 
 function renderStudyBackgroundStatus() {
@@ -3462,6 +3464,7 @@ function showStudyCard() {
   studyState.currentEvalContext = null;
   studyState.currentDecision = null;
   studyState.checkFails = [];
+  studyState.checkErrorLabels = [];
   const _checkFb = document.querySelector('#study-check-feedback');
   if (_checkFb) { _checkFb.textContent = ''; _checkFb.className = 'study-check-feedback'; }
   clearCheckErrorTags();
@@ -3884,6 +3887,11 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
 
     document.querySelector('#study-answer-block').classList.add('hidden');
     document.querySelector('#study-result-block').classList.remove('hidden');
+
+    // Show accumulated conceptual error tags from Verificar clicks
+    if (studyState.checkErrorLabels.length > 0) {
+      studyState.checkErrorLabels.forEach((label) => addCheckErrorTag(label));
+    }
 
     // Chinese TTS: auto-play if expected answer contains Hanzi
     const ttsBar = document.querySelector('#study-tts-bar');
