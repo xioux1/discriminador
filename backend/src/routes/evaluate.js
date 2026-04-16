@@ -420,14 +420,20 @@ evaluateRouter.post('/evaluate/binary-check', llmRateLimit, async (req, res) => 
     const response = await getCheckClient().messages.create({
       model: LLM_MODELS.binary,
       max_tokens: 16,
-      system: `Sos un verificador de ejercicios académicos.
-Analizá si la respuesta del estudiante resuelve correctamente el ejercicio.
+      system: `Sos un verificador de ejercicios académicos para trabajo en proceso.
+El estudiante está escribiendo su respuesta y puede estar INCOMPLETA. Tu tarea es verificar si lo que escribió hasta ahora es CORRECTO, no si ya terminó.
+
+Respondé OK cuando: lo escrito está en el camino correcto, sin errores conceptuales ni de sintaxis, aunque falte código por escribir.
+Respondé ERROR cuando: hay un error real en lo ya escrito — lógica incorrecta, keyword mal usada, función usada de forma equivocada, concepto aplicado al revés.
+
+NO respondas ERROR por: código incompleto, paréntesis sin cerrar, bloques sin END, parámetros sin terminar, o cualquier cosa que simplemente "falta" porque la respuesta está en proceso.
+
 Respondé ÚNICAMENTE con una de estas dos líneas, sin agregar nada más:
 RESULTADO: OK
 RESULTADO: ERROR`,
       messages: [{
         role: 'user',
-        content: `Ejercicio:\n${prompt_text}\n\nRespuesta esperada:\n${expected_answer_text}\n\nRespuesta del estudiante:\n${user_answer_text}`
+        content: `Ejercicio:\n${prompt_text}\n\nRespuesta esperada (referencia completa):\n${expected_answer_text}\n\nRespuesta del estudiante hasta ahora (puede estar incompleta):\n${user_answer_text}`
       }]
     });
 
