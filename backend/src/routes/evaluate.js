@@ -419,33 +419,56 @@ evaluateRouter.post('/evaluate/binary-check', llmRateLimit, async (req, res) => 
   try {
     const response = await getCheckClient().messages.create({
       model: LLM_MODELS.binary,
-      max_tokens: 16,
+      max_tokens: 80,
+      temperature: 0,
       system: `Sos un verificador de ejercicios académicos para trabajo en proceso.
-El estudiante está escribiendo su respuesta y puede estar INCOMPLETA. Tu tarea es verificar si lo que escribió hasta ahora es CORRECTO, no si ya terminó.
+El estudiante está escribiendo su respuesta y puede estar INCOMPLETA. Verificá si lo que escribió hasta ahora es CORRECTO, no si ya terminó.
 
-Respondé OK cuando: lo escrito está en el camino correcto, sin errores conceptuales ni de sintaxis, aunque falte código por escribir.
-Respondé ERROR cuando: hay un error real en lo ya escrito — lógica incorrecta, keyword mal usada, función usada de forma equivocada, concepto aplicado al revés.
+Respondé OK cuando: lo escrito está en el camino correcto, sin errores reales, aunque falte código por escribir.
+Respondé ERROR cuando: hay un error real en lo ya escrito — lógica incorrecta, keyword mal usada, función aplicada con propósito equivocado, concepto al revés.
 
 NO respondas ERROR por: código incompleto, paréntesis sin cerrar, bloques sin END, parámetros sin terminar, o cualquier cosa que simplemente "falta" porque la respuesta está en proceso.
 
-Respondé ÚNICAMENTE con una de estas dos líneas, sin agregar nada más:
-RESULTADO: OK
-RESULTADO: ERROR`,
+Cuando el resultado es ERROR, clasificalo:
+- ERROR_TYPE: "conceptual" si es error de lógica o concepto (algoritmo incorrecto, orden de operaciones mal, condición lógica invertida, función usada con propósito equivocado)
+- ERROR_TYPE: "syntactic" si es solo un detalle de forma sin impacto conceptual (mayúsculas, espaciado, convención de nombres, error de tipeo menor)
+- ERROR_LABEL: descripción breve del error conceptual, máximo 60 caracteres (solo cuando ERROR_TYPE es "conceptual")
+
+Respondé ÚNICAMENTE en este formato, sin texto adicional:
+Para respuesta correcta → RESULTADO: OK
+Para error →
+RESULTADO: ERROR
+ERROR_TYPE: conceptual|syntactic
+ERROR_LABEL: descripción breve (solo si conceptual)`,
       messages: [{
         role: 'user',
         content: `Ejercicio:\n${prompt_text}\n\nRespuesta esperada (referencia completa):\n${expected_answer_text}\n\nRespuesta del estudiante hasta ahora (puede estar incompleta):\n${user_answer_text}`
       }]
     });
 
-    const text    = response.content.find((b) => b.type === 'text')?.text ?? '';
-    const result  = /RESULTADO:\s*OK/i.test(text) ? 'ok' : 'error';
+    const text  = response.content.find((b) => b.type === 'text')?.text ?? '';
+    const lines = text.replace(/\r\n/g, '\n').trim().split('\n').map((l) => l.trim()).filter(Boolean);
+
+    const resultLine    = lines.find((l) => /^RESULTADO:/i.test(l));
+    const errorTypeLine = lines.find((l) => /^ERROR_TYPE:/i.test(l));
+    const errorLblLine  = lines.find((l) => /^ERROR_LABEL:/i.test(l));
+
+    const result     = (resultLine && /OK/i.test(resultLine)) ? 'ok' : 'error';
+    const errorType  = errorTypeLine ? errorTypeLine.replace(/^ERROR_TYPE:\s*/i, '').trim().toLowerCase() : null;
+    const errorLabel = errorLblLine  ? (errorLblLine.replace(/^ERROR_LABEL:\s*/i, '').trim() || null) : null;
+
+    // Normalise error_type to known values only
+    const safeErrorType = (errorType === 'conceptual' || errorType === 'syntactic')
+      ? errorType
+      : (result === 'error' ? 'unknown' : null);
 
     let checkId = null;
     if (result === 'error' && userId) {
       const logRes = await dbPool.query(
-        `INSERT INTO binary_check_log (user_id, card_id, subject, user_answer, result)
-         VALUES ($1, $2, $3, $4, 'error') RETURNING id`,
-        [userId, card_id ? Number(card_id) : null, subject || null, user_answer_text]
+        `INSERT INTO binary_check_log (user_id, card_id, subject, user_answer, result, error_type, error_label)
+         VALUES ($1, $2, $3, $4, 'error', $5, $6) RETURNING id`,
+        [userId, card_id ? Number(card_id) : null, subject || null, user_answer_text,
+         safeErrorType, safeErrorType === 'conceptual' ? errorLabel : null]
       );
       checkId = logRes.rows[0]?.id ?? null;
     }
