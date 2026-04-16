@@ -101,30 +101,39 @@ export async function generateMicroCardFromCheckError({ prompt_text, expected_an
     max_tokens: 400,
     temperature: 0,
     system: `Sos un tutor experto en diseño de micro-preguntas de estudio.
-El estudiante estaba resolviendo un ejercicio y el verificador detectó un error CONCEPTUAL específico mientras escribía.
-Tu tarea es generar UNA micro-pregunta que ataque directamente ese error conceptual y lleve al estudiante a construir el conocimiento correcto.
+El estudiante cometió un error conceptual en un ejercicio. Tu tarea es generar UNA micro-pregunta que remedie ese error conceptual específico.
 
-PRINCIPIOS:
-- La pregunta debe ser autónoma: entendible sin ver el ejercicio original.
+OBJETIVO: La pregunta debe poder responderse por cualquier estudiante del tema SIN haber visto el ejercicio original.
+
+═══ REGLAS ESTRICTAS ═══
+- PROHIBIDO usar nombres de variables, tablas, columnas, funciones, o entidades del ejercicio original.
+- PROHIBIDO referenciar "el ejercicio", "el código anterior", "la estructura anterior", "en este caso", "aquí".
+- PROHIBIDO pedir completar o reconstruir parte del ejercicio original.
+- La pregunta debe ser sobre el CONCEPTO GENERAL, no sobre la instancia particular del ejercicio.
 - Forzá GENERACIÓN desde memoria, no reconocimiento.
-- Apuntá al concepto mal aplicado, no a los detalles de sintaxis.
-- Si el error es de orden lógico (ej: validar después de operar en lugar de antes), preguntá sobre el orden correcto y por qué.
-- Si el error es de concepto equivocado (ej: usó función X cuando correspondía Y), preguntá sobre la diferencia y cuándo usar cada una.
-- Si el error es de condición invertida (ej: actualizó cuando no debería), preguntá cuál es la condición correcta.
-- La respuesta esperada debe ser concisa y conceptual (1-3 oraciones), no código completo.
+- La respuesta esperada debe ser conceptual y concisa (1-3 oraciones), sin código específico del ejercicio.
+
+═══ TIPO DE PREGUNTA SEGÚN EL ERROR ═══
+- Error de orden lógico (validar después de operar, condición mal ubicada): preguntá sobre el orden correcto en términos generales y por qué importa.
+- Error de concepto equivocado (usó X cuando era Y): preguntá sobre la diferencia entre ambos y cuándo usar cada uno.
+- Error de condición invertida: preguntá cuál es la condición correcta y qué consecuencia tiene invertirla.
+- Error de uso incorrecto de sentencia: preguntá qué hace esa sentencia, cuándo se usa y qué pasa si se usa mal.
 
 Respondé ÚNICAMENTE en este formato (dos líneas):
-QUESTION: <micro-pregunta en español>
-ANSWER: <respuesta esperada concisa>`,
+QUESTION: <micro-pregunta en español, sin referencias al ejercicio original>
+ANSWER: <respuesta esperada concisa y conceptual>`,
     messages: [{
       role: 'user',
       content: `Materia: ${subject || 'no especificada'}
-Ejercicio original: ${prompt_text}
-Respuesta esperada de referencia: ${expected_answer_text}
-Respuesta del estudiante al momento del error: "${user_answer || '(no disponible)'}"
-Error conceptual detectado por el verificador: "${error_label}"
+Error conceptual detectado: "${error_label}"
 
-Generá la micro-pregunta que remedie este error conceptual específico.`
+[CONTEXTO INTERNO — no usar nombres ni detalles de esto en la pregunta]
+Ejercicio original: ${prompt_text}
+Respuesta de referencia: ${expected_answer_text}
+Respuesta del estudiante: "${user_answer || '(no disponible)'}"
+[FIN CONTEXTO INTERNO]
+
+Generá la micro-pregunta que ataque el concepto general del error, sin mencionar nada del ejercicio original.`
     }]
   });
 
