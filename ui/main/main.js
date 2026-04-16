@@ -5006,6 +5006,10 @@ document.querySelector('#curriculum-micro-cards-enabled')?.addEventListener('cha
   updateMicroCardsLimitVisibility(e.target.checked);
 });
 
+document.querySelector('#curriculum-auto-variants-enabled')?.addEventListener('change', (e) => {
+  document.querySelector('#auto-variants-limit-row').style.display = e.target.checked ? '' : 'none';
+});
+
 async function openCurriculumModal(subject) {
   document.querySelector('#curriculum-modal-title').textContent = `Configurar: ${subject}`;
   document.querySelector('#curriculum-modal').classList.remove('hidden');
@@ -5029,6 +5033,10 @@ async function openCurriculumModal(subject) {
     document.querySelector('#curriculum-micro-cards-enabled').checked = microEnabled;
     document.querySelector('#curriculum-micro-spawn-siblings').checked = data.config?.micro_cards_spawn_siblings ?? false;
     updateMicroCardsLimitVisibility(microEnabled);
+    const autoVariants = data.config?.auto_variants_enabled ?? false;
+    document.querySelector('#curriculum-auto-variants-enabled').checked = autoVariants;
+    document.querySelector('#curriculum-max-variants-per-card').value = data.config?.max_variants_per_card ?? '';
+    document.querySelector('#auto-variants-limit-row').style.display = autoVariants ? '' : 'none';
     renderExamDatesList(data.exam_dates || [], subject);
     renderExamsList(data.exams || [], subject);
     renderClassNotesList(classNotesData.class_notes || [], subject);
@@ -5040,6 +5048,9 @@ async function openCurriculumModal(subject) {
     document.querySelector('#curriculum-micro-cards-enabled').checked = true;
     document.querySelector('#curriculum-micro-spawn-siblings').checked = false;
     updateMicroCardsLimitVisibility(true);
+    document.querySelector('#curriculum-auto-variants-enabled').checked = false;
+    document.querySelector('#curriculum-max-variants-per-card').value = '';
+    document.querySelector('#auto-variants-limit-row').style.display = 'none';
     renderClassNotesList([], subject);
   }
 
@@ -5077,16 +5088,26 @@ document.querySelector('#curriculum-save-btn').addEventListener('click', async (
   }
 
   try {
-    const strictness = parseInt(document.querySelector('#curriculum-grading-strictness').value, 10);
-    const microEnabled    = document.querySelector('#curriculum-micro-cards-enabled').checked;
-    const spawnSiblings   = document.querySelector('#curriculum-micro-spawn-siblings').checked;
+    const strictness       = parseInt(document.querySelector('#curriculum-grading-strictness').value, 10);
+    const microEnabled     = document.querySelector('#curriculum-micro-cards-enabled').checked;
+    const spawnSiblings    = document.querySelector('#curriculum-micro-spawn-siblings').checked;
+    const autoVariants     = document.querySelector('#curriculum-auto-variants-enabled').checked;
+    const rawMaxVariants   = document.querySelector('#curriculum-max-variants-per-card').value.trim();
+    const parsedMaxVariants = rawMaxVariants === '' ? null : parseInt(rawMaxVariants, 10);
+    if (rawMaxVariants !== '' && (!Number.isFinite(parsedMaxVariants) || parsedMaxVariants < 1)) {
+      fb.textContent = 'El máximo de variantes debe ser un entero mayor o igual a 1.';
+      fb.style.color = 'var(--fail-fg)';
+      return;
+    }
     await postJson(`/curriculum/${encodeURIComponent(subject)}`, {
       syllabus_text:                document.querySelector('#curriculum-syllabus').value,
       daily_new_cards_limit:        parsedDailyLimit,
       max_micro_cards_per_card:     parsedMicroLimit,
       grading_strictness:           Number.isFinite(strictness) ? strictness : 5,
       micro_cards_enabled:          microEnabled,
-      micro_cards_spawn_siblings:   spawnSiblings
+      micro_cards_spawn_siblings:   spawnSiblings,
+      auto_variants_enabled:        autoVariants,
+      max_variants_per_card:        parsedMaxVariants
     }, 'PUT');
     fb.textContent = 'Guardado.';
     fb.style.color = 'var(--pass-fg)';
