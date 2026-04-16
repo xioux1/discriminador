@@ -12,10 +12,10 @@ export function requireAuth(req, res, next) {
   if (!token) return res.status(401).json({ error: 'unauthorized', message: 'Authentication required.' });
   try {
     req.user = jwt.verify(token, getSecret());
-    // Slide token: if less than 7 days left, issue a fresh one
+    // Slide token: refresh only when less than 1 day left to avoid token storms on burst requests.
     const exp = req.user.exp;
-    const sevenDays = 7 * 24 * 3600;
-    if (exp - Math.floor(Date.now() / 1000) < sevenDays) {
+    const oneDay = 24 * 3600;
+    if (exp - Math.floor(Date.now() / 1000) < oneDay) {
       const { iat, exp: _exp, ...payload } = req.user;
       const fresh = jwt.sign(payload, getSecret(), { expiresIn: '30d' });
       res.setHeader('X-Refresh-Token', fresh);

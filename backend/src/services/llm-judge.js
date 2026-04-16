@@ -1,9 +1,13 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { LLM_MODELS } from '../config/env.js';
 
-// claude-haiku-4-5: optimized for latency — classification task with short output.
-const LLM_MODEL = 'claude-haiku-4-5';
+const LLM_MODEL = LLM_MODELS.judge;
 const LLM_MAX_TOKENS = 384;
 const FEW_SHOT_LIMIT = 4;
+
+// In-memory cache for few-shot examples per subject (TTL: 5 minutes).
+const _fewShotCache = new Map();
+const FEW_SHOT_CACHE_TTL_MS = 5 * 60 * 1000;
 
 let _client = null;
 
@@ -26,8 +30,15 @@ function toDisplayGrade(g) {
  * Fetch calibration examples from past human decisions.
  * Prefers examples for the same subject; falls back to any subject.
  * Returns a balanced set across grade levels.
+ * Results are cached per subject for FEW_SHOT_CACHE_TTL_MS to avoid redundant DB queries.
  */
 export async function fetchFewShotExamples(pool, subject) {
+  const cacheKey = (subject || '').toLowerCase();
+  const cached = _fewShotCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < FEW_SHOT_CACHE_TTL_MS) {
+    return cached.examples;
+  }
+
   const result = await pool.query(
     `SELECT
        ei.input_payload->>'prompt_text'          AS prompt_text,
@@ -51,10 +62,13 @@ export async function fetchFewShotExamples(pool, subject) {
   const fails  = result.rows.filter((r) => ['fail', 'again', 'hard'].includes(r.final_grade));
   const half   = Math.ceil(FEW_SHOT_LIMIT / 2);
 
-  return [
+  const examples = [
     ...passes.slice(0, half),
     ...fails.slice(0, FEW_SHOT_LIMIT - Math.min(passes.length, half))
   ].slice(0, FEW_SHOT_LIMIT);
+
+  _fewShotCache.set(cacheKey, { examples, timestamp: Date.now() });
+  return examples;
 }
 
 function buildStrictnessSection(strictness) {
@@ -178,8 +192,9 @@ const VALID_GRADES = new Set(['AGAIN', 'HARD', 'GOOD', 'EASY']);
 
 function parseResponse(text) {
   const gradeMatch   = text.match(/GRADE:\s*(AGAIN|HARD|GOOD|EASY|PASS|FAIL|REVIEW)/i);
-  const justMatch    = text.match(/JUSTIFICATION:\s*(.+)/i);
-  const missingMatch = text.match(/MISSING:\s*(.+)/i);
+  // Use [\s\S]+ to capture multiline content up to the next labelled field or end of string.
+  const justMatch    = text.match(/JUSTIFICATION:\s*([\s\S]+?)(?:\n[A-Z_]+:|$)/i);
+  const missingMatch = text.match(/MISSING:\s*([\s\S]+?)(?:\n[A-Z_]+:|$)/i);
 
   if (!gradeMatch) {
     throw new Error(`LLM judge: cannot parse grade from response: "${text}"`);

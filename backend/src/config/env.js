@@ -59,6 +59,14 @@ export function isLLMJudgeEnabled() {
   return parseBoolean(process.env.ENABLE_LLM_JUDGE, false);
 }
 
+export const LLM_MODELS = {
+  judge:    process.env.LLM_JUDGE_MODEL    || 'claude-haiku-4-5-20251001',
+  socratic: process.env.LLM_SOCRATIC_MODEL || 'claude-haiku-4-5-20251001',
+  micro:    process.env.LLM_MICRO_MODEL    || 'claude-haiku-4-5-20251001',
+  advisor:  process.env.LLM_ADVISOR_MODEL  || 'claude-sonnet-4-6',
+  binary:   process.env.LLM_BINARY_MODEL   || 'claude-opus-4-6'
+};
+
 export function assertRequiredEnv() {
   if (!env.databaseUrl) {
     throw new Error('DATABASE_URL is required.');

@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import Anthropic from '@anthropic-ai/sdk';
 import { scoreEvaluation } from '../services/scoring.js';
 import { judgeWithLLM } from '../services/llm-judge.js';
-import { isLLMJudgeEnabled } from '../config/env.js';
+import { isLLMJudgeEnabled, LLM_MODELS } from '../config/env.js';
 import { dbPool } from '../db/client.js';
 
 // Lazy Anthropic client for binary check (reused across requests).
@@ -150,6 +150,7 @@ evaluateRouter.post('/evaluate', async (req, res) => {
   // LLM judge: primary evaluator when enabled.
   // Falls back to heuristic if the API call fails.
   let llmJudge = null;
+  let llmFallback = false;
   if (isLLMJudgeEnabled()) {
     try {
       llmJudge = await judgeWithLLM(dbPool, {
@@ -160,9 +161,16 @@ evaluateRouter.post('/evaluate', async (req, res) => {
         strictness: gradingStrictness
       });
     } catch (llmError) {
-      console.warn('LLM judge failed, falling back to heuristic.', {
-        message: llmError.message
-      });
+      llmFallback = true;
+      if (llmError.status === 429) {
+        console.warn('[LLM judge] Rate limit reached, falling back to heuristic.', { message: llmError.message });
+      } else if (llmError.message?.toLowerCase().includes('parse')) {
+        console.error('[LLM judge] Response parse failure, falling back to heuristic.', { message: llmError.message });
+      } else if (llmError.status >= 500) {
+        console.warn('[LLM judge] API server error, falling back to heuristic.', { status: llmError.status, message: llmError.message });
+      } else {
+        console.error('[LLM judge] Unexpected error, falling back to heuristic.', { message: llmError.message });
+      }
     }
   }
 
@@ -357,7 +365,8 @@ evaluateRouter.post('/evaluate', async (req, res) => {
       evaluation_id: evaluationId,
       prompt_text: normalizedFields.prompt_text,
       subject: normalizedSubject || null,
-      missing_concepts: result.missing_concepts
+      missing_concepts: result.missing_concepts,
+      llm_fallback: llmFallback
     });
   } catch (error) {
     if (client) {
@@ -396,7 +405,7 @@ evaluateRouter.post('/evaluate/binary-check', async (req, res) => {
 
   try {
     const response = await getCheckClient().messages.create({
-      model: 'claude-opus-4-6',
+      model: LLM_MODELS.binary,
       max_tokens: 16,
       system: `Sos un verificador de ejercicios académicos.
 Analizá si la respuesta del estudiante resuelve correctamente el ejercicio.
