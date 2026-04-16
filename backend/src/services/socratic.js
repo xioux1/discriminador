@@ -1,7 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { fetchFewShotExamples } from './llm-judge.js';
+import { LLM_MODELS } from '../config/env.js';
 
-const LLM_MODEL = 'claude-haiku-4-5';
+const LLM_MODEL = LLM_MODELS.socratic;
 
 let _client = null;
 
@@ -71,8 +72,8 @@ Observación inicial: ${justification}`;
   });
 
   const text = response.content.find((b) => b.type === 'text')?.text ?? '';
-  const q1 = text.match(/PREGUNTA_1:\s*(.+)/i)?.[1]?.trim();
-  const q2 = text.match(/PREGUNTA_2:\s*(.+)/i)?.[1]?.trim();
+  const q1 = text.match(/PREGUNTA_1:\s*([\s\S]+?)(?:\nPREGUNTA_2:|$)/i)?.[1]?.trim();
+  const q2 = text.match(/PREGUNTA_2:\s*([\s\S]+?)(?:\n[A-Z_]+:|$)/i)?.[1]?.trim();
 
   if (!q1 || !q2) {
     throw new Error(`Could not parse Socratic questions from LLM response: "${text}"`);
@@ -131,7 +132,7 @@ ${dialogue}`;
 
   const text = response.content.find((b) => b.type === 'text')?.text ?? '';
   const gradeMatch = text.match(/GRADE:\s*(PASS|FAIL)/i);
-  const justMatch = text.match(/JUSTIFICATION:\s*(.+)/i);
+  const justMatch = text.match(/JUSTIFICATION:\s*([\s\S]+?)(?:\n[A-Z_]+:|$)/i);
 
   if (!gradeMatch) {
     throw new Error(`Could not parse grade from Socratic re-evaluation: "${text}"`);
@@ -176,8 +177,8 @@ ${dialogue}`;
   });
 
   const text = response.content.find((b) => b.type === 'text')?.text ?? '';
-  const errorMatch = text.match(/ERROR:\s*(.+)/i);
-  const conceptMatch = text.match(/CONCEPTO:\s*(.+)/i);
+  const errorMatch = text.match(/ERROR:\s*([\s\S]+?)(?:\nCONCEPTO:|$)/i);
+  const conceptMatch = text.match(/CONCEPTO:\s*([\s\S]+?)(?:\n[A-Z_]+:|$)/i);
 
   return {
     error_summary: errorMatch ? errorMatch[1].trim() : 'No se identificó el error específico.',

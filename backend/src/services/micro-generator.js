@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { LLM_MODELS } from '../config/env.js';
 
-const LLM_MODEL = 'claude-haiku-4-5-20251001';
+const LLM_MODEL = LLM_MODELS.micro;
 
 let _client = null;
 function getClient() {

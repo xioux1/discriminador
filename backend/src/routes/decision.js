@@ -457,9 +457,9 @@ async function syncSchedulerCard(pool, {
     );
   }
 
-  // Fetch concept gaps stored at evaluation time.
+  // Fetch concept gaps stored at evaluation time (limited — only top-N needed).
   const { rows: gaps } = await pool.query(
-    'SELECT concept FROM concept_gaps WHERE evaluation_item_id = $1',
+    'SELECT concept FROM concept_gaps WHERE evaluation_item_id = $1 ORDER BY created_at DESC LIMIT 10',
     [evaluation_item_id]
   );
   // Don't create micros when teacher explicitly corrected to a pass grade
@@ -486,14 +486,14 @@ async function syncSchedulerCard(pool, {
         console.warn(`[scheduler sync] micro-card gen failed for "${concept}", using fallback:`, generationError.message);
         micro = {
           question: `¿Qué es "${concept}" y por qué es importante?`,
-          expected_answer: ''
+          expected_answer: card.expected_answer_text || card.expected_answer || concept
         };
       }
 
       const result = await pool.query(
         `INSERT INTO micro_cards (parent_card_id, concept, question, expected_answer, user_id, subject)
          VALUES ($1, $2, $3, $4, $5, $6)
-         ON CONFLICT DO NOTHING`,
+         ON CONFLICT (parent_card_id, concept) DO NOTHING`,
         [card.id, concept, micro.question, micro.expected_answer, user_id, card.subject || null]
       );
       if (result.rowCount > 0) {

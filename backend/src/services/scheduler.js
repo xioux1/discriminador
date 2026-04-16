@@ -71,10 +71,20 @@ export function isFailGrade(grade) {
   return ['fail', 'again', 'hard'].includes(grade);
 }
 
+const ARGENTINA_TZ = 'America/Argentina/Buenos_Aires';
+
 function daysFromNow(days) {
-  const BUE_MS = 3 * 60 * 60 * 1000;
-  const local = new Date(Date.now() - BUE_MS);
-  local.setUTCHours(0, 0, 0, 0);
-  local.setUTCDate(local.getUTCDate() + days);
-  return new Date(local.getTime() + BUE_MS);
+  // Compute today's local date in Argentina timezone using Intl API (handles DST correctly).
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: ARGENTINA_TZ,
+    year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(now);
+  const y = parts.find((p) => p.type === 'year').value;
+  const m = parts.find((p) => p.type === 'month').value;
+  const d = parts.find((p) => p.type === 'day').value;
+  // Midnight in Argentina = ISO date string at local midnight, interpreted as UTC offset target.
+  const midnightLocal = new Date(`${y}-${m}-${d}T00:00:00`);
+  midnightLocal.setDate(midnightLocal.getDate() + days);
+  return midnightLocal;
 }

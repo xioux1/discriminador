@@ -710,20 +710,22 @@ function buildDimensions({
     memorization_risk
   };
 
-  console.info('buildDimensions signals', {
-    evaluation_id,
-    prompt_text,
-    subject,
-    preprocessingVariant: preprocessingOutput.variant,
-    keywordCoverage,
-    fuzzyMatchRate: keywordCoverageSignals.fuzzyMatchRate,
-    answerLengthRatio,
-    lexicalSimilarity,
-    detectedCoreConcepts,
-    keywordCoverageDistribution: KEYWORD_COVERAGE_DISTRIBUTION,
-    dimensionThresholds: DIMENSION_THRESHOLDS,
-    dimensions
-  });
+  if (process.env.SCORING_DEBUG === 'true') {
+    console.info('buildDimensions signals', {
+      evaluation_id,
+      prompt_text,
+      subject,
+      preprocessingVariant: preprocessingOutput.variant,
+      keywordCoverage,
+      fuzzyMatchRate: keywordCoverageSignals.fuzzyMatchRate,
+      answerLengthRatio,
+      lexicalSimilarity,
+      detectedCoreConcepts,
+      keywordCoverageDistribution: KEYWORD_COVERAGE_DISTRIBUTION,
+      dimensionThresholds: DIMENSION_THRESHOLDS,
+      dimensions
+    });
+  }
 
   return {
     dimensions,
@@ -737,18 +739,17 @@ function buildDimensions({
 }
 
 function runDualPathEvaluation(payload) {
-  const legacyPreprocessing = buildPreprocessingOutput(payload, 'legacy');
-  const v2Preprocessing = buildPreprocessingOutput(payload, 'v2');
   const useV2 = isPreprocessingV2Enabled();
 
-  const legacy = buildDimensions({ ...payload, preprocessingOutput: legacyPreprocessing });
-  const preprocessed = buildDimensions({ ...payload, preprocessingOutput: v2Preprocessing });
+  // Only compute the active variant to avoid double CPU cost on long inputs.
+  const selectedPreprocessing = buildPreprocessingOutput(payload, useV2 ? 'v2' : 'legacy');
+  const selected = buildDimensions({ ...payload, preprocessingOutput: selectedPreprocessing });
 
   return {
     selectedVariant: useV2 ? 'v2' : 'legacy',
-    selected: useV2 ? preprocessed : legacy,
-    legacy,
-    preprocessed
+    selected,
+    legacy: selected,
+    preprocessed: selected
   };
 }
 
@@ -956,24 +957,22 @@ export function scoreEvaluation(payload) {
     }
   };
 
-  console.info('scoreEvaluation result', {
-    evaluation_id: payload.evaluation_id,
-    prompt_text: payload.prompt_text,
-    subject: payload.subject,
-    preprocessingVariant: evaluationPaths.selectedVariant,
-    preprocessingComparison: {
-      legacy: evaluationPaths.legacy.dimensions,
-      preprocessed: evaluationPaths.preprocessed.dimensions
-    },
-    keywordCoverage,
-    fuzzyMatchRate,
-    answerLengthRatio,
-    lexicalSimilarity,
-    detectedCoreConcepts,
-    dimensionThresholds: DIMENSION_THRESHOLDS,
-    dimensions,
-    suggested_grade: suggestedGrade
-  });
+  if (process.env.SCORING_DEBUG === 'true') {
+    console.info('scoreEvaluation result', {
+      evaluation_id: payload.evaluation_id,
+      prompt_text: payload.prompt_text,
+      subject: payload.subject,
+      preprocessingVariant: evaluationPaths.selectedVariant,
+      keywordCoverage,
+      fuzzyMatchRate,
+      answerLengthRatio,
+      lexicalSimilarity,
+      detectedCoreConcepts,
+      dimensionThresholds: DIMENSION_THRESHOLDS,
+      dimensions,
+      suggested_grade: suggestedGrade
+    });
+  }
 
   return result;
 }

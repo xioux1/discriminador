@@ -402,7 +402,7 @@ function installSchedulerFlowDbMock() {
       return found ? { rows: [{ id: found.id }], rowCount: 1 } : { rows: [], rowCount: 0 };
     }
 
-    if (compactSql.startsWith('INSERT INTO micro_cards (parent_card_id, concept, question, expected_answer, user_id)')) {
+    if (compactSql.startsWith('INSERT INTO micro_cards (parent_card_id, concept, question, expected_answer, user_id, subject)')) {
       const [parentCardId, concept, question, expectedAnswer, userId] = params;
       const row = {
         id: state.nextMicroCardId++,
