@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { dbPool } from '../db/client.js';
 import { computeNextReview, isPassGrade, isFailGrade } from '../services/scheduler.js';
-import { generateMicroCard, generateMicroCardFromCheckError } from '../services/micro-generator.js';
+import { generateMicroCard, generateMicroCardFromCheckError, generateChineseMicroCard, isChineseCard } from '../services/micro-generator.js';
 import { generateVariant } from '../services/variant-generator.js';
 import Anthropic from '@anthropic-ai/sdk';
 
@@ -478,7 +478,8 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
 
     for (const concept of targetConcepts) {
       try {
-        const micro = await generateMicroCard({
+        const _microFn = isChineseCard(card) ? generateChineseMicroCard : generateMicroCard;
+        const micro = await _microFn({
           prompt_text: card.prompt_text,
           expected_answer_text: card.expected_answer_text,
           subject: card.subject,
@@ -672,7 +673,8 @@ async function reviewMicroCard(res, microCardId, grade, conceptGaps, userAnswer,
 
         for (const concept of targetConcepts) {
           try {
-            const sibling = await generateMicroCard({
+            const _siblingFn = isChineseCard(parent) ? generateChineseMicroCard : generateMicroCard;
+            const sibling = await _siblingFn({
               prompt_text:          parent.prompt_text,
               expected_answer_text: parent.expected_answer_text,
               subject:              micro.subject || parent.subject,
