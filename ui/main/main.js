@@ -3086,7 +3086,14 @@ function _doStartPlannedSession() {
   showStudyCard();
 }
 
-function startPlannedSession() {
+async function startPlannedSession() {
+  const status = await checkPlannerDayStatus();
+  const gateEl = document.querySelector('#briefing-planner-gate');
+  if (!status.is_full) {
+    renderPlannerGate(gateEl, status.filled ?? 0, status.total ?? 32);
+    return;
+  }
+  gateEl?.classList.add('hidden');
   showGratitudeModal(() => _doStartPlannedSession());
 }
 
@@ -3436,7 +3443,40 @@ async function _doStartStudySession() {
   showStudyCard();
 }
 
-function startStudySession() {
+async function checkPlannerDayStatus() {
+  try {
+    const res = await fetch('/planner/day-status', {
+      headers: Auth.getToken() ? { 'Authorization': 'Bearer ' + Auth.getToken() } : {}
+    });
+    if (!res.ok) return { is_full: true }; // fail open — server error shouldn't block studying
+    return await res.json();
+  } catch {
+    return { is_full: true }; // fail open — offline/network error
+  }
+}
+
+function renderPlannerGate(gateEl, filled, total) {
+  const missing = total - filled;
+  gateEl.innerHTML = `
+    <span class="planner-gate-text">
+      Planificá tu día antes de estudiar — faltan <strong>${missing} bloque${missing !== 1 ? 's' : ''}</strong> por completar.
+    </span>
+    <button type="button" class="btn-secondary">Ir a Planificar</button>
+  `;
+  gateEl.querySelector('button').addEventListener('click', () => {
+    document.querySelector('[data-tab="planner"]').click();
+  });
+  gateEl.classList.remove('hidden');
+}
+
+async function startStudySession() {
+  const status = await checkPlannerDayStatus();
+  const gateEl = document.querySelector('#overview-planner-gate');
+  if (!status.is_full) {
+    renderPlannerGate(gateEl, status.filled ?? 0, status.total ?? 32);
+    return;
+  }
+  gateEl?.classList.add('hidden');
   showGratitudeModal(() => _doStartStudySession());
 }
 
