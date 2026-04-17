@@ -1077,6 +1077,15 @@ textarea:focus, input[type="text"]:focus, select:focus {
 
 .study-overview-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
 
+.planner-gate {
+  display: flex; align-items: center; gap: 12px;
+  background: #fff8e1; border-left: 3px solid #f5a623;
+  padding: 10px 14px; border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  margin-bottom: 12px; font-size: 0.9rem;
+}
+.planner-gate-text { flex: 1; }
+.planner-gate.hidden { display: none; }
+
 /* ─── Explore (Historial) ────────────────────────────────────────────────────── */
 .history-subject { margin-bottom: 14px; }
 

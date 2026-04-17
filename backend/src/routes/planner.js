@@ -142,6 +142,44 @@ plannerRouter.put('/planner/slot', async (req, res) => {
   }
 });
 
+// GET /planner/day-status
+// Returns whether today's planner column is fully filled (all 32 slots covered).
+// "Today" is computed in America/Argentina/Buenos_Aires timezone.
+plannerRouter.get('/planner/day-status', async (req, res) => {
+  const userId = req.user.id;
+  const TOTAL_SLOTS = 32; // 06:00–21:30, one slot every 30 min
+
+  try {
+    const { rows } = await dbPool.query(
+      `WITH today_info AS (
+         SELECT
+           (NOW() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date                      AS today,
+           EXTRACT(DOW FROM (NOW() AT TIME ZONE 'America/Argentina/Buenos_Aires'))::int      AS day_index
+       ),
+       bounds AS (
+         SELECT today - day_index::int AS week_start, day_index FROM today_info
+       ),
+       filled_slots AS (
+         SELECT slot_time FROM weekly_planner_fixed
+           WHERE user_id = $1 AND day_index = (SELECT day_index FROM bounds)
+         UNION
+         SELECT slot_time FROM weekly_planner
+           WHERE user_id = $1
+             AND week_start = (SELECT week_start FROM bounds)
+             AND day_index  = (SELECT day_index  FROM bounds)
+       )
+       SELECT COUNT(DISTINCT slot_time)::int AS filled FROM filled_slots`,
+      [userId]
+    );
+
+    const filled = rows[0]?.filled ?? 0;
+    return res.json({ is_full: filled >= TOTAL_SLOTS, filled, total: TOTAL_SLOTS });
+  } catch (err) {
+    console.error('GET /planner/day-status error', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
 // ─── Planner To-do list ───────────────────────────────────────────────────────
 
 // GET /planner/todos
