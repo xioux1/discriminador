@@ -5132,12 +5132,13 @@ async function openCurriculumModal(subject) {
   document.querySelector('#exam-add-feedback').textContent = '';
   document.querySelector('#exam-date-feedback').textContent = '';
 
-  // Load existing config + class notes
+  // Load existing config + class notes + sql standard
   try {
     const [data, classNotesData] = await Promise.all([
       getJson(`/curriculum/${encodeURIComponent(subject)}`),
       getJson(`/curriculum/${encodeURIComponent(subject)}/class-notes`)
     ]);
+    loadSqlStandard(subject);
     document.querySelector('#curriculum-syllabus').value = data.config?.syllabus_text || '';
     document.querySelector('#curriculum-daily-new-limit').value = data.config?.daily_new_cards_limit ?? '';
     document.querySelector('#curriculum-max-micro-per-card').value = data.config?.max_micro_cards_per_card ?? '';
@@ -5384,6 +5385,113 @@ function renderExamsList(exams, subject) {
   });
 }
 
+// ── SQL Standard ──────────────────────────────────────────────────────────────
+
+function renderSqlRules(rules) {
+  const list = document.querySelector('#sql-standard-rules-list');
+  if (!list) return;
+  if (!rules || !rules.length) {
+    list.innerHTML = '';
+    return;
+  }
+  const severityColor = { error: 'var(--fail-fg)', warning: 'var(--text-muted)' };
+  const categoryLabel = { naming: 'Nombres', formatting: 'Formato', style: 'Estilo', structure: 'Estructura', forbidden: 'Prohibido' };
+  list.innerHTML = `
+    <p style="font-size:0.8rem;font-weight:600;margin:0 0 6px">${rules.length} regla${rules.length !== 1 ? 's' : ''} extraída${rules.length !== 1 ? 's' : ''}:</p>
+    ${rules.map(r => `
+      <div style="border-left:3px solid ${severityColor[r.severity] || 'var(--text-muted)'};padding:4px 8px;margin-bottom:6px;font-size:0.8rem">
+        <span style="color:var(--text-muted);font-size:0.72rem">${categoryLabel[r.category] || r.category} · ${r.severity}</span><br>
+        <span>${escHtml(r.description)}</span>
+        ${r.source_quote ? `<br><em style="color:var(--text-muted);font-size:0.75rem">"${escHtml(r.source_quote)}"</em>` : ''}
+      </div>`).join('')}`;
+}
+
+function renderSqlValidationResults(results) {
+  const el = document.querySelector('#sql-standard-results');
+  if (!el || !results) return;
+  const nonCompliant = results.filter(r => !r.compliant);
+  const compliant = results.filter(r => r.compliant);
+  el.innerHTML = `
+    <p style="font-size:0.8rem;font-weight:600;margin:0 0 6px">
+      Resultados: <span style="color:var(--fail-fg)">${nonCompliant.length} no cumplen</span> · <span style="color:var(--pass-fg)">${compliant.length} cumplen</span>
+    </p>
+    ${nonCompliant.map(r => `
+      <div style="border-left:3px solid var(--fail-fg);padding:4px 8px;margin-bottom:5px;font-size:0.79rem">
+        <strong>${escHtml(r.prompt_text?.slice(0, 80) || 'Tarjeta')}</strong><br>
+        ${r.violations.map(v => `<span style="color:var(--fail-fg)">• ${escHtml(v.description)}</span>`).join('<br>')}
+      </div>`).join('')}`;
+}
+
+async function loadSqlStandard(subject) {
+  const statusEl = document.querySelector('#sql-standard-status');
+  const fb = document.querySelector('#sql-standard-feedback');
+  if (!statusEl) return;
+  try {
+    const data = await getJson(`/sql-standard/${encodeURIComponent(subject)}`);
+    if (data.standard) {
+      statusEl.textContent = `Estándar activo: ${data.standard.rules.length} regla${data.standard.rules.length !== 1 ? 's' : ''}`;
+      statusEl.style.color = 'var(--pass-fg)';
+      renderSqlRules(data.standard.rules);
+    } else {
+      statusEl.textContent = 'Sin estándar cargado.';
+      statusEl.style.color = 'var(--text-muted)';
+      renderSqlRules([]);
+    }
+  } catch (_e) {
+    statusEl.textContent = 'Error al cargar estándar.';
+  }
+
+  // Wire buttons (replace to avoid duplicate listeners)
+  function rewire(id, handler) {
+    const btn = document.querySelector(`#${id}`);
+    if (!btn) return;
+    const clone = btn.cloneNode(true);
+    btn.parentNode.replaceChild(clone, btn);
+    clone.addEventListener('click', handler);
+  }
+
+  rewire('sql-standard-extract-btn', async () => {
+    const input = document.querySelector('#sql-standard-input')?.value?.trim();
+    if (!input) { if (fb) { fb.textContent = 'Pegá material del profesor antes de extraer.'; fb.style.color = 'var(--fail-fg)'; } return; }
+    if (fb) { fb.textContent = 'Extrayendo estándar...'; fb.style.color = 'var(--text-muted)'; }
+    try {
+      const data = await postJson(`/sql-standard/${encodeURIComponent(subject)}/extract`, { transcript_text: input });
+      if (fb) { fb.textContent = `Estándar extraído: ${data.standard.rules.length} reglas.${data.summary ? ' ' + data.summary : ''}`; fb.style.color = 'var(--pass-fg)'; }
+      statusEl.textContent = `Estándar activo: ${data.standard.rules.length} regla${data.standard.rules.length !== 1 ? 's' : ''}`;
+      statusEl.style.color = 'var(--pass-fg)';
+      renderSqlRules(data.standard.rules);
+    } catch (err) {
+      if (fb) { fb.textContent = 'Error al extraer estándar.'; fb.style.color = 'var(--fail-fg)'; }
+    }
+  });
+
+  rewire('sql-standard-validate-btn', async () => {
+    if (fb) { fb.textContent = 'Validando tarjetas SQL...'; fb.style.color = 'var(--text-muted)'; }
+    try {
+      const data = await postJson(`/sql-standard/${encodeURIComponent(subject)}/validate-batch`, {});
+      if (fb) { fb.textContent = `Validadas: ${data.validated} · Omitidas (sin SQL): ${data.skipped} · Errores: ${data.errors}`; fb.style.color = 'var(--pass-fg)'; }
+      const resultsData = await getJson(`/sql-standard/${encodeURIComponent(subject)}/results`);
+      renderSqlValidationResults(resultsData.results || []);
+    } catch (err) {
+      if (fb) { fb.textContent = err.message?.includes('estándar') ? 'Primero extraé un estándar.' : 'Error al validar tarjetas.'; fb.style.color = 'var(--fail-fg)'; }
+    }
+  });
+
+  rewire('sql-standard-delete-btn', async () => {
+    if (!confirm('¿Eliminar el estándar y todos los resultados de validación?')) return;
+    try {
+      await deleteJson(`/sql-standard/${encodeURIComponent(subject)}`);
+      statusEl.textContent = 'Sin estándar cargado.';
+      statusEl.style.color = 'var(--text-muted)';
+      renderSqlRules([]);
+      document.querySelector('#sql-standard-results').innerHTML = '';
+      if (fb) { fb.textContent = ''; }
+    } catch (_e) {
+      if (fb) { fb.textContent = 'Error al eliminar estándar.'; fb.style.color = 'var(--fail-fg)'; }
+    }
+  });
+}
+
 // ── Class notes (per-class entries) ───────────────────────────────────────────
 
 function renderClassNotesList(classNotes, subject) {
@@ -5419,20 +5527,63 @@ function renderClassNotesList(classNotes, subject) {
   });
 }
 
+function renderStructuredNote(structuredData, container) {
+  if (!structuredData || !structuredData.clusters) { container.innerHTML = ''; return; }
+  const importanceBadge = (n) => {
+    const colors = ['', '#aaa', '#888', 'var(--text-muted)', 'var(--pass-fg)', 'var(--fail-fg)'];
+    const labels = ['', 'Mencionado', 'Explicado', 'Central', 'Evaluable', 'Crítico'];
+    return `<span style="color:${colors[n] || '#aaa'};font-size:0.72rem;font-weight:600">${labels[n] || n}</span>`;
+  };
+  const examBadge = (r) => {
+    const map = { high: ['var(--fail-fg)', 'Cae en examen'], medium: ['var(--pass-fg)', 'Relacionado'], low: ['var(--text-muted)', 'No aparece'] };
+    const [col, label] = map[r] || ['var(--text-muted)', ''];
+    return label ? `<span style="color:${col};font-size:0.7rem;margin-left:6px">${label}</span>` : '';
+  };
+  container.innerHTML = `
+    ${structuredData.raw_summary ? `<p style="font-size:0.82rem;color:var(--text-muted);margin:0 0 10px;font-style:italic">${escHtml(structuredData.raw_summary)}</p>` : ''}
+    ${structuredData.professor_emphasis?.length ? `<div style="margin-bottom:10px;font-size:0.78rem"><strong>El profe enfatizó:</strong> ${structuredData.professor_emphasis.map(e => `<em>"${escHtml(e)}"</em>`).join(' · ')}</div>` : ''}
+    ${(structuredData.clusters || []).map(c => `
+      <div style="border-left:3px solid ${c.importance >= 4 ? 'var(--fail-fg)' : c.importance >= 3 ? 'var(--pass-fg)' : 'var(--text-muted)'};padding:5px 10px;margin-bottom:8px">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <strong style="font-size:0.85rem">${escHtml(c.concept)}</strong>
+          ${importanceBadge(c.importance)}
+          ${examBadge(c.exam_relevance)}
+          ${c.mentions > 1 ? `<span style="color:var(--text-muted);font-size:0.7rem">${c.mentions} menciones</span>` : ''}
+        </div>
+        ${c.importance_reason ? `<p style="font-size:0.75rem;color:var(--text-muted);margin:2px 0">${escHtml(c.importance_reason)}</p>` : ''}
+        <p style="font-size:0.8rem;margin:4px 0">${escHtml(c.summary || '')}</p>
+        ${c.key_points?.length ? `<ul style="margin:2px 0 0 16px;font-size:0.78rem">${c.key_points.map(p => `<li>${escHtml(p)}</li>`).join('')}</ul>` : ''}
+      </div>`).join('')}`;
+}
+
 function appendClassNoteCard(note, subject, container) {
   const card = document.createElement('div');
   card.className = 'class-note-card';
   card.dataset.id = note.id;
 
-  const displayTitle = note.title || 'Sin título';
+  const statusBadge = note.processing_status === 'done'
+    ? `<span style="font-size:0.68rem;color:var(--pass-fg);margin-left:6px">✓ Analizado</span>`
+    : note.processing_status === 'processing'
+    ? `<span style="font-size:0.68rem;color:var(--text-muted);margin-left:6px">Procesando...</span>`
+    : note.processing_status === 'error'
+    ? `<span style="font-size:0.68rem;color:var(--fail-fg);margin-left:6px">Error</span>`
+    : '';
+
   card.innerHTML = `
     <div class="class-note-header">
       <button type="button" class="class-note-toggle" aria-expanded="true">▾</button>
       <input type="text" class="class-note-title-input" value="${escHtml(note.title || '')}" placeholder="Título de la clase" maxlength="200">
+      ${statusBadge}
       <button type="button" class="class-note-delete btn-ghost" style="font-size:0.72rem;padding:1px 7px">Eliminar</button>
     </div>
     <div class="class-note-body">
       <textarea class="class-note-content" placeholder="Contenido de la clase...">${escHtml(note.content || '')}</textarea>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
+        <button type="button" class="class-note-process-btn btn-secondary" style="font-size:0.75rem;padding:2px 10px">Procesar transcript</button>
+        ${note.has_structured ? `<button type="button" class="class-note-view-analysis-btn btn-ghost" style="font-size:0.75rem;padding:2px 10px">Ver análisis</button>` : ''}
+      </div>
+      <p class="class-note-transcript-feedback" style="font-size:0.78rem;margin:4px 0;color:var(--text-muted)"></p>
+      <div class="class-note-structured-view" style="display:none;margin-top:8px"></div>
       <span class="class-note-save-status"></span>
     </div>`;
 
@@ -5481,6 +5632,80 @@ function appendClassNoteCard(note, subject, container) {
       }
     } catch (_e) {}
   });
+
+  // ── Transcript processing ──
+  const transcriptFb = card.querySelector('.class-note-transcript-feedback');
+  const structuredView = card.querySelector('.class-note-structured-view');
+
+  const processBtn = card.querySelector('.class-note-process-btn');
+  processBtn.addEventListener('click', async () => {
+    const transcriptText = contentTextarea.value.trim();
+    if (!transcriptText) {
+      transcriptFb.textContent = 'Pegá el transcript en el contenido de la clase primero.';
+      transcriptFb.style.color = 'var(--fail-fg)';
+      return;
+    }
+    transcriptFb.textContent = 'Procesando... esto puede tardar 1-2 minutos.';
+    transcriptFb.style.color = 'var(--text-muted)';
+    processBtn.disabled = true;
+    try {
+      await postJson(`/curriculum/${encodeURIComponent(subject)}/class-notes/${note.id}/process-transcript`, { transcript_text: transcriptText });
+      // Poll until done
+      const poll = setInterval(async () => {
+        try {
+          const data = await getJson(`/curriculum/${encodeURIComponent(subject)}/class-notes/${note.id}/structured`);
+          if (data.processing_status === 'done') {
+            clearInterval(poll);
+            transcriptFb.textContent = 'Análisis completado.';
+            transcriptFb.style.color = 'var(--pass-fg)';
+            processBtn.disabled = false;
+            structuredView.style.display = '';
+            renderStructuredNote(data.structured_data, structuredView);
+            // Show "Ver análisis" button if not already there
+            if (!card.querySelector('.class-note-view-analysis-btn')) {
+              const viewBtn = document.createElement('button');
+              viewBtn.type = 'button';
+              viewBtn.className = 'class-note-view-analysis-btn btn-ghost';
+              viewBtn.style.cssText = 'font-size:0.75rem;padding:2px 10px';
+              viewBtn.textContent = 'Ocultar análisis';
+              processBtn.insertAdjacentElement('afterend', viewBtn);
+              wireViewAnalysisBtn(viewBtn);
+            }
+          } else if (data.processing_status === 'error' || !data.processing_status) {
+            clearInterval(poll);
+            transcriptFb.textContent = 'Error al procesar el transcript.';
+            transcriptFb.style.color = 'var(--fail-fg)';
+            processBtn.disabled = false;
+          }
+        } catch (_e) { clearInterval(poll); processBtn.disabled = false; }
+      }, 3000);
+    } catch (_e) {
+      transcriptFb.textContent = 'Error al iniciar el procesamiento.';
+      transcriptFb.style.color = 'var(--fail-fg)';
+      processBtn.disabled = false;
+    }
+  });
+
+  function wireViewAnalysisBtn(btn) {
+    btn.addEventListener('click', async () => {
+      if (structuredView.style.display !== 'none') {
+        structuredView.style.display = 'none';
+        btn.textContent = 'Ver análisis';
+        return;
+      }
+      structuredView.style.display = '';
+      btn.textContent = 'Ocultar análisis';
+      if (!structuredView.innerHTML) {
+        try {
+          const data = await getJson(`/curriculum/${encodeURIComponent(subject)}/class-notes/${note.id}/structured`);
+          renderStructuredNote(data.structured_data, structuredView);
+        } catch (_e) { structuredView.innerHTML = '<p style="color:var(--fail-fg);font-size:0.8rem">Error al cargar análisis.</p>'; }
+      }
+    });
+  }
+
+  const existingViewBtn = card.querySelector('.class-note-view-analysis-btn');
+  if (existingViewBtn) wireViewAnalysisBtn(existingViewBtn);
 
   container.appendChild(card);
 }

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { dbPool } from '../db/client.js';
 import { invalidateAdvisorCache } from './advisor.js';
+import { processTranscript } from '../services/transcript-processor.js';
 
 const curriculumRouter = Router();
 
@@ -230,7 +231,8 @@ curriculumRouter.get('/curriculum/:subject/class-notes', async (req, res) => {
   const userId = req.user.id;
   try {
     const { rows } = await dbPool.query(
-      `SELECT id, title, content, position
+      `SELECT id, title, content, position, processing_status,
+              (structured_data IS NOT NULL) AS has_structured
        FROM subject_class_notes
        WHERE user_id = $1 AND subject = $2
        ORDER BY position ASC, id ASC`,
@@ -307,6 +309,67 @@ curriculumRouter.delete('/curriculum/:subject/class-notes/:id', async (req, res)
     return res.json({ ok: true });
   } catch (err) {
     console.error('DELETE /curriculum/:subject/class-notes/:id error', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+// ─── Transcript Processing ────────────────────────────────────────────────────
+
+// POST /curriculum/:subject/class-notes/:id/process-transcript
+curriculumRouter.post('/curriculum/:subject/class-notes/:id/process-transcript', async (req, res) => {
+  const { subject } = req.params;
+  const id = Number(req.params.id);
+  const userId = req.user.id;
+  const { transcript_text } = req.body || {};
+
+  if (!Number.isFinite(id)) return res.status(422).json({ error: 'validation_error', message: 'invalid id.' });
+  if (!transcript_text?.trim()) {
+    return res.status(422).json({ error: 'validation_error', message: 'transcript_text es obligatorio.' });
+  }
+
+  // Verify note belongs to user
+  const { rows } = await dbPool.query(
+    'SELECT id FROM subject_class_notes WHERE id = $1 AND user_id = $2 AND subject = $3',
+    [id, userId, subject]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'not_found' });
+
+  // Fire and forget — stale guard in GET endpoint
+  processTranscript({ noteId: id, transcriptText: transcript_text, subject, pool: dbPool, userId })
+    .catch(err => console.error('processTranscript fire-and-forget error', err.message));
+
+  return res.status(202).json({ status: 'processing' });
+});
+
+// GET /curriculum/:subject/class-notes/:id/structured
+curriculumRouter.get('/curriculum/:subject/class-notes/:id/structured', async (req, res) => {
+  const id = Number(req.params.id);
+  const userId = req.user.id;
+  if (!Number.isFinite(id)) return res.status(422).json({ error: 'validation_error', message: 'invalid id.' });
+
+  try {
+    const { rows } = await dbPool.query(
+      'SELECT structured_data, processing_status, updated_at FROM subject_class_notes WHERE id = $1 AND user_id = $2',
+      [id, userId]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'not_found' });
+
+    const note = rows[0];
+    // Stale guard: if processing for more than 5 minutes, reset to null
+    if (note.processing_status === 'processing') {
+      const ageMs = Date.now() - new Date(note.updated_at).getTime();
+      if (ageMs > 5 * 60 * 1000) {
+        await dbPool.query(
+          'UPDATE subject_class_notes SET processing_status = NULL, updated_at = now() WHERE id = $1 AND user_id = $2',
+          [id, userId]
+        );
+        note.processing_status = null;
+      }
+    }
+
+    return res.json({ structured_data: note.structured_data, processing_status: note.processing_status });
+  } catch (err) {
+    console.error('GET /curriculum/:subject/class-notes/:id/structured', err.message);
     return res.status(500).json({ error: 'server_error', message: err.message });
   }
 });

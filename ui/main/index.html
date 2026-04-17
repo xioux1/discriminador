@@ -160,6 +160,23 @@
               <p style="font-size:0.8rem;color:var(--text-muted);margin:4px 0 8px">Cada clase, sus temas y lo que el profe marcó como importante.</p>
               <div id="class-notes-list" class="class-notes-list"></div>
 
+              <!-- ── Estándar SQL de la cátedra ─────────────────────────────── -->
+              <hr style="margin:16px 0">
+              <h4 class="curriculum-section-title">Estándar SQL de la cátedra</h4>
+              <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 8px">Extraé las reglas de estilo SQL/PL-SQL que el profesor exige. Podés pegar transcripciones de clase y/o bloques de código de ejemplo.</p>
+              <div id="sql-standard-section">
+                <div id="sql-standard-status" style="font-size:0.82rem;color:var(--text-muted);margin-bottom:6px">Sin estándar cargado.</div>
+                <textarea id="sql-standard-input" rows="5" placeholder="Pegá fragmentos de transcripción o código del profesor..." style="width:100%;box-sizing:border-box;font-size:0.82rem"></textarea>
+                <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+                  <button type="button" id="sql-standard-extract-btn" class="btn-secondary">Extraer estándar</button>
+                  <button type="button" id="sql-standard-validate-btn" class="btn-secondary">Validar tarjetas SQL</button>
+                  <button type="button" id="sql-standard-delete-btn" class="btn-ghost" style="font-size:0.78rem">Eliminar estándar</button>
+                </div>
+                <p id="sql-standard-feedback" style="font-size:0.82rem;margin-top:6px"></p>
+                <div id="sql-standard-rules-list" style="margin-top:10px"></div>
+                <div id="sql-standard-results" style="margin-top:10px"></div>
+              </div>
+
               <button type="button" id="curriculum-save-btn" class="btn-primary" style="margin-top:14px">Guardar</button>
               <p id="curriculum-save-feedback" style="font-size:0.82rem;margin-top:6px"></p>
 
