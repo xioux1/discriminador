@@ -12,7 +12,7 @@ const uiDir = path.resolve(currentDir, '../../ui/main');
 export function createApp() {
   const app = express();
 
-  app.use(express.json({ limit: '128kb' }));
+  app.use(express.json({ limit: '5mb' }));
   app.use(express.static(uiDir));
 
   app.get('/', (_req, res) => {

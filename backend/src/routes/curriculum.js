@@ -327,18 +327,23 @@ curriculumRouter.post('/curriculum/:subject/class-notes/:id/process-transcript',
     return res.status(422).json({ error: 'validation_error', message: 'transcript_text es obligatorio.' });
   }
 
-  // Verify note belongs to user
-  const { rows } = await dbPool.query(
-    'SELECT id FROM subject_class_notes WHERE id = $1 AND user_id = $2 AND subject = $3',
-    [id, userId, subject]
-  );
-  if (!rows.length) return res.status(404).json({ error: 'not_found' });
+  try {
+    // Verify note belongs to user
+    const { rows } = await dbPool.query(
+      'SELECT id FROM subject_class_notes WHERE id = $1 AND user_id = $2 AND subject = $3',
+      [id, userId, subject]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'not_found' });
 
-  // Fire and forget — stale guard in GET endpoint
-  processTranscript({ noteId: id, transcriptText: transcript_text, subject, pool: dbPool, userId })
-    .catch(err => console.error('processTranscript fire-and-forget error', err.message));
+    // Fire and forget — stale guard in GET endpoint
+    processTranscript({ noteId: id, transcriptText: transcript_text, subject, pool: dbPool, userId })
+      .catch(err => console.error('processTranscript fire-and-forget error', err.message));
 
-  return res.status(202).json({ status: 'processing' });
+    return res.status(202).json({ status: 'processing' });
+  } catch (err) {
+    console.error('POST /curriculum/:subject/class-notes/:id/process-transcript error', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
 });
 
 // GET /curriculum/:subject/class-notes/:id/structured
