@@ -5651,6 +5651,7 @@ function appendClassNoteCard(note, subject, container) {
     try {
       await postJson(`/curriculum/${encodeURIComponent(subject)}/class-notes/${note.id}/process-transcript`, { transcript_text: transcriptText });
       // Poll until done
+      let nullPollCount = 0;
       const poll = setInterval(async () => {
         try {
           const data = await getJson(`/curriculum/${encodeURIComponent(subject)}/class-notes/${note.id}/structured`);
@@ -5671,11 +5672,20 @@ function appendClassNoteCard(note, subject, container) {
               processBtn.insertAdjacentElement('afterend', viewBtn);
               wireViewAnalysisBtn(viewBtn);
             }
-          } else if (data.processing_status === 'error' || !data.processing_status) {
+          } else if (data.processing_status === 'error') {
             clearInterval(poll);
             transcriptFb.textContent = 'Error al procesar el transcript.';
             transcriptFb.style.color = 'var(--fail-fg)';
             processBtn.disabled = false;
+          } else if (!data.processing_status) {
+            // null can mean "not started yet" (race) — wait a few polls before giving up
+            nullPollCount++;
+            if (nullPollCount >= 3) {
+              clearInterval(poll);
+              transcriptFb.textContent = 'Error al procesar el transcript.';
+              transcriptFb.style.color = 'var(--fail-fg)';
+              processBtn.disabled = false;
+            }
           }
         } catch (_e) { clearInterval(poll); processBtn.disabled = false; }
       }, 3000);
