@@ -147,11 +147,12 @@ export async function processTranscript({ noteId, transcriptText, subject, pool,
     const examTexts = examsResult.rows.map(r => r.content_text || '');
     const syllabusText = configResult.rows[0]?.syllabus_text || '';
 
-    // Pass 1: chunk + extract per chunk (parallel, Haiku)
+    // Pass 1: chunk + extract per chunk (sequential to respect rate limits)
     const chunks = chunkTranscript(transcriptText);
-    const chunkedResults = await Promise.all(
-      chunks.map(chunk => extractConceptsFromChunk(chunk, subject))
-    );
+    const chunkedResults = [];
+    for (const chunk of chunks) {
+      chunkedResults.push(await extractConceptsFromChunk(chunk, subject));
+    }
 
     // Pass 2: merge + weight (Sonnet)
     const examContext = examTexts.slice(0, 3).join('\n---\n');
