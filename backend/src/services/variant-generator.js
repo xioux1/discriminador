@@ -12,6 +12,9 @@ function getClient() {
  * Generate a conservative variant of a card.
  * The variant keeps the same concept, difficulty, and structure.
  * Only surface details change (numbers, names, examples).
+ * For SQL cards the variant always includes the table schemas used,
+ * prepended to the question, so the student knows the structure even
+ * when the original card didn't show it.
  */
 export async function generateVariant({ prompt_text, expected_answer_text, subject }) {
   const response = await getClient().messages.create({
@@ -29,8 +32,10 @@ Reglas estrictas:
 - NO agregués ni quitées conceptos.
 - La respuesta esperada debe seguir la misma estructura que la original.
 - Escribí en el mismo idioma que la tarjeta original.
+- Si la pregunta o respuesta contiene SQL, SIEMPRE incluí un bloque TABLES que liste los esquemas de TODAS las tablas que aparecen en la variante, en el formato: NOMBRE_TABLA(COL1, COL2, COL3(FK)). Si la pregunta original no tenía tablas, inventialas con nombres coherentes y listalas igual.
 
 Respondé ÚNICAMENTE en este formato exacto:
+TABLES: <esquemas de tablas separados por " | ", o "none" si no hay SQL>
 QUESTION: <variante de la pregunta>
 ANSWER: <variante de la respuesta esperada>`,
     messages: [{
@@ -45,6 +50,7 @@ Generá una variante conservadora.`
   });
 
   const text = response.content.find((b) => b.type === 'text')?.text ?? '';
+  const tablesMatch   = text.match(/TABLES:\s*([\s\S]+?)(?=\nQUESTION:)/i);
   const questionMatch = text.match(/QUESTION:\s*([\s\S]+?)(?=\nANSWER:)/i);
   const answerMatch   = text.match(/ANSWER:\s*([\s\S]+)/i);
 
@@ -52,8 +58,15 @@ Generá una variante conservadora.`
     throw new Error('El LLM no devolvió el formato esperado');
   }
 
+  const tables = tablesMatch ? tablesMatch[1].trim() : null;
+  const question = questionMatch[1].trim();
+
+  const finalPrompt = (tables && tables.toLowerCase() !== 'none')
+    ? `${tables}\n\n${question}`
+    : question;
+
   return {
-    prompt_text:          questionMatch[1].trim(),
+    prompt_text:          finalPrompt,
     expected_answer_text: answerMatch[1].trim()
   };
 }
