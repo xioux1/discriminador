@@ -89,6 +89,91 @@ Aplicá el árbol de decisión y generá la micro-pregunta.`
 }
 
 /**
+ * Detect whether a card contains Chinese (CJK) content by inspecting its text fields.
+ */
+export function isChineseCard({ prompt_text = '', expected_answer_text = '' }) {
+  return /[\u4e00-\u9fff\u3400-\u4dbf]/u.test(`${prompt_text} ${expected_answer_text}`);
+}
+
+/**
+ * Generate a focused micro-card for Chinese language learning.
+ *
+ * Rule: one card = one thing (word | structure | order | particle | register).
+ *
+ * Type A — lexical failure (forgot a word):
+ *   Front: "¿Cómo se dice 'X'?"  |  Back: Chinese word only
+ *
+ * Type B — structural failure (wrong pattern, particle, order, register):
+ *   Option 1 (cloze): take the original sentence, blank out only the structural element
+ *     Front: "我昨天 ___ 看书"  |  Back: "在家"
+ *   Option 2 (mirror): simpler sentence in Spanish → same pattern in Chinese
+ *     Front: "Estudio en casa"  |  Back: "我在家学习"
+ */
+export async function generateChineseMicroCard({ prompt_text, expected_answer_text, subject, concept, user_answer = '' }) {
+  const response = await getClient().messages.create({
+    model: LLM_MODEL_STRONG,
+    max_tokens: 300,
+    temperature: 0,
+    system: `Sos un tutor especialista en chino mandarín que diseña flashcards.
+
+REGLA BASE (no negociable): una tarjeta testea UNA SOLA COSA: palabra | estructura | orden | partícula | registro.
+
+═══ CLASIFICACIÓN ═══
+
+TIPO A — FALLO LÉXICO (el estudiante no recordó una palabra específica):
+  FRONT: ¿Cómo se dice '[palabra en español]'?
+  BACK: solo la palabra en chino — nada más.
+
+TIPO B — FALLO ESTRUCTURAL (patrón, partícula, orden u otra estructura):
+  Elegí la opción más pedagógica:
+
+  Opción CLOZE (preferida cuando hay oración de referencia):
+    Tomá la oración original o una equivalente minimal.
+    Reemplazá SOLO el elemento estructural con ___.
+    FRONT: oración con ___
+    BACK: solo el fragmento faltante
+    Ejemplo → FRONT: "我昨天 ___ 看书"  BACK: "在家"
+
+  Opción MIRROR (cuando no hay oración clara):
+    Creá una oración más simple con el MISMO patrón.
+    FRONT: esa oración en español
+    BACK: la oración en chino con ese patrón
+    Ejemplo → FRONT: "Estudio en casa"  BACK: "我在家学习"
+
+PROHIBIDO:
+- Mezclar léxico y estructura en una sola tarjeta.
+- Poner más de un elemento en el BACK.
+- Revelar la respuesta en el FRONT.
+- Referencias a "la tarjeta", "el ejercicio", "el ejemplo anterior".
+
+Respondé ÚNICAMENTE en este formato (4 líneas):
+TYPE: A|B
+FORMAT: lexical|cloze|mirror
+FRONT: <frente>
+BACK: <dorso>`,
+    messages: [{
+      role: 'user',
+      content: `Tarjeta de chino:
+Pregunta: ${prompt_text}
+Respuesta esperada: ${expected_answer_text}
+Respuesta del estudiante: "${user_answer || '(sin respuesta)'}"
+Concepto / error a remediar: "${concept}"
+
+Clasificá y generá la micro-tarjeta.`
+    }]
+  });
+
+  const text = response.content.find((b) => b.type === 'text')?.text ?? '';
+  const frontMatch = text.match(/FRONT:\s*(.+)/i);
+  const backMatch  = text.match(/BACK:\s*([\s\S]+)/i);
+
+  return {
+    question:        frontMatch?.[1]?.trim() ?? `¿Cómo se dice "${concept}" en chino?`,
+    expected_answer: backMatch?.[1]?.trim()  || expected_answer_text,
+  };
+}
+
+/**
  * Generate a targeted micro-card from a conceptual error detected by the binary verifier.
  * Uses a stronger model (Sonnet) since the error label already tells us exactly what went wrong.
  *
