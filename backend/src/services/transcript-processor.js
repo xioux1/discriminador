@@ -159,6 +159,7 @@ export async function processTranscript({ noteId, transcriptText, subject, pool,
     const merged = await mergeAndWeightConcepts(chunkedResults, subject, examContext);
 
     if (!merged) {
+      console.error('processTranscript: no concepts extracted or Sonnet response unparseable', { noteId, subject });
       await pool.query(
         'UPDATE subject_class_notes SET processing_status = $1, updated_at = now() WHERE id = $2 AND user_id = $3',
         ['error', noteId, userId]
