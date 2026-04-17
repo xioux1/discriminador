@@ -264,8 +264,8 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
       if (parseInt(card.variant_count) === 0) return card;
 
       const vRes = await dbPool.query(
-        `SELECT id, prompt_text, expected_answer_text FROM card_variants WHERE card_id = $1`,
-        [card.id]
+        `SELECT id, prompt_text, expected_answer_text FROM card_variants WHERE card_id = $1 AND (user_id = $2 OR user_id IS NULL)`,
+        [card.id, card.user_id]
       );
       const variants = vRes.rows;
       if (variants.length === 0) return card;
@@ -350,8 +350,8 @@ async function autoGenerateVariant(cardId, card, userId) {
   const maxVariants = cfgRes.rows[0].max_variants_per_card; // null = unlimited
 
   const countRes = await dbPool.query(
-    'SELECT COUNT(*) AS cnt FROM card_variants WHERE card_id = $1',
-    [cardId]
+    'SELECT COUNT(*) AS cnt FROM card_variants WHERE card_id = $1 AND (user_id = $2 OR user_id IS NULL)',
+    [cardId, userId]
   );
   const existing = parseInt(countRes.rows[0].cnt, 10);
   if (maxVariants !== null && existing >= maxVariants) return;
@@ -363,8 +363,8 @@ async function autoGenerateVariant(cardId, card, userId) {
   });
 
   await dbPool.query(
-    `INSERT INTO card_variants (card_id, prompt_text, expected_answer_text) VALUES ($1, $2, $3)`,
-    [cardId, variant.prompt_text, variant.expected_answer_text]
+    `INSERT INTO card_variants (card_id, prompt_text, expected_answer_text, user_id) VALUES ($1, $2, $3, $4)`,
+    [cardId, variant.prompt_text, variant.expected_answer_text, userId]
   );
 
   console.info('[auto-variant] generated', { cardId, subject: card.subject });
@@ -971,9 +971,9 @@ schedulerRouter.post('/scheduler/cards/:id/variant', async (req, res) => {
     });
 
     const insertRes = await dbPool.query(
-      `INSERT INTO card_variants (card_id, prompt_text, expected_answer_text)
-       VALUES ($1, $2, $3) RETURNING *`,
-      [cardId, variant.prompt_text, variant.expected_answer_text]
+      `INSERT INTO card_variants (card_id, prompt_text, expected_answer_text, user_id)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [cardId, variant.prompt_text, variant.expected_answer_text, userId]
     );
 
     return res.status(200).json({
@@ -1005,9 +1005,9 @@ schedulerRouter.get('/scheduler/cards/:id/variants', async (req, res) => {
     const variantsRes = await dbPool.query(
       `SELECT id, prompt_text, expected_answer_text, created_at
        FROM card_variants
-       WHERE card_id = $1
+       WHERE card_id = $1 AND (user_id = $2 OR user_id IS NULL)
        ORDER BY created_at ASC`,
-      [cardId]
+      [cardId, userId]
     );
 
     return res.json({ card: cardRes.rows[0], variants: variantsRes.rows });

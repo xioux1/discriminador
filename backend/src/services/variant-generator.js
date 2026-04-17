@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 
-const LLM_MODEL = 'claude-haiku-4-5';
+const LLM_MODEL = 'claude-haiku-4-5-20251001';
 
 let _client = null;
 function getClient() {
@@ -16,7 +16,7 @@ function getClient() {
 export async function generateVariant({ prompt_text, expected_answer_text, subject }) {
   const response = await getClient().messages.create({
     model: LLM_MODEL,
-    max_tokens: 400,
+    max_tokens: 800,
     temperature: 0.3,
     system: `Sos un tutor que genera variantes conservadoras de tarjetas de estudio.
 
