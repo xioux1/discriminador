@@ -308,4 +308,4 @@ function validate(sql) {
   return errors.slice(0, 5);
 }
 
-export { validate };
+export { validate, KEYWORD_SET };
