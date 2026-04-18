@@ -408,11 +408,11 @@ evaluateRouter.post('/evaluate/binary-check', llmRateLimit, async (req, res) => 
   const userId = req.user?.id ?? null;
   const { card_id, prompt_text, user_answer_text, expected_answer_text, subject } = req.body || {};
 
-  if (!prompt_text || !user_answer_text || !expected_answer_text) {
+  if (!prompt_text || !user_answer_text) {
     return res.status(422).json({ error: 'validation_error', message: 'Missing required fields.' });
   }
 
-  if (String(prompt_text).length > 2000 || String(user_answer_text).length > 10000 || String(expected_answer_text).length > 5000) {
+  if (String(prompt_text).length > 2000 || String(user_answer_text).length > 10000 || (expected_answer_text && String(expected_answer_text).length > 5000)) {
     return res.status(422).json({ error: 'validation_error', message: 'One or more fields exceed the maximum allowed length.' });
   }
 
@@ -442,7 +442,7 @@ ERROR_TYPE: conceptual|syntactic
 ERROR_LABEL: descripción breve (solo si conceptual)`,
       messages: [{
         role: 'user',
-        content: `Ejercicio:\n${prompt_text}\n\nRespuesta esperada (referencia completa):\n${expected_answer_text}\n\nRespuesta del estudiante hasta ahora (puede estar incompleta):\n${user_answer_text}`
+        content: `Ejercicio:\n${prompt_text}\n\nRespuesta del estudiante hasta ahora (puede estar incompleta):\n${user_answer_text}`
       }]
     });
 
