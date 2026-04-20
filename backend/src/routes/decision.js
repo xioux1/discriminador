@@ -439,12 +439,30 @@ async function syncSchedulerCard(pool, {
       card.subject = subject;
     }
   } else {
-    const inserted = await pool.query(
-      `INSERT INTO cards (subject, prompt_text, expected_answer_text, user_id)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
-      [subject, prompt_text, expected_answer_text, user_id]
+    // Before creating a new card, check if this text belongs to a card variant.
+    // Variants must always update the parent card — never spawn a duplicate.
+    const variantMatch = await pool.query(
+      `SELECT c.*
+       FROM card_variants cv
+       JOIN cards c ON cv.card_id = c.id
+       WHERE cv.prompt_text = $1
+         AND cv.expected_answer_text = $2
+         AND c.user_id = $3
+         AND c.archived_at IS NULL
+       LIMIT 1`,
+      [prompt_text, expected_answer_text, user_id]
     );
-    card = inserted.rows[0];
+
+    if (variantMatch.rows.length) {
+      card = variantMatch.rows[0];
+    } else {
+      const inserted = await pool.query(
+        `INSERT INTO cards (subject, prompt_text, expected_answer_text, user_id)
+         VALUES ($1, $2, $3, $4) RETURNING *`,
+        [subject, prompt_text, expected_answer_text, user_id]
+      );
+      card = inserted.rows[0];
+    }
   }
 
   // Apply FSRS
