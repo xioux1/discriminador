@@ -3230,6 +3230,13 @@ textarea:focus, input[type="text"]:focus, select:focus {
   display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap;
 }
 
+/* ── Time restriction modal ──────────────────────────────────────────────── */
+.time-restrict-box { text-align: center; }
+.time-restrict-next {
+  font-size: 0.88rem; color: var(--text-muted);
+  margin: 0 0 4px; font-style: italic;
+}
+
 /* ── Chinese TTS bar ─────────────────────────────────────────────────────── */
 
 .study-tts-bar {
