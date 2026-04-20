@@ -1645,13 +1645,13 @@ const uiState = {
 };
 
 const minRules = {
-  prompt_text: 10,
+  prompt_text: 1,
   user_answer_text: 1,
   expected_answer_text: 1,
 };
 
 const errorMessages = {
-  prompt_text: 'La consigna es obligatoria (mínimo 10 caracteres).',
+  prompt_text: 'La consigna es obligatoria.',
   user_answer_text: 'La respuesta del usuario es obligatoria (mínimo 5 caracteres).',
   expected_answer_text: 'La respuesta esperada es obligatoria (mínimo 1 carácter).',
   subject: 'La materia debe tener entre 1 y 60 caracteres.',
