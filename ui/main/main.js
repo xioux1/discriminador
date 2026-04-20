@@ -3087,6 +3087,7 @@ function _doStartPlannedSession() {
 }
 
 async function startPlannedSession() {
+  if (!isAllowedStartTime()) { showTimeRestrictionModal(); return; }
   const status = await checkPlannerDayStatus();
   const gateEl = document.querySelector('#briefing-planner-gate');
   if (!status.is_full) {
@@ -3335,6 +3336,32 @@ function startExamSession(cards, subject) {
 // ── Gratitude modal ───────────────────────────────────────────────────────────
 // Shows the gratitude modal and resolves once the user has submitted and
 // acknowledged the response.  Pass a callback that starts the actual session.
+function isAllowedStartTime() {
+  const min = new Date().getMinutes();
+  return min === 0 || min === 30;
+}
+
+function showTimeRestrictionModal() {
+  const modal    = document.querySelector('#time-restrict-modal');
+  const nextEl   = document.querySelector('#time-restrict-next');
+  const closeBtn = document.querySelector('#time-restrict-close-btn');
+  const backdrop = document.querySelector('#time-restrict-backdrop');
+
+  const min      = new Date().getMinutes();
+  const wait     = min < 30 ? 30 - min : 60 - min;
+  nextEl.textContent = `Próximo horario disponible en ${wait} minuto${wait !== 1 ? 's' : ''}.`;
+
+  modal.classList.remove('hidden');
+
+  function close() {
+    modal.classList.add('hidden');
+    closeBtn.removeEventListener('click', close);
+    backdrop.removeEventListener('click', close);
+  }
+  closeBtn.addEventListener('click', close);
+  backdrop.addEventListener('click', close);
+}
+
 function showGratitudeModal(onConfirm) {
   const modal      = document.querySelector('#gratitude-modal');
   const input      = document.querySelector('#gratitude-input');
@@ -3470,6 +3497,7 @@ function renderPlannerGate(gateEl, filled, total) {
 }
 
 async function startStudySession() {
+  if (!isAllowedStartTime()) { showTimeRestrictionModal(); return; }
   const status = await checkPlannerDayStatus();
   const gateEl = document.querySelector('#overview-planner-gate');
   if (!status.is_full) {
