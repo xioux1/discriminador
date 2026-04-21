@@ -1,3 +1,32 @@
+// ─── Theme ────────────────────────────────────────────────────────────────────
+(function initTheme() {
+  const stored = localStorage.getItem('theme');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const theme = stored ?? (prefersDark ? 'dark' : 'light');
+
+  function applyTheme(isDark) {
+    if (isDark) {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    } else {
+      document.documentElement.removeAttribute('data-theme');
+    }
+    const btn = document.getElementById('theme-toggle');
+    if (btn) {
+      btn.textContent = isDark ? '☀' : '☾';
+      btn.title = isDark ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro';
+    }
+  }
+
+  applyTheme(theme === 'dark');
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#theme-toggle')) return;
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    localStorage.setItem('theme', isDark ? 'light' : 'dark');
+    applyTheme(!isDark);
+  });
+})();
+
 const EVALUATE_ENDPOINT = '/evaluate';
 const DECISION_ENDPOINT = '/decision';
 let pendingStudySubject = null;
