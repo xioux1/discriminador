@@ -6110,3 +6110,184 @@ async function initNotes() {
     }, 800);
   });
 }
+
+// ── Bot chat panel ────────────────────────────────────────────────────────────
+
+const BOT_LAST_READ_KEY = 'discriminador_bot_last_read';
+
+function getBotLastRead() {
+  return localStorage.getItem(BOT_LAST_READ_KEY) || new Date(0).toISOString();
+}
+
+function setBotLastRead() {
+  localStorage.setItem(BOT_LAST_READ_KEY, new Date().toISOString());
+}
+
+function fmtChatTime(iso) {
+  const d = new Date(iso);
+  return d.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function renderMessages(messages) {
+  const container = document.querySelector('#bot-chat-messages');
+  if (!messages.length) {
+    container.innerHTML = '<div class="bot-chat-empty">Sin mensajes aún. El asistente te escribirá cuando detecte que una materia necesita atención.</div>';
+    return;
+  }
+  container.innerHTML = '';
+  for (const msg of messages) {
+    const bubble = document.createElement('div');
+    bubble.className = `bot-chat-bubble bot-chat-bubble--${msg.direction === 'outbound' ? 'bot' : 'user'}`;
+    bubble.innerHTML = `
+      <div class="bot-chat-bubble-body">${msg.body.replace(/\n/g, '<br>')}</div>
+      <div class="bot-chat-bubble-time">${fmtChatTime(msg.created_at)}</div>
+    `;
+    container.appendChild(bubble);
+  }
+  container.scrollTop = container.scrollHeight;
+}
+
+async function loadBotMessages() {
+  try {
+    const data = await getJson('/bot/messages?limit=50');
+    renderMessages(data.messages || []);
+  } catch { /* silent */ }
+}
+
+async function loadSnoozes() {
+  try {
+    const data = await getJson('/bot/snoozes');
+    const list  = document.querySelector('#bot-chat-snoozes-list');
+    const panel = document.querySelector('#bot-chat-snoozes');
+    const snoozes = data.snoozes || [];
+    if (!snoozes.length) {
+      panel.classList.add('hidden');
+      return;
+    }
+    list.innerHTML = '';
+    for (const s of snoozes) {
+      const row = document.createElement('div');
+      row.className = 'bot-snooze-row';
+      row.innerHTML = `
+        <span class="bot-snooze-subject">${s.subject}</span>
+        <span class="bot-snooze-until">hasta ${new Date(s.snoozed_until).toLocaleDateString('es-AR')}</span>
+        <button class="btn-ghost bot-snooze-cancel" data-subject="${s.subject}" title="Cancelar silencio">✕</button>
+      `;
+      row.querySelector('.bot-snooze-cancel').addEventListener('click', async (e) => {
+        const subj = e.target.dataset.subject;
+        try {
+          await fetch(`/bot/snoozes/${encodeURIComponent(subj)}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${localStorage.getItem('discriminador_token')}` }
+          });
+          await loadSnoozes();
+        } catch { /* silent */ }
+      });
+      list.appendChild(row);
+    }
+    panel.classList.remove('hidden');
+  } catch { /* silent */ }
+}
+
+async function updateBotBadge() {
+  try {
+    const since = getBotLastRead();
+    const data  = await getJson(`/bot/unread-count?since=${encodeURIComponent(since)}`);
+    const badge = document.querySelector('#bot-chat-badge');
+    const count = data.unread || 0;
+    if (count > 0) {
+      badge.textContent = count > 9 ? '9+' : String(count);
+      badge.classList.remove('hidden');
+    } else {
+      badge.classList.add('hidden');
+    }
+  } catch { /* silent */ }
+}
+
+function initBotChat() {
+  const fab    = document.querySelector('#bot-chat-fab');
+  const panel  = document.querySelector('#bot-chat-panel');
+  const closeBtn = document.querySelector('#bot-chat-close');
+  const sendBtn  = document.querySelector('#bot-chat-send');
+  const input    = document.querySelector('#bot-chat-input');
+  const snoozesToggle = document.querySelector('#bot-chat-snoozes-btn');
+  const snoozesPanel  = document.querySelector('#bot-chat-snoozes');
+
+  if (!fab) return;
+
+  // Open panel
+  fab.addEventListener('click', async () => {
+    panel.classList.toggle('hidden');
+    if (!panel.classList.contains('hidden')) {
+      setBotLastRead();
+      document.querySelector('#bot-chat-badge').classList.add('hidden');
+      await loadBotMessages();
+      await loadSnoozes();
+      input.focus();
+    }
+  });
+
+  closeBtn.addEventListener('click', () => panel.classList.add('hidden'));
+
+  // Toggle snoozes section
+  snoozesToggle.addEventListener('click', () => {
+    snoozesPanel.classList.toggle('hidden');
+    if (!snoozesPanel.classList.contains('hidden')) loadSnoozes();
+  });
+
+  // Send message
+  async function sendMessage() {
+    const text = input.value.trim();
+    if (!text) return;
+
+    input.value = '';
+    sendBtn.disabled = true;
+
+    // Optimistically add user bubble
+    const container = document.querySelector('#bot-chat-messages');
+    const userBubble = document.createElement('div');
+    userBubble.className = 'bot-chat-bubble bot-chat-bubble--user';
+    userBubble.innerHTML = `<div class="bot-chat-bubble-body">${text.replace(/\n/g, '<br>')}</div><div class="bot-chat-bubble-time">ahora</div>`;
+    container.querySelector('.bot-chat-empty')?.remove();
+    container.appendChild(userBubble);
+    container.scrollTop = container.scrollHeight;
+
+    // Thinking indicator
+    const thinking = document.createElement('div');
+    thinking.className = 'bot-chat-bubble bot-chat-bubble--bot bot-chat-thinking';
+    thinking.innerHTML = '<div class="bot-chat-bubble-body">...</div>';
+    container.appendChild(thinking);
+    container.scrollTop = container.scrollHeight;
+
+    try {
+      const data = await postJson('/bot/reply', { text });
+      thinking.remove();
+      const botBubble = document.createElement('div');
+      botBubble.className = 'bot-chat-bubble bot-chat-bubble--bot';
+      botBubble.innerHTML = `<div class="bot-chat-bubble-body">${(data.reply || '').replace(/\n/g, '<br>')}</div><div class="bot-chat-bubble-time">ahora</div>`;
+      container.appendChild(botBubble);
+      container.scrollTop = container.scrollHeight;
+      await loadSnoozes();
+    } catch (err) {
+      thinking.remove();
+      const errBubble = document.createElement('div');
+      errBubble.className = 'bot-chat-bubble bot-chat-bubble--bot';
+      errBubble.innerHTML = `<div class="bot-chat-bubble-body" style="color:var(--fail-fg)">Error: ${err.message}</div>`;
+      container.appendChild(errBubble);
+    } finally {
+      sendBtn.disabled = false;
+      input.focus();
+    }
+  }
+
+  sendBtn.addEventListener('click', sendMessage);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  });
+
+  // Poll for unread badge every 60s
+  updateBotBadge();
+  setInterval(updateBotBadge, 60_000);
+}
+
+initBotChat();

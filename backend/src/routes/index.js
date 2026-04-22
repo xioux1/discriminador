@@ -22,6 +22,7 @@ import plannerRouter from './planner.js';
 import notesRouter from './notes.js';
 import gratitudeRouter from './gratitude.js';
 import ttsRouter from './tts.js';
+import botChatRouter from './bot-chat.js';
 
 const router = Router();
 
@@ -48,5 +49,6 @@ router.use(sqlStandardRouter);
 router.use(notesRouter);
 router.use(gratitudeRouter);
 router.use(ttsRouter);
+router.use(botChatRouter);
 
 export default router;

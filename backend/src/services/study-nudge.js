@@ -1,9 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { dbPool } from '../db/client.js';
-import { sendDM } from './discord-bot.js';
 
 const NUDGE_MODEL = 'claude-haiku-4-5-20251001';
 const REPLY_MODEL = 'claude-sonnet-4-6';
+const IN_APP_CHANNEL = 'inapp';
 
 let _ai = null;
 function getAi() {
@@ -11,7 +11,6 @@ function getAi() {
   return _ai;
 }
 
-// Nudge thresholds: days_since_last_study required to trigger, given days_until_exam
 function shouldNudge(daysSince, daysUntilExam) {
   if (daysUntilExam === null) return daysSince >= 14;
   if (daysUntilExam <= 30)   return daysSince >= 3;
@@ -27,18 +26,17 @@ async function buildNudgeMessage(subject, daysSince, daysUntilExam) {
   const resp = await getAi().messages.create({
     model: NUDGE_MODEL,
     max_tokens: 200,
-    system: `Sos un asistente de estudio amigable y directo. Escribís mensajes cortos de Discord (2-3 oraciones máximo).
+    system: `Sos un asistente de estudio amigable y directo. Escribís mensajes cortos (2-3 oraciones máximo).
 Notás que el usuario no estudió una materia en varios días. Sos curioso, no regañón. Preguntás qué pasó.
 No uses más de 1 emoji. Respondé solo el mensaje, sin comillas ni formato adicional.`,
-    messages: [
-      {
-        role: 'user',
-        content: `El usuario no estudió "${subject}" en ${daysSince} días. ${examContext} Escribí el mensaje de alerta.`
-      }
-    ]
+    messages: [{
+      role: 'user',
+      content: `El usuario no estudió "${subject}" en ${daysSince} días. ${examContext} Escribí el mensaje de alerta.`
+    }]
   });
 
-  return resp.content[0]?.text?.trim() || `Che, ¿todo bien? No veo que hayas estudiado ${subject} en los últimos ${daysSince} días. ¿Qué está pasando?`;
+  return resp.content[0]?.text?.trim()
+    || `Che, ¿todo bien? No veo que hayas estudiado ${subject} en los últimos ${daysSince} días. ¿Qué está pasando?`;
 }
 
 async function buildStudyTips(subject) {
@@ -48,19 +46,51 @@ async function buildStudyTips(subject) {
     system: `Sos un coach de estudio experto. Proponés estrategias creativas y concretas, no genéricas.
 Cada estrategia dura menos de 30 minutos y usa técnicas de recuperación activa, intercalado o aplicación real.
 Respondé en español, con viñetas simples. Sin intro ni cierre, solo las estrategias.`,
-    messages: [
-      {
-        role: 'user',
-        content: `Propone 2-3 formas innovadoras de avanzar con "${subject}" hoy.`
-      }
-    ]
+    messages: [{
+      role: 'user',
+      content: `Propone 2-3 formas innovadoras de avanzar con "${subject}" hoy.`
+    }]
   });
 
   return resp.content[0]?.text?.trim() || '';
 }
 
+// Write a bot message to bot_conversations (in-app channel)
+async function saveOutbound(userId, subject, body) {
+  const result = await dbPool.query(
+    `INSERT INTO bot_conversations
+       (user_id, discord_channel_id, direction, subject, body)
+     VALUES ($1, $2, 'outbound', $3, $4)
+     RETURNING id, created_at`,
+    [userId, IN_APP_CHANNEL, subject || null, body]
+  );
+  return result.rows[0];
+}
+
+async function saveInbound(userId, body) {
+  const result = await dbPool.query(
+    `INSERT INTO bot_conversations
+       (user_id, discord_channel_id, direction, body)
+     VALUES ($1, $2, 'inbound', $3)
+     RETURNING id, created_at`,
+    [userId, IN_APP_CHANNEL, body]
+  );
+  return result.rows[0];
+}
+
 export async function checkAndNudge(userId) {
   try {
+    // Only send one nudge per day — skip if there's already an outbound message today
+    const recentCheck = await dbPool.query(
+      `SELECT 1 FROM bot_conversations
+       WHERE user_id = $1
+         AND direction = 'outbound'
+         AND created_at >= CURRENT_DATE AT TIME ZONE 'America/Argentina/Buenos_Aires'
+       LIMIT 1`,
+      [userId]
+    );
+    if (recentCheck.rows.length) return;
+
     const [activityRes, examsRes, snoozeRes] = await Promise.all([
       dbPool.query(
         `SELECT subject, MAX(logged_date) AS last_studied
@@ -93,59 +123,35 @@ export async function checkAndNudge(userId) {
       const { subject, last_studied } = row;
       if (snoozedSubjects.has(subject)) continue;
 
-      const lastDate    = new Date(last_studied);
-      const daysSince   = Math.floor((today - lastDate) / 86400000);
-      const examDate    = examBySubject[subject] ? new Date(examBySubject[subject]) : null;
+      const daysSince     = Math.floor((today - new Date(last_studied)) / 86400000);
+      const examDate      = examBySubject[subject] ? new Date(examBySubject[subject]) : null;
       const daysUntilExam = examDate ? Math.ceil((examDate - today) / 86400000) : null;
 
       if (!shouldNudge(daysSince, daysUntilExam)) continue;
 
       const message = await buildNudgeMessage(subject, daysSince, daysUntilExam);
-      const sent    = await sendDM(message);
-
-      await dbPool.query(
-        `INSERT INTO bot_conversations (user_id, discord_channel_id, discord_message_id, direction, subject, body)
-         VALUES ($1, $2, $3, 'outbound', $4, $5)`,
-        [userId, sent?.channelId || '', sent?.id || null, subject, message]
-      );
-
-      // One nudge per day max — break after first to avoid flooding
-      break;
+      await saveOutbound(userId, subject, message);
+      break; // one nudge per day
     }
   } catch (err) {
     console.error('[study-nudge] checkAndNudge error:', err.message);
   }
 }
 
-export async function handleUserReply({ discordUserId, replyText, channelId, messageId }) {
-  // Resolve internal user_id from discord_user_id env match
-  const configuredDiscordId = process.env.DISCORD_USER_ID;
-  if (!configuredDiscordId || discordUserId !== configuredDiscordId) return;
+// Called from POST /bot/reply — returns the bot's response text
+export async function handleUserReply(userId, replyText) {
+  await saveInbound(userId, replyText);
 
-  const userRes = await dbPool.query(
-    `SELECT id FROM users ORDER BY id ASC LIMIT 1`
-  );
-  if (!userRes.rows.length) return;
-  const userId = userRes.rows[0].id;
-
-  // Store incoming message
-  await dbPool.query(
-    `INSERT INTO bot_conversations (user_id, discord_channel_id, discord_message_id, direction, body)
-     VALUES ($1, $2, $3, 'inbound', $4)`,
-    [userId, channelId, messageId, replyText]
-  );
-
-  // Fetch recent conversation context
+  // Fetch recent conversation context (last 6 messages)
   const contextRes = await dbPool.query(
     `SELECT direction, subject, body FROM bot_conversations
      WHERE user_id = $1
      ORDER BY created_at DESC LIMIT 6`,
     [userId]
   );
-  const history = contextRes.rows.reverse();
+  const history     = contextRes.rows.reverse();
   const contextText = history.map((r) => `[${r.direction}] ${r.body}`).join('\n');
 
-  // Ask Claude to parse intent and generate reply
   const parseResp = await getAi().messages.create({
     model: REPLY_MODEL,
     max_tokens: 500,
@@ -160,25 +166,22 @@ Analizá el contexto y devolvé SOLO JSON válido con estos campos:
 }
 Para "explained_priority": si el estudiante explica que el examen es en N meses/semanas, calculá snooze_until como la fecha actual más (N meses - 60 días).
 Para "will_study": snooze_until es null, reply_message los alienta.
-Para "needs_help": snooze_until es null, el campo reply_message puede ser más largo con sugerencias.
+Para "needs_help": snooze_until es null, reply_message puede incluir sugerencias concretas.
 Hoy es ${new Date().toISOString().slice(0, 10)}.`,
-    messages: [
-      {
-        role: 'user',
-        content: `Conversación reciente:\n${contextText}\n\nÚltima respuesta del usuario: "${replyText}"`
-      }
-    ]
+    messages: [{
+      role: 'user',
+      content: `Conversación reciente:\n${contextText}\n\nÚltima respuesta del usuario: "${replyText}"`
+    }]
   });
 
   let parsed;
   try {
-    const raw = parseResp.content[0]?.text?.trim() || '{}';
-    parsed = JSON.parse(raw);
+    parsed = JSON.parse(parseResp.content[0]?.text?.trim() || '{}');
   } catch {
     parsed = { intent: 'other', reply_message: 'Gracias por tu respuesta. ¡Seguí así!' };
   }
 
-  // Store snooze if applicable
+  // Persist snooze if the user explained a priority
   if (parsed.intent === 'explained_priority' && parsed.subject && parsed.snooze_until) {
     await dbPool.query(
       `INSERT INTO subject_snooze (user_id, subject, reason, snoozed_until)
@@ -189,18 +192,12 @@ Hoy es ${new Date().toISOString().slice(0, 10)}.`,
     );
   }
 
-  // Append study tips for needs_help
-  let replyText2 = parsed.reply_message || '¡Gracias por escribir!';
+  let botReply = parsed.reply_message || '¡Gracias por escribir!';
   if (parsed.intent === 'needs_help' && parsed.subject) {
     const tips = await buildStudyTips(parsed.subject);
-    if (tips) replyText2 += `\n\n${tips}`;
+    if (tips) botReply += `\n\n${tips}`;
   }
 
-  const sent = await sendDM(replyText2);
-
-  await dbPool.query(
-    `INSERT INTO bot_conversations (user_id, discord_channel_id, discord_message_id, direction, subject, body)
-     VALUES ($1, $2, $3, 'outbound', $4, $5)`,
-    [userId, channelId, sent?.id || null, parsed.subject || null, replyText2]
-  );
+  await saveOutbound(userId, parsed.subject || null, botReply);
+  return botReply;
 }
