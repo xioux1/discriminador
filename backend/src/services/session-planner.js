@@ -82,12 +82,14 @@ export async function planSession({
         forced:       ref.forced || false,
       });
     } else {
+      const deferDays = (!ref.forced && prioritized._deferDays?.[key]) || 0;
       deferred.push({
-        type:    ref.type,
-        id:      ref.id,
-        subject: item.subject || item.parent_subject,
-        reason:  ref.reason || '',
-        forced:  ref.forced || false,
+        type:       ref.type,
+        id:         ref.id,
+        subject:    item.subject || item.parent_subject,
+        reason:     ref.reason || '',
+        forced:     ref.forced || false,
+        defer_days: deferDays,
       });
     }
   }
@@ -116,7 +118,8 @@ export async function planSession({
         subject:    d.subject,
         retention:  item?.estimated_retention != null ? Math.round(item.estimated_retention * 100) / 100 : null,
         forced:     d.forced,
-        decision:   'deferred',
+        decision:   d.defer_days > 0 ? 'rescheduled' : 'deferred',
+        defer_days: d.defer_days || 0,
         reason:     d.reason,
       };
     }),
@@ -150,18 +153,17 @@ REGLAS DE PRIORIDAD:
 5. Si la tarjeta padre también está en cola (parent_also_due=true), poné la general primero — si se responde bien, las micros se archivan.
 6. Con energy_level='tired': preferí tarjetas con más pass_count (más familiares).
 7. Con energy_level='focused': podés poner tarjetas más difíciles primero.
-
-TARJETAS DIFERIBLES: Si una tarjeta no-forced tiene retención alta (≥80%) Y el examen está lejos (>60 días), es razonable diferirla para priorizar contenido urgente. Explicá siempre por qué.
+8. REPROGRAMACIÓN: Para tarjetas no-forced con max_defer_days>0 que no entren en el presupuesto, podés incluir "defer_days": N (1 a max_defer_days) para posponer explícitamente su próxima revisión. Usá defer_days bajos (1-3) si el examen está cerca (<30 días). Podés usar valores mayores si el examen está lejos (>60 días) y la retención es alta. Para tarjetas que querés ver mañana igual, usá defer_days: 0.
 
 Respondé ÚNICAMENTE con JSON válido:
 {
   "priority_order": [
-    { "type": "micro"|"card", "id": <number>, "reason": "<frase corta>", "forced": true|false },
+    { "type": "micro"|"card", "id": <number>, "reason": "<frase corta>", "forced": true|false, "defer_days": 0 },
     ...
   ],
   "session_tip": "<consejo corto según estado de ánimo y situación, máx 20 palabras>",
   "warnings": ["<advertencia si hay examen muy próximo o retención crítica>"],
-  "agent_log": "<razonamiento del agente: 3-6 oraciones explicando decisiones clave — qué forzó, qué difirió y por qué, qué materia priorizó>"
+  "agent_log": "<razonamiento del agente: 3-6 oraciones explicando decisiones clave — qué forzó, qué difirió, cuántos días reprogramó y por qué>"
 }`,
     messages: [{ role: 'user', content: userContent }],
   });
@@ -185,6 +187,11 @@ Respondé ÚNICAMENTE con JSON válido:
     ? parsed.priority_order
     : buildFallbackOrder({ cards, microCards });
 
+  // Index defer_days by type:id for O(1) lookup in planSession
+  order._deferDays = {};
+  for (const item of order) {
+    if (item.defer_days > 0) order._deferDays[`${item.type}:${item.id}`] = item.defer_days;
+  }
   order._tip      = parsed.session_tip || '';
   order._warnings = Array.isArray(parsed.warnings) ? parsed.warnings : [];
   order._agentLog = parsed.agent_log   || '';
@@ -260,6 +267,7 @@ function buildUserMessage({ availableMinutes, energyLevel, cards, microCards, su
     estimated_retention: retPct(m.estimated_retention),
     forced:          m.retention_forced || false,
     retention_floor: `${Math.round((retentionFloors[m.parent_subject] ?? 0.75) * 100)}%`,
+    max_defer_days:  m.max_defer_days ?? 0,
     ...examInfo(m.parent_subject),
   }));
 
@@ -274,6 +282,7 @@ function buildUserMessage({ availableMinutes, energyLevel, cards, microCards, su
     estimated_retention: retPct(c.estimated_retention),
     forced:          c.retention_forced || false,
     retention_floor: `${Math.round((retentionFloors[c.subject] ?? 0.75) * 100)}%`,
+    max_defer_days:  c.max_defer_days ?? 0,
     ...examInfo(c.subject),
   }));
 
