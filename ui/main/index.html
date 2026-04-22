@@ -98,6 +98,14 @@
               <label for="curriculum-daily-new-limit" style="display:block;font-size:0.84rem;color:var(--text-muted);margin-bottom:6px">Máximo de tarjetas nuevas por día (0/vacío = sin límite)</label>
               <input type="number" id="curriculum-daily-new-limit" min="0" step="1" placeholder="Ej: 10" style="max-width:180px">
 
+              <!-- ── Piso de retención ──────────────────────────────────────── -->
+              <h4 class="curriculum-section-title" style="margin-top:18px">Piso de retención</h4>
+              <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 10px">Las tarjetas cuya retención estimada caiga por debajo de este valor se incluyen obligatoriamente en la próxima sesión, independientemente de la urgencia del examen.</p>
+              <div style="display:flex;align-items:center;gap:12px">
+                <input type="range" id="curriculum-retention-floor" min="50" max="99" step="1" value="75" class="strictness-range" style="max-width:200px">
+                <span id="curriculum-retention-floor-badge" class="strictness-badge" style="min-width:42px;text-align:center">75%</span>
+              </div>
+
               <div class="micro-options-grid" id="micro-options-grid">
                 <div class="micro-option-row">
                   <label class="toggle-row">
@@ -840,6 +848,12 @@
               <p class="progress-section-label">Tiempo de respuesta</p>
               <div id="progress-timing-subjects"></div>
               <div id="progress-timing-slowcards" style="margin-top:20px"></div>
+            </div>
+
+            <!-- Agent plan logs -->
+            <div class="progress-section">
+              <p class="progress-section-label">Razonamiento del agente</p>
+              <div id="progress-plan-logs"><span style="color:var(--text-muted);font-size:var(--fs-sm)">Cargando...</span></div>
             </div>
 
           </div><!-- /.card -->

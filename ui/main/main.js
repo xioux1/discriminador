@@ -1175,10 +1175,11 @@ async function loadProgress() {
   content.classList.add('hidden');
 
   try {
-    const [actData, overview, timingData] = await Promise.all([
+    const [actData, overview, timingData, logsData] = await Promise.all([
       getJson('/stats/activity?days=3650'),
       getJson('/stats/overview').catch(() => ({ subjects: [] })),
-      getJson('/stats/timing?weeks=4').catch(() => null)
+      getJson('/stats/timing?weeks=4').catch(() => null),
+      getJson('/session/plan-logs?limit=10').catch(() => ({ logs: [] }))
     ]);
 
     loading.classList.add('hidden');
@@ -1356,11 +1357,49 @@ async function loadProgress() {
         resetAdvisorChat(null);
       }
     });
+    renderPlanLogs(logsData?.logs || []);
   } catch (err) {
     loading.classList.add('hidden');
     document.querySelector('#progress-content').innerHTML =
       `<p style="color:var(--fail-fg);padding:16px">Error al cargar progreso: ${err.message}</p>`;
     document.querySelector('#progress-content').classList.remove('hidden');
+  }
+}
+
+function renderPlanLogs(logs) {
+  const el = document.querySelector('#progress-plan-logs');
+  if (!el) return;
+
+  if (!logs.length) {
+    el.innerHTML = '<p style="color:var(--text-muted);font-size:var(--fs-sm)">Aún no hay sesiones planificadas por el agente.</p>';
+    return;
+  }
+
+  el.innerHTML = '';
+  for (const log of logs) {
+    const date = new Date(log.created_at).toLocaleString('es-AR', {
+      day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+    });
+    const forcedBadge = log.forced_count > 0
+      ? `<span class="plan-log-forced-badge">${log.forced_count} forzada${log.forced_count !== 1 ? 's' : ''}</span>`
+      : '';
+
+    const entry = document.createElement('div');
+    entry.className = 'plan-log-entry';
+    entry.innerHTML = `
+      <div class="plan-log-header">
+        <span class="plan-log-date">${date}</span>
+        <span class="plan-log-stats">${log.planned_count} incluidas · ${log.deferred_count} diferidas ${forcedBadge}</span>
+        <button class="btn-ghost plan-log-toggle" type="button">Ver ▾</button>
+      </div>
+      <div class="plan-log-body hidden">${log.agent_reasoning || '(sin razonamiento)'}</div>
+    `;
+    entry.querySelector('.plan-log-toggle').addEventListener('click', (e) => {
+      const body    = entry.querySelector('.plan-log-body');
+      const isHidden = body.classList.toggle('hidden');
+      e.target.textContent = isHidden ? 'Ver ▾' : 'Ocultar ▴';
+    });
+    el.appendChild(entry);
   }
 }
 
@@ -5312,6 +5351,10 @@ document.querySelector('#curriculum-grading-strictness')?.addEventListener('inpu
   updateStrictnessDisplay(e.target.value);
 });
 
+document.querySelector('#curriculum-retention-floor')?.addEventListener('input', (e) => {
+  document.querySelector('#curriculum-retention-floor-badge').textContent = `${e.target.value}%`;
+});
+
 function updateMicroCardsLimitVisibility(enabled) {
   const limitRow  = document.querySelector('#micro-cards-limit-row');
   const spawnRow  = document.querySelector('#micro-spawn-row');
@@ -5347,6 +5390,9 @@ async function openCurriculumModal(subject) {
     const strictness = data.config?.grading_strictness ?? 5;
     document.querySelector('#curriculum-grading-strictness').value = strictness;
     updateStrictnessDisplay(strictness);
+    const retFloor = Math.round((parseFloat(data.config?.retention_floor) || 0.75) * 100);
+    document.querySelector('#curriculum-retention-floor').value = retFloor;
+    document.querySelector('#curriculum-retention-floor-badge').textContent = `${retFloor}%`;
     const microEnabled = data.config?.micro_cards_enabled ?? true;
     document.querySelector('#curriculum-micro-cards-enabled').checked = microEnabled;
     document.querySelector('#curriculum-micro-spawn-siblings').checked = data.config?.micro_cards_spawn_siblings ?? false;
@@ -5363,6 +5409,8 @@ async function openCurriculumModal(subject) {
     document.querySelector('#curriculum-max-micro-per-card').value = '';
     document.querySelector('#curriculum-grading-strictness').value = 5;
     updateStrictnessDisplay(5);
+    document.querySelector('#curriculum-retention-floor').value = 75;
+    document.querySelector('#curriculum-retention-floor-badge').textContent = '75%';
     document.querySelector('#curriculum-micro-cards-enabled').checked = true;
     document.querySelector('#curriculum-micro-spawn-siblings').checked = false;
     updateMicroCardsLimitVisibility(true);
@@ -5417,6 +5465,8 @@ document.querySelector('#curriculum-save-btn').addEventListener('click', async (
       fb.style.color = 'var(--fail-fg)';
       return;
     }
+    const retFloorRaw = parseInt(document.querySelector('#curriculum-retention-floor').value, 10);
+    const retFloorVal = Number.isFinite(retFloorRaw) ? Math.min(99, Math.max(50, retFloorRaw)) / 100 : 0.75;
     await postJson(`/curriculum/${encodeURIComponent(subject)}`, {
       syllabus_text:                document.querySelector('#curriculum-syllabus').value,
       daily_new_cards_limit:        parsedDailyLimit,
@@ -5425,7 +5475,8 @@ document.querySelector('#curriculum-save-btn').addEventListener('click', async (
       micro_cards_enabled:          microEnabled,
       micro_cards_spawn_siblings:   spawnSiblings,
       auto_variants_enabled:        autoVariants,
-      max_variants_per_card:        parsedMaxVariants
+      max_variants_per_card:        parsedMaxVariants,
+      retention_floor:              retFloorVal
     }, 'PUT');
     fb.textContent = 'Guardado.';
     fb.style.color = 'var(--pass-fg)';
