@@ -1019,4 +1019,108 @@ schedulerRouter.get('/scheduler/cards/:id/variants', async (req, res) => {
   }
 });
 
+// GET /scheduler/daily-summary
+// Returns today's review count, minutes studied, and per-subject priority allocation.
+schedulerRouter.get('/scheduler/daily-summary', async (req, res) => {
+  const userId = req.user.id;
+  const budgetMinutes = Math.max(10, parseInt(req.query.budget_minutes) || 120);
+
+  try {
+    const [reviewsRes, minutesRes, subjectRes] = await Promise.all([
+      dbPool.query(
+        `SELECT COUNT(*) AS cnt
+         FROM activity_log
+         WHERE user_id = $1
+           AND activity_type = 'study'
+           AND logged_date = (NOW() AT TIME ZONE 'America/Argentina/Buenos_Aires')::DATE`,
+        [userId]
+      ),
+      dbPool.query(
+        `SELECT COALESCE(SUM(actual_minutes), 0) AS total_minutes
+         FROM study_sessions
+         WHERE user_id = $1
+           AND (started_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::DATE
+               = (NOW() AT TIME ZONE 'America/Argentina/Buenos_Aires')::DATE`,
+        [userId]
+      ),
+      dbPool.query(
+        `SELECT
+           COALESCE(c.subject, '(sin materia)') AS subject,
+           COUNT(DISTINCT c.id)                  AS cards_due,
+           COUNT(DISTINCT mc.id)                 AS micros_due,
+           MIN(se.exam_date)                     AS exam_date,
+           (SELECT se2.label
+            FROM subject_exam_dates se2
+            WHERE se2.subject = c.subject
+              AND se2.user_id = $1
+              AND se2.exam_date = MIN(se.exam_date)
+            LIMIT 1) AS exam_label
+         FROM cards c
+         LEFT JOIN micro_cards mc
+           ON mc.parent_card_id = c.id
+          AND mc.status = 'active'
+          AND mc.next_review_at <= now()
+         LEFT JOIN subject_exam_dates se
+           ON se.subject = c.subject
+          AND se.user_id = $1
+          AND se.exam_date >= CURRENT_DATE
+         WHERE c.user_id = $1
+           AND c.archived_at IS NULL
+           AND c.suspended_at IS NULL
+           AND c.next_review_at <= now()
+         GROUP BY c.subject
+         ORDER BY exam_date ASC NULLS LAST`,
+        [userId]
+      )
+    ]);
+
+    const reviewsDoneToday = parseInt(reviewsRes.rows[0]?.cnt || 0);
+    const minutesStudiedToday = parseFloat(minutesRes.rows[0]?.total_minutes || 0);
+
+    const rows = subjectRes.rows.map((row) => {
+      const cardsDue = parseInt(row.cards_due || 0);
+      const microsDue = parseInt(row.micros_due || 0);
+      const examDate = row.exam_date ? new Date(row.exam_date) : null;
+
+      let daysUntilExam = null;
+      let urgencyScore = 0.5;
+      let urgencyLabel = 'low';
+
+      if (examDate) {
+        const now = new Date();
+        daysUntilExam = Math.ceil((examDate - now) / 86400000);
+        if (daysUntilExam <= 1)       { urgencyScore = 10;  urgencyLabel = 'critical'; }
+        else if (daysUntilExam <= 3)  { urgencyScore = 4.0; urgencyLabel = 'critical'; }
+        else if (daysUntilExam <= 7)  { urgencyScore = 2.5; urgencyLabel = 'high'; }
+        else if (daysUntilExam <= 14) { urgencyScore = 1.5; urgencyLabel = 'medium'; }
+        else if (daysUntilExam <= 30) { urgencyScore = 1.0; urgencyLabel = 'medium'; }
+        else                           { urgencyScore = 0.5; urgencyLabel = 'low'; }
+      }
+
+      const backlog = Math.min(1.0, (cardsDue + microsDue) / 20);
+      const weight = urgencyScore * 0.7 + backlog * 0.3;
+
+      return { subject: row.subject, cards_due: cardsDue, micros_due: microsDue,
+               days_until_exam: daysUntilExam, exam_label: row.exam_label || null,
+               urgency: urgencyLabel, _weight: weight };
+    });
+
+    const totalWeight = rows.reduce((s, r) => s + r._weight, 0);
+
+    const subjectPriority = rows.map(({ _weight, ...r }) => ({
+      ...r,
+      suggested_minutes: totalWeight > 0 ? Math.round((_weight / totalWeight) * budgetMinutes) : 0
+    }));
+
+    return res.json({
+      reviews_done_today: reviewsDoneToday,
+      minutes_studied_today: minutesStudiedToday,
+      subject_priority: subjectPriority
+    });
+  } catch (err) {
+    console.error('GET /scheduler/daily-summary', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
 export default schedulerRouter;

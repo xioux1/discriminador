@@ -67,6 +67,11 @@ export const LLM_MODELS = {
   binary:   process.env.LLM_BINARY_MODEL   || 'claude-opus-4-6'
 };
 
+export const DISCORD = {
+  botToken: process.env.DISCORD_BOT_TOKEN || '',
+  userId:   process.env.DISCORD_USER_ID   || ''
+};
+
 export function assertRequiredEnv() {
   if (!env.databaseUrl) {
     throw new Error('DATABASE_URL is required.');
