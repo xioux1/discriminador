@@ -12,6 +12,17 @@ function estimateRetention(card) {
   return Math.pow(0.9, daysSince / stability);
 }
 
+// Max days we can safely push next_review_at before retention drops below floor.
+function maxSafeDeferDays(card, floor) {
+  const lastReviewed = card.last_reviewed_at ? new Date(card.last_reviewed_at) : null;
+  if (!lastReviewed) return 0;
+  const daysSince = (Date.now() - lastReviewed.getTime()) / 86400000;
+  const stability = parseFloat(card.stability) || 1;
+  // R = 0.9^(d/S) >= floor  →  d <= S * log(floor)/log(0.9)
+  const maxTotal = stability * (Math.log(floor) / Math.log(0.9));
+  return Math.max(0, Math.min(14, Math.floor(maxTotal - daysSince)));
+}
+
 // POST /session/plan
 sessionPlannerRouter.post('/session/plan', async (req, res) => {
   const { available_minutes, energy_level } = req.body || {};
@@ -155,18 +166,20 @@ sessionPlannerRouter.post('/session/plan', async (req, res) => {
       subjectConfigs = [...examDatesResult.rows, ...legacyRows];
     }
 
-    // 4. Annotate cards with estimated retention + forced flag
+    // 4. Annotate cards with estimated retention + forced flag + max safe defer days
     for (const c of cards) {
       c.estimated_retention = estimateRetention(c);
       const floor = retentionFloors[c.subject] ?? 0.75;
-      c.retention_forced = c.estimated_retention !== null && c.estimated_retention < floor;
-      c.retention_floor  = floor;
+      c.retention_forced  = c.estimated_retention !== null && c.estimated_retention < floor;
+      c.retention_floor   = floor;
+      c.max_defer_days    = c.retention_forced ? 0 : maxSafeDeferDays(c, floor);
     }
     for (const m of microCards) {
       m.estimated_retention = estimateRetention(m);
       const floor = retentionFloors[m.parent_subject] ?? 0.75;
-      m.retention_forced = m.estimated_retention !== null && m.estimated_retention < floor;
-      m.retention_floor  = floor;
+      m.retention_forced  = m.estimated_retention !== null && m.estimated_retention < floor;
+      m.retention_floor   = floor;
+      m.max_defer_days    = m.retention_forced ? 0 : maxSafeDeferDays(m, floor);
     }
 
     // 5. Timing baselines + calibration
@@ -225,7 +238,38 @@ sessionPlannerRouter.post('/session/plan', async (req, res) => {
       subjectAvgMsBySubject,
     });
 
-    // 7. Persist agent reasoning log
+    // 7. Apply rescheduling: push next_review_at for deferred non-forced items
+    const cardById  = new Map(cards.map((c) => [c.id, c]));
+    const microById = new Map(microCards.map((m) => [m.id, m]));
+    const rescheduled = [];
+
+    for (const d of plan.deferred) {
+      if (!d.defer_days || d.forced) continue;
+      const item  = d.type === 'card' ? cardById.get(d.id) : microById.get(d.id);
+      if (!item) continue;
+      const floor = d.type === 'card'
+        ? (retentionFloors[item.subject] ?? 0.75)
+        : (retentionFloors[item.parent_subject] ?? 0.75);
+      // Safety cap: never defer past the retention floor
+      const safeDays  = maxSafeDeferDays(item, floor);
+      const deferDays = Math.min(d.defer_days, safeDays);
+      if (deferDays < 1) continue;
+
+      const table = d.type === 'card' ? 'cards' : 'micro_cards';
+      try {
+        await dbPool.query(
+          `UPDATE ${table}
+           SET next_review_at = now() + $1 * INTERVAL '1 day'
+           WHERE id = $2 AND user_id = $3`,
+          [deferDays, d.id, userId]
+        );
+        rescheduled.push({ type: d.type, id: d.id, subject: d.subject, defer_days: deferDays });
+      } catch (reschedErr) {
+        console.error(`reschedule ${table}#${d.id} failed (non-fatal):`, reschedErr.message);
+      }
+    }
+
+    // 8. Persist agent reasoning log
     const forcedCount = [...cards, ...microCards].filter((x) => x.retention_forced).length;
     try {
       await dbPool.query(
@@ -250,7 +294,7 @@ sessionPlannerRouter.post('/session/plan', async (req, res) => {
     }
 
     return res.status(200).json({
-      plan,
+      plan: { ...plan, rescheduled },
       cards,
       micro_cards: microCards
     });
