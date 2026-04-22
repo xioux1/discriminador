@@ -899,6 +899,11 @@ async function renderExamCalendar(exams) {
   return card;
 }
 
+function getDailyTarget()  { return parseInt(localStorage.getItem('discriminador_daily_target'))  || 50; }
+function setDailyTarget(n) { localStorage.setItem('discriminador_daily_target', String(n)); }
+function getDailyBudget()  { return parseInt(localStorage.getItem('discriminador_daily_budget'))  || 120; }
+function setDailyBudget(n) { localStorage.setItem('discriminador_daily_budget', String(n)); }
+
 async function loadDashboard() {
   const loading = document.querySelector('#dashboard-loading');
   const content = document.querySelector('#dashboard-content');
@@ -906,10 +911,11 @@ async function loadDashboard() {
   content.innerHTML = '';
 
   try {
-    const [overview, dueCounts, calendarData] = await Promise.all([
+    const [overview, dueCounts, calendarData, dailySummary] = await Promise.all([
       getJson('/stats/overview').catch(() => ({ subjects: [] })),
       getJson('/scheduler/due-counts').catch(() => ({ cards: {}, micros: {} })),
-      getJson('/exam-calendar').catch(() => ({ exams: [] }))
+      getJson('/exam-calendar').catch(() => ({ exams: [] })),
+      getJson(`/scheduler/daily-summary?budget_minutes=${getDailyBudget()}`).catch(() => null)
     ]);
 
     loading.classList.add('hidden');
@@ -945,6 +951,73 @@ async function loadDashboard() {
         banner.textContent = 'Sin pendientes hoy.';
       }
       content.appendChild(banner);
+    }
+
+    // Daily progress widget
+    if (dailySummary) {
+      const target = getDailyTarget();
+      const done   = dailySummary.reviews_done_today;
+      const pct    = Math.min(100, Math.round((done / target) * 100));
+      const minText = dailySummary.minutes_studied_today > 0
+        ? `${Math.round(dailySummary.minutes_studied_today)}min estudiados hoy`
+        : '';
+
+      const widget = document.createElement('div');
+      widget.className = 'card daily-progress-widget';
+      widget.innerHTML = `
+        <div class="daily-progress-header">
+          <span class="daily-progress-label">Meta diaria: <strong>${done} / ${target}</strong> revisiones</span>
+          <button class="btn-ghost daily-target-edit" title="Cambiar meta">✎</button>
+        </div>
+        <div class="daily-progress-bar-track">
+          <div class="daily-progress-bar-fill" style="width:${pct}%"></div>
+        </div>
+        ${minText ? `<div class="daily-progress-subtext">${minText}</div>` : ''}
+      `;
+      widget.querySelector('.daily-target-edit').addEventListener('click', () => {
+        const raw = window.prompt('Meta de revisiones diarias:', String(target));
+        const n = parseInt(raw);
+        if (Number.isFinite(n) && n > 0) { setDailyTarget(n); loadDashboard(); }
+      });
+      content.appendChild(widget);
+
+      // Per-subject priority card
+      const prioritySubjects = (dailySummary.subject_priority || [])
+        .filter((s) => s.days_until_exam != null && (s.cards_due + s.micros_due) > 0);
+
+      if (prioritySubjects.length > 0) {
+        const budget = getDailyBudget();
+        const priorityCard = document.createElement('div');
+        priorityCard.className = 'card daily-priority-card';
+
+        const rows = prioritySubjects.map((s) => {
+          const icon = s.urgency === 'critical' ? '🔴' : s.urgency === 'high' ? '🟠' : s.urgency === 'medium' ? '🟡' : '🟢';
+          const examText = s.days_until_exam === 0 ? 'hoy'
+                         : s.days_until_exam === 1 ? 'mañana'
+                         : `en ${s.days_until_exam} días`;
+          return `
+            <div class="priority-row">
+              <span class="priority-icon">${icon}</span>
+              <span class="priority-subject">${s.subject}</span>
+              <span class="priority-exam">${s.exam_label || 'examen'} ${examText}</span>
+              <span class="priority-time">${s.suggested_minutes}min</span>
+            </div>`;
+        }).join('');
+
+        priorityCard.innerHTML = `
+          <div class="daily-priority-header">
+            Para hoy (${budget}min disponibles):
+            <button class="btn-ghost daily-budget-edit" title="Cambiar tiempo disponible">✎</button>
+          </div>
+          ${rows}
+        `;
+        priorityCard.querySelector('.daily-budget-edit').addEventListener('click', () => {
+          const raw = window.prompt('¿Cuántos minutos tenés disponibles hoy?', String(budget));
+          const n = parseInt(raw);
+          if (Number.isFinite(n) && n >= 10) { setDailyBudget(n); loadDashboard(); }
+        });
+        content.appendChild(priorityCard);
+      }
     }
 
     const panel = document.createElement('div');
@@ -3052,6 +3125,20 @@ async function fetchSessionPlan() {
         ${deferred.length > 0 ? `<div class="briefing-deferred">+ ${deferred.length} tarjeta${deferred.length !== 1 ? 's' : ''} postergada${deferred.length !== 1 ? 's' : ''} para otra sesión</div>` : ''}
       `;
       startBtn.classList.remove('hidden');
+
+      // Daily quota nudge
+      getJson(`/scheduler/daily-summary?budget_minutes=${getDailyBudget()}`).then((ds) => {
+        if (!ds) return;
+        const done   = ds.reviews_done_today;
+        const target = getDailyTarget();
+        const rem    = Math.max(0, target - done);
+        if (rem > 0) {
+          const nudge = document.createElement('div');
+          nudge.className = 'briefing-daily-nudge';
+          nudge.textContent = `Meta diaria: ${done}/${target} revisiones · te quedan ${rem}`;
+          summaryEl.appendChild(nudge);
+        }
+      }).catch(() => {});
     }
 
     planArea.classList.remove('hidden');

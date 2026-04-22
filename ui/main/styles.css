@@ -716,6 +716,73 @@ textarea:focus, input[type="text"]:focus, select:focus {
   font-size: var(--fs-sm);
 }
 
+/* Daily progress widget */
+.daily-progress-widget {
+  padding: 12px 16px;
+  margin-bottom: 12px;
+}
+.daily-progress-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: var(--fs-sm);
+}
+.daily-progress-label { color: var(--text); }
+.daily-progress-bar-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-2, #e5e7eb);
+  overflow: hidden;
+}
+.daily-progress-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent, #6366f1);
+  transition: width 0.3s ease;
+  min-width: 2px;
+}
+.daily-progress-subtext {
+  margin-top: 6px;
+  font-size: var(--fs-xs, 0.75rem);
+  color: var(--text-muted);
+}
+
+/* Per-subject priority card */
+.daily-priority-card {
+  padding: 12px 16px;
+  margin-bottom: 12px;
+}
+.daily-priority-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: var(--text-muted);
+}
+.priority-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  font-size: var(--fs-sm);
+  border-bottom: 1px solid var(--border, #e5e7eb);
+}
+.priority-row:last-child { border-bottom: none; }
+.priority-icon { width: 18px; flex-shrink: 0; }
+.priority-subject { flex: 1; min-width: 0; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.priority-exam { color: var(--text-muted); font-size: var(--fs-xs, 0.75rem); white-space: nowrap; }
+.priority-time { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--accent, #6366f1); white-space: nowrap; margin-left: auto; }
+
+/* Session briefing quota nudge */
+.briefing-daily-nudge {
+  margin-top: 10px;
+  font-size: var(--fs-xs, 0.75rem);
+  color: var(--text-muted);
+}
+
 /* Beat column — visual rhythm anchor, same fixed width as exam countdown */
 .subjects-list-beat {
   width: 48px;               /* matches grid column width */
