@@ -3652,7 +3652,7 @@ textarea.chinese-input {
 /* ── Bot chat FAB & panel ──────────────────────────────────────────────── */
 .bot-chat-fab {
   position: fixed;
-  bottom: 24px;
+  bottom: 82px;
   right: 24px;
   width: 52px;
   height: 52px;
@@ -3691,7 +3691,7 @@ textarea.chinese-input {
 
 .bot-chat-panel {
   position: fixed;
-  bottom: 86px;
+  bottom: 144px;
   right: 24px;
   width: 360px;
   max-width: calc(100vw - 32px);
