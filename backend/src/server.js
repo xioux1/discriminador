@@ -3,25 +3,27 @@ import { assertRequiredEnv, env } from './config/env.js';
 import { dbPool } from './db/client.js';
 import { runMigrations } from './db/migrate.js';
 // import { startBot } from './services/discord-bot.js';
-// import { checkAndNudge } from './services/study-nudge.js';
-// import cron from 'node-cron';
+import { checkAndNudge } from './services/study-nudge.js';
+import cron from 'node-cron';
 
 assertRequiredEnv();
 
 await runMigrations(dbPool);
 
-// Discord bot + daily nudge cron — disabled until in-app feedback channel is ready
+// Discord bot disabled — nudges go to in-app chat instead
 // startBot().catch((err) => console.error('[discord-bot] startup error:', err.message));
-// cron.schedule('0 12 * * *', async () => {
-//   try {
-//     const usersRes = await dbPool.query('SELECT id FROM users');
-//     for (const row of usersRes.rows) {
-//       await checkAndNudge(row.id);
-//     }
-//   } catch (err) {
-//     console.error('[cron] daily nudge error:', err.message);
-//   }
-// }, { timezone: 'America/Argentina/Buenos_Aires' });
+
+// Daily nudge cron — 9 AM Argentina time, writes to bot_conversations (in-app)
+cron.schedule('0 12 * * *', async () => {
+  try {
+    const usersRes = await dbPool.query('SELECT id FROM users');
+    for (const row of usersRes.rows) {
+      await checkAndNudge(row.id);
+    }
+  } catch (err) {
+    console.error('[cron] daily nudge error:', err.message);
+  }
+}, { timezone: 'America/Argentina/Buenos_Aires' });
 
 const app = createApp();
 

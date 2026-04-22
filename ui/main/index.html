@@ -904,5 +904,35 @@
     <script src="./sql-editor.js"></script>
     <script src="./auth.js"></script>
     <script src="./main.js"></script>
+
+    <!-- ── Bot chat panel ─────────────────────────────────────────────────── -->
+    <button id="bot-chat-fab" class="bot-chat-fab" title="Asistente" aria-label="Abrir chat del asistente">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      <span id="bot-chat-badge" class="bot-chat-badge hidden">0</span>
+    </button>
+
+    <div id="bot-chat-panel" class="bot-chat-panel hidden" role="dialog" aria-label="Chat del asistente">
+      <div class="bot-chat-header">
+        <span class="bot-chat-title">Asistente de estudio</span>
+        <button id="bot-chat-close" class="btn-ghost" title="Cerrar">✕</button>
+      </div>
+
+      <div id="bot-chat-messages" class="bot-chat-messages">
+        <div class="bot-chat-empty">Sin mensajes aún. El asistente te escribirá cuando detecte que una materia necesita atención.</div>
+      </div>
+
+      <div id="bot-chat-snoozes" class="bot-chat-snoozes hidden">
+        <div class="bot-chat-snoozes-title">Materias silenciadas</div>
+        <div id="bot-chat-snoozes-list"></div>
+      </div>
+
+      <div class="bot-chat-footer">
+        <textarea id="bot-chat-input" class="bot-chat-input" rows="2" placeholder="Escribí tu respuesta..."></textarea>
+        <div class="bot-chat-actions">
+          <button id="bot-chat-snoozes-btn" class="btn-ghost bot-chat-snoozes-toggle" type="button">Silenciados</button>
+          <button id="bot-chat-send" class="btn-primary bot-chat-send" type="button">Enviar</button>
+        </div>
+      </div>
+    </div>
   </body>
 </html>
