@@ -1958,6 +1958,44 @@ textarea:focus, input[type="text"]:focus, select:focus {
   white-space: pre-wrap;
 }
 
+/* Plan log entries in Progreso tab */
+.plan-log-entry {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+.plan-log-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--surface-1, #f9fafb);
+  font-size: var(--fs-sm);
+}
+.plan-log-date { color: var(--text-muted); white-space: nowrap; }
+.plan-log-stats { flex: 1; color: var(--text); }
+.plan-log-forced-badge {
+  color: var(--warn, #f59e0b);
+  font-weight: 600;
+  font-size: var(--fs-xs, 0.75rem);
+  margin-left: 4px;
+}
+.plan-log-toggle {
+  font-size: var(--fs-xs, 0.75rem);
+  color: var(--text-muted);
+  white-space: nowrap;
+  text-decoration: underline;
+}
+.plan-log-body {
+  padding: 10px 14px;
+  font-size: var(--fs-xs, 0.75rem);
+  color: var(--text-muted);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  background: var(--surface-0, #fff);
+}
+
 /* ─── Auth Screen ────────────────────────────────────────────────────────────── */
 #auth-screen {
   min-height: 100vh;
