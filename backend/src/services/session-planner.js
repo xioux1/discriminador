@@ -1,13 +1,12 @@
 import Anthropic from '@anthropic-ai/sdk';
 
-const LLM_MODEL = 'claude-haiku-4-5-20251001';
-const DEFAULT_RESPONSE_TIME_MS = 45000; // 45s default if no history
+const LLM_MODEL = 'claude-sonnet-4-6';
+const DEFAULT_RESPONSE_TIME_MS = 45000;
 
-// Energy level parameters
 const ENERGY = {
-  tired:    { speedMultiplier: 1.4,  budgetMultiplier: 0.75 },
-  normal:   { speedMultiplier: 1.0,  budgetMultiplier: 1.0  },
-  focused:  { speedMultiplier: 0.85, budgetMultiplier: 1.1  },
+  tired:   { speedMultiplier: 1.4,  budgetMultiplier: 0.75 },
+  normal:  { speedMultiplier: 1.0,  budgetMultiplier: 1.0  },
+  focused: { speedMultiplier: 0.85, budgetMultiplier: 1.1  },
 };
 
 let _client = null;
@@ -17,20 +16,13 @@ function getClient() {
 }
 
 /**
- * Plans an optimal study session.
+ * Plans an optimal study session using an LLM agent.
  *
- * Architecture: LLM handles prioritization only (no math).
- * JS handles all time-budget arithmetic deterministically.
- *
- * @param {object} params
- * @param {number} params.availableMinutes
- * @param {string} params.energyLevel - 'tired' | 'normal' | 'focused'
- * @param {Array}  params.cards
- * @param {Array}  params.microCards
- * @param {Array}  params.subjectConfigs
- * @param {number|null} params.avgResponseTimeMs
- * @param {Object.<string, number>} params.subjectAvgMsBySubject
- * @param {number}      params.calibrationFactor - personal correction factor (default 1.0)
+ * Architecture:
+ * - LLM handles prioritization and produces explicit reasoning (agent_log).
+ * - JS handles all time-budget arithmetic deterministically.
+ * - Cards whose estimated retention is below the subject floor are "forced"
+ *   and always included before purely priority-based cards.
  */
 export async function planSession({
   availableMinutes,
@@ -38,34 +30,31 @@ export async function planSession({
   cards,
   microCards,
   subjectConfigs,
+  retentionFloors = {},
   avgResponseTimeMs,
   subjectAvgMsBySubject = {},
   calibrationFactor = 1.0
 }) {
-  const energy = ENERGY[energyLevel] ?? ENERGY.normal;
-  // Apply personal calibration factor: if user consistently takes longer, expand per-card estimate
+  const energy  = ENERGY[energyLevel] ?? ENERGY.normal;
   const baseMs  = (avgResponseTimeMs ?? DEFAULT_RESPONSE_TIME_MS) * calibrationFactor;
+  const msPerCard = Math.round(baseMs * energy.speedMultiplier);
+  const budgetMs  = availableMinutes * 60 * 1000 * energy.budgetMultiplier;
 
-  // Deterministic time per card (JS, not LLM)
-  const msPerCard    = Math.round(baseMs * energy.speedMultiplier);
-  const budgetMs     = availableMinutes * 60 * 1000 * energy.budgetMultiplier;
-
-  // Ask LLM only to prioritize — no math involved
   const prioritized = await getPrioritizedOrder({
     availableMinutes,
     energyLevel,
     cards,
     microCards,
     subjectConfigs,
+    retentionFloors,
     msPerCard,
   });
 
-  // JS greedily fills the time budget from the prioritized list
   const allItems = buildItemMap(cards, microCards);
   const planned  = [];
   const deferred = [];
   let accumulatedMs = 0;
-  const seen = new Set(); // dedup: LLM may return the same id twice
+  const seen = new Set();
 
   for (const ref of prioritized) {
     const key = `${ref.type}:${ref.id}`;
@@ -90,55 +79,89 @@ export async function planSession({
         subject:      item.subject || item.parent_subject,
         estimated_ms: estimatedMs,
         reason:       ref.reason || '',
+        forced:       ref.forced || false,
       });
     } else {
-      deferred.push({ type: ref.type, id: ref.id, subject: item.subject || item.parent_subject });
+      deferred.push({
+        type:    ref.type,
+        id:      ref.id,
+        subject: item.subject || item.parent_subject,
+        reason:  ref.reason || '',
+        forced:  ref.forced || false,
+      });
     }
   }
 
   const totalEstimatedMinutes = parseFloat((accumulatedMs / 60000).toFixed(1));
 
+  // Build card_decisions for the log (all items, planned + deferred)
+  const cardDecisions = [
+    ...planned.map((p) => {
+      const item = allItems.get(`${p.type}:${p.id}`);
+      return {
+        type:       p.type,
+        id:         p.id,
+        subject:    p.subject,
+        retention:  item?.estimated_retention != null ? Math.round(item.estimated_retention * 100) / 100 : null,
+        forced:     p.forced,
+        decision:   'planned',
+        reason:     p.reason,
+      };
+    }),
+    ...deferred.map((d) => {
+      const item = allItems.get(`${d.type}:${d.id}`);
+      return {
+        type:       d.type,
+        id:         d.id,
+        subject:    d.subject,
+        retention:  item?.estimated_retention != null ? Math.round(item.estimated_retention * 100) / 100 : null,
+        forced:     d.forced,
+        decision:   'deferred',
+        reason:     d.reason,
+      };
+    }),
+  ];
+
   return {
     planned,
     deferred,
     total_estimated_minutes: totalEstimatedMinutes,
-    session_tip:  prioritized._tip  || '',
-    warnings:     prioritized._warnings || [],
+    session_tip:    prioritized._tip      || '',
+    warnings:       prioritized._warnings || [],
+    agent_log:      prioritized._agentLog || '',
+    card_decisions: cardDecisions,
   };
 }
 
-/**
- * Asks the LLM to return cards in priority order + tip + warnings.
- * No arithmetic — purely ordering logic.
- */
-async function getPrioritizedOrder({ availableMinutes, energyLevel, cards, microCards, subjectConfigs, msPerCard }) {
-  const userContent = buildUserMessage({ availableMinutes, energyLevel, cards, microCards, subjectConfigs, msPerCard });
+async function getPrioritizedOrder({ availableMinutes, energyLevel, cards, microCards, subjectConfigs, retentionFloors, msPerCard }) {
+  const userContent = buildUserMessage({ availableMinutes, energyLevel, cards, microCards, subjectConfigs, retentionFloors, msPerCard });
 
   const response = await getClient().messages.create({
     model: LLM_MODEL,
-    max_tokens: 1200,
+    max_tokens: 2000,
     temperature: 0,
-    system: `Sos un tutor que organiza sesiones de estudio. Tu única tarea es ORDENAR las tarjetas por prioridad — no calculés cuántas entran ni tiempos, eso lo hace el sistema.
+    system: `Sos un agente de planificación de estudio. Tu tarea es ordenar tarjetas de revisión por prioridad y explicar tu razonamiento.
 
-Criterios de orden (de mayor a menor prioridad):
-1. Micro-tarjetas con created_today=true (remediales frescas — detectadas hoy, siempre primero).
-2. Tarjetas generales con has_micro_in_queue=true: mostralas ANTES que sus micros. Razón: si se responde bien la general, las micros se archivan automáticamente y no hace falta revisarlas.
-3. Micro-tarjetas con parent_also_due=true: solo después de que su tarjeta general ya fue incluida en el orden.
-4. Tarjetas con examen en ≤ 7 días, ordenadas por urgencia.
-5. Micro-tarjetas con parent_also_due=false (la tarjeta general no está en la cola hoy).
-6. Resto por fecha de vencimiento (más atrasadas primero).
+REGLAS DE PRIORIDAD:
+1. Tarjetas "forced=true" (retención estimada bajo el piso configurado) van SIEMPRE primero — el usuario no puede permitirse olvidarlas.
+2. Entre tarjetas forced: priorizá por retención más baja primero (más urgente de recuperar).
+3. Entre tarjetas no-forced: priorizá por urgencia del examen (días_hasta_examen × peso_materia).
+4. Micro-tarjetas creadas hoy (created_today=true) van antes que sus tarjetas padre.
+5. Si la tarjeta padre también está en cola (parent_also_due=true), poné la general primero — si se responde bien, las micros se archivan.
+6. Con energy_level='tired': preferí tarjetas con más pass_count (más familiares).
+7. Con energy_level='focused': podés poner tarjetas más difíciles primero.
 
-Si energyLevel='tired': preferí tarjetas con higher pass_count (más familiares) sobre tarjetas nuevas.
-Si energyLevel='focused': podés incluir tarjetas más desafiantes primero.
+TARJETAS DIFERIBLES: Si una tarjeta no-forced tiene retención alta (≥80%) Y el examen está lejos (>60 días), es razonable diferirla para priorizar contenido urgente. Explicá siempre por qué.
 
 Respondé ÚNICAMENTE con JSON válido:
 {
   "priority_order": [
-    { "type": "micro"|"card", "id": <number>, "reason": "<frase corta>" },
+    { "type": "micro"|"card", "id": <number>, "reason": "<frase corta>", "forced": true|false },
     ...
   ],
-  "session_tip": "<consejo corto según estado de ánimo, máx 15 palabras>",
-  "warnings": ["<advertencia si hay examen muy próximo>"]
+  "session_tip": "<consejo corto según estado de ánimo y situación, máx 20 palabras>",
+  "warnings": ["<advertencia si hay examen muy próximo o retención crítica>"],
+  "agent_log": "<razonamiento del agente: 3-6 oraciones explicando decisiones clave — qué forzó, qué difirió y por qué, qué materia priorizó>"
 }`,
     messages: [{ role: 'user', content: userContent }],
   });
@@ -149,14 +172,22 @@ Respondé ÚNICAMENTE con JSON válido:
   let parsed;
   try {
     parsed = JSON.parse(jsonText);
-  } catch (_e) {
-    // Fallback: micro-cards first, then cards by date — LLM failed gracefully
-    parsed = { priority_order: buildFallbackOrder({ cards, microCards }), session_tip: '', warnings: [] };
+  } catch {
+    parsed = {
+      priority_order: buildFallbackOrder({ cards, microCards }),
+      session_tip: '',
+      warnings: [],
+      agent_log: 'No se pudo obtener razonamiento del agente (respuesta inválida).'
+    };
   }
 
-  const order = Array.isArray(parsed.priority_order) ? parsed.priority_order : buildFallbackOrder({ cards, microCards });
+  const order = Array.isArray(parsed.priority_order)
+    ? parsed.priority_order
+    : buildFallbackOrder({ cards, microCards });
+
   order._tip      = parsed.session_tip || '';
   order._warnings = Array.isArray(parsed.warnings) ? parsed.warnings : [];
+  order._agentLog = parsed.agent_log   || '';
   return order;
 }
 
@@ -168,36 +199,33 @@ function dateStr(val) {
 
 function buildFallbackOrder({ cards, microCards }) {
   const todayStr   = new Date().toISOString().slice(0, 10);
-  const dueCardIds = new Set(cards.map(c => c.id));
+  const dueCardIds = new Set(cards.map((c) => c.id));
 
-  // Remediales frescas: micros creadas hoy (el gap fue detectado esta sesión) → primero siempre
-  const remedialMicros   = microCards.filter(m => dateStr(m.created_at) === todayStr);
-  // Dependientes: la tarjeta general también está en cola → van DESPUÉS de la general
-  const dependentMicros  = microCards.filter(m => dateStr(m.created_at) !== todayStr && dueCardIds.has(m.parent_card_id));
-  // Standalone: la tarjeta general no está en cola hoy
-  const standaloneMicros = microCards.filter(m => dateStr(m.created_at) !== todayStr && !dueCardIds.has(m.parent_card_id));
+  const remedialMicros   = microCards.filter((m) => dateStr(m.created_at) === todayStr);
+  const dependentMicros  = microCards.filter((m) => dateStr(m.created_at) !== todayStr &&  dueCardIds.has(m.parent_card_id));
+  const standaloneMicros = microCards.filter((m) => dateStr(m.created_at) !== todayStr && !dueCardIds.has(m.parent_card_id));
 
-  const parentIds      = new Set(dependentMicros.map(m => m.parent_card_id));
-  const parentsFirst   = cards.filter(c =>  parentIds.has(c.id)); // generales con micros en cola → revisar antes
-  const remainingCards = cards.filter(c => !parentIds.has(c.id));
+  const parentIds      = new Set(dependentMicros.map((m) => m.parent_card_id));
+  const parentsFirst   = cards.filter((c) =>  parentIds.has(c.id));
+  const remainingCards = cards.filter((c) => !parentIds.has(c.id));
 
   return [
-    ...remedialMicros.map(m   => ({ type: 'micro', id: m.id, reason: 'remedial-hoy' })),
-    ...parentsFirst.map(c     => ({ type: 'card',  id: c.id, reason: 'general-primero' })),
-    ...dependentMicros.map(m  => ({ type: 'micro', id: m.id, reason: 'dependiente' })),
-    ...standaloneMicros.map(m => ({ type: 'micro', id: m.id, reason: 'vencida' })),
-    ...remainingCards.map(c   => ({ type: 'card',  id: c.id, reason: 'vencida' })),
+    ...remedialMicros.map((m)   => ({ type: 'micro', id: m.id, reason: 'remedial-hoy',    forced: m.retention_forced || false })),
+    ...parentsFirst.map((c)     => ({ type: 'card',  id: c.id, reason: 'general-primero', forced: c.retention_forced || false })),
+    ...dependentMicros.map((m)  => ({ type: 'micro', id: m.id, reason: 'dependiente',     forced: m.retention_forced || false })),
+    ...standaloneMicros.map((m) => ({ type: 'micro', id: m.id, reason: 'vencida',         forced: m.retention_forced || false })),
+    ...remainingCards.map((c)   => ({ type: 'card',  id: c.id, reason: 'vencida',         forced: c.retention_forced || false })),
   ];
 }
 
 function buildItemMap(cards, microCards) {
   const map = new Map();
-  for (const c of cards)  map.set(`card:${c.id}`,  c);
+  for (const c of cards)      map.set(`card:${c.id}`,  c);
   for (const m of microCards) map.set(`micro:${m.id}`, m);
   return map;
 }
 
-function buildUserMessage({ availableMinutes, energyLevel, cards, microCards, subjectConfigs, msPerCard }) {
+function buildUserMessage({ availableMinutes, energyLevel, cards, microCards, subjectConfigs, retentionFloors, msPerCard }) {
   const now = new Date();
   const configBySubject = {};
   for (const cfg of subjectConfigs) configBySubject[cfg.subject] = cfg;
@@ -208,45 +236,58 @@ function buildUserMessage({ availableMinutes, energyLevel, cards, microCards, su
     const days = Math.ceil((new Date(cfg.exam_date) - now) / 86400000);
     return {
       days_until_exam: days,
-      exam_label: cfg.label || cfg.exam_type || 'examen',
-      scope_pct: cfg.scope_pct ?? 50,
+      exam_label:      cfg.label || cfg.exam_type || 'examen',
+      scope_pct:       cfg.scope_pct ?? 50,
     };
   }
 
-  const todayStr      = now.toISOString().slice(0, 10);
-  const dueCardIds    = new Set(cards.map(c => c.id));
-  const microParentIds = new Set(microCards.map(m => m.parent_card_id));
+  function retPct(r) {
+    return r != null ? `${Math.round(r * 100)}%` : 'nueva';
+  }
+
+  const todayStr       = now.toISOString().slice(0, 10);
+  const dueCardIds     = new Set(cards.map((c) => c.id));
+  const microParentIds = new Set(microCards.map((m) => m.parent_card_id));
 
   const microSummary = microCards.map((m) => ({
-    id: m.id, type: 'micro',
-    concept: m.concept,
-    parent_subject: m.parent_subject,
-    parent_card_id: m.parent_card_id,
+    id:              m.id,
+    type:            'micro',
+    concept:         m.concept,
+    parent_subject:  m.parent_subject,
+    parent_card_id:  m.parent_card_id,
     created_today:   dateStr(m.created_at) === todayStr,
     parent_also_due: dueCardIds.has(m.parent_card_id),
+    estimated_retention: retPct(m.estimated_retention),
+    forced:          m.retention_forced || false,
+    retention_floor: `${Math.round((retentionFloors[m.parent_subject] ?? 0.75) * 100)}%`,
     ...examInfo(m.parent_subject),
   }));
 
   const cardSummary = cards.map((c) => ({
-    id: c.id, type: 'card',
-    subject: c.subject,
-    pass_count: c.pass_count,
-    review_count: c.review_count,
+    id:              c.id,
+    type:            'card',
+    subject:         c.subject,
+    pass_count:      c.pass_count,
+    review_count:    c.review_count,
     active_micro_count: parseInt(c.active_micro_count) || 0,
     has_micro_in_queue: microParentIds.has(c.id),
+    estimated_retention: retPct(c.estimated_retention),
+    forced:          c.retention_forced || false,
+    retention_floor: `${Math.round((retentionFloors[c.subject] ?? 0.75) * 100)}%`,
     ...examInfo(c.subject),
   }));
 
-  return `Ordenar por prioridad para una sesión de estudio:
+  return `Planificar sesión de estudio con las siguientes tarjetas vencidas:
 
 available_minutes: ${availableMinutes}
 energy_level: ${energyLevel}
-estimated_ms_per_card: ${msPerCard} (ya calculado por el sistema, no lo uses para contar)
+estimated_ms_per_card: ${msPerCard}
 
-Nota: cada tarjeta puede tener "exam_label" (nombre del próximo parcial/final),
-"days_until_exam" (días hasta ese examen) y "scope_pct" (% del temario que cubre ese examen).
-Usá esta info para priorizar: si hay un parcial en ≤7 días con scope_pct alto, las tarjetas
-de esa materia tienen más urgencia.
+Campos clave por tarjeta:
+- forced=true → retención estimada por debajo del piso configurado → SIEMPRE incluir
+- estimated_retention → porcentaje de retención actual estimado (ej: "72%")
+- retention_floor → piso configurado para la materia (ej: "75%")
+- days_until_exam → días hasta el próximo examen de esa materia
 
 micro_cards vencidas (${microSummary.length}):
 ${JSON.stringify(microSummary, null, 2)}
@@ -254,13 +295,12 @@ ${JSON.stringify(microSummary, null, 2)}
 cards vencidas (${cardSummary.length}):
 ${JSON.stringify(cardSummary, null, 2)}
 
-Devolvé únicamente el JSON con priority_order, session_tip y warnings.`;
+Devolvé únicamente el JSON con priority_order, session_tip, warnings y agent_log.`;
 }
 
 function estimateItemMs({ item, type, defaultMs, speedMultiplier, subjectAvgMsBySubject }) {
-  const subject = type === 'micro' ? item.parent_subject : item.subject;
+  const subject    = type === 'micro' ? item.parent_subject : item.subject;
   const subjectAvg = subject ? subjectAvgMsBySubject[subject] : null;
-
   const explicitAvg = type === 'micro'
     ? item.parent_avg_response_time_ms
     : item.avg_response_time_ms;
@@ -273,43 +313,25 @@ function estimateItemMs({ item, type, defaultMs, speedMultiplier, subjectAvgMsBy
 }
 
 function normalizeSessionText(text) {
-  return String(text || '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, ' ');
+  return String(text || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
-/**
- * Validates that a session payload does not contain duplicated prompts/questions.
- * Duplicates are detected across cards and micro-cards using normalized text.
- */
 export function findDuplicatedSessionItems(cards = [], microCards = []) {
-  const seenByText = new Map();
+  const seenByText      = new Map();
   const duplicatesByText = new Map();
 
   const register = ({ id, type, text }) => {
     const normalized = normalizeSessionText(text);
     if (!normalized) return;
-
-    const current = { id, type, text: String(text).trim() };
+    const current  = { id, type, text: String(text).trim() };
     const existing = seenByText.get(normalized);
-
-    if (!existing) {
-      seenByText.set(normalized, [current]);
-      return;
-    }
-
+    if (!existing) { seenByText.set(normalized, [current]); return; }
     existing.push(current);
     duplicatesByText.set(normalized, existing);
   };
 
-  for (const card of cards) {
-    register({ id: card.id, type: 'card', text: card.prompt_text });
-  }
-
-  for (const micro of microCards) {
-    register({ id: micro.id, type: 'micro', text: micro.question });
-  }
+  for (const card  of cards)      register({ id: card.id,  type: 'card',  text: card.prompt_text });
+  for (const micro of microCards) register({ id: micro.id, type: 'micro', text: micro.question   });
 
   return Array.from(duplicatesByText.values());
 }

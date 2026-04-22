@@ -3115,11 +3115,12 @@ async function fetchSessionPlan() {
       summaryEl.innerHTML = '<p style="color:var(--text-muted)">No hay tarjetas pendientes para hoy. ¡Al día!</p>';
       startBtn.classList.add('hidden');
     } else {
+      const forcedCount = planned.filter((p) => p.forced).length;
       summaryEl.innerHTML = `
-        <div style="font-weight:600;margin-bottom:8px">${planned.length} tarjeta${planned.length !== 1 ? 's' : ''} · ~${data.plan.total_estimated_minutes} min</div>
+        <div style="font-weight:600;margin-bottom:8px">${planned.length} tarjeta${planned.length !== 1 ? 's' : ''} · ~${data.plan.total_estimated_minutes} min${forcedCount > 0 ? ` · <span class="briefing-forced-badge">${forcedCount} forzada${forcedCount !== 1 ? 's' : ''}</span>` : ''}</div>
         ${planned.map((p) => `
-          <div class="briefing-plan-row">
-            <span>${p.subject}</span>
+          <div class="briefing-plan-row${p.forced ? ' briefing-plan-row--forced' : ''}">
+            <span>${p.subject}${p.forced ? ' <span class="briefing-forced-icon" title="Retención bajo el piso — revisión obligatoria">⚠</span>' : ''}</span>
             <span style="color:var(--text-muted);font-size:0.8rem">~${Math.round(p.estimated_ms / 1000)}s</span>
           </div>`).join('')}
         ${deferred.length > 0 ? `<div class="briefing-deferred">+ ${deferred.length} tarjeta${deferred.length !== 1 ? 's' : ''} postergada${deferred.length !== 1 ? 's' : ''} para otra sesión</div>` : ''}
@@ -3139,6 +3140,23 @@ async function fetchSessionPlan() {
           summaryEl.appendChild(nudge);
         }
       }).catch(() => {});
+
+      // Agent reasoning log
+      if (data.plan.agent_log) {
+        const logToggle = document.createElement('div');
+        logToggle.className = 'briefing-agent-log-toggle';
+        logToggle.innerHTML = `<button class="btn-ghost briefing-agent-log-btn">Ver razonamiento del agente ▾</button>`;
+        const logBody = document.createElement('div');
+        logBody.className = 'briefing-agent-log-body hidden';
+        logBody.textContent = data.plan.agent_log;
+        logToggle.querySelector('.briefing-agent-log-btn').addEventListener('click', () => {
+          const isHidden = logBody.classList.toggle('hidden');
+          logToggle.querySelector('.briefing-agent-log-btn').textContent =
+            isHidden ? 'Ver razonamiento del agente ▾' : 'Ocultar razonamiento ▴';
+        });
+        logToggle.appendChild(logBody);
+        summaryEl.appendChild(logToggle);
+      }
     }
 
     planArea.classList.remove('hidden');
