@@ -3497,15 +3497,27 @@ textarea.chinese-input {
 }
 [data-theme="dark"] .planner-swatch-active { border-color: #e0e8f8 !important; }
 [data-theme="dark"] .planner-wrap {
-  background: rgba(10, 15, 24, 0.70);
+  background: rgba(16, 22, 36, 0.80);
 }
 [data-theme="dark"] .planner-table th,
 [data-theme="dark"] .planner-table td    { border-color: rgba(38, 55, 85, 0.45); }
-[data-theme="dark"] .planner-th-time     { background: rgba(14, 20, 34, 0.75); }
-[data-theme="dark"] .planner-th-day      { background: rgba(14, 20, 34, 0.75); color: var(--text-muted); }
+[data-theme="dark"] .planner-th-time     { background: rgba(14, 20, 34, 0.80); }
+[data-theme="dark"] .planner-th-day      { background: rgba(14, 20, 34, 0.80); color: var(--text-muted); }
 [data-theme="dark"] .planner-today-col   { background: rgba(70, 105, 175, 0.14); }
-[data-theme="dark"] .planner-time        { background: rgba(12, 17, 28, 0.65); color: var(--text-light); }
-[data-theme="dark"] .planner-cell:hover  { filter: brightness(1.12); }
+[data-theme="dark"] .planner-time        { background: rgba(12, 17, 28, 0.70); color: var(--text-light); }
+
+/* Empty cells get a subtle raised surface */
+[data-theme="dark"] .planner-cell        { background-color: rgba(22, 30, 48, 0.60); }
+[data-theme="dark"] .planner-cell:hover  { filter: brightness(1.14); }
+
+/* Remap pastel palette → dark-appropriate tones (override inline style) */
+[data-theme="dark"] .planner-cell[data-color="#b7e1cd"] { background: rgba( 45, 110,  80, 0.55) !important; } /* verde   */
+[data-theme="dark"] .planner-cell[data-color="#c9daf8"] { background: rgba( 38,  82, 152, 0.52) !important; } /* azul    */
+[data-theme="dark"] .planner-cell[data-color="#fce5cd"] { background: rgba(150,  90,  38, 0.52) !important; } /* naranja */
+[data-theme="dark"] .planner-cell[data-color="#f4cccc"] { background: rgba(140,  48,  48, 0.52) !important; } /* rojo    */
+[data-theme="dark"] .planner-cell[data-color="#fff2cc"] { background: rgba(140, 112,  26, 0.52) !important; } /* amarillo*/
+[data-theme="dark"] .planner-cell[data-color="#d9d2e9"] { background: rgba( 82,  58, 130, 0.52) !important; } /* violeta */
+[data-theme="dark"] .planner-cell[data-color="#d9d9d9"] { background: rgba( 48,  58,  78, 0.55) !important; } /* gris    */
 
 /* ── Dark: notes panel ─────────────────────────────────────────────────── */
 [data-theme="dark"] .notes-panel        { background: rgba(13, 19, 32, 0.97); }
