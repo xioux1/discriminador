@@ -5843,7 +5843,8 @@ async function openAiFixPanel(triggerBtn) {
       confirmBtn.textContent = 'Guardando...';
       fb.textContent = '';
       try {
-        await postJson('/cards/batch', { action: 'edit', ids: [Number(cardId)], expected_answer_text: suggested });
+        const result = await postJson('/cards/batch', { action: 'edit', ids: [Number(cardId)], expected_answer_text: suggested });
+        if (!result?.updated) throw new Error('La tarjeta no se actualizó en la base de datos.');
         fb.textContent = '✓ Guardado';
         fb.style.color = 'var(--pass-fg)';
         confirmBtn.textContent = 'Guardado';
