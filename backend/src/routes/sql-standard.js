@@ -170,7 +170,7 @@ sqlStandardRouter.post('/sql-standard/:subject/validate-batch', async (req, res)
 
     const standard = standardResult.rows[0];
     const cardsResult = await dbPool.query(
-      'SELECT id, expected_answer_text FROM cards WHERE user_id = $1 AND subject = $2',
+      'SELECT id, expected_answer_text FROM cards WHERE user_id = $1 AND subject = $2 AND archived_at IS NULL',
       [userId, subject]
     );
 
@@ -219,7 +219,7 @@ sqlStandardRouter.get('/sql-standard/:subject/results', async (req, res) => {
       `SELECT r.id, r.card_id, r.compliant, r.violations, r.validated_at,
               c.prompt_text
        FROM sql_standard_validation_results r
-       JOIN cards c ON r.card_id = c.id
+       JOIN cards c ON r.card_id = c.id AND c.archived_at IS NULL
        JOIN sql_coding_standards s ON r.standard_id = s.id
        WHERE r.user_id = $1 AND s.subject = $2
        ORDER BY r.compliant ASC, r.validated_at DESC`,

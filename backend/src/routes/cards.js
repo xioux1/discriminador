@@ -291,7 +291,7 @@ cardsRouter.post('/cards/:id/ai-fix-answer', async (req, res) => {
                 s.rules AS standard_rules
          FROM cards c
          LEFT JOIN sql_coding_standards s ON s.subject = c.subject AND s.user_id = c.user_id
-         WHERE c.id = $1 AND c.user_id = $2 AND c.archived_at IS NULL`,
+         WHERE c.id = $1 AND c.user_id = $2`,
         [cardId, userId]
       ),
       dbPool.query(
