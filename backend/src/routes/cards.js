@@ -48,23 +48,28 @@ cardsRouter.get('/cards/:id', async (req, res) => {
   const userId = req.user.id;
   const cardId = parseInt(req.params.id, 10);
   if (!Number.isFinite(cardId)) return res.status(400).json({ error: 'invalid_id' });
-  const { rows } = await dbPool.query(
-    `SELECT
-       c.id, c.subject, c.prompt_text, c.expected_answer_text,
-       c.next_review_at, c.last_reviewed_at, c.created_at,
-       c.review_count, c.pass_count, c.interval_days, c.ease_factor,
-       c.flagged, c.notes, c.suspended_at,
-       COUNT(mc.id) FILTER (WHERE mc.status = 'active') AS active_micro_count,
-       COUNT(cv.id) AS variant_count
-     FROM cards c
-     LEFT JOIN micro_cards mc ON mc.parent_card_id = c.id AND mc.user_id = c.user_id
-     LEFT JOIN card_variants cv ON cv.card_id = c.id
-     WHERE c.id = $1 AND c.user_id = $2 AND c.archived_at IS NULL
-     GROUP BY c.id`,
-    [cardId, userId]
-  );
-  if (!rows.length) return res.status(404).json({ error: 'not_found' });
-  return res.json({ card: rows[0] });
+  try {
+    const { rows } = await dbPool.query(
+      `SELECT
+         c.id, c.subject, c.prompt_text, c.expected_answer_text,
+         c.next_review_at, c.last_reviewed_at, c.created_at,
+         c.review_count, c.pass_count, c.interval_days, c.ease_factor,
+         c.flagged, c.notes, c.suspended_at,
+         COUNT(mc.id) FILTER (WHERE mc.status = 'active') AS active_micro_count,
+         COUNT(cv.id) AS variant_count
+       FROM cards c
+       LEFT JOIN micro_cards mc ON mc.parent_card_id = c.id AND mc.user_id = c.user_id
+       LEFT JOIN card_variants cv ON cv.card_id = c.id
+       WHERE c.id = $1 AND c.user_id = $2 AND c.archived_at IS NULL
+       GROUP BY c.id`,
+      [cardId, userId]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'not_found' });
+    return res.json({ card: rows[0] });
+  } catch (err) {
+    console.error('GET /cards/:id', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
 });
 
 // PATCH /cards/:id/flag  — mark a card as flagged with optional note
@@ -248,21 +253,23 @@ cardsRouter.post('/cards/batch', async (req, res) => {
   if (action === 'edit') {
     const nextSubject = typeof req.body?.subject === 'string' ? req.body.subject.trim() : '';
     const nextPrompt = typeof req.body?.prompt_text === 'string' ? req.body.prompt_text.trim() : '';
-    if (!nextSubject && !nextPrompt) {
+    const nextAnswer = typeof req.body?.expected_answer_text === 'string' ? req.body.expected_answer_text.trim() : '';
+    if (!nextSubject && !nextPrompt && !nextAnswer) {
       return res.status(422).json({
         error: 'validation_error',
-        message: 'subject or prompt_text is required for edit.'
+        message: 'subject, prompt_text, or expected_answer_text is required for edit.'
       });
     }
     const { rowCount } = await dbPool.query(
       `UPDATE cards
        SET subject = CASE WHEN $1 = '' THEN subject ELSE $1 END,
            prompt_text = CASE WHEN $2 = '' THEN prompt_text ELSE $2 END,
+           expected_answer_text = CASE WHEN $3 = '' THEN expected_answer_text ELSE $3 END,
            updated_at = now()
-       WHERE user_id = $3
-         AND id = ANY($4::int[])
+       WHERE user_id = $4
+         AND id = ANY($5::int[])
          AND archived_at IS NULL`,
-      [nextSubject, nextPrompt, userId, ids]
+      [nextSubject, nextPrompt, nextAnswer, userId, ids]
     );
     return res.json({ updated: rowCount });
   }
