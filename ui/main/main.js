@@ -5752,10 +5752,13 @@ function renderSqlValidationResults(results) {
       Resultados: <span style="color:var(--fail-fg)">${nonCompliant.length} no cumplen</span> · <span style="color:var(--pass-fg)">${compliant.length} cumplen</span>
     </p>
     ${nonCompliant.map(r => `
-      <div style="border-left:3px solid var(--fail-fg);padding:4px 8px;margin-bottom:5px;font-size:0.79rem">
-        <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:3px">
+      <div class="sql-violation-card" data-card-id="${r.card_id}" style="border-left:3px solid var(--fail-fg);padding:4px 8px;margin-bottom:5px;font-size:0.79rem">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;gap:6px;margin-bottom:3px;flex-wrap:wrap">
           <strong style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(r.prompt_text?.slice(0, 80) || 'Tarjeta')}</strong>
-          <button class="btn-ghost sql-violation-view-btn" data-card-id="${r.card_id}" style="font-size:0.72rem;padding:1px 6px;flex-shrink:0">Ver tarjeta</button>
+          <div style="display:flex;gap:4px;flex-shrink:0">
+            <button class="btn-ghost sql-violation-view-btn" data-card-id="${r.card_id}" style="font-size:0.72rem;padding:1px 6px">Ver tarjeta</button>
+            <button class="btn-ghost sql-violation-ai-fix-btn" data-card-id="${r.card_id}" style="font-size:0.72rem;padding:1px 6px">Corregir con IA</button>
+          </div>
         </div>
         ${r.violations.map(v => `<span style="color:var(--fail-fg)">• ${escHtml(v.description)}</span>`).join('<br>')}
       </div>`).join('')}`;
@@ -5777,6 +5780,90 @@ function renderSqlValidationResults(results) {
       }
     });
   });
+
+  el.querySelectorAll('.sql-violation-ai-fix-btn').forEach(btn => {
+    btn.addEventListener('click', () => openAiFixPanel(btn));
+  });
+}
+
+async function openAiFixPanel(triggerBtn) {
+  const cardId = triggerBtn.dataset.cardId;
+  const cardRow = triggerBtn.closest('.sql-violation-card');
+  if (!cardRow) return;
+
+  // Toggle: close if already open
+  const existing = cardRow.querySelector('.ai-fix-panel');
+  if (existing) { existing.remove(); return; }
+
+  triggerBtn.disabled = true;
+  triggerBtn.textContent = 'Consultando IA...';
+
+  const panel = document.createElement('div');
+  panel.className = 'ai-fix-panel';
+  panel.style.cssText = 'margin-top:8px;padding:10px 12px;border:1px solid var(--border-mid);border-radius:6px;background:var(--bg-subtle);font-size:0.8rem';
+
+  try {
+    const data = await postJson(`/cards/${cardId}/ai-fix-answer`, {});
+    const suggested = data.suggested_answer || '';
+
+    const label = document.createElement('div');
+    label.style.cssText = 'font-weight:600;margin-bottom:6px;color:var(--text-muted);font-size:0.75rem;text-transform:uppercase;letter-spacing:.04em';
+    label.textContent = 'Corrección sugerida por IA:';
+
+    const pre = document.createElement('pre');
+    pre.style.cssText = 'white-space:pre-wrap;word-break:break-word;background:var(--bg-code,#1e1e1e);color:var(--fg-code,#d4d4d4);padding:10px;border-radius:4px;font-size:0.8rem;max-height:260px;overflow-y:auto;margin:0 0 8px';
+    pre.textContent = suggested;
+
+    const actionsRow = document.createElement('div');
+    actionsRow.style.cssText = 'display:flex;gap:8px;align-items:center';
+
+    const confirmBtn = document.createElement('button');
+    confirmBtn.type = 'button';
+    confirmBtn.className = 'btn-secondary';
+    confirmBtn.style.fontSize = '0.82rem';
+    confirmBtn.textContent = 'Confirmar y guardar';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'btn-ghost';
+    cancelBtn.style.fontSize = '0.82rem';
+    cancelBtn.textContent = 'Cancelar';
+
+    const fb = document.createElement('span');
+    fb.style.cssText = 'font-size:0.78rem;margin-left:4px';
+
+    actionsRow.append(confirmBtn, cancelBtn, fb);
+    panel.append(label, pre, actionsRow);
+    cardRow.appendChild(panel);
+
+    cancelBtn.addEventListener('click', () => panel.remove());
+
+    confirmBtn.addEventListener('click', async () => {
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = 'Guardando...';
+      fb.textContent = '';
+      try {
+        await postJson('/cards/batch', { action: 'edit', ids: [Number(cardId)], expected_answer_text: suggested });
+        fb.textContent = '✓ Guardado';
+        fb.style.color = 'var(--pass-fg)';
+        confirmBtn.textContent = 'Guardado';
+        cardRow.style.borderLeftColor = 'var(--pass-fg)';
+        setTimeout(() => panel.remove(), 1800);
+      } catch (_) {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = 'Confirmar y guardar';
+        fb.textContent = 'Error al guardar.';
+        fb.style.color = 'var(--fail-fg)';
+      }
+    });
+  } catch (err) {
+    panel.textContent = `Error: ${err.message || 'No se pudo obtener la corrección.'}`;
+    panel.style.color = 'var(--fail-fg)';
+    cardRow.appendChild(panel);
+  } finally {
+    triggerBtn.disabled = false;
+    triggerBtn.textContent = 'Corregir con IA';
+  }
 }
 
 async function loadSqlStandard(subject) {
