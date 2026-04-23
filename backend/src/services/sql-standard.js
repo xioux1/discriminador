@@ -42,31 +42,39 @@ export async function extractStandardFromMaterial({ transcriptText, codeBlocks, 
 
   const response = await getClient().messages.create({
     model: SQL_MODEL,
-    max_tokens: 2000,
+    max_tokens: 4000,
     temperature: 0,
     system: `Sos un extractor de estándares de codificación SQL/PL-SQL de cátedra universitaria.
-Tu tarea: analizar el material de clase (transcripciones y código de ejemplo) e identificar las reglas de estilo, convención y estructura que el profesor exige.
+Tu tarea: analizar el material (transcripciones, código de ejemplo, o ambos) e identificar las reglas de estilo, convención y estructura que el profesor exige.
 
-Buscá:
-- Convenciones de nombres (variables, cursores, procedimientos, parámetros)
-- Formato y estructura (dónde poner el BEGIN, END, sangría, etc.)
-- Patrones obligatorios (ej: siempre usar cursor FOR, siempre cerrar con COMMIT)
-- Patrones prohibidos (ej: nunca usar SELECT *, no usar cursores implícitos cuando el profe quiere explícitos)
-- Frases del profesor como "siempre", "nunca", "tienen que", "pierden puntos si", "la cátedra exige"
+FUENTES DE REGLAS — usá ambas cuando estén disponibles:
+1. Directivas explícitas del profesor: frases como "siempre", "nunca", "tienen que", "pierden puntos si", "la cátedra exige", "se espera que", "es obligatorio".
+2. Patrones implícitos en el código de ejemplo: si el código muestra un estilo consistente, ese ES el estándar esperado. Inferí las convenciones del código mismo.
 
-Para cada regla extraída, asignale una categoría: "naming" | "formatting" | "style" | "structure" | "forbidden"
+BUSCÁ SIEMPRE (aunque sea solo código sin comentarios del profesor):
+- Convenciones de nombres: prefijos de variables (ej: V_, P_, C_, L_), nombres de cursores, procedimientos, funciones, parámetros
+- Formato y estructura: indentación, ubicación de DECLARE/BEGIN/END, estilo de END (END loop_name, END IF, etc.)
+- Patrones de cursores: FOR implícito vs explícito, apertura/cierre manual, fetch loops
+- Manejo de excepciones: bloques EXCEPTION, WHEN OTHERS, mensajes de error
+- Manejo de transacciones: COMMIT, ROLLBACK, SAVEPOINT
+- Patrones obligatorios visibles en el código (ej: siempre usar DBMS_OUTPUT, siempre verificar %ROWCOUNT)
+- Patrones prohibidos evidentes (ej: SELECT * sin alias, cursores implícitos si el código usa siempre explícitos)
+
+IMPORTANTE: Si el material es solo código sin texto del profesor, extraé al menos las convenciones de nombrado y estructura que se ven en el código. Un código de ejemplo enseña el estándar esperado.
+
+Para cada regla, asignale una categoría: "naming" | "formatting" | "style" | "structure" | "forbidden"
 y severidad: "error" (se descuenta puntos) | "warning" (es preferible)
 
-RESPONDÉ SOLO JSON con este schema exacto:
+RESPONDÉ SOLO JSON, sin texto adicional antes ni después, con este schema exacto:
 {
   "rules": [
     {
       "id": 1,
       "category": "naming",
       "description": "descripción clara de la regla en español",
-      "pattern_hint": "ejemplo correcto e incorrecto (opcional)",
+      "pattern_hint": "ejemplo correcto / incorrecto (opcional)",
       "severity": "error",
-      "source_quote": "frase textual del material que originó esta regla (si la hay)"
+      "source_quote": "fragmento del material que muestra esta convención (si existe)"
     }
   ],
   "summary": "resumen de 2-3 oraciones del estilo de codificación de la cátedra"
