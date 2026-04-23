@@ -5670,9 +5670,22 @@ function renderSqlValidationResults(results) {
     </p>
     ${nonCompliant.map(r => `
       <div style="border-left:3px solid var(--fail-fg);padding:4px 8px;margin-bottom:5px;font-size:0.79rem">
-        <strong>${escHtml(r.prompt_text?.slice(0, 80) || 'Tarjeta')}</strong><br>
+        <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:3px">
+          <strong style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(r.prompt_text?.slice(0, 80) || 'Tarjeta')}</strong>
+          <button class="btn-ghost sql-violation-view-btn" data-card-id="${r.card_id}" style="font-size:0.72rem;padding:1px 6px;flex-shrink:0">Ver tarjeta</button>
+        </div>
         ${r.violations.map(v => `<span style="color:var(--fail-fg)">• ${escHtml(v.description)}</span>`).join('<br>')}
       </div>`).join('')}`;
+
+  el.querySelectorAll('.sql-violation-view-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const cardId = btn.dataset.cardId;
+      try {
+        const data = await getJson(`/cards/${cardId}`);
+        if (data.card) showCardDetail(data.card);
+      } catch (_) {}
+    });
+  });
 }
 
 async function loadSqlStandard(subject) {
