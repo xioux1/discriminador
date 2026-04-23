@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { dbPool } from '../db/client.js';
+import Anthropic from '@anthropic-ai/sdk';
 
 const cardsRouter = Router();
 
@@ -275,6 +276,84 @@ cardsRouter.post('/cards/batch', async (req, res) => {
   }
 
   return res.status(422).json({ error: 'validation_error', message: 'Unsupported action.' });
+});
+
+// POST /cards/:id/ai-fix-answer — use Claude Sonnet to correct expected_answer_text based on violated SQL rules
+cardsRouter.post('/cards/:id/ai-fix-answer', async (req, res) => {
+  const userId = req.user.id;
+  const cardId = parseInt(req.params.id, 10);
+  if (!Number.isFinite(cardId)) return res.status(400).json({ error: 'invalid_id' });
+
+  try {
+    const [cardResult, violationsResult] = await Promise.all([
+      dbPool.query(
+        `SELECT c.id, c.subject, c.prompt_text, c.expected_answer_text,
+                s.rules AS standard_rules
+         FROM cards c
+         LEFT JOIN sql_coding_standards s ON s.subject = c.subject AND s.user_id = c.user_id
+         WHERE c.id = $1 AND c.user_id = $2 AND c.archived_at IS NULL`,
+        [cardId, userId]
+      ),
+      dbPool.query(
+        `SELECT r.violations FROM sql_standard_validation_results r
+         JOIN sql_coding_standards s ON r.standard_id = s.id
+         WHERE r.card_id = $1 AND r.user_id = $2 AND NOT r.compliant
+         ORDER BY r.validated_at DESC LIMIT 1`,
+        [cardId, userId]
+      ),
+    ]);
+
+    if (!cardResult.rows.length) return res.status(404).json({ error: 'not_found' });
+    const card = cardResult.rows[0];
+    const rules = card.standard_rules || [];
+    const violations = violationsResult.rows[0]?.violations || [];
+
+    if (!rules.length && !violations.length) {
+      return res.status(422).json({ error: 'no_rules', message: 'No hay reglas ni violaciones registradas para esta tarjeta.' });
+    }
+
+    const rulesText = rules.map(r =>
+      `- [${r.severity}] (${r.category}): ${r.description}${r.pattern_hint ? ` | Ej: ${r.pattern_hint}` : ''}`
+    ).join('\n');
+    const violationsText = violations.map(v =>
+      `- ${v.description}${v.quote ? `\n  Fragmento incorrecto: "${v.quote}"` : ''}`
+    ).join('\n');
+
+    const client = new Anthropic();
+    const response = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 4000,
+      temperature: 0,
+      system: `Sos un experto en SQL/PL-SQL y corrector de soluciones modelo para tarjetas de estudio universitario.
+Tu tarea: reescribir la "respuesta esperada" (solución modelo) para que cumpla con las reglas de estilo de la cátedra.
+
+REGLAS:
+- Mantené la lógica del código intacta. No cambies lo que hace, solo el estilo
+- Aplicá únicamente las correcciones necesarias para cumplir las reglas violadas
+- Respondé SOLO con el código corregido, sin texto antes ni después, sin bloques de markdown`,
+      messages: [{
+        role: 'user',
+        content: `CONSIGNA: ${card.prompt_text}
+
+REGLAS DE LA CÁTEDRA:
+${rulesText || '(sin reglas registradas)'}
+
+VIOLACIONES EN LA RESPUESTA ACTUAL:
+${violationsText || '(aplicá las reglas generales de la cátedra)'}
+
+RESPUESTA ESPERADA A CORREGIR:
+${card.expected_answer_text}`,
+      }],
+    });
+
+    const suggestedAnswer = response.content.find(b => b.type === 'text')?.text?.trim() ?? '';
+    if (!suggestedAnswer) return res.status(500).json({ error: 'empty_response' });
+
+    return res.json({ suggested_answer: suggestedAnswer });
+  } catch (err) {
+    console.error('POST /cards/:id/ai-fix-answer', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
 });
 
 // POST /cards/rename-subject — rename all cards of a subject (merge/deduplicate subjects)
