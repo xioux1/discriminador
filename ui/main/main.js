@@ -3947,6 +3947,79 @@ async function toggleStudyPromptEdit() {
   }
 }
 
+function openStudyAnswerEdit(item, expectedEl) {
+  if (item.type === 'micro') return;
+  if (document.querySelector('#study-answer-edit-container')) return;
+
+  const currentText = item.data.expected_answer_text || '';
+
+  const container = document.createElement('div');
+  container.id = 'study-answer-edit-container';
+  container.style.cssText = 'margin-top:10px;padding:10px 12px;border:1px solid var(--border-mid);border-radius:6px;background:var(--bg-subtle)';
+
+  const label = document.createElement('div');
+  label.style.cssText = 'font-size:0.82rem;font-weight:600;margin-bottom:6px;color:var(--text-muted)';
+  label.textContent = 'Editar respuesta esperada:';
+
+  const ta = document.createElement('textarea');
+  ta.rows = 8;
+  ta.style.cssText = 'width:100%;box-sizing:border-box;font-family:monospace;font-size:0.84rem';
+  ta.value = currentText;
+
+  const actionsRow = document.createElement('div');
+  actionsRow.style.cssText = 'display:flex;gap:8px;margin-top:6px;align-items:center';
+
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'button';
+  saveBtn.className = 'btn-secondary';
+  saveBtn.style.fontSize = '0.85rem';
+  saveBtn.textContent = 'Guardar';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'btn-ghost';
+  cancelBtn.style.fontSize = '0.85rem';
+  cancelBtn.textContent = 'Cancelar';
+
+  const fb = document.createElement('span');
+  fb.style.cssText = 'font-size:0.8rem;margin-left:4px';
+
+  actionsRow.append(saveBtn, cancelBtn, fb);
+  container.append(label, ta, actionsRow);
+  expectedEl.appendChild(container);
+  ta.focus();
+
+  cancelBtn.addEventListener('click', () => container.remove());
+
+  saveBtn.addEventListener('click', async () => {
+    const newText = ta.value.trim();
+    if (!newText) { fb.textContent = 'No puede estar vacía.'; fb.style.color = 'var(--fail-fg)'; return; }
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Guardando...';
+    fb.textContent = '';
+    try {
+      await postJson('/cards/batch', { action: 'edit', ids: [item.data.id], expected_answer_text: newText });
+      item.data.expected_answer_text = newText;
+      container.remove();
+      // Replace the "Respuesta esperada" block in the display
+      for (const block of expectedEl.querySelectorAll('.study-answer-compare-block')) {
+        if (block.querySelector('strong')?.textContent?.includes('Respuesta esperada')) {
+          const tmp = document.createElement('div');
+          tmp.innerHTML = formatAnswerBlock('Respuesta esperada', newText);
+          block.replaceWith(tmp.firstElementChild);
+          break;
+        }
+      }
+      setStudyPromptFeedback('Respuesta esperada guardada.', 'success');
+    } catch (_) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Guardar';
+      fb.textContent = 'Error al guardar.';
+      fb.style.color = 'var(--fail-fg)';
+    }
+  });
+}
+
 async function clarifyStudyPrompt() {
   const item = studyState.queue[studyState.index];
   if (!item) return;
@@ -4138,6 +4211,16 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       ${formatAnswerBlock('Respuesta esperada', expected_answer_text)}
     `;
     expectedEl.classList.remove('hidden');
+
+    if (item.type !== 'micro') {
+      const editAnswerBtn = document.createElement('button');
+      editAnswerBtn.type = 'button';
+      editAnswerBtn.className = 'btn-ghost';
+      editAnswerBtn.textContent = 'Editar respuesta';
+      editAnswerBtn.style.cssText = 'font-size:0.8rem;margin-top:6px;padding:2px 8px';
+      editAnswerBtn.addEventListener('click', () => openStudyAnswerEdit(item, expectedEl));
+      expectedEl.appendChild(editAnswerBtn);
+    }
 
     // SQL clause checklist in study result block
     let studySqlChecklist = document.querySelector('#study-sql-clause-checklist');
@@ -5680,10 +5763,18 @@ function renderSqlValidationResults(results) {
   el.querySelectorAll('.sql-violation-view-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const cardId = btn.dataset.cardId;
+      const prev = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '...';
       try {
         const data = await getJson(`/cards/${cardId}`);
         if (data.card) showCardDetail(data.card);
-      } catch (_) {}
+        else btn.textContent = 'No encontrada';
+      } catch (_) {
+        btn.textContent = 'Error';
+      } finally {
+        setTimeout(() => { btn.disabled = false; btn.textContent = prev; }, 1500);
+      }
     });
   });
 }
