@@ -43,6 +43,30 @@ cardsRouter.get('/cards/browser', async (req, res) => {
   return res.json({ cards: rows });
 });
 
+// GET /cards/:id — fetch a single card with stats
+cardsRouter.get('/cards/:id', async (req, res) => {
+  const userId = req.user.id;
+  const cardId = parseInt(req.params.id, 10);
+  if (!Number.isFinite(cardId)) return res.status(400).json({ error: 'invalid_id' });
+  const { rows } = await dbPool.query(
+    `SELECT
+       c.id, c.subject, c.prompt_text, c.expected_answer_text,
+       c.next_review_at, c.last_reviewed_at, c.created_at,
+       c.review_count, c.pass_count, c.interval_days, c.ease_factor,
+       c.flagged, c.notes, c.suspended_at,
+       COUNT(mc.id) FILTER (WHERE mc.status = 'active') AS active_micro_count,
+       COUNT(cv.id) AS variant_count
+     FROM cards c
+     LEFT JOIN micro_cards mc ON mc.parent_card_id = c.id AND mc.user_id = c.user_id
+     LEFT JOIN card_variants cv ON cv.card_id = c.id
+     WHERE c.id = $1 AND c.user_id = $2 AND c.archived_at IS NULL
+     GROUP BY c.id`,
+    [cardId, userId]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'not_found' });
+  return res.json({ card: rows[0] });
+});
+
 // PATCH /cards/:id/flag  — mark a card as flagged with optional note
 cardsRouter.patch('/cards/:id/flag', async (req, res) => {
   const userId = req.user.id;
