@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { KEYWORD_SET } from './plsql-parser.js';
 
 const SQL_MODEL = 'claude-haiku-4-5-20251001';
+const VALIDATE_MODEL = 'claude-sonnet-4-6';
 
 let _client = null;
 function getClient() {
@@ -102,25 +103,45 @@ export async function validateCardAgainstStandard({ expectedAnswerText, standard
   ).join('\n\n');
 
   const response = await getClient().messages.create({
-    model: SQL_MODEL,
-    max_tokens: 800,
+    model: VALIDATE_MODEL,
+    max_tokens: 2000,
     temperature: 0,
-    system: `Sos un validador de estilo SQL/PL-SQL. Recibís un conjunto de reglas de la cátedra y un bloque de código de estudiante.
-Tu tarea: identificar qué reglas NO se cumplen en el código, citando el fragmento exacto que las viola.
+    system: `Sos un validador experto de estilo SQL/PL-SQL para una cátedra universitaria.
 
-Respondé SOLO JSON:
+PASO 1 — Identificá el tipo de objeto SQL en el código:
+PROCEDIMIENTO (CREATE OR REPLACE PROCEDURE / IS ... BEGIN ... END), FUNCIÓN (CREATE OR REPLACE FUNCTION / RETURN), BLOQUE ANÓNIMO (DECLARE ... BEGIN ... END sin CREATE), CURSOR explícito, TRIGGER, o combinación.
+
+PASO 2 — Aplicá SOLO las reglas que corresponden al tipo de objeto detectado:
+- Reglas de naming para PROCEDIMIENTOS → solo si el código define un procedimiento
+- Reglas de naming para FUNCIONES → solo si el código define una función
+- Reglas de naming para parámetros → aplican a procedimientos y funciones con parámetros
+- Reglas de naming para variables locales → aplican a cualquier bloque con DECLARE
+- Reglas de estructura/formato → aplican siempre
+- Reglas sobre cursores → solo si el código usa cursores
+- Reglas sobre excepciones → solo si el código tiene bloque EXCEPTION o debería tenerlo
+
+PASO 3 — Una regla NO aplica si el objeto analizado no es del tipo al que la regla se refiere.
+Ejemplos de NO-aplica:
+  • Regla "procedimientos deben usar prefijo pro_" → no aplica a funciones ni bloques anónimos
+  • Regla "funciones deben usar prefijo f_" → no aplica a procedimientos ni bloques anónimos
+  • Regla "parámetros OUT deben tener prefijo" → no aplica si no hay parámetros OUT
+
+PASO 4 — Solo reportá violaciones REALES Y CONCRETAS. Si una regla NO aplica al tipo de objeto, no la listés como violación. Dudas → no reportar.
+
+Respondé SOLO JSON, sin texto adicional:
 {
+  "object_type": "tipo detectado (ej: FUNCIÓN, PROCEDIMIENTO, BLOQUE ANÓNIMO)",
   "compliant": true | false,
   "violations": [
     {
       "rule_number": 1,
-      "description": "descripción de la regla incumplida",
+      "description": "descripción concreta de qué viola y por qué aplica a este tipo de objeto",
       "severity": "error" | "warning",
       "quote": "fragmento exacto del código que viola la regla"
     }
   ]
 }
-Si no hay violaciones, "violations" debe ser [].`,
+Si no hay violaciones reales, "violations" debe ser [] y "compliant" debe ser true.`,
     messages: [{
       role: 'user',
       content: `REGLAS DE LA CÁTEDRA:\n${rulesText}\n\n---\n\nCÓDIGO A VALIDAR:\n${expectedAnswerText}`,
