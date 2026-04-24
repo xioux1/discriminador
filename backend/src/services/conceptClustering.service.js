@@ -287,6 +287,87 @@ async function clusterInPhases(groups, orphans, conceptMap) {
   return namedClusters;
 }
 
+// ==================== Pre-validation sanitization ====================
+
+// Fixes common LLM output issues before strict validation:
+//   1. Strips hallucinated concept IDs not in the known set
+//   2. Drops empty clusters left by step 1
+//   3. Force-assigns any unassigned concept to the geometrically nearest cluster
+//   4. Merges any remaining single-concept cluster into its nearest neighbor
+function sanitizeClusters(parsed, allConceptIds, conceptMap) {
+  const allIds = new Set(allConceptIds);
+
+  // 1. Strip hallucinated IDs
+  for (const cl of parsed) {
+    cl.concept_ids = cl.concept_ids.filter(id => allIds.has(id));
+  }
+
+  // 2. Drop empty clusters
+  let clusters = parsed.filter(cl => cl.concept_ids.length > 0);
+
+  // 3. Force-assign unassigned concepts
+  const assigned = new Set(clusters.flatMap(cl => cl.concept_ids));
+  const unassigned = allConceptIds.filter(id => !assigned.has(id));
+
+  for (const id of unassigned) {
+    if (clusters.length === 0) break;
+    const concept = conceptMap.get(id);
+    let bestIdx = 0;
+    let bestSim = -Infinity;
+
+    for (let i = 0; i < clusters.length; i++) {
+      let total = 0, count = 0;
+      for (const cid of clusters[i].concept_ids) {
+        const c = conceptMap.get(cid);
+        if (c?.embedding && concept?.embedding) {
+          total += cosineSimilarity(concept.embedding, c.embedding);
+          count++;
+        }
+      }
+      const avg = count > 0 ? total / count : 0;
+      if (avg > bestSim) { bestSim = avg; bestIdx = i; }
+    }
+
+    clusters[bestIdx].concept_ids.push(id);
+  }
+
+  // 4. Merge single-concept clusters into nearest neighbor
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (let s = 0; s < clusters.length; s++) {
+      if (clusters[s].concept_ids.length >= 2 || clusters.length <= 1) continue;
+
+      const singleId = clusters[s].concept_ids[0];
+      const singleConcept = conceptMap.get(singleId);
+      let bestIdx = s === 0 ? 1 : 0;
+      let bestSim = -Infinity;
+
+      for (let i = 0; i < clusters.length; i++) {
+        if (i === s) continue;
+        let total = 0, count = 0;
+        for (const cid of clusters[i].concept_ids) {
+          const c = conceptMap.get(cid);
+          if (c?.embedding && singleConcept?.embedding) {
+            total += cosineSimilarity(singleConcept.embedding, c.embedding);
+            count++;
+          }
+        }
+        const avg = count > 0 ? total / count : 0;
+        if (avg > bestSim) { bestSim = avg; bestIdx = i; }
+      }
+
+      clusters[bestIdx].concept_ids.push(singleId);
+      clusters.splice(s, 1);
+      changed = true;
+      break;
+    }
+  }
+
+  parsed.length = 0;
+  parsed.push(...clusters);
+}
+
 // ==================== Validation ====================
 
 export function validateClusteringResult(clusters, allConceptIds) {
@@ -316,9 +397,9 @@ export function validateClusteringResult(clusters, allConceptIds) {
     }
 
     const nameWords = cluster.cluster_name.trim().split(/\s+/).filter(Boolean);
-    if (nameWords.length < 3 || nameWords.length > 8) {
+    if (nameWords.length < 2 || nameWords.length > 8) {
       throw new Error(
-        `Validation failed: cluster_name "${cluster.cluster_name}" has ${nameWords.length} word(s) — expected 3-8.`
+        `Validation failed: cluster_name "${cluster.cluster_name}" has ${nameWords.length} word(s) — expected 2-8.`
       );
     }
 
@@ -495,8 +576,9 @@ export async function clusterConceptsForDocument(documentId) {
     }
   }
 
-  // Step 6: Strict validation
+  // Step 6: Sanitize then validate
   const allConceptIds = concepts.map(c => c.id);
+  sanitizeClusters(parsed, allConceptIds, conceptMap);
   validateClusteringResult(parsed, allConceptIds);
 
   logger.info('[conceptClustering] Validation passed', {
