@@ -8,6 +8,90 @@ const router = Router();
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ASYNC_WORD_THRESHOLD = 5000;
 
+// ── Document CRUD ──────────────────────────────────────────────────────────────
+
+// GET /api/documents — list documents for the authenticated user
+router.get('/api/documents', async (req, res, next) => {
+  const userId = req.user.id;
+  try {
+    const { rows } = await dbPool.query(
+      `SELECT
+         d.id,
+         d.original_filename,
+         d.status,
+         d.created_at,
+         COALESCE(
+           array_length(
+             regexp_split_to_array(
+               trim(COALESCE(d.text, d.content, d.transcript, '')),
+               '\\s+'
+             ), 1
+           ), 0
+         ) AS word_count,
+         COUNT(c.id)::int AS concept_count
+       FROM documents d
+       LEFT JOIN concepts c ON c.document_id = d.id
+       WHERE d.user_id = $1
+       GROUP BY d.id
+       ORDER BY d.created_at DESC`,
+      [userId]
+    );
+    return res.json({ documents: rows });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// POST /api/documents — create a document from pasted text
+router.post('/api/documents', async (req, res, next) => {
+  const userId = req.user.id;
+  const { text, original_filename } = req.body || {};
+
+  if (!text || !String(text).trim()) {
+    return res.status(400).json({ error: 'bad_request', message: 'text is required.' });
+  }
+
+  try {
+    const { rows } = await dbPool.query(
+      `INSERT INTO documents (user_id, text, original_filename)
+       VALUES ($1, $2, $3)
+       RETURNING id, original_filename, status, created_at`,
+      [userId, String(text).trim(), original_filename ? String(original_filename).trim() : null]
+    );
+    const doc = rows[0];
+    return res.status(201).json({
+      document: { ...doc, word_count: String(text).trim().split(/\s+/).filter(Boolean).length, concept_count: 0 }
+    });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// DELETE /api/documents/:id — delete a document (and cascade its concepts)
+router.delete('/api/documents/:id', async (req, res, next) => {
+  const userId = req.user.id;
+  const documentId = req.params.id;
+
+  if (!UUID_RE.test(documentId)) {
+    return res.status(400).json({ error: 'invalid_id', message: 'Document ID must be a valid UUID.' });
+  }
+
+  try {
+    const { rows } = await dbPool.query(
+      'DELETE FROM documents WHERE id = $1 AND user_id = $2 RETURNING id',
+      [documentId, userId]
+    );
+    if (!rows.length) {
+      return res.status(404).json({ error: 'not_found', message: 'Document not found.' });
+    }
+    return res.json({ deleted: true });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// ── Concept extraction ─────────────────────────────────────────────────────────
+
 // POST /api/documents/:id/extract-concepts
 router.post('/api/documents/:id/extract-concepts', async (req, res, next) => {
   const documentId = req.params.id;
@@ -23,7 +107,6 @@ router.post('/api/documents/:id/extract-concepts', async (req, res, next) => {
 
   const document = rows[0];
 
-  // Estimate word count from direct text fields; PDF documents always go async
   const directText = document.text || document.content || document.transcript || '';
   const wordCount = directText.split(/\s+/).filter(Boolean).length;
   const isPdfOnly = !directText && Boolean(document.file_path);

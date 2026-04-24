@@ -54,6 +54,7 @@
       <button class="tab-btn" data-tab="planner" title="Organizar tu tiempo de estudio semanal">Planificar</button>
       <button class="tab-btn" data-tab="progress" title="Ver tu progreso y estadísticas por materia">Progreso</button>
       <button class="tab-btn" data-tab="settings" title="Ajustar preferencias y configuración de sesiones">Configuración</button>
+      <button class="tab-btn" data-tab="documents" title="Subir documentos y extraer conceptos con IA">Documentos</button>
       <button id="theme-toggle" class="btn-ghost theme-toggle" title="Cambiar a modo oscuro" aria-label="Cambiar tema">☾</button>
       <button id="logout-btn" class="btn-ghost logout-btn" title="Cerrar sesión">Salir</button>
     </nav>
@@ -1032,6 +1033,31 @@
 
           <p id="settings-save-status" style="font-size:0.84rem;color:var(--text-muted);margin-top:20px;min-height:1.2em"></p>
         </div>
+      </section>
+
+      <!-- ═══ TAB: DOCUMENTOS ═════════════════════════════════════════════ -->
+      <section id="tab-documents" class="hidden">
+
+        <!-- Create document form -->
+        <div class="card docs-create-card">
+          <h3 style="margin:0 0 14px">Nuevo documento</h3>
+          <label for="doc-name-input" style="display:block;font-size:var(--fs-sm);color:var(--text-muted);margin-bottom:4px">Nombre (opcional)</label>
+          <input type="text" id="doc-name-input" placeholder="Ej: Clase 5 — Prescripción" style="width:100%;max-width:480px;margin-bottom:10px">
+          <label for="doc-text-input" style="display:block;font-size:var(--fs-sm);color:var(--text-muted);margin-bottom:4px">Texto / transcripción</label>
+          <textarea id="doc-text-input" rows="8" placeholder="Pegá el texto, apuntes o transcripción del material..."></textarea>
+          <div style="display:flex;align-items:center;gap:14px;margin-top:10px;flex-wrap:wrap">
+            <button type="button" id="doc-create-btn" class="btn-primary">Crear documento</button>
+            <p id="doc-create-feedback" class="feedback" style="margin:0"></p>
+          </div>
+        </div>
+
+        <!-- Documents list -->
+        <div id="docs-list-wrap">
+          <div id="docs-loading" class="loading-hint">Cargando documentos...</div>
+          <p id="docs-empty" class="hidden" style="color:var(--text-muted);font-size:var(--fs-sm);padding:8px 0">Todavía no hay documentos. Creá uno arriba.</p>
+          <div id="docs-list"></div>
+        </div>
+
       </section>
 
     </main>
