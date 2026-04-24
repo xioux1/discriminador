@@ -70,3 +70,16 @@ Generá una variante conservadora.`
     expected_answer_text: answerMatch[1].trim()
   };
 }
+
+/**
+ * Build a listening variant for a Chinese card.
+ * No LLM needed — the variant stores the Hanzi as the prompt so the frontend
+ * can play it via TTS and ask the student to write it from hearing alone.
+ */
+export function buildChineseListeningVariant({ expected_answer_text }) {
+  return {
+    prompt_text:          expected_answer_text,
+    expected_answer_text: expected_answer_text,
+    variant_type:         'listening'
+  };
+}

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { dbPool } from '../db/client.js';
 import { computeNextReview, isPassGrade, isFailGrade } from '../services/scheduler.js';
 import { generateMicroCard, generateMicroCardFromCheckError, generateChineseMicroCard, isChineseCard } from '../services/micro-generator.js';
-import { generateVariant } from '../services/variant-generator.js';
+import { generateVariant, buildChineseListeningVariant } from '../services/variant-generator.js';
 import Anthropic from '@anthropic-ai/sdk';
 
 const LLM_MODEL = 'claude-haiku-4-5-20251001';
@@ -264,7 +264,7 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
       if (parseInt(card.variant_count) === 0) return card;
 
       const vRes = await dbPool.query(
-        `SELECT id, prompt_text, expected_answer_text FROM card_variants WHERE card_id = $1 AND (user_id = $2 OR user_id IS NULL)`,
+        `SELECT id, prompt_text, expected_answer_text, variant_type FROM card_variants WHERE card_id = $1 AND (user_id = $2 OR user_id IS NULL)`,
         [card.id, card.user_id]
       );
       const variants = vRes.rows;
@@ -279,7 +279,8 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
         ...card,
         prompt_text:          v.prompt_text,
         expected_answer_text: v.expected_answer_text,
-        variant_id:           v.id
+        variant_id:           v.id,
+        variant_type:         v.variant_type
       };
     }));
 
@@ -349,25 +350,44 @@ async function autoGenerateVariant(cardId, card, userId) {
 
   const maxVariants = cfgRes.rows[0].max_variants_per_card; // null = unlimited
 
+  // Count regular and listening variants separately.
+  // Listening variants don't count against the regular limit.
   const countRes = await dbPool.query(
-    'SELECT COUNT(*) AS cnt FROM card_variants WHERE card_id = $1 AND (user_id = $2 OR user_id IS NULL)',
+    `SELECT variant_type, COUNT(*) AS cnt
+     FROM card_variants
+     WHERE card_id = $1 AND (user_id = $2 OR user_id IS NULL)
+     GROUP BY variant_type`,
     [cardId, userId]
   );
-  const existing = parseInt(countRes.rows[0].cnt, 10);
-  if (maxVariants !== null && existing >= maxVariants) return;
+  const variantCounts = {};
+  for (const row of countRes.rows) variantCounts[row.variant_type] = parseInt(row.cnt, 10);
 
-  const variant = await generateVariant({
-    prompt_text:          card.prompt_text,
-    expected_answer_text: card.expected_answer_text,
-    subject:              card.subject
-  });
+  const existingRegular = variantCounts['regular'] || 0;
 
-  await dbPool.query(
-    `INSERT INTO card_variants (card_id, prompt_text, expected_answer_text, user_id) VALUES ($1, $2, $3, $4)`,
-    [cardId, variant.prompt_text, variant.expected_answer_text, userId]
-  );
+  if (maxVariants === null || existingRegular < maxVariants) {
+    const variant = await generateVariant({
+      prompt_text:          card.prompt_text,
+      expected_answer_text: card.expected_answer_text,
+      subject:              card.subject
+    });
+    await dbPool.query(
+      `INSERT INTO card_variants (card_id, prompt_text, expected_answer_text, user_id, variant_type)
+       VALUES ($1, $2, $3, $4, 'regular')`,
+      [cardId, variant.prompt_text, variant.expected_answer_text, userId]
+    );
+    console.info('[auto-variant] generated regular', { cardId, subject: card.subject });
+  }
 
-  console.info('[auto-variant] generated', { cardId, subject: card.subject });
+  // For Chinese cards, generate exactly one listening variant (audio-only front).
+  if (isChineseCard(card) && !variantCounts['listening']) {
+    const lv = buildChineseListeningVariant(card);
+    await dbPool.query(
+      `INSERT INTO card_variants (card_id, prompt_text, expected_answer_text, user_id, variant_type)
+       VALUES ($1, $2, $3, $4, 'listening')`,
+      [cardId, lv.prompt_text, lv.expected_answer_text, userId]
+    );
+    console.info('[auto-variant] generated listening', { cardId, subject: card.subject });
+  }
 }
 
 // ─── Internal: review a full card ────────────────────────────────────────────

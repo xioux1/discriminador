@@ -2312,16 +2312,18 @@ function hasChinese(text) {
 }
 
 let _ttsAudio = null;                    // keep reference to stop previous playback
-let _ttsCurrentText = null;             // Hanzi text of the currently shown card
+let _ttsCurrentText = null;             // Hanzi text for the post-eval TTS bar
+let _ttsListeningText = null;           // Hanzi text for the listening variant prompt bar
 const _ttsCache = new Map();             // text → base64 audio string (session cache)
 
 /**
  * Plays the TTS audio for the given Hanzi text.
  * Fetches from POST /tts on first use; subsequent calls use the in-memory cache.
  * If autoplay is blocked by the browser, the button stays enabled for manual replay.
+ * btnSelector defaults to the post-eval replay button; pass a different selector for other contexts.
  */
-async function playChineseTTS(text) {
-  const btn = document.querySelector('#study-tts-btn');
+async function playChineseTTS(text, btnSelector = '#study-tts-btn') {
+  const btn = document.querySelector(btnSelector);
   if (!text || !hasChinese(text)) return;
 
   // Stop any currently playing audio
@@ -3157,6 +3159,11 @@ function initStudyTab() {
     if (_ttsCurrentText) playChineseTTS(_ttsCurrentText);
   });
 
+  // Listening variant replay button (prompt-side audio for listening cards)
+  document.querySelector('#study-listening-replay-btn')?.addEventListener('click', () => {
+    if (_ttsListeningText) playChineseTTS(_ttsListeningText, '#study-listening-replay-btn');
+  });
+
   // ── Binary check button ────────────────────────────────────────────────────
   document.querySelector('#study-binary-check-btn')?.addEventListener('click', async () => {
     const item = studyState.queue[studyState.index];
@@ -3939,6 +3946,9 @@ function showStudyCard() {
 
   subjectEl.textContent = `Materia: ${subjectLabel}`;
 
+  const listeningBar = document.querySelector('#study-listening-bar');
+  const isListeningVariant = item.type === 'card' && item.data.variant_type === 'listening';
+
   if (item.type === 'micro') {
     badge.textContent = 'Micro-concepto';
     badge.classList.remove('hidden');
@@ -3950,13 +3960,26 @@ function showStudyCard() {
     } else {
       parentContextEl.classList.add('hidden');
     }
+    if (listeningBar) listeningBar.classList.add('hidden');
+    _ttsListeningText = null;
   } else {
     badge.classList.add('hidden');
     parentContextEl.classList.add('hidden');
     const hasMicros = parseInt(item.data.active_micro_count) > 0;
     badge.textContent = hasMicros ? `Advertencia: Conceptos pendientes (${item.data.active_micro_count})` : '';
     if (hasMicros) badge.classList.remove('hidden');
-    renderStudyPrompt(promptEl, getStudyPromptText(item));
+
+    if (isListeningVariant) {
+      // Hide the text prompt; show the listening bar and auto-play TTS.
+      promptEl.innerHTML = '';
+      _ttsListeningText = item.data.prompt_text;
+      if (listeningBar) listeningBar.classList.remove('hidden');
+      if (getTTSEnabled()) playChineseTTS(_ttsListeningText, '#study-listening-replay-btn');
+    } else {
+      renderStudyPrompt(promptEl, getStudyPromptText(item));
+      if (listeningBar) listeningBar.classList.add('hidden');
+      _ttsListeningText = null;
+    }
   }
   setStudyPromptFeedback('');
 

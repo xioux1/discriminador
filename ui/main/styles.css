@@ -3449,6 +3449,25 @@ textarea:focus, input[type="text"]:focus, select:focus {
   opacity: .6; cursor: default;
 }
 
+/* Listening variant prompt bar */
+.study-listening-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  background: var(--bg-subtle);
+  border: 1.5px solid var(--border-mid);
+  border-radius: 8px;
+  margin: 8px 0 12px;
+}
+.study-listening-bar.hidden { display: none; }
+.study-listening-icon { font-size: 1.6rem; }
+.study-listening-label {
+  flex: 1;
+  font-size: 0.92rem;
+  color: var(--text-muted);
+}
+
 /* Larger font when typing Chinese characters */
 textarea.chinese-input {
   font-size: 1.5rem;
