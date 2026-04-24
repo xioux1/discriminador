@@ -14,6 +14,7 @@
     <div id="auth-screen" class="hidden">
       <div class="auth-card">
         <h1 class="auth-title">Discriminador</h1>
+        <p class="auth-tagline">Repaso con IA para preparar tus exámenes</p>
         <div class="auth-tabs">
           <button class="auth-tab active" data-tab="login">Iniciar sesión</button>
           <button class="auth-tab" data-tab="register">Registrarse</button>
@@ -27,8 +28,12 @@
             <label for="auth-password">Contraseña</label>
             <input type="password" id="auth-password" name="password" autocomplete="current-password" required placeholder="••••••••">
           </div>
+          <div class="auth-field hidden" id="auth-confirm-field">
+            <label for="auth-confirm">Confirmar contraseña</label>
+            <input type="password" id="auth-confirm" name="confirm-password" autocomplete="new-password" placeholder="••••••••">
+          </div>
           <p id="auth-error" class="auth-error hidden"></p>
-          <button type="submit" class="btn-primary auth-submit">Entrar</button>
+          <button type="submit" class="btn-primary auth-submit" id="auth-submit-btn">Entrar</button>
         </form>
       </div>
     </div>
@@ -41,14 +46,14 @@
         </div>
       </div>
       <nav class="tab-nav" id="main-nav">
-      <button class="tab-btn active" data-tab="dashboard">Inicio</button>
-      <button class="tab-btn" data-tab="study">Estudiar</button>
-      <button class="tab-btn" data-tab="evaluate" style="display:none">Evaluar</button>
-      <button class="tab-btn" data-tab="explore" style="display:none">Explorar</button>
-      <button class="tab-btn" data-tab="browser">Tarjetas</button>
-      <button class="tab-btn" data-tab="planner">Planificar</button>
-      <button class="tab-btn" data-tab="progress">Progreso</button>
-      <button class="tab-btn" data-tab="settings">Configuración</button>
+      <button class="tab-btn active" data-tab="dashboard" title="Resumen general: materias, pendientes y agenda">Inicio</button>
+      <button class="tab-btn" data-tab="study" title="Iniciar una sesión de repaso con IA">Estudiar</button>
+      <button class="tab-btn" data-tab="evaluate" style="display:none" title="Evaluar una respuesta manualmente">Evaluar</button>
+      <button class="tab-btn" data-tab="explore" style="display:none" title="Explorar historial de evaluaciones">Explorar</button>
+      <button class="tab-btn" data-tab="browser" title="Ver, crear y gestionar tus tarjetas de estudio">Tarjetas</button>
+      <button class="tab-btn" data-tab="planner" title="Organizar tu tiempo de estudio semanal">Planificar</button>
+      <button class="tab-btn" data-tab="progress" title="Ver tu progreso y estadísticas por materia">Progreso</button>
+      <button class="tab-btn" data-tab="settings" title="Ajustar preferencias y configuración de sesiones">Configuración</button>
       <button id="theme-toggle" class="btn-ghost theme-toggle" title="Cambiar a modo oscuro" aria-label="Cambiar tema">☾</button>
       <button id="logout-btn" class="btn-ghost logout-btn" title="Cerrar sesión">Salir</button>
     </nav>
