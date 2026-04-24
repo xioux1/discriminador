@@ -6553,11 +6553,12 @@ async function updateBotBadge() {
 }
 
 function initBotChat() {
-  const fab    = document.querySelector('#bot-chat-fab');
-  const panel  = document.querySelector('#bot-chat-panel');
-  const closeBtn = document.querySelector('#bot-chat-close');
-  const sendBtn  = document.querySelector('#bot-chat-send');
-  const input    = document.querySelector('#bot-chat-input');
+  const fab          = document.querySelector('#bot-chat-fab');
+  const panel        = document.querySelector('#bot-chat-panel');
+  const closeBtn     = document.querySelector('#bot-chat-close');
+  const sendBtn      = document.querySelector('#bot-chat-send');
+  const statusBtn    = document.querySelector('#bot-chat-status-btn');
+  const input        = document.querySelector('#bot-chat-input');
   const snoozesToggle = document.querySelector('#bot-chat-snoozes-btn');
   const snoozesPanel  = document.querySelector('#bot-chat-snoozes');
 
@@ -6581,6 +6582,35 @@ function initBotChat() {
   snoozesToggle.addEventListener('click', () => {
     snoozesPanel.classList.toggle('hidden');
     if (!snoozesPanel.classList.contains('hidden')) loadSnoozes();
+  });
+
+  // Check system status on demand
+  statusBtn.addEventListener('click', async () => {
+    statusBtn.disabled = true;
+    const container = document.querySelector('#bot-chat-messages');
+    container.querySelector('.bot-chat-empty')?.remove();
+    const thinking = document.createElement('div');
+    thinking.className = 'bot-chat-bubble bot-chat-bubble--bot bot-chat-thinking';
+    thinking.innerHTML = '<div class="bot-chat-bubble-body">...</div>';
+    container.appendChild(thinking);
+    container.scrollTop = container.scrollHeight;
+    try {
+      const data = await postJson('/bot/status', {});
+      thinking.remove();
+      const botBubble = document.createElement('div');
+      botBubble.className = 'bot-chat-bubble bot-chat-bubble--bot';
+      botBubble.innerHTML = `<div class="bot-chat-bubble-body">${(data.reply || '').replace(/\n/g, '<br>')}</div><div class="bot-chat-bubble-time">ahora</div>`;
+      container.appendChild(botBubble);
+      container.scrollTop = container.scrollHeight;
+    } catch (err) {
+      thinking.remove();
+      const errBubble = document.createElement('div');
+      errBubble.className = 'bot-chat-bubble bot-chat-bubble--bot';
+      errBubble.innerHTML = `<div class="bot-chat-bubble-body" style="color:var(--fail-fg)">Error: ${err.message}</div>`;
+      container.appendChild(errBubble);
+    } finally {
+      statusBtn.disabled = false;
+    }
   });
 
   // Send message

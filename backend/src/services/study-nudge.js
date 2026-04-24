@@ -138,6 +138,68 @@ export async function checkAndNudge(userId) {
   }
 }
 
+// Called from POST /bot/status — returns an on-demand study status summary
+export async function generateStatusReport(userId) {
+  const [activityRes, examsRes, snoozeRes] = await Promise.all([
+    dbPool.query(
+      `SELECT subject, MAX(logged_date) AS last_studied
+       FROM activity_log
+       WHERE user_id = $1
+         AND activity_type = 'study'
+         AND logged_date >= CURRENT_DATE - INTERVAL '60 days'
+       GROUP BY subject`,
+      [userId]
+    ),
+    dbPool.query(
+      `SELECT subject, MIN(exam_date) AS next_exam
+       FROM subject_exam_dates
+       WHERE user_id = $1 AND exam_date >= CURRENT_DATE
+       GROUP BY subject`,
+      [userId]
+    ),
+    dbPool.query(
+      `SELECT subject FROM subject_snooze
+       WHERE user_id = $1 AND snoozed_until >= CURRENT_DATE`,
+      [userId]
+    ),
+  ]);
+
+  const snoozedSubjects = new Set(snoozeRes.rows.map((r) => r.subject));
+  const examBySubject   = Object.fromEntries(examsRes.rows.map((r) => [r.subject, r.next_exam]));
+  const today           = new Date();
+
+  const subjectSummaries = activityRes.rows.map((row) => {
+    const daysSince     = Math.floor((today - new Date(row.last_studied)) / 86400000);
+    const examDate      = examBySubject[row.subject] ? new Date(examBySubject[row.subject]) : null;
+    const daysUntilExam = examDate ? Math.ceil((examDate - today) / 86400000) : null;
+    const snoozed       = snoozedSubjects.has(row.subject);
+    return { subject: row.subject, daysSince, daysUntilExam, snoozed };
+  });
+
+  const contextLines = subjectSummaries.map((s) => {
+    const examPart  = s.daysUntilExam != null ? `, examen en ${s.daysUntilExam} días` : '';
+    const snoozeTag = s.snoozed ? ' [silenciada]' : '';
+    return `- ${s.subject}: sin estudiar hace ${s.daysSince} días${examPart}${snoozeTag}`;
+  }).join('\n') || '- Sin actividad registrada en los últimos 60 días.';
+
+  const resp = await getAi().messages.create({
+    model: NUDGE_MODEL,
+    max_tokens: 300,
+    system: `Sos un asistente de estudio amigable. El usuario quiere saber su estado actual.
+Generá un resumen conciso (máximo 4 oraciones). Destacá materias urgentes y las que van bien.
+Si hay materias silenciadas, mencionálo brevemente. Sin formato markdown, solo texto plano.
+Hoy es ${today.toISOString().slice(0, 10)}.`,
+    messages: [{
+      role: 'user',
+      content: `Estado de estudio del usuario:\n${contextLines}\n\nGenerá el resumen de estado.`
+    }]
+  });
+
+  const statusText = resp.content[0]?.text?.trim() || 'No tengo datos suficientes para generar un resumen todavía.';
+  await saveOutbound(userId, null, statusText);
+  return statusText;
+}
+
 // Called from POST /bot/reply — returns the bot's response text
 export async function handleUserReply(userId, replyText) {
   await saveInbound(userId, replyText);
