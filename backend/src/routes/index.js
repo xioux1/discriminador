@@ -25,10 +25,12 @@ import ttsRouter from './tts.js';
 import botChatRouter from './bot-chat.js';
 import settingsRouter from './settings.js';
 import conceptsRouter from './concepts.routes.js';
+import clusterConceptsRouter from './cluster-concepts.routes.js';
 
 const router = Router();
 
 router.use(conceptsRouter);
+router.use(clusterConceptsRouter);
 router.use(cardsRouter);
 router.use(promptToolsRouter);
 router.use(studyDoubtRouter);
