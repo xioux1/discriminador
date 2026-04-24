@@ -1000,8 +1000,8 @@ schedulerRouter.post('/scheduler/cards/:id/variant', async (req, res) => {
     });
 
     const insertRes = await dbPool.query(
-      `INSERT INTO card_variants (card_id, prompt_text, expected_answer_text, user_id)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
+      `INSERT INTO card_variants (card_id, prompt_text, expected_answer_text, user_id, variant_type)
+       VALUES ($1, $2, $3, $4, 'regular') RETURNING *`,
       [cardId, variant.prompt_text, variant.expected_answer_text, userId]
     );
 
