@@ -336,7 +336,8 @@ evaluateRouter.post('/evaluate', llmRateLimit, async (req, res) => {
         for (const concept of result.missing_concepts) {
           await client.query(
             `INSERT INTO concept_gaps (evaluation_item_id, concept, subject, prompt_text)
-             VALUES ($1, $2, $3, $4)`,
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (evaluation_item_id, concept) DO NOTHING`,
             [
               evaluationItem.id,
               concept,

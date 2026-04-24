@@ -15,13 +15,13 @@ function llmGuard(res) {
 }
 
 socraticRouter.post('/socratic/questions', llmRateLimit, async (req, res) => {
-  if (llmGuard(res)) return;
-
   const { prompt_text, user_answer_text, expected_answer_text, subject, dimensions, justification, mode } = req.body;
 
   if (!prompt_text || !user_answer_text || !expected_answer_text || !dimensions) {
     return res.status(422).json({ error: 'validation_error', message: 'prompt_text, user_answer_text, expected_answer_text and dimensions are required.' });
   }
+
+  if (llmGuard(res)) return;
 
   try {
     const result = await generateSocraticQuestions({
@@ -41,8 +41,6 @@ socraticRouter.post('/socratic/questions', llmRateLimit, async (req, res) => {
 });
 
 socraticRouter.post('/socratic/evaluate', llmRateLimit, async (req, res) => {
-  if (llmGuard(res)) return;
-
   const { prompt_text, user_answer_text, expected_answer_text, subject, socratic_qa, evaluation_id } = req.body;
 
   if (!prompt_text || !user_answer_text || !expected_answer_text) {
@@ -57,6 +55,8 @@ socraticRouter.post('/socratic/evaluate', llmRateLimit, async (req, res) => {
   if (invalidQA) {
     return res.status(422).json({ error: 'validation_error', message: 'Each socratic_qa item must have question and answer (min 3 chars).' });
   }
+
+  if (llmGuard(res)) return;
 
   try {
     const result = await judgeWithSocraticContext(dbPool, {
@@ -75,8 +75,6 @@ socraticRouter.post('/socratic/evaluate', llmRateLimit, async (req, res) => {
 });
 
 socraticRouter.post('/socratic/feedback', llmRateLimit, async (req, res) => {
-  if (llmGuard(res)) return;
-
   const { prompt_text, user_answer_text, expected_answer_text, subject, socratic_qa } = req.body;
 
   if (!prompt_text || !user_answer_text || !expected_answer_text) {
@@ -91,6 +89,8 @@ socraticRouter.post('/socratic/feedback', llmRateLimit, async (req, res) => {
   if (invalidQA) {
     return res.status(422).json({ error: 'validation_error', message: 'Each socratic_qa item must have question and answer (min 3 chars).' });
   }
+
+  if (llmGuard(res)) return;
 
   try {
     const result = await generateSocraticFeedback({
