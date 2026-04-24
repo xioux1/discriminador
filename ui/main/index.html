@@ -687,6 +687,7 @@
             <button type="button" id="browser-suspend-btn" class="btn-secondary">Suspender</button>
             <button type="button" id="browser-reactivate-btn" class="btn-secondary">Reactivar</button>
             <button type="button" id="browser-edit-btn" class="btn-secondary">Editar</button>
+            <button type="button" id="browser-detect-redundant-btn" class="btn-secondary">Detectar redundantes</button>
           </div>
           <p id="browser-feedback" class="feedback"></p>
         </div>
@@ -759,6 +760,19 @@
             <div class="cdp-section-title">Árbol de variantes</div>
             <div id="cdp-variants-tree"></div>
           </div>
+        </div>
+      </div>
+
+      <!-- ═══ Redundant cards detection modal ════════════════════════════════ -->
+      <div id="redundant-modal-overlay" class="card-detail-overlay hidden" role="dialog" aria-modal="true" aria-label="Tarjetas redundantes">
+        <div class="card-detail-popup redundant-modal-popup">
+          <div class="card-detail-header">
+            <span style="font-weight:700;font-size:1rem">Tarjetas redundantes detectadas</span>
+            <button type="button" id="redundant-modal-close" class="btn-ghost" aria-label="Cerrar">✕</button>
+          </div>
+          <p id="redundant-modal-intro" style="font-size:0.84rem;color:var(--text-muted);margin-bottom:14px"></p>
+          <div id="redundant-clusters-list"></div>
+          <p id="redundant-modal-feedback" class="feedback" style="margin-top:10px"></p>
         </div>
       </div>
 
