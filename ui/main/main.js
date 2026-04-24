@@ -143,8 +143,9 @@ getJson('/settings').then((s) => { Object.assign(userSettings, s); }).catch((err
     planner:   document.querySelector('#tab-planner'),
     progress:  document.querySelector('#tab-progress'),
     settings:  document.querySelector('#tab-settings'),
+    documents: document.querySelector('#tab-documents'),
   };
-  let loaded = { dashboard: false, study: false, explore: false, browser: false, planner: false, progress: false, settings: false };
+  let loaded = { dashboard: false, study: false, explore: false, browser: false, planner: false, progress: false, settings: false, documents: false };
 
   function showTab(tab) {
     Object.values(tabSections).forEach((s) => s.classList.add('hidden'));
@@ -189,6 +190,8 @@ getJson('/settings').then((s) => { Object.assign(userSettings, s); }).catch((err
         loaded.progress = true; loadProgress();
       } else if (tab === 'settings' && !loaded.settings) {
         loaded.settings = true; initSettingsTab();
+      } else if (tab === 'documents' && !loaded.documents) {
+        loaded.documents = true; initDocumentsTab();
       }
 
       // Dashboard "Estudiar" subject button → skip briefing, go straight to the
@@ -6903,4 +6906,282 @@ function initSettingsTab() {
     if (Number.isFinite(n) && n >= 10) { setDailyBudget(n); flash(); }
     else dailyBudgetEl.value = getDailyBudget();
   });
+}
+
+// ─── Documentos tab ────────────────────────────────────────────────────────────
+
+function formatDocDate(isoStr) {
+  const d = new Date(isoStr);
+  const diffMs = Date.now() - d.getTime();
+  const diffMin = Math.round(diffMs / 60000);
+  if (diffMin < 1)  return 'ahora';
+  if (diffMin < 60) return `hace ${diffMin} min`;
+  const diffH = Math.round(diffMin / 60);
+  if (diffH < 24)   return `hace ${diffH} h`;
+  const diffD = Math.round(diffH / 24);
+  if (diffD === 1)  return 'ayer';
+  if (diffD < 30)   return `hace ${diffD} días`;
+  return d.toLocaleDateString('es-AR');
+}
+
+function initDocumentsTab() {
+  const createBtn = document.getElementById('doc-create-btn');
+  const nameInput = document.getElementById('doc-name-input');
+  const textInput = document.getElementById('doc-text-input');
+  const feedback  = document.getElementById('doc-create-feedback');
+  const listEl    = document.getElementById('docs-list');
+  const loadingEl = document.getElementById('docs-loading');
+  const emptyEl   = document.getElementById('docs-empty');
+
+  // documentId → setInterval id for background polling
+  const polling = new Map();
+
+  // ── Load list ────────────────────────────────────────────────────────────────
+  async function loadDocuments() {
+    loadingEl.classList.remove('hidden');
+    listEl.innerHTML = '';
+    emptyEl.classList.add('hidden');
+
+    try {
+      const data = await getJson('/api/documents');
+      loadingEl.classList.add('hidden');
+
+      if (!data || !data.documents || data.documents.length === 0) {
+        emptyEl.classList.remove('hidden');
+        return;
+      }
+      data.documents.forEach(doc => listEl.appendChild(renderDocItem(doc)));
+    } catch (err) {
+      loadingEl.classList.add('hidden');
+      loadingEl.textContent = `Error al cargar: ${err.message}`;
+    }
+  }
+
+  // ── Render a single document row ─────────────────────────────────────────────
+  function renderDocItem(doc) {
+    const item = document.createElement('div');
+    item.className = 'docs-document-item';
+    item.dataset.docId = doc.id;
+
+    const name      = doc.original_filename || 'Sin nombre';
+    const words     = doc.word_count != null ? `${Number(doc.word_count).toLocaleString('es-AR')} palabras` : '';
+    const date      = formatDocDate(doc.created_at);
+    const metaParts = [words, date].filter(Boolean);
+
+    item.innerHTML = `
+      <div class="docs-document-header">
+        <span class="docs-document-name" title="${escHtml(name)}">${escHtml(name)}</span>
+        <span class="docs-document-meta">${escHtml(metaParts.join(' · '))}</span>
+      </div>
+      <div class="docs-document-actions">
+        <button type="button" class="btn-secondary docs-extract-btn">Extraer conceptos</button>
+        <button type="button" class="docs-concepts-toggle hidden">
+          <span class="docs-toggle-count">0 conceptos</span>
+          <span class="docs-toggle-arrow">▼</span>
+        </button>
+        <button type="button" class="btn-ghost docs-delete-btn" style="font-size:var(--fs-sm)">Eliminar</button>
+        <span class="docs-extract-status"></span>
+      </div>
+      <div class="docs-concepts-panel"></div>
+    `;
+
+    if (doc.concept_count > 0) updateConceptBadge(item, doc.concept_count);
+
+    wire(item, doc.id);
+    return item;
+  }
+
+  // ── Wire button events ────────────────────────────────────────────────────────
+  function wire(item, docId) {
+    item.querySelector('.docs-extract-btn').addEventListener('click', () => extractConcepts(docId, item));
+    item.querySelector('.docs-concepts-toggle').addEventListener('click', () => togglePanel(docId, item));
+    item.querySelector('.docs-delete-btn').addEventListener('click', () => deleteDoc(docId, item));
+  }
+
+  // ── Update the concepts count badge ──────────────────────────────────────────
+  function updateConceptBadge(item, count) {
+    const toggle = item.querySelector('.docs-concepts-toggle');
+    const label  = item.querySelector('.docs-toggle-count');
+    if (count > 0) {
+      label.textContent = `${count} concepto${count !== 1 ? 's' : ''}`;
+      toggle.classList.remove('hidden');
+    } else {
+      toggle.classList.add('hidden');
+    }
+  }
+
+  // ── Toggle inline concepts panel ─────────────────────────────────────────────
+  async function togglePanel(docId, item) {
+    const panel  = item.querySelector('.docs-concepts-panel');
+    const toggle = item.querySelector('.docs-concepts-toggle');
+    const isOpen = panel.classList.contains('open');
+
+    panel.classList.toggle('open', !isOpen);
+    toggle.classList.toggle('open', !isOpen);
+
+    if (isOpen) return; // closing — no fetch needed
+
+    panel.innerHTML = '<span style="color:var(--text-muted);font-size:var(--fs-sm)">Cargando...</span>';
+
+    try {
+      const data = await getJson(`/api/documents/${docId}/concepts`);
+      renderConceptsInPanel(panel, data);
+      updateConceptBadge(item, data.concept_count);
+    } catch (err) {
+      panel.innerHTML = `<span style="color:var(--fail-fg);font-size:var(--fs-sm)">Error: ${escHtml(err.message)}</span>`;
+    }
+  }
+
+  function renderConceptsInPanel(panel, data) {
+    if (!data.concepts || data.concepts.length === 0) {
+      panel.innerHTML = '<p style="color:var(--text-muted);font-size:var(--fs-sm);margin:0">Sin conceptos extraídos aún.</p>';
+      return;
+    }
+    panel.innerHTML = data.concepts.map(c => `
+      <div class="docs-concept-item">
+        <div class="docs-concept-label">
+          ${escHtml(c.label)}
+          ${c.source_chunk_index != null
+            ? `<span class="docs-concept-chunk">fragmento ${c.source_chunk_index + 1}</span>`
+            : ''}
+        </div>
+        <div class="docs-concept-definition">${escHtml(c.definition)}</div>
+        ${c.evidence ? `<div class="docs-concept-evidence">"${escHtml(c.evidence)}"</div>` : ''}
+      </div>
+    `).join('');
+  }
+
+  // ── Extract concepts ──────────────────────────────────────────────────────────
+  async function extractConcepts(docId, item) {
+    const btn      = item.querySelector('.docs-extract-btn');
+    const statusEl = item.querySelector('.docs-extract-status');
+
+    btn.disabled    = true;
+    btn.textContent = 'Extrayendo...';
+    statusEl.textContent = '';
+    statusEl.style.color = '';
+
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
+
+      const res = await fetch(`/api/documents/${docId}/extract-concepts`, { method: 'POST', headers });
+      Auth.handleRefreshToken(res);
+
+      if (res.status === 202) {
+        statusEl.textContent = 'Procesando en segundo plano...';
+        btn.textContent = 'Extraer conceptos';
+        btn.disabled    = false;
+        startPolling(docId, item);
+        return;
+      }
+
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload.message || `HTTP ${res.status}`);
+
+      statusEl.textContent = `${payload.concept_count} concepto${payload.concept_count !== 1 ? 's' : ''} extraídos.`;
+      updateConceptBadge(item, payload.concept_count);
+
+      const panel = item.querySelector('.docs-concepts-panel');
+      if (panel.classList.contains('open')) renderConceptsInPanel(panel, payload);
+    } catch (err) {
+      statusEl.textContent = err.message;
+      statusEl.style.color = 'var(--fail-fg)';
+    } finally {
+      btn.disabled    = false;
+      btn.textContent = 'Extraer conceptos';
+    }
+  }
+
+  // ── Background polling after async extraction ─────────────────────────────────
+  function startPolling(docId, item) {
+    if (polling.has(docId)) clearInterval(polling.get(docId));
+
+    const statusEl = item.querySelector('.docs-extract-status');
+    let attempts = 0;
+
+    const id = setInterval(async () => {
+      attempts++;
+      if (attempts > 60) { // 3 min max
+        clearInterval(id);
+        polling.delete(docId);
+        statusEl.textContent = 'La extracción tardó demasiado. Intentá de nuevo.';
+        return;
+      }
+      try {
+        const data = await getJson(`/api/documents/${docId}/concepts`);
+        if (data.concept_count > 0) {
+          clearInterval(id);
+          polling.delete(docId);
+          statusEl.textContent = `${data.concept_count} concepto${data.concept_count !== 1 ? 's' : ''} extraídos.`;
+          updateConceptBadge(item, data.concept_count);
+
+          const panel = item.querySelector('.docs-concepts-panel');
+          if (panel.classList.contains('open')) renderConceptsInPanel(panel, data);
+        }
+      } catch { /* ignore transient polling errors */ }
+    }, 3000);
+
+    polling.set(docId, id);
+  }
+
+  // ── Delete document ───────────────────────────────────────────────────────────
+  async function deleteDoc(docId, item) {
+    if (!confirm('¿Eliminar este documento y todos sus conceptos?')) return;
+
+    try {
+      const headers = {};
+      if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
+      const res = await fetch(`/api/documents/${docId}`, { method: 'DELETE', headers });
+      Auth.handleRefreshToken(res);
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        throw new Error(e.message || `HTTP ${res.status}`);
+      }
+
+      if (polling.has(docId)) { clearInterval(polling.get(docId)); polling.delete(docId); }
+      item.remove();
+      if (!listEl.querySelector('.docs-document-item')) emptyEl.classList.remove('hidden');
+    } catch (err) {
+      alert(`Error al eliminar: ${err.message}`);
+    }
+  }
+
+  // ── Create document ───────────────────────────────────────────────────────────
+  createBtn.addEventListener('click', async () => {
+    const text = textInput.value.trim();
+    if (!text) {
+      feedback.textContent = 'El texto no puede estar vacío.';
+      feedback.className = 'feedback error';
+      return;
+    }
+
+    createBtn.disabled = true;
+    feedback.textContent = '';
+    feedback.className = 'feedback';
+
+    try {
+      const data = await postJson('/api/documents', {
+        text,
+        original_filename: nameInput.value.trim() || null,
+      });
+
+      textInput.value = '';
+      nameInput.value = '';
+      feedback.textContent = 'Documento creado.';
+      feedback.className = 'feedback success';
+
+      emptyEl.classList.add('hidden');
+      listEl.insertBefore(renderDocItem(data.document), listEl.firstChild);
+
+      setTimeout(() => { if (feedback.textContent === 'Documento creado.') feedback.textContent = ''; }, 3000);
+    } catch (err) {
+      feedback.textContent = err.message;
+      feedback.className = 'feedback error';
+    } finally {
+      createBtn.disabled = false;
+    }
+  });
+
+  loadDocuments();
 }
