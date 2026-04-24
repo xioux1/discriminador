@@ -7102,7 +7102,7 @@ function initDocumentsTab() {
 
     const id = setInterval(async () => {
       attempts++;
-      if (attempts > 60) { // 3 min max
+      if (attempts > 200) { // 10 min max
         clearInterval(id);
         polling.delete(docId);
         statusEl.textContent = 'La extracción tardó demasiado. Intentá de nuevo.';

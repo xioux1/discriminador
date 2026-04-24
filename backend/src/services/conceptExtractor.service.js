@@ -7,7 +7,10 @@ import { logger } from '../utils/logger.js';
 
 let _anthropic = null;
 function getAnthropicClient() {
-  if (!_anthropic) _anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  if (!_anthropic) _anthropic = new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY,
+    timeout: Number(process.env.CONCEPT_LLM_TIMEOUT_MS || 30_000),
+  });
   return _anthropic;
 }
 
@@ -341,21 +344,27 @@ export async function extractConceptsForDocument(documentId) {
   const extractedConcepts = [];
   let failedChunks = 0;
 
-  for (const chunk of chunks) {
-    try {
-      const rawResponse = await callAnthropicConceptExtraction(chunk.text);
-      const parsed = safeJsonParseArray(rawResponse);
-
-      for (const rawConcept of parsed) {
-        const valid = validateConcept(rawConcept, chunk.text, chunk.index);
-        if (valid) extractedConcepts.push(valid);
+  const CHUNK_CONCURRENCY = Number(process.env.CONCEPT_CHUNK_CONCURRENCY || 5);
+  for (let i = 0; i < chunks.length; i += CHUNK_CONCURRENCY) {
+    const batch = chunks.slice(i, i + CHUNK_CONCURRENCY);
+    const results = await Promise.allSettled(
+      batch.map(chunk => callAnthropicConceptExtraction(chunk.text))
+    );
+    results.forEach((result, j) => {
+      const chunk = batch[j];
+      if (result.status === 'fulfilled') {
+        const parsed = safeJsonParseArray(result.value);
+        for (const rawConcept of parsed) {
+          const valid = validateConcept(rawConcept, chunk.text, chunk.index);
+          if (valid) extractedConcepts.push(valid);
+        }
+      } else {
+        failedChunks++;
+        logger.warn('[conceptExtractor] Chunk failed', {
+          documentId, chunkIndex: chunk.index, error: result.reason?.message,
+        });
       }
-    } catch (err) {
-      failedChunks++;
-      logger.warn('[conceptExtractor] Chunk failed', {
-        documentId, chunkIndex: chunk.index, error: err.message,
-      });
-    }
+    });
   }
 
   if (failedChunks > 0) {
@@ -366,16 +375,23 @@ export async function extractConceptsForDocument(documentId) {
     documentId, count: extractedConcepts.length,
   });
 
+  const EMBED_CONCURRENCY = Number(process.env.CONCEPT_EMBED_CONCURRENCY || 10);
   const conceptsWithEmbeddings = [];
-  for (const concept of extractedConcepts) {
-    try {
-      const embedding = await createEmbedding(`${concept.label}. ${concept.definition}`);
-      conceptsWithEmbeddings.push({ ...concept, embedding });
-    } catch (err) {
-      logger.warn('[conceptExtractor] Embedding failed, skipping concept', {
-        documentId, label: concept.label, error: err.message,
-      });
-    }
+  for (let i = 0; i < extractedConcepts.length; i += EMBED_CONCURRENCY) {
+    const batch = extractedConcepts.slice(i, i + EMBED_CONCURRENCY);
+    const results = await Promise.allSettled(
+      batch.map(c => createEmbedding(`${c.label}. ${c.definition}`))
+    );
+    results.forEach((result, j) => {
+      const concept = batch[j];
+      if (result.status === 'fulfilled') {
+        conceptsWithEmbeddings.push({ ...concept, embedding: result.value });
+      } else {
+        logger.warn('[conceptExtractor] Embedding failed, skipping concept', {
+          documentId, label: concept.label, error: result.reason?.message,
+        });
+      }
+    });
   }
 
   const threshold = Number(process.env.CONCEPT_DEDUP_THRESHOLD || 0.86);
