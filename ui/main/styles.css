@@ -3892,4 +3892,18 @@ textarea.chinese-input {
 [data-theme="dark"] .bot-chat-snoozes  { background: rgba(12, 18, 30, 0.95); border-top-color: rgba(38, 52, 82, 0.65); }
 [data-theme="dark"] .bot-chat-bubble--bot .bot-chat-bubble-body { background: rgba(28, 40, 65, 0.85); }
 [data-theme="dark"] .bot-chat-input    { background: rgba(18, 26, 44, 0.90); border-color: rgba(38, 52, 82, 0.75); color: var(--text); }
+
+/* ── Settings tab ──────────────────────────────────────────────────────── */
+
+.settings-toggle-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.settings-hint {
+  margin: 0;
+  font-size: 0.80rem;
+  color: var(--text-muted);
+  padding-left: 24px;
+}
 [data-theme="dark"] .bot-chat-input:focus { border-color: var(--primary); }

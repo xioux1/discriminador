@@ -32,6 +32,13 @@ const DECISION_ENDPOINT = '/decision';
 let pendingStudySubject = null;
 const advisorCoverageCache = new Map();
 
+// ─── User settings (loaded once on startup) ───────────────────────────────────
+let userSettings = {
+  session_planning_enabled: true,
+  gratitude_enabled: true,
+  time_restriction_enabled: true,
+};
+
 // ─── Auth gate ────────────────────────────────────────────────────────────────
 
 if (!Auth.isLoggedIn()) {
@@ -84,6 +91,9 @@ if (!Auth.isLoggedIn()) {
   throw new Error('__auth_gate__'); // halts script execution cleanly
 }
 
+// Load user settings early so feature flags are ready before any tab is used
+getJson('/settings').then((s) => { Object.assign(userSettings, s); }).catch(() => {});
+
 // --- Tab navigation ---
 
 (function initTabs() {
@@ -96,8 +106,9 @@ if (!Auth.isLoggedIn()) {
     browser:   document.querySelector('#tab-browser'),
     planner:   document.querySelector('#tab-planner'),
     progress:  document.querySelector('#tab-progress'),
+    settings:  document.querySelector('#tab-settings'),
   };
-  let loaded = { dashboard: false, study: false, explore: false, browser: false, planner: false, progress: false };
+  let loaded = { dashboard: false, study: false, explore: false, browser: false, planner: false, progress: false, settings: false };
 
   function showTab(tab) {
     Object.values(tabSections).forEach((s) => s.classList.add('hidden'));
@@ -140,6 +151,8 @@ if (!Auth.isLoggedIn()) {
         // already loaded — just show
       } else if (tab === 'progress' && !loaded.progress) {
         loaded.progress = true; loadProgress();
+      } else if (tab === 'settings' && !loaded.settings) {
+        loaded.settings = true; initSettingsTab();
       }
 
       // Dashboard "Estudiar" subject button → skip briefing, go straight to the
@@ -2824,9 +2837,14 @@ function applyStudySubjectFilter(subject) {
 }
 
 function initStudyTab() {
-  // Show briefing first, hide overview
-  document.querySelector('#study-briefing').classList.remove('hidden');
-  document.querySelector('#study-overview').classList.add('hidden');
+  if (userSettings.session_planning_enabled) {
+    document.querySelector('#study-briefing').classList.remove('hidden');
+    document.querySelector('#study-overview').classList.add('hidden');
+  } else {
+    document.querySelector('#study-briefing').classList.add('hidden');
+    document.querySelector('#study-overview').classList.remove('hidden');
+    loadStudyOverview();
+  }
 
   ensureAddCardFormHandlers();
   document.querySelector('#study-overview-back-btn').addEventListener('click', () => {
@@ -3260,7 +3278,7 @@ function _doStartPlannedSession() {
 }
 
 async function startPlannedSession() {
-  if (!isAllowedStartTime()) { showTimeRestrictionModal(); return; }
+  if (userSettings.time_restriction_enabled && !isAllowedStartTime()) { showTimeRestrictionModal(); return; }
   const status = await checkPlannerDayStatus();
   const gateEl = document.querySelector('#briefing-planner-gate');
   if (!status.is_full) {
@@ -3536,6 +3554,7 @@ function showTimeRestrictionModal() {
 }
 
 function showGratitudeModal(onConfirm) {
+  if (!userSettings.gratitude_enabled) { onConfirm(); return; }
   const modal      = document.querySelector('#gratitude-modal');
   const input      = document.querySelector('#gratitude-input');
   const submitBtn  = document.querySelector('#gratitude-submit-btn');
@@ -3670,7 +3689,7 @@ function renderPlannerGate(gateEl, filled, total) {
 }
 
 async function startStudySession() {
-  if (!isAllowedStartTime()) { showTimeRestrictionModal(); return; }
+  if (userSettings.time_restriction_enabled && !isAllowedStartTime()) { showTimeRestrictionModal(); return; }
   const status = await checkPlannerDayStatus();
   const gateEl = document.querySelector('#overview-planner-gate');
   if (!status.is_full) {
@@ -6534,3 +6553,43 @@ function initBotChat() {
 }
 
 initBotChat();
+
+// ─── Settings tab ─────────────────────────────────────────────────────────────
+
+function initSettingsTab() {
+  const planningEl      = document.querySelector('#setting-session-planning');
+  const gratitudeEl     = document.querySelector('#setting-gratitude');
+  const timeRestrictEl  = document.querySelector('#setting-time-restriction');
+  const statusEl        = document.querySelector('#settings-save-status');
+
+  planningEl.checked      = userSettings.session_planning_enabled;
+  gratitudeEl.checked     = userSettings.gratitude_enabled;
+  timeRestrictEl.checked  = userSettings.time_restriction_enabled;
+
+  let saveTimer = null;
+
+  async function saveSettings() {
+    const payload = {
+      session_planning_enabled: planningEl.checked,
+      gratitude_enabled:        gratitudeEl.checked,
+      time_restriction_enabled: timeRestrictEl.checked,
+    };
+    try {
+      const saved = await postJson('/settings', payload, 'PUT');
+      Object.assign(userSettings, saved);
+      statusEl.textContent = 'Guardado.';
+      setTimeout(() => { statusEl.textContent = ''; }, 2000);
+    } catch (err) {
+      statusEl.textContent = `Error al guardar: ${err.message}`;
+    }
+  }
+
+  function scheduleSave() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveSettings, 400);
+  }
+
+  planningEl.addEventListener('change', scheduleSave);
+  gratitudeEl.addEventListener('change', scheduleSave);
+  timeRestrictEl.addEventListener('change', scheduleSave);
+}

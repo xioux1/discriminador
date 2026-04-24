@@ -48,6 +48,7 @@
       <button class="tab-btn" data-tab="browser">Tarjetas</button>
       <button class="tab-btn" data-tab="planner">Planificar</button>
       <button class="tab-btn" data-tab="progress">Progreso</button>
+      <button class="tab-btn" data-tab="settings">Configuración</button>
       <button id="theme-toggle" class="btn-ghost theme-toggle" title="Cambiar a modo oscuro" aria-label="Cambiar tema">☾</button>
       <button id="logout-btn" class="btn-ghost logout-btn" title="Cerrar sesión">Salir</button>
     </nav>
@@ -880,6 +881,46 @@
               <button type="button" id="advisor-chat-send" class="btn-primary" style="white-space:nowrap">Enviar</button>
             </div>
           </div>
+        </div>
+      </section>
+
+      <!-- ═══ TAB: CONFIGURACIÓN ═══════════════════════════════════════════ -->
+      <section id="tab-settings" class="hidden">
+        <div class="card" style="max-width:560px">
+          <h2 style="margin:0 0 4px">Configuración</h2>
+          <p style="margin:0 0 24px;color:var(--text-muted);font-size:0.88rem">Personalizá el comportamiento de tus sesiones de estudio.</p>
+
+          <h4 class="curriculum-section-title">Inicio de sesión</h4>
+
+          <div style="display:flex;flex-direction:column;gap:18px;margin-top:12px">
+
+            <div class="settings-toggle-block">
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-session-planning">
+                <span class="toggle-label">Planificar antes de iniciar sesión</span>
+              </label>
+              <p class="settings-hint">Requiere completar el paso de planificación (tiempo, energía y plan de IA) antes de poder empezar a estudiar.</p>
+            </div>
+
+            <div class="settings-toggle-block">
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-gratitude">
+                <span class="toggle-label">Escribir una gratitud antes de estudiar</span>
+              </label>
+              <p class="settings-hint">Muestra el modal de gratitud antes de cada sesión para hacer una pausa reflexiva.</p>
+            </div>
+
+            <div class="settings-toggle-block">
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-time-restriction">
+                <span class="toggle-label">Solo iniciar en punto o y media (:00 / :30)</span>
+              </label>
+              <p class="settings-hint">Restringe el inicio de sesiones a los minutos :00 o :30 de cada hora para crear hábitos consistentes.</p>
+            </div>
+
+          </div>
+
+          <p id="settings-save-status" style="font-size:0.84rem;color:var(--text-muted);margin-top:20px;min-height:1.2em"></p>
         </div>
       </section>
 
