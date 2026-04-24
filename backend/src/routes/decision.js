@@ -455,6 +455,10 @@ async function syncSchedulerCard(pool, {
 
     if (variantMatch.rows.length) {
       card = variantMatch.rows[0];
+      if (subject && !card.subject) {
+        await pool.query('UPDATE cards SET subject = $1, updated_at = now() WHERE id = $2', [subject, card.id]);
+        card.subject = subject;
+      }
     } else {
       const inserted = await pool.query(
         `INSERT INTO cards (subject, prompt_text, expected_answer_text, user_id)
@@ -534,7 +538,7 @@ async function syncSchedulerCard(pool, {
         `INSERT INTO micro_cards (parent_card_id, concept, question, expected_answer, user_id, subject)
          VALUES ($1, $2, $3, $4, $5, $6)
          ON CONFLICT (parent_card_id, concept) DO NOTHING`,
-        [card.id, concept, micro.question, micro.expected_answer, user_id, card.subject || null]
+        [card.id, concept, micro.question, micro.expected_answer, user_id, card.subject || subject || null]
       );
       if (result.rowCount > 0) {
         console.info(`[scheduler sync] micro-card created for concept "${concept}" (card ${card.id})`);
