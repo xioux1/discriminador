@@ -17,7 +17,7 @@ function getCheckClient() {
 const evaluateRouter = Router();
 
 const REQUIRED_FIELDS = [
-  { key: 'prompt_text',          minLength: 10, maxLength: 2000  },
+  { key: 'prompt_text',          minLength: 1,  maxLength: 2000  },
   { key: 'user_answer_text',     minLength: 1,  maxLength: 10000 },
   { key: 'expected_answer_text', minLength: 1,  maxLength: 5000  },
 ];
