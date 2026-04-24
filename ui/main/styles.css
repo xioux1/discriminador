@@ -4153,7 +4153,12 @@ textarea.chinese-input {
   padding: 12px 16px;
   background: var(--bg-subtle);
 }
-.docs-concepts-panel.open { display: block; }
+.docs-concepts-panel.open {
+  display: block;
+  max-height: 420px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
 
 .docs-concept-item {
   padding: 8px 0;
@@ -4162,6 +4167,10 @@ textarea.chinese-input {
 .docs-concept-item:last-child { border-bottom: none; }
 
 .docs-concept-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
   font-weight: 600;
   font-size: var(--fs-sm);
   color: var(--text);
@@ -4170,20 +4179,19 @@ textarea.chinese-input {
 .docs-concept-chunk {
   font-size: 0.75rem;
   color: var(--text-light);
-  float: right;
+  flex-shrink: 0;
 }
 .docs-concept-definition {
   font-size: var(--fs-sm);
   color: var(--text-muted);
   margin-bottom: 4px;
+  overflow-wrap: break-word;
 }
 .docs-concept-evidence {
   font-size: 0.78rem;
   color: var(--text-light);
   font-style: italic;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: break-word;
 }
 
 [data-theme="dark"] .docs-document-item { background: var(--surface); }
