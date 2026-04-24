@@ -126,7 +126,9 @@ if (!Auth.isLoggedIn()) {
 }
 
 // Load user settings early so feature flags are ready before any tab is used
-getJson('/settings').then((s) => { Object.assign(userSettings, s); }).catch(() => {});
+getJson('/settings').then((s) => { Object.assign(userSettings, s); }).catch((err) => {
+  console.warn('[settings] Failed to load user settings:', err.message);
+});
 
 // --- Tab navigation ---
 
@@ -5350,7 +5352,11 @@ function appendTodoItem(todo) {
   check.addEventListener('change', async () => {
     const done = check.checked;
     li.classList.toggle('done', done);
-    await postJson(`/planner/todos/${todo.id}`, { done }, 'PATCH').catch(() => {});
+    await postJson(`/planner/todos/${todo.id}`, { done }, 'PATCH').catch((err) => {
+      check.checked = !done;
+      li.classList.toggle('done', !done);
+      console.warn('[planner] Failed to update todo:', err.message);
+    });
   });
 
   const textEl = document.createElement('input');
@@ -5361,8 +5367,13 @@ function appendTodoItem(todo) {
     const text = textEl.value.trim();
     if (!text) { textEl.value = todo.text; return; }
     if (text === todo.text) return;
+    const prev = todo.text;
     todo.text = text;
-    await postJson(`/planner/todos/${todo.id}`, { text }, 'PATCH').catch(() => {});
+    await postJson(`/planner/todos/${todo.id}`, { text }, 'PATCH').catch((err) => {
+      todo.text = prev;
+      textEl.value = prev;
+      console.warn('[planner] Failed to update todo text:', err.message);
+    });
   });
   textEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') textEl.blur(); });
 
@@ -5371,7 +5382,9 @@ function appendTodoItem(todo) {
   del.textContent = '✕';
   del.title = 'Eliminar';
   del.addEventListener('click', async () => {
-    await deleteJson(`/planner/todos/${todo.id}`).catch(() => {});
+    await deleteJson(`/planner/todos/${todo.id}`).catch((err) => {
+      console.warn('[planner] Failed to delete todo:', err.message);
+    });
     li.remove();
   });
 

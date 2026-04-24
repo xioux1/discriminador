@@ -44,6 +44,15 @@ transcribeRouter.post('/transcribe', llmRateLimit, async (req, res) => {
     });
   }
 
+  // Whisper limit is 25 MB; base64 adds ~33% overhead → ~34 MB base64 string max
+  const MAX_AUDIO_BASE64_BYTES = 34 * 1024 * 1024;
+  if (Buffer.byteLength(audio, 'utf8') > MAX_AUDIO_BASE64_BYTES) {
+    return res.status(413).json({
+      error: 'payload_too_large',
+      message: 'El audio supera el límite de 25 MB.'
+    });
+  }
+
   const mimeType = typeof mime_type === 'string' ? mime_type : 'audio/webm';
   const ext = mimeToExt(mimeType);
 
@@ -61,7 +70,8 @@ transcribeRouter.post('/transcribe', llmRateLimit, async (req, res) => {
       transcribeParams.prompt = subject.trim();
     }
 
-    const transcription = await getClient().audio.transcriptions.create(transcribeParams);
+    const timeout = AbortSignal.timeout(30_000);
+    const transcription = await getClient().audio.transcriptions.create(transcribeParams, { signal: timeout });
 
     return res.status(200).json({ text: transcription.text });
   } catch (error) {

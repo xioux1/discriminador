@@ -27,7 +27,7 @@ cron.schedule('0 12 * * *', async () => {
 
 const app = createApp();
 
-app.listen(env.port, env.host, () => {
+const server = app.listen(env.port, env.host, () => {
   console.info('Preprocessing rollout', {
     activeVariant: env.enablePreprocessingV2 ? 'v2' : 'legacy',
     enablePreprocessingV2: env.enablePreprocessingV2,
@@ -35,3 +35,24 @@ app.listen(env.port, env.host, () => {
   });
   console.log(`Backend listening on http://${env.host}:${env.port}`);
 });
+
+async function shutdown(signal) {
+  console.log(`[server] ${signal} received — shutting down gracefully`);
+  server.close(async () => {
+    try {
+      await dbPool.end();
+      console.log('[server] DB pool closed');
+    } catch (err) {
+      console.error('[server] Error closing DB pool', err.message);
+    }
+    process.exit(0);
+  });
+  // Force exit if graceful shutdown takes too long
+  setTimeout(() => {
+    console.error('[server] Graceful shutdown timed out — forcing exit');
+    process.exit(1);
+  }, 10_000).unref();
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT',  () => shutdown('SIGINT'));

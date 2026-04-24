@@ -79,6 +79,9 @@ export function assertRequiredEnv() {
   if (!process.env.JWT_SECRET) {
     throw new Error('JWT_SECRET is required.');
   }
+  if (process.env.JWT_SECRET.length < 32) {
+    throw new Error('JWT_SECRET must be at least 32 characters.');
+  }
   if (isLLMJudgeEnabled() && !process.env.ANTHROPIC_API_KEY) {
     throw new Error('ANTHROPIC_API_KEY is required when ENABLE_LLM_JUDGE=true.');
   }
