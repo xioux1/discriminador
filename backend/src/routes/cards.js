@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { dbPool } from '../db/client.js';
+import Anthropic from '@anthropic-ai/sdk';
 
 const cardsRouter = Router();
 
@@ -41,6 +42,35 @@ cardsRouter.get('/cards/browser', async (req, res) => {
     [userId]
   );
   return res.json({ cards: rows });
+});
+
+// GET /cards/:id — fetch a single card with stats
+cardsRouter.get('/cards/:id', async (req, res) => {
+  const userId = req.user.id;
+  const cardId = parseInt(req.params.id, 10);
+  if (!Number.isFinite(cardId)) return res.status(400).json({ error: 'invalid_id' });
+  try {
+    const { rows } = await dbPool.query(
+      `SELECT
+         c.id, c.subject, c.prompt_text, c.expected_answer_text,
+         c.next_review_at, c.last_reviewed_at, c.created_at,
+         c.review_count, c.pass_count, c.interval_days, c.ease_factor,
+         c.flagged, c.notes, c.suspended_at,
+         COUNT(mc.id) FILTER (WHERE mc.status = 'active') AS active_micro_count,
+         COUNT(cv.id) AS variant_count
+       FROM cards c
+       LEFT JOIN micro_cards mc ON mc.parent_card_id = c.id AND mc.user_id = c.user_id
+       LEFT JOIN card_variants cv ON cv.card_id = c.id
+       WHERE c.id = $1 AND c.user_id = $2 AND c.archived_at IS NULL
+       GROUP BY c.id`,
+      [cardId, userId]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'not_found' });
+    return res.json({ card: rows[0] });
+  } catch (err) {
+    console.error('GET /cards/:id', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
 });
 
 // PATCH /cards/:id/flag  — mark a card as flagged with optional note
@@ -224,26 +254,106 @@ cardsRouter.post('/cards/batch', async (req, res) => {
   if (action === 'edit') {
     const nextSubject = typeof req.body?.subject === 'string' ? req.body.subject.trim() : '';
     const nextPrompt = typeof req.body?.prompt_text === 'string' ? req.body.prompt_text.trim() : '';
-    if (!nextSubject && !nextPrompt) {
+    const nextAnswer = typeof req.body?.expected_answer_text === 'string' ? req.body.expected_answer_text.trim() : '';
+    if (!nextSubject && !nextPrompt && !nextAnswer) {
       return res.status(422).json({
         error: 'validation_error',
-        message: 'subject or prompt_text is required for edit.'
+        message: 'subject, prompt_text, or expected_answer_text is required for edit.'
       });
     }
     const { rowCount } = await dbPool.query(
       `UPDATE cards
        SET subject = CASE WHEN $1 = '' THEN subject ELSE $1 END,
            prompt_text = CASE WHEN $2 = '' THEN prompt_text ELSE $2 END,
+           expected_answer_text = CASE WHEN $3 = '' THEN expected_answer_text ELSE $3 END,
            updated_at = now()
-       WHERE user_id = $3
-         AND id = ANY($4::int[])
+       WHERE user_id = $4
+         AND id = ANY($5::int[])
          AND archived_at IS NULL`,
-      [nextSubject, nextPrompt, userId, ids]
+      [nextSubject, nextPrompt, nextAnswer, userId, ids]
     );
     return res.json({ updated: rowCount });
   }
 
   return res.status(422).json({ error: 'validation_error', message: 'Unsupported action.' });
+});
+
+// POST /cards/:id/ai-fix-answer — use Claude Sonnet to correct expected_answer_text based on violated SQL rules
+cardsRouter.post('/cards/:id/ai-fix-answer', async (req, res) => {
+  const userId = req.user.id;
+  const cardId = parseInt(req.params.id, 10);
+  if (!Number.isFinite(cardId)) return res.status(400).json({ error: 'invalid_id' });
+
+  try {
+    const [cardResult, violationsResult] = await Promise.all([
+      dbPool.query(
+        `SELECT c.id, c.subject, c.prompt_text, c.expected_answer_text,
+                s.rules AS standard_rules
+         FROM cards c
+         LEFT JOIN sql_coding_standards s ON s.subject = c.subject AND s.user_id = c.user_id
+         WHERE c.id = $1 AND c.user_id = $2`,
+        [cardId, userId]
+      ),
+      dbPool.query(
+        `SELECT r.violations FROM sql_standard_validation_results r
+         JOIN sql_coding_standards s ON r.standard_id = s.id
+         WHERE r.card_id = $1 AND r.user_id = $2 AND NOT r.compliant
+         ORDER BY r.validated_at DESC LIMIT 1`,
+        [cardId, userId]
+      ),
+    ]);
+
+    if (!cardResult.rows.length) return res.status(404).json({ error: 'not_found' });
+    const card = cardResult.rows[0];
+    const rules = card.standard_rules || [];
+    const violations = violationsResult.rows[0]?.violations || [];
+
+    if (!rules.length && !violations.length) {
+      return res.status(422).json({ error: 'no_rules', message: 'No hay reglas ni violaciones registradas para esta tarjeta.' });
+    }
+
+    const rulesText = rules.map(r =>
+      `- [${r.severity}] (${r.category}): ${r.description}${r.pattern_hint ? ` | Ej: ${r.pattern_hint}` : ''}`
+    ).join('\n');
+    const violationsText = violations.map(v =>
+      `- ${v.description}${v.quote ? `\n  Fragmento incorrecto: "${v.quote}"` : ''}`
+    ).join('\n');
+
+    const client = new Anthropic();
+    const response = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 4000,
+      temperature: 0,
+      system: `Sos un experto en SQL/PL-SQL y corrector de soluciones modelo para tarjetas de estudio universitario.
+Tu tarea: reescribir la "respuesta esperada" (solución modelo) para que cumpla con las reglas de estilo de la cátedra.
+
+REGLAS:
+- Mantené la lógica del código intacta. No cambies lo que hace, solo el estilo
+- Aplicá únicamente las correcciones necesarias para cumplir las reglas violadas
+- Respondé SOLO con el código corregido, sin texto antes ni después, sin bloques de markdown`,
+      messages: [{
+        role: 'user',
+        content: `CONSIGNA: ${card.prompt_text}
+
+REGLAS DE LA CÁTEDRA:
+${rulesText || '(sin reglas registradas)'}
+
+VIOLACIONES EN LA RESPUESTA ACTUAL:
+${violationsText || '(aplicá las reglas generales de la cátedra)'}
+
+RESPUESTA ESPERADA A CORREGIR:
+${card.expected_answer_text}`,
+      }],
+    });
+
+    const suggestedAnswer = response.content.find(b => b.type === 'text')?.text?.trim() ?? '';
+    if (!suggestedAnswer) return res.status(500).json({ error: 'empty_response' });
+
+    return res.json({ suggested_answer: suggestedAnswer });
+  } catch (err) {
+    console.error('POST /cards/:id/ai-fix-answer', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
 });
 
 // POST /cards/rename-subject — rename all cards of a subject (merge/deduplicate subjects)

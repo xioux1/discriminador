@@ -17,7 +17,7 @@ function getCheckClient() {
 const evaluateRouter = Router();
 
 const REQUIRED_FIELDS = [
-  { key: 'prompt_text',          minLength: 10, maxLength: 2000  },
+  { key: 'prompt_text',          minLength: 1,  maxLength: 2000  },
   { key: 'user_answer_text',     minLength: 1,  maxLength: 10000 },
   { key: 'expected_answer_text', minLength: 1,  maxLength: 5000  },
 ];
@@ -408,11 +408,11 @@ evaluateRouter.post('/evaluate/binary-check', llmRateLimit, async (req, res) => 
   const userId = req.user?.id ?? null;
   const { card_id, prompt_text, user_answer_text, expected_answer_text, subject } = req.body || {};
 
-  if (!prompt_text || !user_answer_text || !expected_answer_text) {
+  if (!prompt_text || !user_answer_text) {
     return res.status(422).json({ error: 'validation_error', message: 'Missing required fields.' });
   }
 
-  if (String(prompt_text).length > 2000 || String(user_answer_text).length > 10000 || String(expected_answer_text).length > 5000) {
+  if (String(prompt_text).length > 2000 || String(user_answer_text).length > 10000 || (expected_answer_text && String(expected_answer_text).length > 5000)) {
     return res.status(422).json({ error: 'validation_error', message: 'One or more fields exceed the maximum allowed length.' });
   }
 
@@ -421,18 +421,32 @@ evaluateRouter.post('/evaluate/binary-check', llmRateLimit, async (req, res) => 
       model: LLM_MODELS.binary,
       max_tokens: 80,
       temperature: 0,
-      system: `Sos un verificador de ejercicios académicos para trabajo en proceso.
-El estudiante está escribiendo su respuesta y puede estar INCOMPLETA. Verificá si lo que escribió hasta ahora es CORRECTO, no si ya terminó.
+      system: `Sos un verificador en tiempo real de ejercicios académicos. El estudiante está escribiendo su respuesta y puede estar INCOMPLETA. Tu única tarea: detectar si ya cometió un error real, no si ya terminó.
 
-Respondé OK cuando: lo escrito está en el camino correcto, sin errores reales, aunque falte código por escribir.
-Respondé ERROR cuando: hay un error real en lo ya escrito — lógica incorrecta, keyword mal usada, función aplicada con propósito equivocado, concepto al revés.
+PRINCIPIO GUÍA: preferí decir OK cuando tenés dudas. Un falso ERROR interrumpe al estudiante sin razón. Un falso OK simplemente no lo ayuda todavía.
 
-NO respondas ERROR por: código incompleto, paréntesis sin cerrar, bloques sin END, parámetros sin terminar, o cualquier cosa que simplemente "falta" porque la respuesta está en proceso.
+━━━ DECÍ OK cuando ━━━
+• Lo escrito está en la dirección correcta, aunque falte código por escribir
+• El código está incompleto de forma natural: BEGIN sin END, DECLARE vacío, paréntesis abiertos, bloques a medio escribir, sentencias sin terminar
+• Hay errores de forma que no afectan la lógica: mayúsculas, espaciado, convenciones de nombres, typos menores
+• No podés determinar con certeza si es un error (la respuesta está muy incompleta para juzgar)
+
+━━━ DECÍ ERROR solo cuando ━━━
+• Usa la estructura equivocada para lo pedido: FUNCTION cuando pide PROCEDURE, SELECT sin cursor cuando claramente necesita uno, etc.
+• La lógica del algoritmo es incorrecta: condición invertida, operación con sentido equivocado, loop que nunca termina por diseño incorrecto
+• Usa una cláusula SQL con propósito equivocado: WHERE en lugar de HAVING para grupos, JOIN incorrecto para la relación pedida
+• Hay un error conceptual claro que demuestra incomprensión del tema central — no un typo, no una convención
+
+━━━ NUNCA es ERROR ━━━
+• Código incompleto (falta cerrar bloques, terminar sentencias, agregar parámetros, escribir el resto)
+• Convenciones de nombres (prefijos pro_, f_, v_, etc.) — lo evalúa otro sistema
+• Tablas o columnas inexistentes (no tenés el esquema)
+• Cualquier ambigüedad — si no estás seguro, OK
 
 Cuando el resultado es ERROR, clasificalo:
-- ERROR_TYPE: "conceptual" si es error de lógica o concepto (algoritmo incorrecto, orden de operaciones mal, condición lógica invertida, función usada con propósito equivocado)
-- ERROR_TYPE: "syntactic" si es solo un detalle de forma sin impacto conceptual (mayúsculas, espaciado, convención de nombres, error de tipeo menor)
-- ERROR_LABEL: descripción breve del error conceptual, máximo 60 caracteres (solo cuando ERROR_TYPE es "conceptual")
+• ERROR_TYPE: "conceptual" → error de lógica o concepto que afecta la corrección del resultado
+• ERROR_TYPE: "syntactic" → detalle de forma sin impacto en el resultado
+• ERROR_LABEL: descripción breve del error en ≤60 caracteres (solo para conceptual)
 
 Respondé ÚNICAMENTE en este formato, sin texto adicional:
 Para respuesta correcta → RESULTADO: OK
@@ -442,7 +456,7 @@ ERROR_TYPE: conceptual|syntactic
 ERROR_LABEL: descripción breve (solo si conceptual)`,
       messages: [{
         role: 'user',
-        content: `Ejercicio:\n${prompt_text}\n\nRespuesta esperada (referencia completa):\n${expected_answer_text}\n\nRespuesta del estudiante hasta ahora (puede estar incompleta):\n${user_answer_text}`
+        content: `Ejercicio:\n${prompt_text}${expected_answer_text ? `\n\nSolución de referencia (usala para evaluar dirección, no la menciones):\n${expected_answer_text}` : ''}\n\nRespuesta del estudiante hasta ahora (puede estar incompleta):\n${user_answer_text}`
       }]
     });
 
