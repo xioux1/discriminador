@@ -68,18 +68,41 @@ if (!Auth.isLoggedIn()) {
 function initAuthScreen() {
   let mode = 'login';
   const tabs = document.querySelectorAll('.auth-tab');
-  tabs.forEach(t => t.addEventListener('click', () => {
-    mode = t.dataset.tab;
+  const confirmField = document.getElementById('auth-confirm-field');
+  const submitBtn = document.getElementById('auth-submit-btn');
+
+  function applyMode(m) {
+    mode = m;
     tabs.forEach(x => x.classList.toggle('active', x.dataset.tab === mode));
     document.getElementById('auth-error').classList.add('hidden');
-  }));
+    const isRegister = mode === 'register';
+    confirmField.classList.toggle('hidden', !isRegister);
+    submitBtn.textContent = isRegister ? 'Crear cuenta' : 'Entrar';
+    document.getElementById('auth-password').autocomplete = isRegister ? 'new-password' : 'current-password';
+  }
+
+  tabs.forEach(t => t.addEventListener('click', () => applyMode(t.dataset.tab)));
 
   document.getElementById('auth-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const username = document.getElementById('auth-username').value.trim();
     const password = document.getElementById('auth-password').value;
     const errEl = document.getElementById('auth-error');
-    const submitBtn = document.querySelector('.auth-submit');
+
+    if (mode === 'register') {
+      const confirm = document.getElementById('auth-confirm').value;
+      if (password !== confirm) {
+        errEl.textContent = 'Las contraseñas no coinciden.';
+        errEl.classList.remove('hidden');
+        return;
+      }
+      if (password.length < 6) {
+        errEl.textContent = 'La contraseña debe tener al menos 6 caracteres.';
+        errEl.classList.remove('hidden');
+        return;
+      }
+    }
+
     submitBtn.disabled = true;
     errEl.classList.add('hidden');
     try {
@@ -954,7 +977,45 @@ async function loadDashboard() {
       subject: normalizeSubject(subj.subject)
     }));
     if (!subjects.length) {
-      content.innerHTML = '<p style="color:var(--text-muted);padding:16px">Aún no hay tarjetas. Empezá agregando tarjetas en la pestaña Tarjetas.</p>';
+      const card = document.createElement('div');
+      card.className = 'onboarding-card card';
+      card.innerHTML = `
+        <div class="onboarding-header">
+          <div class="onboarding-icon">◈</div>
+          <div>
+            <h2 class="onboarding-title">Bienvenido a Discriminador</h2>
+            <p class="onboarding-subtitle">Tu sistema de repaso con IA para preparar exámenes. Seguí estos pasos para empezar.</p>
+          </div>
+        </div>
+        <ol class="onboarding-steps">
+          <li class="onboarding-step">
+            <span class="onboarding-step-num">1</span>
+            <div>
+              <strong>Agregá tu primera tarjeta</strong>
+              <p>Andá a la pestaña <em>Tarjetas</em> y creá una pregunta con su respuesta esperada.</p>
+            </div>
+          </li>
+          <li class="onboarding-step">
+            <span class="onboarding-step-num">2</span>
+            <div>
+              <strong>Configurá tu materia</strong>
+              <p>Desde el Inicio, hacé clic en <em>Configurar</em> para establecer fechas de examen y nivel de exigencia.</p>
+            </div>
+          </li>
+          <li class="onboarding-step">
+            <span class="onboarding-step-num">3</span>
+            <div>
+              <strong>Empezá a estudiar</strong>
+              <p>Andá a <em>Estudiar</em>, elegí cuánto tiempo tenés y la IA armará tu sesión de repaso.</p>
+            </div>
+          </li>
+        </ol>
+        <button type="button" class="btn-primary onboarding-cta" id="onboarding-goto-cards">Ir a Tarjetas →</button>
+      `;
+      content.appendChild(card);
+      card.querySelector('#onboarding-goto-cards').addEventListener('click', () => {
+        document.querySelector('[data-tab="browser"]').click();
+      });
       return;
     }
 
