@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { dbPool } from '../db/client.js';
-import { handleUserReply } from '../services/study-nudge.js';
+import { handleUserReply, generateStatusReport } from '../services/study-nudge.js';
 
 const botChatRouter = Router();
 
@@ -44,6 +44,19 @@ botChatRouter.get('/bot/unread-count', async (req, res) => {
     return res.json({ unread: parseInt(result.rows[0]?.cnt || 0) });
   } catch (err) {
     console.error('GET /bot/unread-count', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+// POST /bot/status
+// Returns an on-demand study status report for the authenticated user.
+botChatRouter.post('/bot/status', async (req, res) => {
+  const userId = req.user.id;
+  try {
+    const reply = await generateStatusReport(userId);
+    return res.json({ reply });
+  } catch (err) {
+    console.error('POST /bot/status', err.message);
     return res.status(500).json({ error: 'server_error', message: err.message });
   }
 });
