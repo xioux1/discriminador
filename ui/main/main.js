@@ -34,10 +34,21 @@ const advisorCoverageCache = new Map();
 
 // ─── User settings (loaded once on startup) ───────────────────────────────────
 let userSettings = {
-  session_planning_enabled: true,
-  gratitude_enabled: true,
-  time_restriction_enabled: true,
+  session_planning_enabled:   true,
+  gratitude_enabled:          true,
+  time_restriction_enabled:   true,
+  planner_gate_enabled:       true,
+  default_retention_floor:    null,   // integer 50-99, null = use hardcoded 75
+  default_grading_strictness: null,   // integer 0-10,  null = use hardcoded 5
 };
+
+// localStorage-backed UX preferences (no server persistence needed)
+function getTTSEnabled()          { return localStorage.getItem('discriminador_tts_enabled') !== 'false'; }
+function setTTSEnabled(v)         { localStorage.setItem('discriminador_tts_enabled', v ? 'true' : 'false'); }
+function getDefaultBriefingTime() { return localStorage.getItem('discriminador_briefing_time') || ''; }
+function setDefaultBriefingTime(v){ if (v) localStorage.setItem('discriminador_briefing_time', String(v)); else localStorage.removeItem('discriminador_briefing_time'); }
+function getDefaultBriefingEnergy(){ return localStorage.getItem('discriminador_briefing_energy') || ''; }
+function setDefaultBriefingEnergy(v){ if (v) localStorage.setItem('discriminador_briefing_energy', String(v)); else localStorage.removeItem('discriminador_briefing_energy'); }
 
 // ─── Auth gate ────────────────────────────────────────────────────────────────
 
@@ -3126,6 +3137,18 @@ function ensureAddCardFormHandlers() {
 
   document.querySelector('#briefing-plan-btn').addEventListener('click', fetchSessionPlan);
   document.querySelector('#briefing-start-btn').addEventListener('click', startPlannedSession);
+
+  // Pre-select configured defaults
+  const defTime = getDefaultBriefingTime();
+  if (defTime) {
+    const btn = document.querySelector(`#briefing-time-options .briefing-opt[data-value="${defTime}"]`);
+    if (btn) btn.click();
+  }
+  const defEnergy = getDefaultBriefingEnergy();
+  if (defEnergy) {
+    const btn = document.querySelector(`#briefing-energy-options .briefing-opt[data-value="${defEnergy}"]`);
+    if (btn) btn.click();
+  }
 })();
 
 function checkBriefingReady() {
@@ -3279,11 +3302,10 @@ function _doStartPlannedSession() {
 
 async function startPlannedSession() {
   if (userSettings.time_restriction_enabled && !isAllowedStartTime()) { showTimeRestrictionModal(); return; }
-  const status = await checkPlannerDayStatus();
   const gateEl = document.querySelector('#briefing-planner-gate');
-  if (!status.is_full) {
-    renderPlannerGate(gateEl, status.filled ?? 0, status.total ?? 32);
-    return;
+  if (userSettings.planner_gate_enabled) {
+    const status = await checkPlannerDayStatus();
+    if (!status.is_full) { renderPlannerGate(gateEl, status.filled ?? 0, status.total ?? 32); return; }
   }
   gateEl?.classList.add('hidden');
   showGratitudeModal(() => _doStartPlannedSession());
@@ -3690,11 +3712,10 @@ function renderPlannerGate(gateEl, filled, total) {
 
 async function startStudySession() {
   if (userSettings.time_restriction_enabled && !isAllowedStartTime()) { showTimeRestrictionModal(); return; }
-  const status = await checkPlannerDayStatus();
   const gateEl = document.querySelector('#overview-planner-gate');
-  if (!status.is_full) {
-    renderPlannerGate(gateEl, status.filled ?? 0, status.total ?? 32);
-    return;
+  if (userSettings.planner_gate_enabled) {
+    const status = await checkPlannerDayStatus();
+    if (!status.is_full) { renderPlannerGate(gateEl, status.filled ?? 0, status.total ?? 32); return; }
   }
   gateEl?.classList.add('hidden');
   showGratitudeModal(() => _doStartStudySession());
@@ -4322,7 +4343,7 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
     if (hasChinese(expected_answer_text)) {
       _ttsCurrentText = expected_answer_text;
       if (ttsBar) ttsBar.classList.remove('hidden');
-      playChineseTTS(expected_answer_text);
+      if (getTTSEnabled()) playChineseTTS(expected_answer_text);
     } else {
       _ttsCurrentText = null;
       if (ttsBar) ttsBar.classList.add('hidden');
@@ -5489,10 +5510,12 @@ async function openCurriculumModal(subject) {
     document.querySelector('#curriculum-syllabus').value = data.config?.syllabus_text || '';
     document.querySelector('#curriculum-daily-new-limit').value = data.config?.daily_new_cards_limit ?? '';
     document.querySelector('#curriculum-max-micro-per-card').value = data.config?.max_micro_cards_per_card ?? '';
-    const strictness = data.config?.grading_strictness ?? 5;
+    const strictness = data.config?.grading_strictness ?? userSettings.default_grading_strictness ?? 5;
     document.querySelector('#curriculum-grading-strictness').value = strictness;
     updateStrictnessDisplay(strictness);
-    const retFloor = Math.round((parseFloat(data.config?.retention_floor) || 0.75) * 100);
+    const retFloor = data.config?.retention_floor != null
+      ? Math.round(parseFloat(data.config.retention_floor) * 100)
+      : (userSettings.default_retention_floor ?? 75);
     document.querySelector('#curriculum-retention-floor').value = retFloor;
     document.querySelector('#curriculum-retention-floor-badge').textContent = `${retFloor}%`;
     const microEnabled = data.config?.micro_cards_enabled ?? true;
@@ -5509,10 +5532,12 @@ async function openCurriculumModal(subject) {
   } catch (_e) {
     document.querySelector('#curriculum-daily-new-limit').value = '';
     document.querySelector('#curriculum-max-micro-per-card').value = '';
-    document.querySelector('#curriculum-grading-strictness').value = 5;
-    updateStrictnessDisplay(5);
-    document.querySelector('#curriculum-retention-floor').value = 75;
-    document.querySelector('#curriculum-retention-floor-badge').textContent = '75%';
+    const defStrictness = userSettings.default_grading_strictness ?? 5;
+    document.querySelector('#curriculum-grading-strictness').value = defStrictness;
+    updateStrictnessDisplay(defStrictness);
+    const defRetFloor = userSettings.default_retention_floor ?? 75;
+    document.querySelector('#curriculum-retention-floor').value = defRetFloor;
+    document.querySelector('#curriculum-retention-floor-badge').textContent = `${defRetFloor}%`;
     document.querySelector('#curriculum-micro-cards-enabled').checked = true;
     document.querySelector('#curriculum-micro-spawn-siblings').checked = false;
     updateMicroCardsLimitVisibility(true);
@@ -6557,67 +6582,84 @@ initBotChat();
 // ─── Settings tab ─────────────────────────────────────────────────────────────
 
 function initSettingsTab() {
-  const planningEl      = document.querySelector('#setting-session-planning');
-  const gratitudeEl     = document.querySelector('#setting-gratitude');
-  const timeRestrictEl  = document.querySelector('#setting-time-restriction');
-  const dailyTargetEl   = document.querySelector('#setting-daily-target');
-  const dailyBudgetEl   = document.querySelector('#setting-daily-budget');
-  const statusEl        = document.querySelector('#settings-save-status');
+  const planningEl         = document.querySelector('#setting-session-planning');
+  const gratitudeEl        = document.querySelector('#setting-gratitude');
+  const timeRestrictEl     = document.querySelector('#setting-time-restriction');
+  const plannerGateEl      = document.querySelector('#setting-planner-gate');
+  const ttsEl              = document.querySelector('#setting-tts-enabled');
+  const defTimeEl          = document.querySelector('#setting-default-time');
+  const defEnergyEl        = document.querySelector('#setting-default-energy');
+  const dailyTargetEl      = document.querySelector('#setting-daily-target');
+  const dailyBudgetEl      = document.querySelector('#setting-daily-budget');
+  const defRetentionEl     = document.querySelector('#setting-default-retention');
+  const defStrictnessEl    = document.querySelector('#setting-default-strictness');
+  const statusEl           = document.querySelector('#settings-save-status');
 
+  // Populate from current state
   planningEl.checked      = userSettings.session_planning_enabled;
   gratitudeEl.checked     = userSettings.gratitude_enabled;
   timeRestrictEl.checked  = userSettings.time_restriction_enabled;
+  plannerGateEl.checked   = userSettings.planner_gate_enabled;
+  ttsEl.checked           = getTTSEnabled();
+  defTimeEl.value         = getDefaultBriefingTime();
+  defEnergyEl.value       = getDefaultBriefingEnergy();
   dailyTargetEl.value     = getDailyTarget();
   dailyBudgetEl.value     = getDailyBudget();
+  if (userSettings.default_retention_floor    != null) defRetentionEl.value  = userSettings.default_retention_floor;
+  if (userSettings.default_grading_strictness != null) defStrictnessEl.value = userSettings.default_grading_strictness;
 
   let saveTimer = null;
 
-  async function saveSettings() {
-    // Persist session-behaviour flags to the server
+  function flash() {
+    statusEl.textContent = 'Guardado.';
+    setTimeout(() => { statusEl.textContent = ''; }, 2000);
+  }
+
+  async function saveServerSettings() {
     const payload = {
-      session_planning_enabled: planningEl.checked,
-      gratitude_enabled:        gratitudeEl.checked,
-      time_restriction_enabled: timeRestrictEl.checked,
+      session_planning_enabled:   planningEl.checked,
+      gratitude_enabled:          gratitudeEl.checked,
+      time_restriction_enabled:   timeRestrictEl.checked,
+      planner_gate_enabled:       plannerGateEl.checked,
+      default_retention_floor:    defRetentionEl.value    !== '' ? parseInt(defRetentionEl.value)    : null,
+      default_grading_strictness: defStrictnessEl.value   !== '' ? parseInt(defStrictnessEl.value)   : null,
     };
     try {
       const saved = await postJson('/settings', payload, 'PUT');
       Object.assign(userSettings, saved);
-      statusEl.textContent = 'Guardado.';
-      setTimeout(() => { statusEl.textContent = ''; }, 2000);
+      flash();
     } catch (err) {
       statusEl.textContent = `Error al guardar: ${err.message}`;
     }
   }
 
-  function scheduleToggleSave() {
+  function scheduleServerSave() {
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(saveSettings, 400);
+    saveTimer = setTimeout(saveServerSettings, 400);
   }
 
-  planningEl.addEventListener('change', scheduleToggleSave);
-  gratitudeEl.addEventListener('change', scheduleToggleSave);
-  timeRestrictEl.addEventListener('change', scheduleToggleSave);
+  // Server-persisted toggles
+  planningEl.addEventListener('change',     scheduleServerSave);
+  gratitudeEl.addEventListener('change',    scheduleServerSave);
+  timeRestrictEl.addEventListener('change', scheduleServerSave);
+  plannerGateEl.addEventListener('change',  scheduleServerSave);
+  defRetentionEl.addEventListener('change', scheduleServerSave);
+  defStrictnessEl.addEventListener('change', scheduleServerSave);
 
-  // Daily goals — stored in localStorage, applied immediately
+  // localStorage — immediate
+  ttsEl.addEventListener('change', () => { setTTSEnabled(ttsEl.checked); flash(); });
+  defTimeEl.addEventListener('change',   () => { setDefaultBriefingTime(defTimeEl.value);     flash(); });
+  defEnergyEl.addEventListener('change', () => { setDefaultBriefingEnergy(defEnergyEl.value); flash(); });
+
   dailyTargetEl.addEventListener('change', () => {
     const n = parseInt(dailyTargetEl.value);
-    if (Number.isFinite(n) && n > 0) {
-      setDailyTarget(n);
-      statusEl.textContent = 'Guardado.';
-      setTimeout(() => { statusEl.textContent = ''; }, 2000);
-    } else {
-      dailyTargetEl.value = getDailyTarget();
-    }
+    if (Number.isFinite(n) && n > 0) { setDailyTarget(n); flash(); }
+    else dailyTargetEl.value = getDailyTarget();
   });
 
   dailyBudgetEl.addEventListener('change', () => {
     const n = parseInt(dailyBudgetEl.value);
-    if (Number.isFinite(n) && n >= 10) {
-      setDailyBudget(n);
-      statusEl.textContent = 'Guardado.';
-      setTimeout(() => { statusEl.textContent = ''; }, 2000);
-    } else {
-      dailyBudgetEl.value = getDailyBudget();
-    }
+    if (Number.isFinite(n) && n >= 10) { setDailyBudget(n); flash(); }
+    else dailyBudgetEl.value = getDailyBudget();
   });
 }

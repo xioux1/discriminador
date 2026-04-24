@@ -918,6 +918,53 @@
               <p class="settings-hint">Restringe el inicio de sesiones a los minutos :00 o :30 de cada hora para crear hábitos consistentes.</p>
             </div>
 
+            <div class="settings-toggle-block">
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-planner-gate">
+                <span class="toggle-label">Requerir planificador completo antes de estudiar</span>
+              </label>
+              <p class="settings-hint">Bloquea el inicio de sesión hasta que todos los bloques del día estén cargados en el planificador semanal.</p>
+            </div>
+
+          </div>
+
+          <hr style="margin:24px 0 20px;border:none;border-top:1px solid var(--border)">
+          <h4 class="curriculum-section-title">Sesión de estudio</h4>
+
+          <div style="display:flex;flex-direction:column;gap:18px;margin-top:12px">
+
+            <div class="settings-toggle-block">
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-tts-enabled">
+                <span class="toggle-label">Reproducir audio automáticamente (TTS)</span>
+              </label>
+              <p class="settings-hint">Reproduce la pronunciación en voz alta al mostrar la respuesta de tarjetas con contenido en chino.</p>
+            </div>
+
+            <div class="settings-toggle-block">
+              <label class="toggle-label" for="setting-default-time" style="display:block;margin-bottom:6px">Tiempo por defecto en el briefing</label>
+              <select id="setting-default-time" style="max-width:180px">
+                <option value="">Sin selección automática</option>
+                <option value="15">15 min</option>
+                <option value="30">30 min</option>
+                <option value="45">45 min</option>
+                <option value="60">1 hora</option>
+                <option value="90">+ (90 min)</option>
+              </select>
+              <p class="settings-hint" style="margin-top:4px">Opción pre-seleccionada al abrir el briefing de sesión.</p>
+            </div>
+
+            <div class="settings-toggle-block">
+              <label class="toggle-label" for="setting-default-energy" style="display:block;margin-bottom:6px">Energía por defecto en el briefing</label>
+              <select id="setting-default-energy" style="max-width:180px">
+                <option value="">Sin selección automática</option>
+                <option value="tired">Cansado</option>
+                <option value="normal">Normal</option>
+                <option value="focused">Concentrado</option>
+              </select>
+              <p class="settings-hint" style="margin-top:4px">Nivel de energía pre-seleccionado al abrir el briefing de sesión.</p>
+            </div>
+
           </div>
 
           <hr style="margin:24px 0 20px;border:none;border-top:1px solid var(--border)">
@@ -935,6 +982,26 @@
               <label class="toggle-label" for="setting-daily-budget" style="display:block;margin-bottom:6px">Presupuesto diario en minutos</label>
               <input type="number" id="setting-daily-budget" min="10" max="480" step="5" style="max-width:120px">
               <p class="settings-hint" style="margin-top:4px">Tiempo disponible para estudiar hoy, usado para calcular la prioridad de materias en el dashboard.</p>
+            </div>
+
+          </div>
+
+          <hr style="margin:24px 0 20px;border:none;border-top:1px solid var(--border)">
+          <h4 class="curriculum-section-title">Valores por defecto de materias</h4>
+          <p style="font-size:0.80rem;color:var(--text-muted);margin:4px 0 14px">Se usan al abrir la configuración de una materia sin datos previos.</p>
+
+          <div style="display:flex;flex-direction:column;gap:18px">
+
+            <div class="settings-toggle-block">
+              <label class="toggle-label" for="setting-default-retention" style="display:block;margin-bottom:6px">Piso de retención por defecto (%)</label>
+              <input type="number" id="setting-default-retention" min="50" max="99" step="1" placeholder="75" style="max-width:120px">
+              <p class="settings-hint" style="margin-top:4px">Porcentaje mínimo de retención antes de que una tarjeta sea forzada en la próxima sesión.</p>
+            </div>
+
+            <div class="settings-toggle-block">
+              <label class="toggle-label" for="setting-default-strictness" style="display:block;margin-bottom:6px">Strictness de corrección por defecto (0–10)</label>
+              <input type="number" id="setting-default-strictness" min="0" max="10" step="1" placeholder="5" style="max-width:120px">
+              <p class="settings-hint" style="margin-top:4px">Qué tan exigente es la IA al evaluar respuestas. 0 = muy permisivo, 10 = muy estricto.</p>
             </div>
 
           </div>
