@@ -170,7 +170,7 @@ async function callAnthropicClustering(llmInput) {
 
   const response = await getAnthropicClient().messages.create({
     model,
-    max_tokens:  4096,
+    max_tokens:  16000,
     temperature: 0.1,
     messages: [{ role: 'user', content: buildClusteringPrompt(inputJson) }],
   });
@@ -225,7 +225,7 @@ async function callAnthropicOrphanAssignment(namedClusters, orphanBatch) {
 
   const response = await getAnthropicClient().messages.create({
     model,
-    max_tokens:  1024,
+    max_tokens:  4096,
     temperature: 0.1,
     messages: [{ role: 'user', content: prompt }],
   });
@@ -267,6 +267,7 @@ async function clusterInPhases(groups, orphans, conceptMap) {
       throw new Error(`Phase 2 LLM returned invalid JSON for orphan batch at index ${i}.`);
     }
 
+    const assignedIds = new Set();
     for (const { id, cluster_index } of assignments) {
       if (typeof cluster_index !== 'number' || cluster_index < 0 || cluster_index >= namedClusters.length) {
         throw new Error(`Phase 2: invalid cluster_index ${cluster_index} for concept ${id}.`);
@@ -274,6 +275,12 @@ async function clusterInPhases(groups, orphans, conceptMap) {
       if (!namedClusters[cluster_index].concept_ids.includes(id)) {
         namedClusters[cluster_index].concept_ids.push(id);
       }
+      assignedIds.add(id);
+    }
+
+    const missing = batchIds.filter(id => !assignedIds.has(id));
+    if (missing.length > 0) {
+      throw new Error(`Phase 2: LLM did not assign ${missing.length} concept(s) from batch at index ${i}: ${missing.join(', ')}`);
     }
   }
 
