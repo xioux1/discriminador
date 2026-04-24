@@ -12,6 +12,9 @@ export function requireAuth(req, res, next) {
   if (!token) return res.status(401).json({ error: 'unauthorized', message: 'Authentication required.' });
   try {
     req.user = jwt.verify(token, getSecret());
+    if (!req.user?.id) {
+      return res.status(401).json({ error: 'token_invalid', message: 'Invalid or expired token.' });
+    }
     // Slide token: refresh only when less than 1 day left to avoid token storms on burst requests.
     const exp = req.user.exp;
     const oneDay = 24 * 3600;

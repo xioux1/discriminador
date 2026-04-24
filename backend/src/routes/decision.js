@@ -190,6 +190,16 @@ decisionRouter.post('/decision', async (req, res) => {
     ]);
   }
 
+  const dimensionEntries = Object.entries(dimensions);
+  if (dimensionEntries.length === 0 || !dimensionEntries.every(([, v]) => Number.isFinite(Number(v)))) {
+    return validationError(res, [
+      {
+        field: 'evaluation_result.dimensions',
+        issue: 'All dimension values must be finite numbers.'
+      }
+    ]);
+  }
+
   const resolveByEvaluationIdQuery = `
     SELECT id
     FROM evaluation_items
