@@ -920,6 +920,25 @@
 
           </div>
 
+          <hr style="margin:24px 0 20px;border:none;border-top:1px solid var(--border)">
+          <h4 class="curriculum-section-title">Metas diarias</h4>
+
+          <div style="display:flex;flex-direction:column;gap:18px;margin-top:12px">
+
+            <div class="settings-toggle-block">
+              <label class="toggle-label" for="setting-daily-target" style="display:block;margin-bottom:6px">Meta de revisiones por día</label>
+              <input type="number" id="setting-daily-target" min="1" max="500" step="1" style="max-width:120px">
+              <p class="settings-hint" style="margin-top:4px">Cantidad de revisiones (tarjetas + micro-tarjetas) que querés completar cada día.</p>
+            </div>
+
+            <div class="settings-toggle-block">
+              <label class="toggle-label" for="setting-daily-budget" style="display:block;margin-bottom:6px">Presupuesto diario en minutos</label>
+              <input type="number" id="setting-daily-budget" min="10" max="480" step="5" style="max-width:120px">
+              <p class="settings-hint" style="margin-top:4px">Tiempo disponible para estudiar hoy, usado para calcular la prioridad de materias en el dashboard.</p>
+            </div>
+
+          </div>
+
           <p id="settings-save-status" style="font-size:0.84rem;color:var(--text-muted);margin-top:20px;min-height:1.2em"></p>
         </div>
       </section>

@@ -6560,15 +6560,20 @@ function initSettingsTab() {
   const planningEl      = document.querySelector('#setting-session-planning');
   const gratitudeEl     = document.querySelector('#setting-gratitude');
   const timeRestrictEl  = document.querySelector('#setting-time-restriction');
+  const dailyTargetEl   = document.querySelector('#setting-daily-target');
+  const dailyBudgetEl   = document.querySelector('#setting-daily-budget');
   const statusEl        = document.querySelector('#settings-save-status');
 
   planningEl.checked      = userSettings.session_planning_enabled;
   gratitudeEl.checked     = userSettings.gratitude_enabled;
   timeRestrictEl.checked  = userSettings.time_restriction_enabled;
+  dailyTargetEl.value     = getDailyTarget();
+  dailyBudgetEl.value     = getDailyBudget();
 
   let saveTimer = null;
 
   async function saveSettings() {
+    // Persist session-behaviour flags to the server
     const payload = {
       session_planning_enabled: planningEl.checked,
       gratitude_enabled:        gratitudeEl.checked,
@@ -6584,12 +6589,35 @@ function initSettingsTab() {
     }
   }
 
-  function scheduleSave() {
+  function scheduleToggleSave() {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(saveSettings, 400);
   }
 
-  planningEl.addEventListener('change', scheduleSave);
-  gratitudeEl.addEventListener('change', scheduleSave);
-  timeRestrictEl.addEventListener('change', scheduleSave);
+  planningEl.addEventListener('change', scheduleToggleSave);
+  gratitudeEl.addEventListener('change', scheduleToggleSave);
+  timeRestrictEl.addEventListener('change', scheduleToggleSave);
+
+  // Daily goals — stored in localStorage, applied immediately
+  dailyTargetEl.addEventListener('change', () => {
+    const n = parseInt(dailyTargetEl.value);
+    if (Number.isFinite(n) && n > 0) {
+      setDailyTarget(n);
+      statusEl.textContent = 'Guardado.';
+      setTimeout(() => { statusEl.textContent = ''; }, 2000);
+    } else {
+      dailyTargetEl.value = getDailyTarget();
+    }
+  });
+
+  dailyBudgetEl.addEventListener('change', () => {
+    const n = parseInt(dailyBudgetEl.value);
+    if (Number.isFinite(n) && n >= 10) {
+      setDailyBudget(n);
+      statusEl.textContent = 'Guardado.';
+      setTimeout(() => { statusEl.textContent = ''; }, 2000);
+    } else {
+      dailyBudgetEl.value = getDailyBudget();
+    }
+  });
 }
