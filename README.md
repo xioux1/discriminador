@@ -36,7 +36,7 @@ Abrir `http://localhost:3000/`
 ui/main/          → frontend estático (HTML + CSS + JS vanilla)
 backend/src/
   routes/         → Express routers (evaluate, decision, socratic, scheduler, …)
-  services/       → LLM judge, scoring heurístico, scheduler SM-2, micro-generator
+  services/       → LLM judge, scoring heurístico, scheduler FSRS-5, micro-generator
   db/             → Pool PostgreSQL + auto-migration runner
 db/migrations/    → SQL migrations numeradas (se aplican automáticamente al arrancar)
 ```
@@ -80,12 +80,18 @@ Scheduler de repaso espaciado a nivel de concepto.
 
 ## Scheduler — cómo funciona
 
-### Algoritmo SM-2 simplificado
+### Algoritmo FSRS-5
 
-| Evento | Intervalo | Ease factor |
-|---|---|---|
-| PASS | `intervalo × ease` | sin cambio |
-| FAIL | 1 día | `max(1.3, ease − 0.2)` |
+Usa los pesos entrenados de FSRS-5 con retención objetivo del 90%. Cada tarjeta mantiene dos variables: `stability` (días hasta olvidar) y `difficulty` (1–10).
+
+| Grade | Descripción |
+|---|---|
+| `again` | Blackout: sin respuesta o error conceptual grave |
+| `hard` | Idea general correcta, faltan detalles críticos |
+| `good` | Respuesta correcta con todos los conceptos esenciales |
+| `easy` | Perfecto, inmediato |
+
+El intervalo siguiente se calcula como `round(9 × S × (1/R − 1))` donde S es la estabilidad actual y R la retención deseada (0.9). En `again` o `hard` el intervalo es 1 día y la estabilidad cae según la fórmula de olvido.
 
 ### Ciclo de micro-tarjetas
 
