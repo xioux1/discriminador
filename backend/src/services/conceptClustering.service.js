@@ -297,6 +297,43 @@ function parseEmbedding(raw) {
 
 // ==================== Public API ====================
 
+export async function getClustersForDocument(documentId) {
+  const { rows: clusterRows } = await dbPool.query(
+    `SELECT id, name, definition, stamp
+     FROM clusters
+     WHERE document_id = $1
+     ORDER BY created_at ASC`,
+    [documentId]
+  );
+
+  if (!clusterRows.length) return { document_id: documentId, cluster_count: 0, clusters: [] };
+
+  const clusterIds = clusterRows.map(r => r.id);
+  const { rows: conceptRows } = await dbPool.query(
+    `SELECT id, label, definition, cluster_id
+     FROM concepts
+     WHERE document_id = $1 AND cluster_id = ANY($2::uuid[])
+     ORDER BY created_at ASC`,
+    [documentId, clusterIds]
+  );
+
+  const conceptsByCluster = new Map();
+  for (const c of conceptRows) {
+    if (!conceptsByCluster.has(c.cluster_id)) conceptsByCluster.set(c.cluster_id, []);
+    conceptsByCluster.get(c.cluster_id).push({ id: c.id, label: c.label, definition: c.definition });
+  }
+
+  const clusters = clusterRows.map(cl => ({
+    id:         cl.id,
+    name:       cl.name,
+    definition: cl.definition,
+    stamp:      cl.stamp,
+    concepts:   conceptsByCluster.get(cl.id) || [],
+  }));
+
+  return { document_id: documentId, cluster_count: clusters.length, clusters };
+}
+
 export async function clusterConceptsForDocument(documentId) {
   logger.info('[conceptClustering] Starting', { documentId });
 
