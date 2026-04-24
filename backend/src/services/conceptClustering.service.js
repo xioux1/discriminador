@@ -9,10 +9,14 @@ let _anthropic = null;
 function getAnthropicClient() {
   if (!_anthropic) _anthropic = new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY,
-    timeout: Number(process.env.CONCEPT_LLM_TIMEOUT_MS || 30_000),
+    timeout: Number(process.env.CONCEPT_CLUSTERING_LLM_TIMEOUT_MS || 120_000),
   });
   return _anthropic;
 }
+
+// Max orphans before switching to multi-phase LLM (phase1 groups, phase2 orphan batches)
+const MAX_ORPHANS_SINGLE_PASS = Number(process.env.CONCEPT_CLUSTER_MAX_ORPHANS_SINGLE_PASS || 40);
+const ORPHAN_BATCH_SIZE       = Number(process.env.CONCEPT_CLUSTER_ORPHAN_BATCH_SIZE       || 30);
 
 // ==================== Geometry ====================
 
@@ -175,6 +179,105 @@ async function callAnthropicClustering(llmInput) {
     .map(part => (part.type === 'text' ? part.text : ''))
     .join('\n')
     .trim();
+}
+
+// ==================== Multi-phase: orphan assignment ====================
+
+function buildOrphanAssignmentPrompt(namedClusters, orphanBatch) {
+  const clustersJson = JSON.stringify(
+    namedClusters.map((cl, i) => ({
+      cluster_index:      i,
+      cluster_name:       cl.cluster_name,
+      cluster_definition: cl.cluster_definition,
+    })),
+    null, 2
+  );
+  const orphansJson = JSON.stringify(
+    orphanBatch.map(c => ({ id: c.id, label: c.label, definition: c.definition })),
+    null, 2
+  );
+
+  return `Sos un asistente que asigna conceptos de estudio a clusters temáticos ya definidos.
+
+Clusters existentes:
+${clustersJson}
+
+Conceptos a asignar:
+${orphansJson}
+
+Asigná cada concepto al cluster más apropiado. Si un concepto no encaja perfectamente en ninguno, asignalo al más cercano temáticamente.
+
+Respondé SOLO con un JSON array. Sin texto adicional, sin markdown, sin backticks.
+
+Formato exacto:
+[{"id": "uuid-del-concepto", "cluster_index": 0}]
+
+Reglas:
+- Todos los conceptos deben quedar asignados.
+- Usá exactamente el UUID de id recibido, sin modificar.
+- cluster_index debe ser el índice numérico del cluster en la lista de arriba.
+- No inventes concept_ids ni cluster_indexes fuera de rango.`;
+}
+
+async function callAnthropicOrphanAssignment(namedClusters, orphanBatch) {
+  const model    = process.env.CONCEPT_CLUSTERING_MODEL || 'claude-sonnet-4-20250514';
+  const prompt   = buildOrphanAssignmentPrompt(namedClusters, orphanBatch);
+
+  const response = await getAnthropicClient().messages.create({
+    model,
+    max_tokens:  1024,
+    temperature: 0.1,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  return response.content
+    .map(part => (part.type === 'text' ? part.text : ''))
+    .join('\n')
+    .trim();
+}
+
+// Phase 1: LLM names/merges pre-grouped items.
+// Phase 2: LLM assigns remaining orphans in batches to the named clusters.
+async function clusterInPhases(groups, orphans, conceptMap) {
+  // Phase 1 — if no groups, bootstrap with first batch of orphans
+  let phase1Orphans   = [];
+  let remainingOrphans = orphans;
+
+  if (groups.length === 0) {
+    phase1Orphans    = orphans.slice(0, ORPHAN_BATCH_SIZE);
+    remainingOrphans = orphans.slice(ORPHAN_BATCH_SIZE);
+  }
+
+  const phase1Input = buildLLMInput(groups, phase1Orphans, conceptMap);
+  const phase1Raw   = await callAnthropicClustering(phase1Input);
+  const namedClusters = safeJsonParseArray(phase1Raw);
+  if (!namedClusters.length) {
+    throw new Error('Phase 1 LLM returned invalid or empty JSON for clustering.');
+  }
+
+  // Phase 2 — assign remaining orphans in batches
+  for (let i = 0; i < remainingOrphans.length; i += ORPHAN_BATCH_SIZE) {
+    const batchIds      = remainingOrphans.slice(i, i + ORPHAN_BATCH_SIZE);
+    const batchConcepts = batchIds.map(id => conceptMap.get(id));
+
+    const assignRaw   = await callAnthropicOrphanAssignment(namedClusters, batchConcepts);
+    const assignments = safeJsonParseArray(assignRaw);
+
+    if (!assignments.length) {
+      throw new Error(`Phase 2 LLM returned invalid JSON for orphan batch at index ${i}.`);
+    }
+
+    for (const { id, cluster_index } of assignments) {
+      if (typeof cluster_index !== 'number' || cluster_index < 0 || cluster_index >= namedClusters.length) {
+        throw new Error(`Phase 2: invalid cluster_index ${cluster_index} for concept ${id}.`);
+      }
+      if (!namedClusters[cluster_index].concept_ids.includes(id)) {
+        namedClusters[cluster_index].concept_ids.push(id);
+      }
+    }
+  }
+
+  return namedClusters;
 }
 
 // ==================== Validation ====================
@@ -367,19 +470,22 @@ export async function clusterConceptsForDocument(documentId) {
     documentId, groups: groups.length, orphans: orphans.length,
   });
 
-  // Step 3: Prepare LLM input
+  // Steps 3-5: LLM clustering (single pass or multi-phase)
   const conceptMap = new Map(concepts.map(c => [c.id, c]));
-  const llmInput   = buildLLMInput(groups, orphans, conceptMap);
 
-  // Step 4: Call LLM
-  const rawResponse = await callAnthropicClustering(llmInput);
-
-  logger.info('[conceptClustering] LLM responded', { documentId });
-
-  // Step 5: Tolerant JSON parse
-  const parsed = safeJsonParseArray(rawResponse);
-  if (!parsed.length) {
-    throw new Error('LLM returned invalid or empty JSON for clustering.');
+  let parsed;
+  if (orphans.length > MAX_ORPHANS_SINGLE_PASS) {
+    logger.info('[conceptClustering] Large document: using multi-phase LLM', {
+      documentId, groups: groups.length, orphans: orphans.length,
+    });
+    parsed = await clusterInPhases(groups, orphans, conceptMap);
+  } else {
+    const llmInput    = buildLLMInput(groups, orphans, conceptMap);
+    const rawResponse = await callAnthropicClustering(llmInput);
+    parsed = safeJsonParseArray(rawResponse);
+    if (!parsed.length) {
+      throw new Error('LLM returned invalid or empty JSON for clustering.');
+    }
   }
 
   // Step 6: Strict validation
