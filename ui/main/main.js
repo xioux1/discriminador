@@ -6979,7 +6979,7 @@ function initDocumentsTab() {
           <span class="docs-toggle-count">0 conceptos</span>
           <span class="docs-toggle-arrow">▼</span>
         </button>
-        <button type="button" class="btn-secondary docs-clusterize-btn hidden">Clusterizar</button>
+        <button type="button" class="btn-secondary docs-clusterize-btn" disabled title="Extraé conceptos primero">Clusterizar</button>
         <button type="button" class="docs-clusters-toggle hidden">
           <span class="docs-clusters-count">0 clusters</span>
           <span class="docs-toggle-arrow">▼</span>
@@ -7009,19 +7009,21 @@ function initDocumentsTab() {
 
   // ── Update the concepts count badge ──────────────────────────────────────────
   function updateConceptBadge(item, count) {
-    const toggle       = item.querySelector('.docs-concepts-toggle');
-    const label        = item.querySelector('.docs-toggle-count');
+    const toggle        = item.querySelector('.docs-concepts-toggle');
+    const label         = item.querySelector('.docs-toggle-count');
     const clusterizeBtn = item.querySelector('.docs-clusterize-btn');
     if (count > 0) {
       label.textContent = `${count} concepto${count !== 1 ? 's' : ''}`;
       toggle.classList.remove('hidden');
-      // Show "Clusterizar" only when no clusters exist yet
+      // Enable "Clusterizar" only when no clusters exist yet
       if (item.querySelector('.docs-clusters-toggle').classList.contains('hidden')) {
-        clusterizeBtn.classList.remove('hidden');
+        clusterizeBtn.disabled = false;
+        clusterizeBtn.title    = '';
       }
     } else {
       toggle.classList.add('hidden');
-      clusterizeBtn.classList.add('hidden');
+      clusterizeBtn.disabled = true;
+      clusterizeBtn.title    = 'Extraé conceptos primero';
     }
   }
 
@@ -7033,7 +7035,7 @@ function initDocumentsTab() {
     if (count > 0) {
       label.textContent = `${count} cluster${count !== 1 ? 's' : ''}`;
       toggle.classList.remove('hidden');
-      clusterizeBtn.classList.add('hidden');
+      clusterizeBtn.classList.add('hidden');  // replaced by toggle
     } else {
       toggle.classList.add('hidden');
     }
