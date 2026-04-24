@@ -378,4 +378,141 @@ cardsRouter.post('/cards/rename-subject', async (req, res) => {
   }
 });
 
+// POST /cards/detect-redundant — use LLM to find semantically similar cards that could be merged as variants
+cardsRouter.post('/cards/detect-redundant', async (req, res) => {
+  const userId = req.user.id;
+  const subject = typeof req.body?.subject === 'string' ? req.body.subject.trim() : null;
+
+  try {
+    const query = subject
+      ? `SELECT id, subject, prompt_text, expected_answer_text FROM cards WHERE user_id = $1 AND archived_at IS NULL AND subject = $2 ORDER BY subject, id`
+      : `SELECT id, subject, prompt_text, expected_answer_text FROM cards WHERE user_id = $1 AND archived_at IS NULL ORDER BY subject, id`;
+    const params = subject ? [userId, subject] : [userId];
+    const { rows: cards } = await dbPool.query(query, params);
+
+    if (cards.length < 2) return res.json({ clusters: [] });
+
+    // Group by subject to keep each LLM call focused
+    const bySubject = {};
+    for (const card of cards) {
+      const key = card.subject || '';
+      if (!bySubject[key]) bySubject[key] = [];
+      bySubject[key].push(card);
+    }
+
+    const allClusters = [];
+    const client = new Anthropic();
+
+    for (const [subjectName, subjectCards] of Object.entries(bySubject)) {
+      if (subjectCards.length < 2) continue;
+
+      const cardList = subjectCards.map((c) =>
+        `[${c.id}] PREGUNTA: ${c.prompt_text.slice(0, 300)}\nRESPUESTA: ${c.expected_answer_text.slice(0, 200)}`
+      ).join('\n\n---\n\n');
+
+      const response = await client.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1200,
+        temperature: 0,
+        system: `Sos un asistente que detecta tarjetas de estudio redundantes.
+Tu tarea: identificar grupos de tarjetas que evalúen EXACTAMENTE el mismo concepto puntual, aunque estén formuladas diferente.
+
+Criterios para considerar tarjetas como redundantes:
+- Evalúan el mismo concepto o habilidad específica (no solo el mismo tema general)
+- Una tarjeta podría reemplazar a la otra sin perder cobertura
+- Preguntan lo mismo pero con diferente redacción, valores o ejemplos
+
+Respondé ÚNICAMENTE con JSON válido, sin texto adicional:
+{"clusters": [{"card_ids": [id1, id2], "reason": "explicación breve en español"}]}
+
+Si no hay redundancias, respondé exactamente: {"clusters": []}`,
+        messages: [{ role: 'user', content: `Materia: ${subjectName || '(sin materia)'}\n\nTarjetas:\n\n${cardList}` }]
+      });
+
+      const text = response.content.find((b) => b.type === 'text')?.text ?? '';
+      let parsed;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        const match = text.match(/\{[\s\S]*\}/);
+        if (match) { try { parsed = JSON.parse(match[0]); } catch { continue; } }
+        else continue;
+      }
+
+      if (!Array.isArray(parsed?.clusters)) continue;
+
+      for (const cluster of parsed.clusters) {
+        if (!Array.isArray(cluster.card_ids) || cluster.card_ids.length < 2) continue;
+        const clusterCards = cluster.card_ids
+          .map((id) => subjectCards.find((c) => c.id === id))
+          .filter(Boolean);
+        if (clusterCards.length < 2) continue;
+        allClusters.push({
+          cards: clusterCards.map((c) => ({
+            id: c.id,
+            subject: c.subject,
+            prompt_text: c.prompt_text,
+            expected_answer_text: c.expected_answer_text
+          })),
+          reason: cluster.reason || ''
+        });
+      }
+    }
+
+    return res.json({ clusters: allClusters });
+  } catch (err) {
+    console.error('POST /cards/detect-redundant', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+// POST /cards/merge-as-variants — keep one card as primary, convert the rest into its variants and archive them
+cardsRouter.post('/cards/merge-as-variants', async (req, res) => {
+  const userId = req.user.id;
+  const primaryId = parseInt(req.body?.primary_card_id, 10);
+  const secondaryIds = Array.isArray(req.body?.secondary_card_ids)
+    ? [...new Set(req.body.secondary_card_ids.map((id) => parseInt(id, 10)).filter((id) => Number.isFinite(id)))]
+    : [];
+
+  if (!Number.isFinite(primaryId) || secondaryIds.length === 0) {
+    return res.status(422).json({ error: 'validation_error', message: 'primary_card_id y secondary_card_ids son obligatorios.' });
+  }
+  if (secondaryIds.includes(primaryId)) {
+    return res.status(422).json({ error: 'validation_error', message: 'La tarjeta primaria no puede estar en secondary_card_ids.' });
+  }
+
+  try {
+    const allIds = [primaryId, ...secondaryIds];
+    const { rows: ownedCards } = await dbPool.query(
+      `SELECT id, prompt_text, expected_answer_text FROM cards WHERE id = ANY($1::int[]) AND user_id = $2 AND archived_at IS NULL`,
+      [allIds, userId]
+    );
+    const ownedMap = new Map(ownedCards.map((c) => [c.id, c]));
+
+    if (!ownedMap.has(primaryId)) {
+      return res.status(404).json({ error: 'not_found', message: 'Tarjeta primaria no encontrada.' });
+    }
+
+    let merged = 0;
+    for (const secId of secondaryIds) {
+      const card = ownedMap.get(secId);
+      if (!card) continue;
+      await dbPool.query(
+        `INSERT INTO card_variants (card_id, prompt_text, expected_answer_text, user_id) VALUES ($1, $2, $3, $4)`,
+        [primaryId, card.prompt_text, card.expected_answer_text, userId]
+      );
+      await dbPool.query(
+        `UPDATE cards SET archived_at = now(), archived_reason = $1, updated_at = now() WHERE id = $2 AND user_id = $3`,
+        [`Mergeada como variante de #${primaryId}`, secId, userId]
+      );
+      merged++;
+    }
+
+    return res.json({ merged });
+  } catch (err) {
+    console.error('POST /cards/merge-as-variants', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
 export default cardsRouter;

@@ -3987,4 +3987,72 @@ textarea.chinese-input {
   color: var(--text-muted);
   padding-left: 24px;
 }
+
+/* ── Redundant card detection modal ─────────────────────────────────────── */
+
+.redundant-modal-popup { max-width: 680px; }
+
+.redundant-loading {
+  font-size: 0.84rem; color: var(--text-muted);
+  padding: 20px 0; text-align: center;
+}
+
+.redundant-cluster {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+.redundant-cluster--done { opacity: 0.55; pointer-events: none; }
+
+.redundant-cluster-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px;
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--border);
+}
+.redundant-cluster-badge {
+  font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--primary);
+  background: var(--primary-light); border-radius: 4px;
+  padding: 2px 7px;
+}
+.redundant-cluster-reason {
+  font-size: 0.80rem; color: var(--text-muted); font-style: italic;
+}
+
+.redundant-cards-list { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+
+.redundant-card-option {
+  display: flex; align-items: flex-start; gap: 10px;
+  cursor: pointer;
+  padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: 8px;
+  transition: border-color .15s, background .15s;
+}
+.redundant-card-option:hover { border-color: var(--primary); background: var(--primary-light); }
+.redundant-card-option input[type="radio"] { margin-top: 4px; flex-shrink: 0; }
+.redundant-card-option input[type="radio"]:checked + .redundant-card-body { color: var(--text); }
+
+.redundant-card-body { flex: 1; min-width: 0; }
+.redundant-card-subject { font-size: 0.72rem; color: var(--text-muted); margin-bottom: 3px; }
+.redundant-card-prompt { font-size: 0.88rem; font-weight: 600; margin-bottom: 6px; line-height: 1.4; white-space: pre-wrap; }
+.redundant-card-answer-label {
+  font-size: 0.68rem; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--text-muted); margin-bottom: 3px;
+}
+.redundant-card-answer {
+  font-size: 0.80rem; color: var(--text-muted); white-space: pre-wrap;
+  max-height: 80px; overflow-y: auto;
+  background: var(--bg-subtle); border-radius: 5px; padding: 6px 8px;
+}
+
+.redundant-cluster-footer {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+}
+.redundant-merge-status { font-size: 0.82rem; }
+.redundant-merge-status.success { color: var(--pass-fg); }
+.redundant-merge-status.error   { color: var(--fail-fg); }
 [data-theme="dark"] .bot-chat-input:focus { border-color: var(--primary); }

@@ -770,11 +770,125 @@ function initBrowserTab() {
   document.querySelector('#browser-suspend-btn')?.addEventListener('click', () => runBrowserBatchAction('suspend'));
   document.querySelector('#browser-reactivate-btn')?.addEventListener('click', () => runBrowserBatchAction('reactivate'));
   document.querySelector('#browser-edit-btn')?.addEventListener('click', () => runBrowserBatchAction('edit'));
+  document.querySelector('#browser-detect-redundant-btn')?.addEventListener('click', openDetectRedundantModal);
 
   loadBrowserCards().catch((err) => {
     feedback.textContent = `Error al cargar navegador: ${err.message}`;
     feedback.className = 'feedback error';
   });
+}
+
+// ── Redundant card detection & merge ────────────────────────────────────────
+
+function closeRedundantModal() {
+  document.querySelector('#redundant-modal-overlay')?.classList.add('hidden');
+}
+
+document.querySelector('#redundant-modal-close')?.addEventListener('click', closeRedundantModal);
+document.querySelector('#redundant-modal-overlay')?.addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) closeRedundantModal();
+});
+
+async function openDetectRedundantModal() {
+  const overlay  = document.querySelector('#redundant-modal-overlay');
+  const intro    = document.querySelector('#redundant-modal-intro');
+  const list     = document.querySelector('#redundant-clusters-list');
+  const feedback = document.querySelector('#redundant-modal-feedback');
+  const btn      = document.querySelector('#browser-detect-redundant-btn');
+
+  overlay.classList.remove('hidden');
+  list.innerHTML = '<div class="redundant-loading">Analizando tarjetas con IA… esto puede tardar unos segundos.</div>';
+  intro.textContent = '';
+  feedback.textContent = '';
+  feedback.className = 'feedback';
+  btn.disabled = true;
+
+  const subjectFilter = document.querySelector('#browser-filter-subject')?.value.trim() || null;
+
+  try {
+    const data = await postJson('/cards/detect-redundant', subjectFilter ? { subject: subjectFilter } : {});
+    const clusters = data?.clusters || [];
+
+    if (!clusters.length) {
+      intro.textContent = 'No se detectaron tarjetas redundantes' + (subjectFilter ? ` en "${subjectFilter}"` : '') + '.';
+      list.innerHTML = '';
+      return;
+    }
+
+    intro.textContent = `Se encontraron ${clusters.length} grupo(s) de tarjetas redundantes. Elegí cuál conservar como principal y mergeá el resto como variantes.`;
+    list.innerHTML = clusters.map((cluster, ci) => renderClusterHTML(cluster, ci)).join('');
+
+    list.querySelectorAll('.redundant-merge-btn').forEach((btn) => {
+      btn.addEventListener('click', () => handleMergeCluster(btn, feedback));
+    });
+  } catch (err) {
+    intro.textContent = '';
+    list.innerHTML = '';
+    feedback.textContent = `Error al detectar redundantes: ${err.message}`;
+    feedback.className = 'feedback error';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderClusterHTML(cluster, ci) {
+  const cardsHTML = cluster.cards.map((card, i) => `
+    <label class="redundant-card-option">
+      <input type="radio" name="primary-${ci}" value="${card.id}" ${i === 0 ? 'checked' : ''}>
+      <div class="redundant-card-body">
+        <div class="redundant-card-subject">${escHtml(card.subject || '')}</div>
+        <div class="redundant-card-prompt">${escHtml(card.prompt_text)}</div>
+        <div class="redundant-card-answer-label">Respuesta esperada</div>
+        <div class="redundant-card-answer">${escHtml(card.expected_answer_text)}</div>
+      </div>
+    </label>`).join('');
+
+  const allIds = cluster.cards.map((c) => c.id).join(',');
+
+  return `
+    <div class="redundant-cluster" data-cluster="${ci}" data-all-ids="${allIds}">
+      <div class="redundant-cluster-header">
+        <span class="redundant-cluster-badge">Cluster ${ci + 1}</span>
+        <span class="redundant-cluster-reason">${escHtml(cluster.reason)}</span>
+      </div>
+      <div class="redundant-cards-list">${cardsHTML}</div>
+      <div class="redundant-cluster-footer">
+        <button type="button" class="btn-primary redundant-merge-btn" data-cluster="${ci}">
+          Mergear — conservar seleccionada como principal
+        </button>
+        <span class="redundant-merge-status"></span>
+      </div>
+    </div>`;
+}
+
+async function handleMergeCluster(btn, feedback) {
+  const ci      = btn.dataset.cluster;
+  const cluster = document.querySelector(`.redundant-cluster[data-cluster="${ci}"]`);
+  const allIds  = cluster.dataset.allIds.split(',').map(Number);
+  const primaryId = Number(cluster.querySelector(`input[name="primary-${ci}"]:checked`)?.value);
+  const secondaryIds = allIds.filter((id) => id !== primaryId);
+  const statusEl = cluster.querySelector('.redundant-merge-status');
+
+  if (!primaryId || !secondaryIds.length) return;
+
+  btn.disabled = true;
+  statusEl.textContent = 'Mergeando…';
+  statusEl.className = 'redundant-merge-status';
+
+  try {
+    const result = await postJson('/cards/merge-as-variants', {
+      primary_card_id: primaryId,
+      secondary_card_ids: secondaryIds
+    });
+    statusEl.textContent = `✓ ${result.merged} tarjeta(s) mergeadas como variante`;
+    statusEl.className = 'redundant-merge-status success';
+    cluster.classList.add('redundant-cluster--done');
+    loadBrowserCards().catch(() => {});
+  } catch (err) {
+    btn.disabled = false;
+    statusEl.textContent = `Error: ${err.message}`;
+    statusEl.className = 'redundant-merge-status error';
+  }
 }
 
 // --- Dashboard ---
