@@ -4196,3 +4196,73 @@ textarea.chinese-input {
 
 [data-theme="dark"] .docs-document-item { background: var(--surface); }
 [data-theme="dark"] .docs-concepts-panel { background: rgba(255,255,255,0.04); }
+
+.docs-clusters-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--fs-sm);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--primary-light);
+  border: 1px solid rgba(61, 90, 138, 0.22);
+  cursor: pointer;
+  color: var(--primary);
+  font-family: var(--font);
+  transition: border-color 0.12s, background 0.12s;
+}
+.docs-clusters-toggle:hover { border-color: var(--primary); background: rgba(61,90,138,0.14); }
+.docs-clusters-toggle .docs-toggle-arrow { font-size: 0.7rem; transition: transform 0.15s; }
+.docs-clusters-toggle.open .docs-toggle-arrow { transform: rotate(180deg); }
+
+.docs-clusters-panel {
+  display: none;
+  border-top: 1px solid var(--border);
+  padding: 12px 16px;
+  background: var(--bg-subtle);
+}
+.docs-clusters-panel.open {
+  display: block;
+  max-height: 520px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.docs-cluster-item {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+  background: var(--surface);
+}
+.docs-cluster-item:last-child { margin-bottom: 0; }
+
+.docs-cluster-name {
+  font-weight: 600;
+  font-size: var(--fs-sm);
+  color: var(--text);
+  margin-bottom: 3px;
+}
+.docs-cluster-definition {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  overflow-wrap: break-word;
+}
+.docs-cluster-concepts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.docs-cluster-concept-tag {
+  font-size: 0.75rem;
+  background: var(--primary-light);
+  color: var(--primary);
+  padding: 2px 8px;
+  border-radius: 20px;
+  border: 1px solid rgba(61, 90, 138, 0.15);
+  overflow-wrap: break-word;
+}
+
+[data-theme="dark"] .docs-clusters-panel { background: rgba(255,255,255,0.04); }
+[data-theme="dark"] .docs-cluster-item   { background: var(--surface); }

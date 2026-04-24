@@ -28,9 +28,11 @@ router.get('/api/documents', async (req, res, next) => {
              ), 1
            ), 0
          ) AS word_count,
-         COUNT(c.id)::int AS concept_count
+         COUNT(c.id)::int AS concept_count,
+         COUNT(DISTINCT cl.id)::int AS cluster_count
        FROM documents d
-       LEFT JOIN concepts c ON c.document_id = d.id
+       LEFT JOIN concepts c  ON c.document_id = d.id
+       LEFT JOIN clusters cl ON cl.document_id = d.id
        WHERE d.user_id = $1
        GROUP BY d.id
        ORDER BY d.created_at DESC`,

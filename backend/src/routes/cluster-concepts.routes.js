@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { dbPool } from '../db/client.js';
-import { clusterConceptsForDocument } from '../services/conceptClustering.service.js';
+import { clusterConceptsForDocument, getClustersForDocument } from '../services/conceptClustering.service.js';
 import { logger } from '../utils/logger.js';
 
 const router = Router();
@@ -63,6 +63,30 @@ router.post('/api/documents/:id/cluster-concepts', async (req, res, next) => {
     return res.json(result);
   } catch (err) {
     logger.error('[clusterConcepts] Pipeline failed', { documentId, error: err.message });
+    return next(err);
+  }
+});
+
+// GET /api/documents/:id/clusters
+router.get('/api/documents/:id/clusters', async (req, res, next) => {
+  const documentId = req.params.id;
+
+  if (!UUID_RE.test(documentId)) {
+    return res.status(400).json({ error: 'invalid_id', message: 'Document ID must be a valid UUID.' });
+  }
+
+  const { rows: docRows } = await dbPool.query(
+    'SELECT id FROM documents WHERE id = $1',
+    [documentId]
+  );
+  if (!docRows.length) {
+    return res.status(404).json({ error: 'not_found', message: 'Document not found.' });
+  }
+
+  try {
+    const result = await getClustersForDocument(documentId);
+    return res.json(result);
+  } catch (err) {
     return next(err);
   }
 });

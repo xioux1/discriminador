@@ -6979,13 +6979,20 @@ function initDocumentsTab() {
           <span class="docs-toggle-count">0 conceptos</span>
           <span class="docs-toggle-arrow">▼</span>
         </button>
+        <button type="button" class="btn-secondary docs-clusterize-btn hidden">Clusterizar</button>
+        <button type="button" class="docs-clusters-toggle hidden">
+          <span class="docs-clusters-count">0 clusters</span>
+          <span class="docs-toggle-arrow">▼</span>
+        </button>
         <button type="button" class="btn-ghost docs-delete-btn" style="font-size:var(--fs-sm)">Eliminar</button>
         <span class="docs-extract-status"></span>
       </div>
       <div class="docs-concepts-panel"></div>
+      <div class="docs-clusters-panel"></div>
     `;
 
     if (doc.concept_count > 0) updateConceptBadge(item, doc.concept_count);
+    if (doc.cluster_count > 0) updateClusterBadge(item, doc.cluster_count);
 
     wire(item, doc.id);
     return item;
@@ -6995,16 +7002,38 @@ function initDocumentsTab() {
   function wire(item, docId) {
     item.querySelector('.docs-extract-btn').addEventListener('click', () => extractConcepts(docId, item));
     item.querySelector('.docs-concepts-toggle').addEventListener('click', () => togglePanel(docId, item));
+    item.querySelector('.docs-clusterize-btn').addEventListener('click', () => clusterizeConcepts(docId, item));
+    item.querySelector('.docs-clusters-toggle').addEventListener('click', () => toggleClustersPanel(docId, item));
     item.querySelector('.docs-delete-btn').addEventListener('click', () => deleteDoc(docId, item));
   }
 
   // ── Update the concepts count badge ──────────────────────────────────────────
   function updateConceptBadge(item, count) {
-    const toggle = item.querySelector('.docs-concepts-toggle');
-    const label  = item.querySelector('.docs-toggle-count');
+    const toggle       = item.querySelector('.docs-concepts-toggle');
+    const label        = item.querySelector('.docs-toggle-count');
+    const clusterizeBtn = item.querySelector('.docs-clusterize-btn');
     if (count > 0) {
       label.textContent = `${count} concepto${count !== 1 ? 's' : ''}`;
       toggle.classList.remove('hidden');
+      // Show "Clusterizar" only when no clusters exist yet
+      if (item.querySelector('.docs-clusters-toggle').classList.contains('hidden')) {
+        clusterizeBtn.classList.remove('hidden');
+      }
+    } else {
+      toggle.classList.add('hidden');
+      clusterizeBtn.classList.add('hidden');
+    }
+  }
+
+  // ── Update the cluster count badge ───────────────────────────────────────────
+  function updateClusterBadge(item, count) {
+    const toggle        = item.querySelector('.docs-clusters-toggle');
+    const label         = item.querySelector('.docs-clusters-count');
+    const clusterizeBtn = item.querySelector('.docs-clusterize-btn');
+    if (count > 0) {
+      label.textContent = `${count} cluster${count !== 1 ? 's' : ''}`;
+      toggle.classList.remove('hidden');
+      clusterizeBtn.classList.add('hidden');
     } else {
       toggle.classList.add('hidden');
     }
@@ -7047,6 +7076,94 @@ function initDocumentsTab() {
         </div>
         <div class="docs-concept-definition">${escHtml(c.definition)}</div>
         ${c.evidence ? `<div class="docs-concept-evidence">"${escHtml(c.evidence)}"</div>` : ''}
+      </div>
+    `).join('');
+  }
+
+  // ── Cluster concepts ──────────────────────────────────────────────────────────
+  async function clusterizeConcepts(docId, item) {
+    const btn      = item.querySelector('.docs-clusterize-btn');
+    const statusEl = item.querySelector('.docs-extract-status');
+
+    btn.disabled    = true;
+    btn.textContent = 'Clusterizando...';
+    statusEl.textContent = '';
+    statusEl.style.color = '';
+
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
+
+      const res = await fetch(`/api/documents/${docId}/cluster-concepts`, { method: 'POST', headers });
+      Auth.handleRefreshToken(res);
+
+      const payload = await res.json().catch(() => ({}));
+
+      if (res.status === 409) {
+        // Already clustered — fetch existing clusters and show them
+        statusEl.textContent = 'Ya clusterizado.';
+        const existing = await getJson(`/api/documents/${docId}/clusters`).catch(() => null);
+        if (existing && existing.cluster_count > 0) {
+          updateClusterBadge(item, existing.cluster_count);
+          const panel = item.querySelector('.docs-clusters-panel');
+          renderClustersInPanel(panel, existing);
+          panel.classList.add('open');
+          item.querySelector('.docs-clusters-toggle').classList.add('open');
+        }
+        return;
+      }
+
+      if (!res.ok) throw new Error(payload.message || `HTTP ${res.status}`);
+
+      statusEl.textContent = `${payload.cluster_count} cluster${payload.cluster_count !== 1 ? 's' : ''} creados.`;
+      updateClusterBadge(item, payload.cluster_count);
+
+      const panel = item.querySelector('.docs-clusters-panel');
+      renderClustersInPanel(panel, payload);
+      panel.classList.add('open');
+      item.querySelector('.docs-clusters-toggle').classList.add('open');
+    } catch (err) {
+      statusEl.textContent = err.message;
+      statusEl.style.color = 'var(--fail-fg)';
+      btn.disabled    = false;
+      btn.textContent = 'Clusterizar';
+    }
+  }
+
+  // ── Toggle inline clusters panel ─────────────────────────────────────────────
+  async function toggleClustersPanel(docId, item) {
+    const panel  = item.querySelector('.docs-clusters-panel');
+    const toggle = item.querySelector('.docs-clusters-toggle');
+    const isOpen = panel.classList.contains('open');
+
+    panel.classList.toggle('open', !isOpen);
+    toggle.classList.toggle('open', !isOpen);
+
+    if (isOpen) return;
+
+    panel.innerHTML = '<span style="color:var(--text-muted);font-size:var(--fs-sm)">Cargando...</span>';
+
+    try {
+      const data = await getJson(`/api/documents/${docId}/clusters`);
+      renderClustersInPanel(panel, data);
+      updateClusterBadge(item, data.cluster_count);
+    } catch (err) {
+      panel.innerHTML = `<span style="color:var(--fail-fg);font-size:var(--fs-sm)">Error: ${escHtml(err.message)}</span>`;
+    }
+  }
+
+  function renderClustersInPanel(panel, data) {
+    if (!data.clusters || data.clusters.length === 0) {
+      panel.innerHTML = '<p style="color:var(--text-muted);font-size:var(--fs-sm);margin:0">Sin clusters aún.</p>';
+      return;
+    }
+    panel.innerHTML = data.clusters.map(cl => `
+      <div class="docs-cluster-item">
+        <div class="docs-cluster-name">${escHtml(cl.name)}</div>
+        <div class="docs-cluster-definition">${escHtml(cl.definition)}</div>
+        <div class="docs-cluster-concepts">
+          ${cl.concepts.map(c => `<span class="docs-cluster-concept-tag">${escHtml(c.label)}</span>`).join('')}
+        </div>
       </div>
     `).join('');
   }
