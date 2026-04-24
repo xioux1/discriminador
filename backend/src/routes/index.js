@@ -24,9 +24,11 @@ import gratitudeRouter from './gratitude.js';
 import ttsRouter from './tts.js';
 import botChatRouter from './bot-chat.js';
 import settingsRouter from './settings.js';
+import conceptsRouter from './concepts.routes.js';
 
 const router = Router();
 
+router.use(conceptsRouter);
 router.use(cardsRouter);
 router.use(promptToolsRouter);
 router.use(studyDoubtRouter);
