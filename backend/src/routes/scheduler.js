@@ -573,12 +573,19 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
 
 // ─── Internal: review a micro-card ───────────────────────────────────────────
 async function reviewMicroCard(res, microCardId, grade, conceptGaps, userAnswer, responseTimeMs, reviewTimeMs, userId) {
-  const { rows } = await dbPool.query('SELECT * FROM micro_cards WHERE id = $1 AND user_id = $2', [microCardId, userId]);
+  const { rows } = await dbPool.query(
+    `SELECT mc.*, c.subject AS parent_subject
+     FROM micro_cards mc
+     JOIN cards c ON mc.parent_card_id = c.id
+     WHERE mc.id = $1 AND mc.user_id = $2`,
+    [microCardId, userId]
+  );
   if (!rows.length) {
     return res.status(404).json({ error: 'not_found', message: 'Micro-card not found.' });
   }
 
   const micro = rows[0];
+  const effectiveSubject = micro.subject || micro.parent_subject || null;
   const schedule = computeNextReview({
     stability:     parseFloat(micro.stability),
     difficulty:    parseFloat(micro.difficulty),
@@ -628,7 +635,7 @@ async function reviewMicroCard(res, microCardId, grade, conceptGaps, userAnswer,
   dbPool.query(
     `INSERT INTO activity_log (activity_type, subject, grade, response_time_ms, review_time_ms, user_id, logged_date)
      VALUES ('study', $1, $2, $3, $4, $5, (NOW() AT TIME ZONE 'America/Argentina/Buenos_Aires')::DATE)`,
-    [micro.parent_subject || null, grade, responseTimeMs, reviewTimeMs, userId]
+    [effectiveSubject, grade, responseTimeMs, reviewTimeMs, userId]
   ).catch((e) => console.warn('[activity log]', e.message));
 
   // ── Sibling micro-card generation ─────────────────────────────────────────
@@ -642,7 +649,7 @@ async function reviewMicroCard(res, microCardId, grade, conceptGaps, userAnswer,
     const configRes = await dbPool.query(
       `SELECT micro_cards_spawn_siblings, micro_cards_enabled, max_micro_cards_per_card
        FROM subject_configs WHERE subject = $1 AND user_id = $2`,
-      [micro.subject || '', userId]
+      [effectiveSubject || '', userId]
     );
     const spawnSiblings  = configRes.rows[0]?.micro_cards_spawn_siblings ?? false;
     const microEnabled   = configRes.rows[0]?.micro_cards_enabled ?? true;
