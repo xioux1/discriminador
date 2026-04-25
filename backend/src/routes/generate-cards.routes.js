@@ -238,7 +238,7 @@ router.patch('/api/cards/:id/accept-draft', async (req, res, next) => {
       const { rows: updated } = await client.query(
         `UPDATE cards
          SET status = 'active',
-             subject = CASE WHEN $1 IS NOT NULL AND $1 <> '' THEN $1 ELSE subject END,
+             subject = CASE WHEN $1::text IS NOT NULL AND $1::text <> '' THEN $1::text ELSE subject END,
              updated_at = NOW()
          WHERE id = $2
          RETURNING id, status, subject`,
