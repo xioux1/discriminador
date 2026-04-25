@@ -2,12 +2,13 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { dbPool } from '../db/client.js';
 import { signToken } from '../middleware/auth.js';
+import { authRateLimit } from '../middleware/auth-rate-limit.js';
 
 const authRouter = Router();
 const SALT_ROUNDS = 12;
 
 // POST /auth/register
-authRouter.post('/auth/register', async (req, res) => {
+authRouter.post('/auth/register', authRateLimit, async (req, res) => {
   const { username, password } = req.body || {};
   if (!username?.trim() || !password || password.length < 8) {
     return res.status(422).json({ error: 'validation_error', message: 'username y contraseña (mín. 8 caracteres) son requeridos.' });
@@ -31,7 +32,7 @@ authRouter.post('/auth/register', async (req, res) => {
 });
 
 // POST /auth/login
-authRouter.post('/auth/login', async (req, res) => {
+authRouter.post('/auth/login', authRateLimit, async (req, res) => {
   const { username, password } = req.body || {};
   if (!username?.trim() || !password) {
     return res.status(422).json({ error: 'validation_error', message: 'username y contraseña son requeridos.' });

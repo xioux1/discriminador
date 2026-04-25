@@ -250,6 +250,9 @@ Respuesta del estudiante: ${user_answer_text}`
   });
 
   const text = response.content.find((b) => b.type === 'text')?.text ?? '';
+  if (!text.trim()) {
+    throw new Error('LLM judge: received empty response from model');
+  }
   const parsed = parseResponse(text);
 
   return {

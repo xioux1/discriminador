@@ -67,6 +67,13 @@ export const LLM_MODELS = {
   binary:   process.env.LLM_BINARY_MODEL   || 'claude-opus-4-6'
 };
 
+export const DISCORD = {
+  botToken: process.env.DISCORD_BOT_TOKEN || '',
+  userId:   process.env.DISCORD_USER_ID   || ''
+};
+
+const VALID_CLAUDE_MODEL = /^claude-/i;
+
 export function assertRequiredEnv() {
   if (!env.databaseUrl) {
     throw new Error('DATABASE_URL is required.');
@@ -74,7 +81,20 @@ export function assertRequiredEnv() {
   if (!process.env.JWT_SECRET) {
     throw new Error('JWT_SECRET is required.');
   }
+  if (process.env.JWT_SECRET.length < 32) {
+    throw new Error('JWT_SECRET must be at least 32 characters.');
+  }
   if (isLLMJudgeEnabled() && !process.env.ANTHROPIC_API_KEY) {
     throw new Error('ANTHROPIC_API_KEY is required when ENABLE_LLM_JUDGE=true.');
+  }
+
+  for (const [key, model] of Object.entries(LLM_MODELS)) {
+    if (!VALID_CLAUDE_MODEL.test(model)) {
+      throw new Error(`LLM model for '${key}' ("${model}") does not look like a valid Claude model name (must start with "claude-").`);
+    }
+  }
+
+  if (!process.env.OPENAI_API_KEY) {
+    console.warn('[startup] OPENAI_API_KEY not set — speech-to-text (/transcribe) will return 503.');
   }
 }
