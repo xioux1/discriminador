@@ -427,11 +427,15 @@ export async function persistGeneratedCardDraft(context, validatedOutput, userId
   const { cluster, document } = context;
   const { card_group, validVariants } = validatedOutput;
 
+  // The parent card IS a study item: use first variant's Q&A so the scheduler
+  // can always evaluate it. Remaining variants go into card_variants for variety.
+  const [primaryVariant, ...extraVariants] = validVariants;
+
   const client = await dbPool.connect();
   try {
     await client.query('BEGIN');
 
-    // Insert parent card (card group)
+    // Insert parent card using first variant's question/answer
     const cardInsert = await client.query(
       `INSERT INTO cards
          (user_id, subject, prompt_text, expected_answer_text,
@@ -441,8 +445,8 @@ export async function persistGeneratedCardDraft(context, validatedOutput, userId
       [
         userId ?? null,
         document.subject_name ?? null,
-        card_group.title,
-        '',
+        primaryVariant.question,
+        primaryVariant.expected_answer,
         cluster.id,
         document.id,
         'theoretical_open',
@@ -450,9 +454,22 @@ export async function persistGeneratedCardDraft(context, validatedOutput, userId
     );
     const cardId = cardInsert.rows[0].id;
 
-    // Insert variants
+    // Insert remaining variants into card_variants
     const insertedVariants = [];
-    for (const v of validVariants) {
+
+    // Always expose the primary variant in the response (it's the parent card)
+    insertedVariants.push({
+      id: null,           // lives on the parent card row, not card_variants
+      question: primaryVariant.question,
+      expected_answer: primaryVariant.expected_answer,
+      grading_rubric: primaryVariant.grading_rubric,
+      difficulty: primaryVariant.difficulty,
+      answer_time_seconds: primaryVariant.answer_time_seconds,
+      source_concept_ids: primaryVariant.source_concept_ids,
+      source_chunk_indexes: primaryVariant.source_chunk_indexes,
+    });
+
+    for (const v of extraVariants) {
       const variantInsert = await client.query(
         `INSERT INTO card_variants
            (card_id, user_id, prompt_text, expected_answer_text,

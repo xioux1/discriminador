@@ -157,7 +157,7 @@ router.get('/api/clusters/:id/card-draft', async (req, res, next) => {
 
   try {
     const { rows: cardRows } = await dbPool.query(
-      `SELECT id, prompt_text AS title, card_type, status, subject
+      `SELECT id, prompt_text AS title, prompt_text, expected_answer_text, card_type, status, subject
        FROM cards WHERE cluster_id = $1 AND status = 'draft' LIMIT 1`,
       [clusterId]
     );
@@ -168,7 +168,8 @@ router.get('/api/clusters/:id/card-draft', async (req, res, next) => {
 
     const card = cardRows[0];
 
-    const { rows: variants } = await dbPool.query(
+    // Primary variant lives on the parent card itself; extra variants in card_variants
+    const { rows: extraVariants } = await dbPool.query(
       `SELECT id,
               prompt_text          AS question,
               expected_answer_text AS expected_answer,
@@ -180,11 +181,22 @@ router.get('/api/clusters/:id/card-draft', async (req, res, next) => {
       [card.id]
     );
 
+    const primaryVariant = {
+      id: null,
+      question: card.prompt_text,
+      expected_answer: card.expected_answer_text,
+      grading_rubric: [],
+      difficulty: 'medium',
+      answer_time_seconds: 50,
+      source_concept_ids: [],
+      source_chunk_indexes: [],
+    };
+
     return res.json({
       status: 'draft_found',
       cluster_id: clusterId,
       card_group: { id: card.id, title: card.title, card_type: card.card_type, status: card.status, subject: card.subject },
-      variants,
+      variants: [primaryVariant, ...extraVariants],
     });
   } catch (err) {
     logger.error('[getCardDraft] Error', { clusterId, error: err.message });
