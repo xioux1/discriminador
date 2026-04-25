@@ -4409,3 +4409,154 @@ textarea.chinese-input {
 
 [data-theme="dark"] .docs-ranking-panel { background: rgba(255,255,255,0.04); }
 [data-theme="dark"] .docs-ranking-item  { background: var(--surface); }
+
+/* ── Generate-cards action row ───────────────────────────────────────────── */
+.docs-ranking-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.docs-generate-card-btn { font-size: 0.8rem; padding: 4px 12px; }
+.docs-generate-card-btn--has-draft { border-color: var(--accent-ok); color: var(--accent-ok); }
+
+.docs-generate-card-status {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+.docs-generate-card-status--ok    { color: var(--pass-fg); }
+.docs-generate-card-status--warn  { color: var(--review-fg); }
+.docs-generate-card-status--error { color: var(--fail-fg); }
+
+/* ── Card draft panel ────────────────────────────────────────────────────── */
+.docs-card-draft-panel {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.docs-card-draft-panel.hidden { display: none; }
+
+.docs-card-draft-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--border);
+}
+.docs-card-draft-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  flex: 1;
+}
+.docs-card-draft-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--review-bg);
+  color: var(--review-fg);
+  border: 1px solid rgba(180,145,75,0.25);
+}
+
+.docs-card-variants-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* ── Card variant ────────────────────────────────────────────────────────── */
+.docs-card-variant {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.docs-card-variant:last-child { border-bottom: none; }
+
+.docs-variant-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.docs-variant-num {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.docs-variant-difficulty {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 4px;
+}
+.diff-easy   { background: var(--pass-bg);   color: var(--pass-fg);   border: 1px solid rgba(90,143,90,0.2); }
+.diff-medium { background: var(--easy-bg);   color: var(--easy-fg);   border: 1px solid rgba(55,120,200,0.2); }
+.diff-hard   { background: var(--fail-bg);   color: var(--fail-fg);   border: 1px solid rgba(200,80,80,0.2); }
+
+.docs-variant-time {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.docs-variant-question {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.45;
+  margin-bottom: 8px;
+}
+
+.docs-variant-answer-wrap,
+.docs-variant-rubric-wrap {
+  margin-top: 6px;
+}
+.docs-variant-answer-wrap > summary,
+.docs-variant-rubric-wrap > summary {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.docs-variant-answer-wrap > summary::before,
+.docs-variant-rubric-wrap > summary::before {
+  content: '▸';
+  font-size: 0.65rem;
+  transition: transform 0.15s;
+}
+.docs-variant-answer-wrap[open] > summary::before,
+.docs-variant-rubric-wrap[open]  > summary::before { transform: rotate(90deg); }
+
+.docs-variant-answer {
+  font-size: 0.84rem;
+  color: var(--text-light);
+  line-height: 1.6;
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: var(--bg-subtle);
+  border-radius: 5px;
+  border-left: 3px solid var(--primary-light);
+}
+
+.docs-variant-rubric {
+  margin: 6px 0 0 0;
+  padding-left: 18px;
+  font-size: 0.8rem;
+  color: var(--text-light);
+  line-height: 1.55;
+}
+.docs-variant-rubric li { margin-bottom: 3px; }
+
+[data-theme="dark"] .docs-card-draft-panel { border-color: rgba(255,255,255,0.10); }
+[data-theme="dark"] .docs-card-draft-header { background: rgba(255,255,255,0.04); }
+[data-theme="dark"] .docs-card-variant { border-color: rgba(255,255,255,0.07); }
+[data-theme="dark"] .docs-variant-answer { background: rgba(255,255,255,0.04); }

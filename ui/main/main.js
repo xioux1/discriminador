@@ -7462,7 +7462,7 @@ function initDocumentsTab() {
       const relLabel = relScore != null ? `Top relativo · ${absLabel} absoluto` : absLabel;
 
       return `
-        <div class="docs-ranking-item">
+        <div class="docs-ranking-item" data-cluster-id="${escHtml(cl.id)}">
           <div class="docs-ranking-item-head">
             <span class="docs-tier-badge ${tierClass[tier] || ''}">${escHtml(tier)}</span>
             <div class="docs-ranking-score-bar-wrap">
@@ -7474,9 +7474,124 @@ function initDocumentsTab() {
           ${cl.definition ? `<div class="docs-ranking-def">${escHtml(cl.definition)}</div>` : ''}
           <div class="docs-ranking-signals">${escHtml(scoreDetails)}</div>
           ${reasons ? `<ul class="docs-ranking-reasons">${reasons}</ul>` : ''}
+          <div class="docs-ranking-item-actions">
+            <button type="button" class="btn-secondary docs-generate-card-btn" data-cluster-id="${escHtml(cl.id)}">Generar cards</button>
+            <span class="docs-generate-card-status"></span>
+          </div>
+          <div class="docs-card-draft-panel hidden"></div>
         </div>
       `;
     }).join('');
+
+    // Wire generate-card buttons
+    panel.querySelectorAll('.docs-generate-card-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const rankingItem = btn.closest('.docs-ranking-item');
+        generateCardDraftUI(btn.dataset.clusterId, rankingItem);
+      });
+    });
+  }
+
+  // ── Generate card draft from cluster ─────────────────────────────────────────
+  async function generateCardDraftUI(clusterId, rankingItem) {
+    const btn      = rankingItem.querySelector('.docs-generate-card-btn');
+    const statusEl = rankingItem.querySelector('.docs-generate-card-status');
+    const draftPanel = rankingItem.querySelector('.docs-card-draft-panel');
+
+    btn.disabled    = true;
+    btn.textContent = 'Generando...';
+    statusEl.textContent = '';
+    statusEl.className = 'docs-generate-card-status';
+
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
+
+      const res = await fetch(`/api/clusters/${clusterId}/generate-card-draft`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({}),
+      });
+      Auth.handleRefreshToken(res);
+
+      if (res.status === 409) {
+        // Draft already exists — fetch and show it
+        statusEl.textContent = 'Ya existe un draft. Cargando...';
+        btn.textContent = 'Ver draft';
+        btn.disabled = false;
+        btn.classList.add('docs-generate-card-btn--has-draft');
+
+        const existing = await fetch(`/api/clusters/${clusterId}/card-draft`, { headers: { 'Authorization': headers['Authorization'] } });
+        Auth.handleRefreshToken(existing);
+        if (existing.ok) {
+          const data = await existing.json();
+          renderCardDraftPanel(draftPanel, data);
+          statusEl.textContent = '';
+          btn.addEventListener('click', () => draftPanel.classList.toggle('hidden'), { once: false });
+        } else {
+          statusEl.textContent = 'Draft existente (no se pudo cargar).';
+          statusEl.className = 'docs-generate-card-status docs-generate-card-status--warn';
+        }
+        return;
+      }
+
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload.message || `HTTP ${res.status}`);
+
+      renderCardDraftPanel(draftPanel, payload);
+      btn.textContent = 'Ver draft';
+      btn.classList.add('docs-generate-card-btn--has-draft');
+      btn.disabled = false;
+      btn.addEventListener('click', () => draftPanel.classList.toggle('hidden'), { once: false });
+      statusEl.textContent = `${payload.variants.length} variante${payload.variants.length !== 1 ? 's' : ''} generada${payload.variants.length !== 1 ? 's' : ''}.`;
+      statusEl.className = 'docs-generate-card-status docs-generate-card-status--ok';
+    } catch (err) {
+      statusEl.textContent = err.message;
+      statusEl.className = 'docs-generate-card-status docs-generate-card-status--error';
+      btn.disabled = false;
+      btn.textContent = 'Reintentar';
+    }
+  }
+
+  // ── Render card draft panel ───────────────────────────────────────────────────
+  function renderCardDraftPanel(panel, data) {
+    const difficultyLabel = { easy: 'Fácil', medium: 'Media', hard: 'Difícil' };
+    const difficultyClass = { easy: 'diff-easy', medium: 'diff-medium', hard: 'diff-hard' };
+
+    const variantsHTML = (data.variants || []).map((v, i) => {
+      const rubricItems = (v.grading_rubric || []).map(r => `<li>${escHtml(r)}</li>`).join('');
+      const diff = v.difficulty || 'medium';
+      const secs = v.answer_time_seconds ? `~${v.answer_time_seconds}s` : '';
+
+      return `
+        <div class="docs-card-variant">
+          <div class="docs-variant-meta">
+            <span class="docs-variant-num">#${i + 1}</span>
+            <span class="docs-variant-difficulty ${difficultyClass[diff] || ''}">${difficultyLabel[diff] || diff}</span>
+            ${secs ? `<span class="docs-variant-time">${escHtml(secs)}</span>` : ''}
+          </div>
+          <div class="docs-variant-question">${escHtml(v.question)}</div>
+          <details class="docs-variant-answer-wrap">
+            <summary>Respuesta esperada</summary>
+            <div class="docs-variant-answer">${escHtml(v.expected_answer)}</div>
+          </details>
+          ${rubricItems ? `
+          <details class="docs-variant-rubric-wrap">
+            <summary>Rúbrica de corrección</summary>
+            <ul class="docs-variant-rubric">${rubricItems}</ul>
+          </details>` : ''}
+        </div>
+      `;
+    }).join('');
+
+    panel.innerHTML = `
+      <div class="docs-card-draft-header">
+        <span class="docs-card-draft-title">${escHtml(data.card_group?.title || '')}</span>
+        <span class="docs-card-draft-badge">draft</span>
+      </div>
+      <div class="docs-card-variants-list">${variantsHTML}</div>
+    `;
+    panel.classList.remove('hidden');
   }
 
   // ── Create document ───────────────────────────────────────────────────────────

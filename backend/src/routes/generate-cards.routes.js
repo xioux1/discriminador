@@ -8,6 +8,7 @@ import {
   validateGeneratedCardDraft,
   safeJsonParseObject,
 } from '../services/cardGeneration.service.js';
+import { dbPool } from '../db/client.js';
 import { logger } from '../utils/logger.js';
 
 const router = Router();
@@ -145,4 +146,51 @@ router.post('/api/clusters/:id/preview-card-draft', async (req, res, next) => {
   }
 });
 
+// GET /api/clusters/:id/card-draft
+// Returns the existing draft card + variants for a cluster, or 404.
+router.get('/api/clusters/:id/card-draft', async (req, res, next) => {
+  const clusterId = req.params.id;
+
+  if (!UUID_RE.test(clusterId)) {
+    return res.status(400).json({ error: 'invalid_id', message: 'Cluster ID must be a valid UUID.' });
+  }
+
+  try {
+    const { rows: cardRows } = await dbPool.query(
+      `SELECT id, prompt_text AS title, card_type, status
+       FROM cards WHERE cluster_id = $1 AND status = 'draft' LIMIT 1`,
+      [clusterId]
+    );
+
+    if (!cardRows.length) {
+      return res.status(404).json({ error: 'not_found', message: 'No card draft found for this cluster.' });
+    }
+
+    const card = cardRows[0];
+
+    const { rows: variants } = await dbPool.query(
+      `SELECT id,
+              prompt_text          AS question,
+              expected_answer_text AS expected_answer,
+              grading_rubric, difficulty, answer_time_seconds,
+              source_concept_ids, source_chunk_indexes
+       FROM card_variants
+       WHERE card_id = $1 AND status = 'draft'
+       ORDER BY id`,
+      [card.id]
+    );
+
+    return res.json({
+      status: 'draft_found',
+      cluster_id: clusterId,
+      card_group: { id: card.id, title: card.title, card_type: card.card_type, status: card.status },
+      variants,
+    });
+  } catch (err) {
+    logger.error('[getCardDraft] Error', { clusterId, error: err.message });
+    return next(err);
+  }
+});
+
 export default router;
+
