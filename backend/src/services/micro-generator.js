@@ -101,13 +101,11 @@ export function isChineseCard({ prompt_text = '', expected_answer_text = '' }) {
  * Rule: one card = one thing (word | structure | order | particle | register).
  *
  * Type A — lexical failure (forgot a word):
- *   Front: "¿Cómo se dice 'X'?"  |  Back: Chinese word only
+ *   Front: Spanish word/phrase  |  Back: hanzi only (user types it)
  *
  * Type B — structural failure (wrong pattern, particle, order, register):
- *   Option 1 (cloze): take the original sentence, blank out only the structural element
- *     Front: "我昨天 ___ 看书"  |  Back: "在家"
- *   Option 2 (mirror): simpler sentence in Spanish → same pattern in Chinese
- *     Front: "Estudio en casa"  |  Back: "我在家学习"
+ *   Front: simple Spanish sentence using the failed structure
+ *   Back: that sentence in hanzi (user types it)
  */
 export async function generateChineseMicroCard({ prompt_text, expected_answer_text, subject, concept, user_answer = '' }) {
   const response = await getClient().messages.create({
@@ -117,40 +115,34 @@ export async function generateChineseMicroCard({ prompt_text, expected_answer_te
     system: `Sos un tutor especialista en chino mandarín que diseña flashcards.
 
 REGLA BASE (no negociable): una tarjeta testea UNA SOLA COSA: palabra | estructura | orden | partícula | registro.
+En TODAS las tarjetas el estudiante tipea hanzi como respuesta. El FRONT siempre está en español.
 
 ═══ CLASIFICACIÓN ═══
 
 TIPO A — FALLO LÉXICO (el estudiante no recordó una palabra específica):
-  FRONT: ¿Cómo se dice '[palabra en español]'?
-  BACK: solo la palabra en chino — nada más.
+  FRONT: la palabra o frase en español — sin adornos, sin signos de pregunta.
+  BACK: solo el hanzi correspondiente — nada más.
+  Ejemplo → FRONT: "biblioteca"  BACK: "图书馆"
 
 TIPO B — FALLO ESTRUCTURAL (patrón, partícula, orden u otra estructura):
-  Elegí la opción más pedagógica:
-
-  Opción CLOZE (preferida cuando hay oración de referencia):
-    Tomá la oración original o una equivalente minimal.
-    Reemplazá SOLO el elemento estructural con ___.
-    FRONT: oración con ___
-    BACK: solo el fragmento faltante
-    Ejemplo → FRONT: "我昨天 ___ 看书"  BACK: "在家"
-
-  Opción MIRROR (cuando no hay oración clara):
-    Creá una oración más simple con el MISMO patrón.
-    FRONT: esa oración en español
-    BACK: la oración en chino con ese patrón
-    Ejemplo → FRONT: "Estudio en casa"  BACK: "我在家学习"
+  Creá una oración corta y simple (4-6 palabras en español) que use EXACTAMENTE el patrón fallado.
+  FRONT: esa oración en español
+  BACK: la misma oración en hanzi
+  Ejemplo → FRONT: "Estudio en casa"  BACK: "我在家学习"
 
 PROHIBIDO:
+- Usar caracteres chinos en el FRONT bajo ninguna circunstancia.
+- Usar formato cloze (frases con ___).
 - Mezclar léxico y estructura en una sola tarjeta.
-- Poner más de un elemento en el BACK.
+- Poner más de una oración en el BACK.
 - Revelar la respuesta en el FRONT.
 - Referencias a "la tarjeta", "el ejercicio", "el ejemplo anterior".
 
 Respondé ÚNICAMENTE en este formato (4 líneas):
 TYPE: A|B
-FORMAT: lexical|cloze|mirror
-FRONT: <frente>
-BACK: <dorso>`,
+FORMAT: lexical|mirror
+FRONT: <frente en español>
+BACK: <hanzi>`,
     messages: [{
       role: 'user',
       content: `Tarjeta de chino:

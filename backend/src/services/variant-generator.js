@@ -31,7 +31,7 @@ Reglas estrictas:
 - NO cambiés el tipo de razonamiento requerido.
 - NO agregués ni quitées conceptos.
 - La respuesta esperada debe seguir la misma estructura que la original.
-- Escribí en el mismo idioma que la tarjeta original.
+- Escribí EXACTAMENTE en el mismo idioma que la respuesta esperada original. Si la respuesta original está en chino mandarín, la variante debe estar en chino mandarín. Si está en japonés, en japonés. Nunca cambies el idioma de escritura, aunque el contenido de la pregunta mencione palabras, lugares o personas de otro idioma.
 - Si la pregunta o respuesta contiene SQL, SIEMPRE incluí un bloque TABLES que liste los esquemas de TODAS las tablas que aparecen en la variante, en el formato: NOMBRE_TABLA(COL1, COL2, COL3(FK)). Si la pregunta original no tenía tablas, inventialas con nombres coherentes y listalas igual.
 
 Respondé ÚNICAMENTE en este formato exacto:
@@ -68,5 +68,18 @@ Generá una variante conservadora.`
   return {
     prompt_text:          finalPrompt,
     expected_answer_text: answerMatch[1].trim()
+  };
+}
+
+/**
+ * Build a listening variant for a Chinese card.
+ * No LLM needed — the variant stores the Hanzi as the prompt so the frontend
+ * can play it via TTS and ask the student to write it from hearing alone.
+ */
+export function buildChineseListeningVariant({ expected_answer_text }) {
+  return {
+    prompt_text:          expected_answer_text,
+    expected_answer_text: expected_answer_text,
+    variant_type:         'listening'
   };
 }

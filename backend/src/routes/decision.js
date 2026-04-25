@@ -190,6 +190,16 @@ decisionRouter.post('/decision', async (req, res) => {
     ]);
   }
 
+  const dimensionEntries = Object.entries(dimensions);
+  if (dimensionEntries.length === 0 || !dimensionEntries.every(([, v]) => Number.isFinite(Number(v)))) {
+    return validationError(res, [
+      {
+        field: 'evaluation_result.dimensions',
+        issue: 'All dimension values must be finite numbers.'
+      }
+    ]);
+  }
+
   const resolveByEvaluationIdQuery = `
     SELECT id
     FROM evaluation_items
@@ -439,12 +449,34 @@ async function syncSchedulerCard(pool, {
       card.subject = subject;
     }
   } else {
-    const inserted = await pool.query(
-      `INSERT INTO cards (subject, prompt_text, expected_answer_text, user_id)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
-      [subject, prompt_text, expected_answer_text, user_id]
+    // Before creating a new card, check if this text belongs to a card variant.
+    // Variants must always update the parent card — never spawn a duplicate.
+    const variantMatch = await pool.query(
+      `SELECT c.*
+       FROM card_variants cv
+       JOIN cards c ON cv.card_id = c.id
+       WHERE cv.prompt_text = $1
+         AND cv.expected_answer_text = $2
+         AND c.user_id = $3
+         AND c.archived_at IS NULL
+       LIMIT 1`,
+      [prompt_text, expected_answer_text, user_id]
     );
-    card = inserted.rows[0];
+
+    if (variantMatch.rows.length) {
+      card = variantMatch.rows[0];
+      if (subject && !card.subject) {
+        await pool.query('UPDATE cards SET subject = $1, updated_at = now() WHERE id = $2', [subject, card.id]);
+        card.subject = subject;
+      }
+    } else {
+      const inserted = await pool.query(
+        `INSERT INTO cards (subject, prompt_text, expected_answer_text, user_id)
+         VALUES ($1, $2, $3, $4) RETURNING *`,
+        [subject, prompt_text, expected_answer_text, user_id]
+      );
+      card = inserted.rows[0];
+    }
   }
 
   // Apply FSRS
@@ -516,7 +548,7 @@ async function syncSchedulerCard(pool, {
         `INSERT INTO micro_cards (parent_card_id, concept, question, expected_answer, user_id, subject)
          VALUES ($1, $2, $3, $4, $5, $6)
          ON CONFLICT (parent_card_id, concept) DO NOTHING`,
-        [card.id, concept, micro.question, micro.expected_answer, user_id, card.subject || null]
+        [card.id, concept, micro.question, micro.expected_answer, user_id, card.subject || subject || null]
       );
       if (result.rowCount > 0) {
         console.info(`[scheduler sync] micro-card created for concept "${concept}" (card ${card.id})`);

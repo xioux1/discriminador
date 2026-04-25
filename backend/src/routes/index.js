@@ -22,9 +22,17 @@ import plannerRouter from './planner.js';
 import notesRouter from './notes.js';
 import gratitudeRouter from './gratitude.js';
 import ttsRouter from './tts.js';
+import botChatRouter from './bot-chat.js';
+import settingsRouter from './settings.js';
+import conceptsRouter from './concepts.routes.js';
+import clusterConceptsRouter from './cluster-concepts.routes.js';
+import rankClustersRouter from './rank-clusters.routes.js';
 
 const router = Router();
 
+router.use(conceptsRouter);
+router.use(clusterConceptsRouter);
+router.use(rankClustersRouter);
 router.use(cardsRouter);
 router.use(promptToolsRouter);
 router.use(studyDoubtRouter);
@@ -48,5 +56,7 @@ router.use(sqlStandardRouter);
 router.use(notesRouter);
 router.use(gratitudeRouter);
 router.use(ttsRouter);
+router.use(botChatRouter);
+router.use(settingsRouter);
 
 export default router;

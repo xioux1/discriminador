@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { dbPool } from '../db/client.js';
 import { computeNextReview, isPassGrade, isFailGrade } from '../services/scheduler.js';
 import { generateMicroCard, generateMicroCardFromCheckError, generateChineseMicroCard, isChineseCard } from '../services/micro-generator.js';
-import { generateVariant } from '../services/variant-generator.js';
+import { generateVariant, buildChineseListeningVariant } from '../services/variant-generator.js';
 import Anthropic from '@anthropic-ai/sdk';
 
 const LLM_MODEL = 'claude-haiku-4-5-20251001';
@@ -264,7 +264,7 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
       if (parseInt(card.variant_count) === 0) return card;
 
       const vRes = await dbPool.query(
-        `SELECT id, prompt_text, expected_answer_text FROM card_variants WHERE card_id = $1 AND (user_id = $2 OR user_id IS NULL)`,
+        `SELECT id, prompt_text, expected_answer_text, variant_type FROM card_variants WHERE card_id = $1 AND (user_id = $2 OR user_id IS NULL)`,
         [card.id, card.user_id]
       );
       const variants = vRes.rows;
@@ -279,7 +279,8 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
         ...card,
         prompt_text:          v.prompt_text,
         expected_answer_text: v.expected_answer_text,
-        variant_id:           v.id
+        variant_id:           v.id,
+        variant_type:         v.variant_type
       };
     }));
 
@@ -349,25 +350,44 @@ async function autoGenerateVariant(cardId, card, userId) {
 
   const maxVariants = cfgRes.rows[0].max_variants_per_card; // null = unlimited
 
+  // Count regular and listening variants separately.
+  // Listening variants don't count against the regular limit.
   const countRes = await dbPool.query(
-    'SELECT COUNT(*) AS cnt FROM card_variants WHERE card_id = $1 AND (user_id = $2 OR user_id IS NULL)',
+    `SELECT variant_type, COUNT(*) AS cnt
+     FROM card_variants
+     WHERE card_id = $1 AND (user_id = $2 OR user_id IS NULL)
+     GROUP BY variant_type`,
     [cardId, userId]
   );
-  const existing = parseInt(countRes.rows[0].cnt, 10);
-  if (maxVariants !== null && existing >= maxVariants) return;
+  const variantCounts = {};
+  for (const row of countRes.rows) variantCounts[row.variant_type] = parseInt(row.cnt, 10);
 
-  const variant = await generateVariant({
-    prompt_text:          card.prompt_text,
-    expected_answer_text: card.expected_answer_text,
-    subject:              card.subject
-  });
+  const existingRegular = variantCounts['regular'] || 0;
 
-  await dbPool.query(
-    `INSERT INTO card_variants (card_id, prompt_text, expected_answer_text, user_id) VALUES ($1, $2, $3, $4)`,
-    [cardId, variant.prompt_text, variant.expected_answer_text, userId]
-  );
+  if (maxVariants === null || existingRegular < maxVariants) {
+    const variant = await generateVariant({
+      prompt_text:          card.prompt_text,
+      expected_answer_text: card.expected_answer_text,
+      subject:              card.subject
+    });
+    await dbPool.query(
+      `INSERT INTO card_variants (card_id, prompt_text, expected_answer_text, user_id, variant_type)
+       VALUES ($1, $2, $3, $4, 'regular')`,
+      [cardId, variant.prompt_text, variant.expected_answer_text, userId]
+    );
+    console.info('[auto-variant] generated regular', { cardId, subject: card.subject });
+  }
 
-  console.info('[auto-variant] generated', { cardId, subject: card.subject });
+  // For Chinese cards, generate exactly one listening variant (audio-only front).
+  if (isChineseCard(card) && !variantCounts['listening']) {
+    const lv = buildChineseListeningVariant(card);
+    await dbPool.query(
+      `INSERT INTO card_variants (card_id, prompt_text, expected_answer_text, user_id, variant_type)
+       VALUES ($1, $2, $3, $4, 'listening')`,
+      [cardId, lv.prompt_text, lv.expected_answer_text, userId]
+    );
+    console.info('[auto-variant] generated listening', { cardId, subject: card.subject });
+  }
 }
 
 // ─── Internal: review a full card ────────────────────────────────────────────
@@ -573,12 +593,19 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
 
 // ─── Internal: review a micro-card ───────────────────────────────────────────
 async function reviewMicroCard(res, microCardId, grade, conceptGaps, userAnswer, responseTimeMs, reviewTimeMs, userId) {
-  const { rows } = await dbPool.query('SELECT * FROM micro_cards WHERE id = $1 AND user_id = $2', [microCardId, userId]);
+  const { rows } = await dbPool.query(
+    `SELECT mc.*, c.subject AS parent_subject
+     FROM micro_cards mc
+     JOIN cards c ON mc.parent_card_id = c.id
+     WHERE mc.id = $1 AND mc.user_id = $2`,
+    [microCardId, userId]
+  );
   if (!rows.length) {
     return res.status(404).json({ error: 'not_found', message: 'Micro-card not found.' });
   }
 
   const micro = rows[0];
+  const effectiveSubject = micro.subject || micro.parent_subject || null;
   const schedule = computeNextReview({
     stability:     parseFloat(micro.stability),
     difficulty:    parseFloat(micro.difficulty),
@@ -628,7 +655,7 @@ async function reviewMicroCard(res, microCardId, grade, conceptGaps, userAnswer,
   dbPool.query(
     `INSERT INTO activity_log (activity_type, subject, grade, response_time_ms, review_time_ms, user_id, logged_date)
      VALUES ('study', $1, $2, $3, $4, $5, (NOW() AT TIME ZONE 'America/Argentina/Buenos_Aires')::DATE)`,
-    [micro.parent_subject || null, grade, responseTimeMs, reviewTimeMs, userId]
+    [effectiveSubject, grade, responseTimeMs, reviewTimeMs, userId]
   ).catch((e) => console.warn('[activity log]', e.message));
 
   // ── Sibling micro-card generation ─────────────────────────────────────────
@@ -642,7 +669,7 @@ async function reviewMicroCard(res, microCardId, grade, conceptGaps, userAnswer,
     const configRes = await dbPool.query(
       `SELECT micro_cards_spawn_siblings, micro_cards_enabled, max_micro_cards_per_card
        FROM subject_configs WHERE subject = $1 AND user_id = $2`,
-      [micro.subject || '', userId]
+      [effectiveSubject || '', userId]
     );
     const spawnSiblings  = configRes.rows[0]?.micro_cards_spawn_siblings ?? false;
     const microEnabled   = configRes.rows[0]?.micro_cards_enabled ?? true;
@@ -973,8 +1000,8 @@ schedulerRouter.post('/scheduler/cards/:id/variant', async (req, res) => {
     });
 
     const insertRes = await dbPool.query(
-      `INSERT INTO card_variants (card_id, prompt_text, expected_answer_text, user_id)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
+      `INSERT INTO card_variants (card_id, prompt_text, expected_answer_text, user_id, variant_type)
+       VALUES ($1, $2, $3, $4, 'regular') RETURNING *`,
       [cardId, variant.prompt_text, variant.expected_answer_text, userId]
     );
 
@@ -1015,6 +1042,110 @@ schedulerRouter.get('/scheduler/cards/:id/variants', async (req, res) => {
     return res.json({ card: cardRes.rows[0], variants: variantsRes.rows });
   } catch (err) {
     console.error('GET /scheduler/cards/:id/variants', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+// GET /scheduler/daily-summary
+// Returns today's review count, minutes studied, and per-subject priority allocation.
+schedulerRouter.get('/scheduler/daily-summary', async (req, res) => {
+  const userId = req.user.id;
+  const budgetMinutes = Math.max(10, parseInt(req.query.budget_minutes) || 120);
+
+  try {
+    const [reviewsRes, minutesRes, subjectRes] = await Promise.all([
+      dbPool.query(
+        `SELECT COUNT(*) AS cnt
+         FROM activity_log
+         WHERE user_id = $1
+           AND activity_type = 'study'
+           AND logged_date = (NOW() AT TIME ZONE 'America/Argentina/Buenos_Aires')::DATE`,
+        [userId]
+      ),
+      dbPool.query(
+        `SELECT COALESCE(SUM(actual_minutes), 0) AS total_minutes
+         FROM study_sessions
+         WHERE user_id = $1
+           AND (started_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::DATE
+               = (NOW() AT TIME ZONE 'America/Argentina/Buenos_Aires')::DATE`,
+        [userId]
+      ),
+      dbPool.query(
+        `SELECT
+           COALESCE(c.subject, '(sin materia)') AS subject,
+           COUNT(DISTINCT c.id)                  AS cards_due,
+           COUNT(DISTINCT mc.id)                 AS micros_due,
+           MIN(se.exam_date)                     AS exam_date,
+           (SELECT se2.label
+            FROM subject_exam_dates se2
+            WHERE se2.subject = c.subject
+              AND se2.user_id = $1
+              AND se2.exam_date = MIN(se.exam_date)
+            LIMIT 1) AS exam_label
+         FROM cards c
+         LEFT JOIN micro_cards mc
+           ON mc.parent_card_id = c.id
+          AND mc.status = 'active'
+          AND mc.next_review_at <= now()
+         LEFT JOIN subject_exam_dates se
+           ON se.subject = c.subject
+          AND se.user_id = $1
+          AND se.exam_date >= CURRENT_DATE
+         WHERE c.user_id = $1
+           AND c.archived_at IS NULL
+           AND c.suspended_at IS NULL
+           AND c.next_review_at <= now()
+         GROUP BY c.subject
+         ORDER BY exam_date ASC NULLS LAST`,
+        [userId]
+      )
+    ]);
+
+    const reviewsDoneToday = parseInt(reviewsRes.rows[0]?.cnt || 0);
+    const minutesStudiedToday = parseFloat(minutesRes.rows[0]?.total_minutes || 0);
+
+    const rows = subjectRes.rows.map((row) => {
+      const cardsDue = parseInt(row.cards_due || 0);
+      const microsDue = parseInt(row.micros_due || 0);
+      const examDate = row.exam_date ? new Date(row.exam_date) : null;
+
+      let daysUntilExam = null;
+      let urgencyScore = 0.5;
+      let urgencyLabel = 'low';
+
+      if (examDate) {
+        const now = new Date();
+        daysUntilExam = Math.ceil((examDate - now) / 86400000);
+        if (daysUntilExam <= 1)       { urgencyScore = 10;  urgencyLabel = 'critical'; }
+        else if (daysUntilExam <= 3)  { urgencyScore = 4.0; urgencyLabel = 'critical'; }
+        else if (daysUntilExam <= 7)  { urgencyScore = 2.5; urgencyLabel = 'high'; }
+        else if (daysUntilExam <= 14) { urgencyScore = 1.5; urgencyLabel = 'medium'; }
+        else if (daysUntilExam <= 30) { urgencyScore = 1.0; urgencyLabel = 'medium'; }
+        else                           { urgencyScore = 0.5; urgencyLabel = 'low'; }
+      }
+
+      const backlog = Math.min(1.0, (cardsDue + microsDue) / 20);
+      const weight = urgencyScore * 0.7 + backlog * 0.3;
+
+      return { subject: row.subject, cards_due: cardsDue, micros_due: microsDue,
+               days_until_exam: daysUntilExam, exam_label: row.exam_label || null,
+               urgency: urgencyLabel, _weight: weight };
+    });
+
+    const totalWeight = rows.reduce((s, r) => s + r._weight, 0);
+
+    const subjectPriority = rows.map(({ _weight, ...r }) => ({
+      ...r,
+      suggested_minutes: totalWeight > 0 ? Math.round((_weight / totalWeight) * budgetMinutes) : 0
+    }));
+
+    return res.json({
+      reviews_done_today: reviewsDoneToday,
+      minutes_studied_today: minutesStudiedToday,
+      subject_priority: subjectPriority
+    });
+  } catch (err) {
+    console.error('GET /scheduler/daily-summary', err.message);
     return res.status(500).json({ error: 'server_error', message: err.message });
   }
 });

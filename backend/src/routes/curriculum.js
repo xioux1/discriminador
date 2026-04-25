@@ -47,7 +47,7 @@ curriculumRouter.get('/curriculum/:subject', async (req, res) => {
 // PUT /curriculum/:subject — upserta subject_configs (solo syllabus ahora)
 curriculumRouter.put('/curriculum/:subject', async (req, res) => {
   const { subject } = req.params;
-  const { syllabus_text, notes_text, daily_new_cards_limit, max_micro_cards_per_card, grading_strictness, micro_cards_enabled, micro_cards_spawn_siblings, auto_variants_enabled, max_variants_per_card } = req.body || {};
+  const { syllabus_text, notes_text, daily_new_cards_limit, max_micro_cards_per_card, grading_strictness, micro_cards_enabled, micro_cards_spawn_siblings, auto_variants_enabled, max_variants_per_card, retention_floor } = req.body || {};
   const userId = req.user.id;
   const parsedDailyLimit = daily_new_cards_limit === null || daily_new_cards_limit === undefined || daily_new_cards_limit === ''
     ? null
@@ -98,10 +98,21 @@ curriculumRouter.put('/curriculum/:subject', async (req, res) => {
     });
   }
 
+  const parsedRetentionFloor = retention_floor === null || retention_floor === undefined || retention_floor === ''
+    ? 0.75
+    : parseFloat(retention_floor);
+
+  if (!Number.isFinite(parsedRetentionFloor) || parsedRetentionFloor < 0.50 || parsedRetentionFloor > 0.99) {
+    return res.status(400).json({
+      error: 'validation_error',
+      message: 'retention_floor debe ser un número entre 50 y 99 (%).'
+    });
+  }
+
   try {
     const { rows } = await dbPool.query(
-      `INSERT INTO subject_configs (subject, syllabus_text, notes_text, daily_new_cards_limit, max_micro_cards_per_card, grading_strictness, micro_cards_enabled, micro_cards_spawn_siblings, auto_variants_enabled, max_variants_per_card, updated_at, user_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now(), $11)
+      `INSERT INTO subject_configs (subject, syllabus_text, notes_text, daily_new_cards_limit, max_micro_cards_per_card, grading_strictness, micro_cards_enabled, micro_cards_spawn_siblings, auto_variants_enabled, max_variants_per_card, retention_floor, updated_at, user_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now(), $12)
        ON CONFLICT (subject, user_id) DO UPDATE SET
          syllabus_text                = EXCLUDED.syllabus_text,
          notes_text                   = EXCLUDED.notes_text,
@@ -112,10 +123,11 @@ curriculumRouter.put('/curriculum/:subject', async (req, res) => {
          micro_cards_spawn_siblings   = EXCLUDED.micro_cards_spawn_siblings,
          auto_variants_enabled        = EXCLUDED.auto_variants_enabled,
          max_variants_per_card        = EXCLUDED.max_variants_per_card,
+         retention_floor              = EXCLUDED.retention_floor,
          user_id                      = EXCLUDED.user_id,
          updated_at                   = now()
        RETURNING *`,
-      [subject, syllabus_text || null, notes_text || null, parsedDailyLimit, parsedMicroLimit, parsedStrictness, parsedMicroEnabled, parsedSpawnSiblings, parsedAutoVariants, parsedMaxVariants, userId]
+      [subject, syllabus_text || null, notes_text || null, parsedDailyLimit, parsedMicroLimit, parsedStrictness, parsedMicroEnabled, parsedSpawnSiblings, parsedAutoVariants, parsedMaxVariants, parsedRetentionFloor, userId]
     );
     invalidateAdvisorCache(subject, userId);
     return res.json({ config: rows[0] });
