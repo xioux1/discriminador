@@ -1,7 +1,54 @@
+// ─── Theme ────────────────────────────────────────────────────────────────────
+(function initTheme() {
+  const stored = localStorage.getItem('theme');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const theme = stored ?? (prefersDark ? 'dark' : 'light');
+
+  function applyTheme(isDark) {
+    if (isDark) {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    } else {
+      document.documentElement.removeAttribute('data-theme');
+    }
+    const btn = document.getElementById('theme-toggle');
+    if (btn) {
+      btn.textContent = isDark ? '☀' : '☾';
+      btn.title = isDark ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro';
+    }
+  }
+
+  applyTheme(theme === 'dark');
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#theme-toggle')) return;
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    localStorage.setItem('theme', isDark ? 'light' : 'dark');
+    applyTheme(!isDark);
+  });
+})();
+
 const EVALUATE_ENDPOINT = '/evaluate';
 const DECISION_ENDPOINT = '/decision';
 let pendingStudySubject = null;
 const advisorCoverageCache = new Map();
+
+// ─── User settings (loaded once on startup) ───────────────────────────────────
+let userSettings = {
+  session_planning_enabled:   true,
+  gratitude_enabled:          true,
+  time_restriction_enabled:   true,
+  planner_gate_enabled:       true,
+  default_retention_floor:    null,   // integer 50-99, null = use hardcoded 75
+  default_grading_strictness: null,   // integer 0-10,  null = use hardcoded 5
+};
+
+// localStorage-backed UX preferences (no server persistence needed)
+function getTTSEnabled()          { return localStorage.getItem('discriminador_tts_enabled') !== 'false'; }
+function setTTSEnabled(v)         { localStorage.setItem('discriminador_tts_enabled', v ? 'true' : 'false'); }
+function getDefaultBriefingTime() { return localStorage.getItem('discriminador_briefing_time') || ''; }
+function setDefaultBriefingTime(v){ if (v) localStorage.setItem('discriminador_briefing_time', String(v)); else localStorage.removeItem('discriminador_briefing_time'); }
+function getDefaultBriefingEnergy(){ return localStorage.getItem('discriminador_briefing_energy') || ''; }
+function setDefaultBriefingEnergy(v){ if (v) localStorage.setItem('discriminador_briefing_energy', String(v)); else localStorage.removeItem('discriminador_briefing_energy'); }
 
 // ─── Auth gate ────────────────────────────────────────────────────────────────
 
@@ -21,18 +68,41 @@ if (!Auth.isLoggedIn()) {
 function initAuthScreen() {
   let mode = 'login';
   const tabs = document.querySelectorAll('.auth-tab');
-  tabs.forEach(t => t.addEventListener('click', () => {
-    mode = t.dataset.tab;
+  const confirmField = document.getElementById('auth-confirm-field');
+  const submitBtn = document.getElementById('auth-submit-btn');
+
+  function applyMode(m) {
+    mode = m;
     tabs.forEach(x => x.classList.toggle('active', x.dataset.tab === mode));
     document.getElementById('auth-error').classList.add('hidden');
-  }));
+    const isRegister = mode === 'register';
+    confirmField.classList.toggle('hidden', !isRegister);
+    submitBtn.textContent = isRegister ? 'Crear cuenta' : 'Entrar';
+    document.getElementById('auth-password').autocomplete = isRegister ? 'new-password' : 'current-password';
+  }
+
+  tabs.forEach(t => t.addEventListener('click', () => applyMode(t.dataset.tab)));
 
   document.getElementById('auth-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const username = document.getElementById('auth-username').value.trim();
     const password = document.getElementById('auth-password').value;
     const errEl = document.getElementById('auth-error');
-    const submitBtn = document.querySelector('.auth-submit');
+
+    if (mode === 'register') {
+      const confirm = document.getElementById('auth-confirm').value;
+      if (password !== confirm) {
+        errEl.textContent = 'Las contraseñas no coinciden.';
+        errEl.classList.remove('hidden');
+        return;
+      }
+      if (password.length < 6) {
+        errEl.textContent = 'La contraseña debe tener al menos 6 caracteres.';
+        errEl.classList.remove('hidden');
+        return;
+      }
+    }
+
     submitBtn.disabled = true;
     errEl.classList.add('hidden');
     try {
@@ -55,6 +125,11 @@ if (!Auth.isLoggedIn()) {
   throw new Error('__auth_gate__'); // halts script execution cleanly
 }
 
+// Load user settings early so feature flags are ready before any tab is used
+getJson('/settings').then((s) => { Object.assign(userSettings, s); }).catch((err) => {
+  console.warn('[settings] Failed to load user settings:', err.message);
+});
+
 // --- Tab navigation ---
 
 (function initTabs() {
@@ -67,8 +142,10 @@ if (!Auth.isLoggedIn()) {
     browser:   document.querySelector('#tab-browser'),
     planner:   document.querySelector('#tab-planner'),
     progress:  document.querySelector('#tab-progress'),
+    settings:  document.querySelector('#tab-settings'),
+    documents: document.querySelector('#tab-documents'),
   };
-  let loaded = { dashboard: false, study: false, explore: false, browser: false, planner: false, progress: false };
+  let loaded = { dashboard: false, study: false, explore: false, browser: false, planner: false, progress: false, settings: false, documents: false };
 
   function showTab(tab) {
     Object.values(tabSections).forEach((s) => s.classList.add('hidden'));
@@ -111,6 +188,10 @@ if (!Auth.isLoggedIn()) {
         // already loaded — just show
       } else if (tab === 'progress' && !loaded.progress) {
         loaded.progress = true; loadProgress();
+      } else if (tab === 'settings' && !loaded.settings) {
+        loaded.settings = true; initSettingsTab();
+      } else if (tab === 'documents' && !loaded.documents) {
+        loaded.documents = true; initDocumentsTab();
       }
 
       // Dashboard "Estudiar" subject button → skip briefing, go straight to the
@@ -694,11 +775,125 @@ function initBrowserTab() {
   document.querySelector('#browser-suspend-btn')?.addEventListener('click', () => runBrowserBatchAction('suspend'));
   document.querySelector('#browser-reactivate-btn')?.addEventListener('click', () => runBrowserBatchAction('reactivate'));
   document.querySelector('#browser-edit-btn')?.addEventListener('click', () => runBrowserBatchAction('edit'));
+  document.querySelector('#browser-detect-redundant-btn')?.addEventListener('click', openDetectRedundantModal);
 
   loadBrowserCards().catch((err) => {
     feedback.textContent = `Error al cargar navegador: ${err.message}`;
     feedback.className = 'feedback error';
   });
+}
+
+// ── Redundant card detection & merge ────────────────────────────────────────
+
+function closeRedundantModal() {
+  document.querySelector('#redundant-modal-overlay')?.classList.add('hidden');
+}
+
+document.querySelector('#redundant-modal-close')?.addEventListener('click', closeRedundantModal);
+document.querySelector('#redundant-modal-overlay')?.addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) closeRedundantModal();
+});
+
+async function openDetectRedundantModal() {
+  const overlay  = document.querySelector('#redundant-modal-overlay');
+  const intro    = document.querySelector('#redundant-modal-intro');
+  const list     = document.querySelector('#redundant-clusters-list');
+  const feedback = document.querySelector('#redundant-modal-feedback');
+  const btn      = document.querySelector('#browser-detect-redundant-btn');
+
+  overlay.classList.remove('hidden');
+  list.innerHTML = '<div class="redundant-loading">Analizando tarjetas con IA… esto puede tardar unos segundos.</div>';
+  intro.textContent = '';
+  feedback.textContent = '';
+  feedback.className = 'feedback';
+  btn.disabled = true;
+
+  const subjectFilter = document.querySelector('#browser-filter-subject')?.value.trim() || null;
+
+  try {
+    const data = await postJson('/cards/detect-redundant', subjectFilter ? { subject: subjectFilter } : {});
+    const clusters = data?.clusters || [];
+
+    if (!clusters.length) {
+      intro.textContent = 'No se detectaron tarjetas redundantes' + (subjectFilter ? ` en "${subjectFilter}"` : '') + '.';
+      list.innerHTML = '';
+      return;
+    }
+
+    intro.textContent = `Se encontraron ${clusters.length} grupo(s) de tarjetas redundantes. Elegí cuál conservar como principal y mergeá el resto como variantes.`;
+    list.innerHTML = clusters.map((cluster, ci) => renderClusterHTML(cluster, ci)).join('');
+
+    list.querySelectorAll('.redundant-merge-btn').forEach((btn) => {
+      btn.addEventListener('click', () => handleMergeCluster(btn, feedback));
+    });
+  } catch (err) {
+    intro.textContent = '';
+    list.innerHTML = '';
+    feedback.textContent = `Error al detectar redundantes: ${err.message}`;
+    feedback.className = 'feedback error';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderClusterHTML(cluster, ci) {
+  const cardsHTML = cluster.cards.map((card, i) => `
+    <label class="redundant-card-option">
+      <input type="radio" name="primary-${ci}" value="${card.id}" ${i === 0 ? 'checked' : ''}>
+      <div class="redundant-card-body">
+        <div class="redundant-card-subject">${escHtml(card.subject || '')}</div>
+        <div class="redundant-card-prompt">${escHtml(card.prompt_text)}</div>
+        <div class="redundant-card-answer-label">Respuesta esperada</div>
+        <div class="redundant-card-answer">${escHtml(card.expected_answer_text)}</div>
+      </div>
+    </label>`).join('');
+
+  const allIds = cluster.cards.map((c) => c.id).join(',');
+
+  return `
+    <div class="redundant-cluster" data-cluster="${ci}" data-all-ids="${allIds}">
+      <div class="redundant-cluster-header">
+        <span class="redundant-cluster-badge">Cluster ${ci + 1}</span>
+        <span class="redundant-cluster-reason">${escHtml(cluster.reason)}</span>
+      </div>
+      <div class="redundant-cards-list">${cardsHTML}</div>
+      <div class="redundant-cluster-footer">
+        <button type="button" class="btn-primary redundant-merge-btn" data-cluster="${ci}">
+          Mergear — conservar seleccionada como principal
+        </button>
+        <span class="redundant-merge-status"></span>
+      </div>
+    </div>`;
+}
+
+async function handleMergeCluster(btn, feedback) {
+  const ci      = btn.dataset.cluster;
+  const cluster = document.querySelector(`.redundant-cluster[data-cluster="${ci}"]`);
+  const allIds  = cluster.dataset.allIds.split(',').map(Number);
+  const primaryId = Number(cluster.querySelector(`input[name="primary-${ci}"]:checked`)?.value);
+  const secondaryIds = allIds.filter((id) => id !== primaryId);
+  const statusEl = cluster.querySelector('.redundant-merge-status');
+
+  if (!primaryId || !secondaryIds.length) return;
+
+  btn.disabled = true;
+  statusEl.textContent = 'Mergeando…';
+  statusEl.className = 'redundant-merge-status';
+
+  try {
+    const result = await postJson('/cards/merge-as-variants', {
+      primary_card_id: primaryId,
+      secondary_card_ids: secondaryIds
+    });
+    statusEl.textContent = `✓ ${result.merged} tarjeta(s) mergeadas como variante`;
+    statusEl.className = 'redundant-merge-status success';
+    cluster.classList.add('redundant-cluster--done');
+    loadBrowserCards().catch(() => {});
+  } catch (err) {
+    btn.disabled = false;
+    statusEl.textContent = `Error: ${err.message}`;
+    statusEl.className = 'redundant-merge-status error';
+  }
 }
 
 // --- Dashboard ---
@@ -870,6 +1065,11 @@ async function renderExamCalendar(exams) {
   return card;
 }
 
+function getDailyTarget()  { return parseInt(localStorage.getItem('discriminador_daily_target'))  || 50; }
+function setDailyTarget(n) { localStorage.setItem('discriminador_daily_target', String(n)); }
+function getDailyBudget()  { return parseInt(localStorage.getItem('discriminador_daily_budget'))  || 120; }
+function setDailyBudget(n) { localStorage.setItem('discriminador_daily_budget', String(n)); }
+
 async function loadDashboard() {
   const loading = document.querySelector('#dashboard-loading');
   const content = document.querySelector('#dashboard-content');
@@ -877,10 +1077,11 @@ async function loadDashboard() {
   content.innerHTML = '';
 
   try {
-    const [overview, dueCounts, calendarData] = await Promise.all([
+    const [overview, dueCounts, calendarData, dailySummary] = await Promise.all([
       getJson('/stats/overview').catch(() => ({ subjects: [] })),
       getJson('/scheduler/due-counts').catch(() => ({ cards: {}, micros: {} })),
-      getJson('/exam-calendar').catch(() => ({ exams: [] }))
+      getJson('/exam-calendar').catch(() => ({ exams: [] })),
+      getJson(`/scheduler/daily-summary?budget_minutes=${getDailyBudget()}`).catch(() => null)
     ]);
 
     loading.classList.add('hidden');
@@ -895,7 +1096,45 @@ async function loadDashboard() {
       subject: normalizeSubject(subj.subject)
     }));
     if (!subjects.length) {
-      content.innerHTML = '<p style="color:var(--text-muted);padding:16px">Aún no hay tarjetas. Empezá agregando tarjetas en la pestaña Tarjetas.</p>';
+      const card = document.createElement('div');
+      card.className = 'onboarding-card card';
+      card.innerHTML = `
+        <div class="onboarding-header">
+          <div class="onboarding-icon">◈</div>
+          <div>
+            <h2 class="onboarding-title">Bienvenido a Discriminador</h2>
+            <p class="onboarding-subtitle">Tu sistema de repaso con IA para preparar exámenes. Seguí estos pasos para empezar.</p>
+          </div>
+        </div>
+        <ol class="onboarding-steps">
+          <li class="onboarding-step">
+            <span class="onboarding-step-num">1</span>
+            <div>
+              <strong>Agregá tu primera tarjeta</strong>
+              <p>Andá a la pestaña <em>Tarjetas</em> y creá una pregunta con su respuesta esperada.</p>
+            </div>
+          </li>
+          <li class="onboarding-step">
+            <span class="onboarding-step-num">2</span>
+            <div>
+              <strong>Configurá tu materia</strong>
+              <p>Desde el Inicio, hacé clic en <em>Configurar</em> para establecer fechas de examen y nivel de exigencia.</p>
+            </div>
+          </li>
+          <li class="onboarding-step">
+            <span class="onboarding-step-num">3</span>
+            <div>
+              <strong>Empezá a estudiar</strong>
+              <p>Andá a <em>Estudiar</em>, elegí cuánto tiempo tenés y la IA armará tu sesión de repaso.</p>
+            </div>
+          </li>
+        </ol>
+        <button type="button" class="btn-primary onboarding-cta" id="onboarding-goto-cards">Ir a Tarjetas →</button>
+      `;
+      content.appendChild(card);
+      card.querySelector('#onboarding-goto-cards').addEventListener('click', () => {
+        document.querySelector('[data-tab="browser"]').click();
+      });
       return;
     }
 
@@ -916,6 +1155,73 @@ async function loadDashboard() {
         banner.textContent = 'Sin pendientes hoy.';
       }
       content.appendChild(banner);
+    }
+
+    // Daily progress widget
+    if (dailySummary) {
+      const target = getDailyTarget();
+      const done   = dailySummary.reviews_done_today;
+      const pct    = Math.min(100, Math.round((done / target) * 100));
+      const minText = dailySummary.minutes_studied_today > 0
+        ? `${Math.round(dailySummary.minutes_studied_today)}min estudiados hoy`
+        : '';
+
+      const widget = document.createElement('div');
+      widget.className = 'card daily-progress-widget';
+      widget.innerHTML = `
+        <div class="daily-progress-header">
+          <span class="daily-progress-label">Meta diaria: <strong>${done} / ${target}</strong> revisiones</span>
+          <button class="btn-ghost daily-target-edit" title="Cambiar meta">✎</button>
+        </div>
+        <div class="daily-progress-bar-track">
+          <div class="daily-progress-bar-fill" style="width:${pct}%"></div>
+        </div>
+        ${minText ? `<div class="daily-progress-subtext">${minText}</div>` : ''}
+      `;
+      widget.querySelector('.daily-target-edit').addEventListener('click', () => {
+        const raw = window.prompt('Meta de revisiones diarias:', String(target));
+        const n = parseInt(raw);
+        if (Number.isFinite(n) && n > 0) { setDailyTarget(n); loadDashboard(); }
+      });
+      content.appendChild(widget);
+
+      // Per-subject priority card
+      const prioritySubjects = (dailySummary.subject_priority || [])
+        .filter((s) => s.days_until_exam != null && (s.cards_due + s.micros_due) > 0);
+
+      if (prioritySubjects.length > 0) {
+        const budget = getDailyBudget();
+        const priorityCard = document.createElement('div');
+        priorityCard.className = 'card daily-priority-card';
+
+        const rows = prioritySubjects.map((s) => {
+          const icon = s.urgency === 'critical' ? '🔴' : s.urgency === 'high' ? '🟠' : s.urgency === 'medium' ? '🟡' : '🟢';
+          const examText = s.days_until_exam === 0 ? 'hoy'
+                         : s.days_until_exam === 1 ? 'mañana'
+                         : `en ${s.days_until_exam} días`;
+          return `
+            <div class="priority-row">
+              <span class="priority-icon">${icon}</span>
+              <span class="priority-subject">${s.subject}</span>
+              <span class="priority-exam">${s.exam_label || 'examen'} ${examText}</span>
+              <span class="priority-time">${s.suggested_minutes}min</span>
+            </div>`;
+        }).join('');
+
+        priorityCard.innerHTML = `
+          <div class="daily-priority-header">
+            Para hoy (${budget}min disponibles):
+            <button class="btn-ghost daily-budget-edit" title="Cambiar tiempo disponible">✎</button>
+          </div>
+          ${rows}
+        `;
+        priorityCard.querySelector('.daily-budget-edit').addEventListener('click', () => {
+          const raw = window.prompt('¿Cuántos minutos tenés disponibles hoy?', String(budget));
+          const n = parseInt(raw);
+          if (Number.isFinite(n) && n >= 10) { setDailyBudget(n); loadDashboard(); }
+        });
+        content.appendChild(priorityCard);
+      }
     }
 
     const panel = document.createElement('div');
@@ -1073,10 +1379,11 @@ async function loadProgress() {
   content.classList.add('hidden');
 
   try {
-    const [actData, overview, timingData] = await Promise.all([
+    const [actData, overview, timingData, logsData] = await Promise.all([
       getJson('/stats/activity?days=3650'),
       getJson('/stats/overview').catch(() => ({ subjects: [] })),
-      getJson('/stats/timing?weeks=4').catch(() => null)
+      getJson('/stats/timing?weeks=4').catch(() => null),
+      getJson('/session/plan-logs?limit=10').catch(() => ({ logs: [] }))
     ]);
 
     loading.classList.add('hidden');
@@ -1254,11 +1561,49 @@ async function loadProgress() {
         resetAdvisorChat(null);
       }
     });
+    renderPlanLogs(logsData?.logs || []);
   } catch (err) {
     loading.classList.add('hidden');
     document.querySelector('#progress-content').innerHTML =
       `<p style="color:var(--fail-fg);padding:16px">Error al cargar progreso: ${err.message}</p>`;
     document.querySelector('#progress-content').classList.remove('hidden');
+  }
+}
+
+function renderPlanLogs(logs) {
+  const el = document.querySelector('#progress-plan-logs');
+  if (!el) return;
+
+  if (!logs.length) {
+    el.innerHTML = '<p style="color:var(--text-muted);font-size:var(--fs-sm)">Aún no hay sesiones planificadas por el agente.</p>';
+    return;
+  }
+
+  el.innerHTML = '';
+  for (const log of logs) {
+    const date = new Date(log.created_at).toLocaleString('es-AR', {
+      day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+    });
+    const forcedBadge = log.forced_count > 0
+      ? `<span class="plan-log-forced-badge">${log.forced_count} forzada${log.forced_count !== 1 ? 's' : ''}</span>`
+      : '';
+
+    const entry = document.createElement('div');
+    entry.className = 'plan-log-entry';
+    entry.innerHTML = `
+      <div class="plan-log-header">
+        <span class="plan-log-date">${date}</span>
+        <span class="plan-log-stats">${log.planned_count} incluidas · ${log.deferred_count} diferidas ${forcedBadge}</span>
+        <button class="btn-ghost plan-log-toggle" type="button">Ver ▾</button>
+      </div>
+      <div class="plan-log-body hidden">${log.agent_reasoning || '(sin razonamiento)'}</div>
+    `;
+    entry.querySelector('.plan-log-toggle').addEventListener('click', (e) => {
+      const body    = entry.querySelector('.plan-log-body');
+      const isHidden = body.classList.toggle('hidden');
+      e.target.textContent = isHidden ? 'Ver ▾' : 'Ocultar ▴';
+    });
+    el.appendChild(entry);
   }
 }
 
@@ -1645,13 +1990,13 @@ const uiState = {
 };
 
 const minRules = {
-  prompt_text: 10,
+  prompt_text: 1,
   user_answer_text: 1,
   expected_answer_text: 1,
 };
 
 const errorMessages = {
-  prompt_text: 'La consigna es obligatoria (mínimo 10 caracteres).',
+  prompt_text: 'La consigna es obligatoria.',
   user_answer_text: 'La respuesta del usuario es obligatoria (mínimo 5 caracteres).',
   expected_answer_text: 'La respuesta esperada es obligatoria (mínimo 1 carácter).',
   subject: 'La materia debe tener entre 1 y 60 caracteres.',
@@ -1970,16 +2315,18 @@ function hasChinese(text) {
 }
 
 let _ttsAudio = null;                    // keep reference to stop previous playback
-let _ttsCurrentText = null;             // Hanzi text of the currently shown card
+let _ttsCurrentText = null;             // Hanzi text for the post-eval TTS bar
+let _ttsListeningText = null;           // Hanzi text for the listening variant prompt bar
 const _ttsCache = new Map();             // text → base64 audio string (session cache)
 
 /**
  * Plays the TTS audio for the given Hanzi text.
  * Fetches from POST /tts on first use; subsequent calls use the in-memory cache.
  * If autoplay is blocked by the browser, the button stays enabled for manual replay.
+ * btnSelector defaults to the post-eval replay button; pass a different selector for other contexts.
  */
-async function playChineseTTS(text) {
-  const btn = document.querySelector('#study-tts-btn');
+async function playChineseTTS(text, btnSelector = '#study-tts-btn') {
+  const btn = document.querySelector(btnSelector);
   if (!text || !hasChinese(text)) return;
 
   // Stop any currently playing audio
@@ -2683,9 +3030,14 @@ function applyStudySubjectFilter(subject) {
 }
 
 function initStudyTab() {
-  // Show briefing first, hide overview
-  document.querySelector('#study-briefing').classList.remove('hidden');
-  document.querySelector('#study-overview').classList.add('hidden');
+  if (userSettings.session_planning_enabled) {
+    document.querySelector('#study-briefing').classList.remove('hidden');
+    document.querySelector('#study-overview').classList.add('hidden');
+  } else {
+    document.querySelector('#study-briefing').classList.add('hidden');
+    document.querySelector('#study-overview').classList.remove('hidden');
+    loadStudyOverview();
+  }
 
   ensureAddCardFormHandlers();
   document.querySelector('#study-overview-back-btn').addEventListener('click', () => {
@@ -2808,6 +3160,11 @@ function initStudyTab() {
   // Single TTS replay button listener (registered once; _ttsCurrentText drives which text to play)
   document.querySelector('#study-tts-btn')?.addEventListener('click', () => {
     if (_ttsCurrentText) playChineseTTS(_ttsCurrentText);
+  });
+
+  // Listening variant replay button (prompt-side audio for listening cards)
+  document.querySelector('#study-listening-replay-btn')?.addEventListener('click', () => {
+    if (_ttsListeningText) playChineseTTS(_ttsListeningText, '#study-listening-replay-btn');
   });
 
   // ── Binary check button ────────────────────────────────────────────────────
@@ -2967,6 +3324,18 @@ function ensureAddCardFormHandlers() {
 
   document.querySelector('#briefing-plan-btn').addEventListener('click', fetchSessionPlan);
   document.querySelector('#briefing-start-btn').addEventListener('click', startPlannedSession);
+
+  // Pre-select configured defaults
+  const defTime = getDefaultBriefingTime();
+  if (defTime) {
+    const btn = document.querySelector(`#briefing-time-options .briefing-opt[data-value="${defTime}"]`);
+    if (btn) btn.click();
+  }
+  const defEnergy = getDefaultBriefingEnergy();
+  if (defEnergy) {
+    const btn = document.querySelector(`#briefing-energy-options .briefing-opt[data-value="${defEnergy}"]`);
+    if (btn) btn.click();
+  }
 })();
 
 function checkBriefingReady() {
@@ -3013,16 +3382,48 @@ async function fetchSessionPlan() {
       summaryEl.innerHTML = '<p style="color:var(--text-muted)">No hay tarjetas pendientes para hoy. ¡Al día!</p>';
       startBtn.classList.add('hidden');
     } else {
+      const forcedCount = planned.filter((p) => p.forced).length;
       summaryEl.innerHTML = `
-        <div style="font-weight:600;margin-bottom:8px">${planned.length} tarjeta${planned.length !== 1 ? 's' : ''} · ~${data.plan.total_estimated_minutes} min</div>
+        <div style="font-weight:600;margin-bottom:8px">${planned.length} tarjeta${planned.length !== 1 ? 's' : ''} · ~${data.plan.total_estimated_minutes} min${forcedCount > 0 ? ` · <span class="briefing-forced-badge">${forcedCount} forzada${forcedCount !== 1 ? 's' : ''}</span>` : ''}</div>
         ${planned.map((p) => `
-          <div class="briefing-plan-row">
-            <span>${p.subject}</span>
+          <div class="briefing-plan-row${p.forced ? ' briefing-plan-row--forced' : ''}">
+            <span>${p.subject}${p.forced ? ' <span class="briefing-forced-icon" title="Retención bajo el piso — revisión obligatoria">⚠</span>' : ''}</span>
             <span style="color:var(--text-muted);font-size:0.8rem">~${Math.round(p.estimated_ms / 1000)}s</span>
           </div>`).join('')}
         ${deferred.length > 0 ? `<div class="briefing-deferred">+ ${deferred.length} tarjeta${deferred.length !== 1 ? 's' : ''} postergada${deferred.length !== 1 ? 's' : ''} para otra sesión</div>` : ''}
       `;
       startBtn.classList.remove('hidden');
+
+      // Daily quota nudge
+      getJson(`/scheduler/daily-summary?budget_minutes=${getDailyBudget()}`).then((ds) => {
+        if (!ds) return;
+        const done   = ds.reviews_done_today;
+        const target = getDailyTarget();
+        const rem    = Math.max(0, target - done);
+        if (rem > 0) {
+          const nudge = document.createElement('div');
+          nudge.className = 'briefing-daily-nudge';
+          nudge.textContent = `Meta diaria: ${done}/${target} revisiones · te quedan ${rem}`;
+          summaryEl.appendChild(nudge);
+        }
+      }).catch(() => {});
+
+      // Agent reasoning log
+      if (data.plan.agent_log) {
+        const logToggle = document.createElement('div');
+        logToggle.className = 'briefing-agent-log-toggle';
+        logToggle.innerHTML = `<button class="btn-ghost briefing-agent-log-btn">Ver razonamiento del agente ▾</button>`;
+        const logBody = document.createElement('div');
+        logBody.className = 'briefing-agent-log-body hidden';
+        logBody.textContent = data.plan.agent_log;
+        logToggle.querySelector('.briefing-agent-log-btn').addEventListener('click', () => {
+          const isHidden = logBody.classList.toggle('hidden');
+          logToggle.querySelector('.briefing-agent-log-btn').textContent =
+            isHidden ? 'Ver razonamiento del agente ▾' : 'Ocultar razonamiento ▴';
+        });
+        logToggle.appendChild(logBody);
+        summaryEl.appendChild(logToggle);
+      }
     }
 
     planArea.classList.remove('hidden');
@@ -3087,11 +3488,11 @@ function _doStartPlannedSession() {
 }
 
 async function startPlannedSession() {
-  const status = await checkPlannerDayStatus();
+  if (userSettings.time_restriction_enabled && !isAllowedStartTime()) { showTimeRestrictionModal(); return; }
   const gateEl = document.querySelector('#briefing-planner-gate');
-  if (!status.is_full) {
-    renderPlannerGate(gateEl, status.filled ?? 0, status.total ?? 32);
-    return;
+  if (userSettings.planner_gate_enabled) {
+    const status = await checkPlannerDayStatus();
+    if (!status.is_full) { renderPlannerGate(gateEl, status.filled ?? 0, status.total ?? 32); return; }
   }
   gateEl?.classList.add('hidden');
   showGratitudeModal(() => _doStartPlannedSession());
@@ -3335,7 +3736,34 @@ function startExamSession(cards, subject) {
 // ── Gratitude modal ───────────────────────────────────────────────────────────
 // Shows the gratitude modal and resolves once the user has submitted and
 // acknowledged the response.  Pass a callback that starts the actual session.
+function isAllowedStartTime() {
+  const min = new Date().getMinutes();
+  return min === 0 || min === 30;
+}
+
+function showTimeRestrictionModal() {
+  const modal    = document.querySelector('#time-restrict-modal');
+  const nextEl   = document.querySelector('#time-restrict-next');
+  const closeBtn = document.querySelector('#time-restrict-close-btn');
+  const backdrop = document.querySelector('#time-restrict-backdrop');
+
+  const min      = new Date().getMinutes();
+  const wait     = min < 30 ? 30 - min : 60 - min;
+  nextEl.textContent = `Próximo horario disponible en ${wait} minuto${wait !== 1 ? 's' : ''}.`;
+
+  modal.classList.remove('hidden');
+
+  function close() {
+    modal.classList.add('hidden');
+    closeBtn.removeEventListener('click', close);
+    backdrop.removeEventListener('click', close);
+  }
+  closeBtn.addEventListener('click', close);
+  backdrop.addEventListener('click', close);
+}
+
 function showGratitudeModal(onConfirm) {
+  if (!userSettings.gratitude_enabled) { onConfirm(); return; }
   const modal      = document.querySelector('#gratitude-modal');
   const input      = document.querySelector('#gratitude-input');
   const submitBtn  = document.querySelector('#gratitude-submit-btn');
@@ -3470,11 +3898,11 @@ function renderPlannerGate(gateEl, filled, total) {
 }
 
 async function startStudySession() {
-  const status = await checkPlannerDayStatus();
+  if (userSettings.time_restriction_enabled && !isAllowedStartTime()) { showTimeRestrictionModal(); return; }
   const gateEl = document.querySelector('#overview-planner-gate');
-  if (!status.is_full) {
-    renderPlannerGate(gateEl, status.filled ?? 0, status.total ?? 32);
-    return;
+  if (userSettings.planner_gate_enabled) {
+    const status = await checkPlannerDayStatus();
+    if (!status.is_full) { renderPlannerGate(gateEl, status.filled ?? 0, status.total ?? 32); return; }
   }
   gateEl?.classList.add('hidden');
   showGratitudeModal(() => _doStartStudySession());
@@ -3521,6 +3949,9 @@ function showStudyCard() {
 
   subjectEl.textContent = `Materia: ${subjectLabel}`;
 
+  const listeningBar = document.querySelector('#study-listening-bar');
+  const isListeningVariant = item.type === 'card' && item.data.variant_type === 'listening';
+
   if (item.type === 'micro') {
     badge.textContent = 'Micro-concepto';
     badge.classList.remove('hidden');
@@ -3532,13 +3963,26 @@ function showStudyCard() {
     } else {
       parentContextEl.classList.add('hidden');
     }
+    if (listeningBar) listeningBar.classList.add('hidden');
+    _ttsListeningText = null;
   } else {
     badge.classList.add('hidden');
     parentContextEl.classList.add('hidden');
     const hasMicros = parseInt(item.data.active_micro_count) > 0;
     badge.textContent = hasMicros ? `Advertencia: Conceptos pendientes (${item.data.active_micro_count})` : '';
     if (hasMicros) badge.classList.remove('hidden');
-    renderStudyPrompt(promptEl, getStudyPromptText(item));
+
+    if (isListeningVariant) {
+      // Hide the text prompt; show the listening bar and auto-play TTS.
+      promptEl.innerHTML = '';
+      _ttsListeningText = item.data.prompt_text;
+      if (listeningBar) listeningBar.classList.remove('hidden');
+      if (getTTSEnabled()) playChineseTTS(_ttsListeningText, '#study-listening-replay-btn');
+    } else {
+      renderStudyPrompt(promptEl, getStudyPromptText(item));
+      if (listeningBar) listeningBar.classList.add('hidden');
+      _ttsListeningText = null;
+    }
   }
   setStudyPromptFeedback('');
 
@@ -3746,6 +4190,79 @@ async function toggleStudyPromptEdit() {
   }
 }
 
+function openStudyAnswerEdit(item, expectedEl) {
+  if (item.type === 'micro') return;
+  if (document.querySelector('#study-answer-edit-container')) return;
+
+  const currentText = item.data.expected_answer_text || '';
+
+  const container = document.createElement('div');
+  container.id = 'study-answer-edit-container';
+  container.style.cssText = 'margin-top:10px;padding:10px 12px;border:1px solid var(--border-mid);border-radius:6px;background:var(--bg-subtle)';
+
+  const label = document.createElement('div');
+  label.style.cssText = 'font-size:0.82rem;font-weight:600;margin-bottom:6px;color:var(--text-muted)';
+  label.textContent = 'Editar respuesta esperada:';
+
+  const ta = document.createElement('textarea');
+  ta.rows = 8;
+  ta.style.cssText = 'width:100%;box-sizing:border-box;font-family:monospace;font-size:0.84rem';
+  ta.value = currentText;
+
+  const actionsRow = document.createElement('div');
+  actionsRow.style.cssText = 'display:flex;gap:8px;margin-top:6px;align-items:center';
+
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'button';
+  saveBtn.className = 'btn-secondary';
+  saveBtn.style.fontSize = '0.85rem';
+  saveBtn.textContent = 'Guardar';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'btn-ghost';
+  cancelBtn.style.fontSize = '0.85rem';
+  cancelBtn.textContent = 'Cancelar';
+
+  const fb = document.createElement('span');
+  fb.style.cssText = 'font-size:0.8rem;margin-left:4px';
+
+  actionsRow.append(saveBtn, cancelBtn, fb);
+  container.append(label, ta, actionsRow);
+  expectedEl.appendChild(container);
+  ta.focus();
+
+  cancelBtn.addEventListener('click', () => container.remove());
+
+  saveBtn.addEventListener('click', async () => {
+    const newText = ta.value.trim();
+    if (!newText) { fb.textContent = 'No puede estar vacía.'; fb.style.color = 'var(--fail-fg)'; return; }
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Guardando...';
+    fb.textContent = '';
+    try {
+      await postJson('/cards/batch', { action: 'edit', ids: [item.data.id], expected_answer_text: newText });
+      item.data.expected_answer_text = newText;
+      container.remove();
+      // Replace the "Respuesta esperada" block in the display
+      for (const block of expectedEl.querySelectorAll('.study-answer-compare-block')) {
+        if (block.querySelector('strong')?.textContent?.includes('Respuesta esperada')) {
+          const tmp = document.createElement('div');
+          tmp.innerHTML = formatAnswerBlock('Respuesta esperada', newText);
+          block.replaceWith(tmp.firstElementChild);
+          break;
+        }
+      }
+      setStudyPromptFeedback('Respuesta esperada guardada.', 'success');
+    } catch (_) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Guardar';
+      fb.textContent = 'Error al guardar.';
+      fb.style.color = 'var(--fail-fg)';
+    }
+  });
+}
+
 async function clarifyStudyPrompt() {
   const item = studyState.queue[studyState.index];
   if (!item) return;
@@ -3938,6 +4455,16 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
     `;
     expectedEl.classList.remove('hidden');
 
+    if (item.type !== 'micro') {
+      const editAnswerBtn = document.createElement('button');
+      editAnswerBtn.type = 'button';
+      editAnswerBtn.className = 'btn-ghost';
+      editAnswerBtn.textContent = 'Editar respuesta';
+      editAnswerBtn.style.cssText = 'font-size:0.8rem;margin-top:6px;padding:2px 8px';
+      editAnswerBtn.addEventListener('click', () => openStudyAnswerEdit(item, expectedEl));
+      expectedEl.appendChild(editAnswerBtn);
+    }
+
     // SQL clause checklist in study result block
     let studySqlChecklist = document.querySelector('#study-sql-clause-checklist');
     if (studySqlChecklist) studySqlChecklist.remove();
@@ -4019,7 +4546,7 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
     if (hasChinese(expected_answer_text)) {
       _ttsCurrentText = expected_answer_text;
       if (ttsBar) ttsBar.classList.remove('hidden');
-      playChineseTTS(expected_answer_text);
+      if (getTTSEnabled()) playChineseTTS(expected_answer_text);
     } else {
       _ttsCurrentText = null;
       if (ttsBar) ttsBar.classList.add('hidden');
@@ -4965,7 +5492,11 @@ function appendTodoItem(todo) {
   check.addEventListener('change', async () => {
     const done = check.checked;
     li.classList.toggle('done', done);
-    await postJson(`/planner/todos/${todo.id}`, { done }, 'PATCH').catch(() => {});
+    await postJson(`/planner/todos/${todo.id}`, { done }, 'PATCH').catch((err) => {
+      check.checked = !done;
+      li.classList.toggle('done', !done);
+      console.warn('[planner] Failed to update todo:', err.message);
+    });
   });
 
   const textEl = document.createElement('input');
@@ -4976,8 +5507,13 @@ function appendTodoItem(todo) {
     const text = textEl.value.trim();
     if (!text) { textEl.value = todo.text; return; }
     if (text === todo.text) return;
+    const prev = todo.text;
     todo.text = text;
-    await postJson(`/planner/todos/${todo.id}`, { text }, 'PATCH').catch(() => {});
+    await postJson(`/planner/todos/${todo.id}`, { text }, 'PATCH').catch((err) => {
+      todo.text = prev;
+      textEl.value = prev;
+      console.warn('[planner] Failed to update todo text:', err.message);
+    });
   });
   textEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') textEl.blur(); });
 
@@ -4986,7 +5522,9 @@ function appendTodoItem(todo) {
   del.textContent = '✕';
   del.title = 'Eliminar';
   del.addEventListener('click', async () => {
-    await deleteJson(`/planner/todos/${todo.id}`).catch(() => {});
+    await deleteJson(`/planner/todos/${todo.id}`).catch((err) => {
+      console.warn('[planner] Failed to delete todo:', err.message);
+    });
     li.remove();
   });
 
@@ -5150,6 +5688,10 @@ document.querySelector('#curriculum-grading-strictness')?.addEventListener('inpu
   updateStrictnessDisplay(e.target.value);
 });
 
+document.querySelector('#curriculum-retention-floor')?.addEventListener('input', (e) => {
+  document.querySelector('#curriculum-retention-floor-badge').textContent = `${e.target.value}%`;
+});
+
 function updateMicroCardsLimitVisibility(enabled) {
   const limitRow  = document.querySelector('#micro-cards-limit-row');
   const spawnRow  = document.querySelector('#micro-spawn-row');
@@ -5182,9 +5724,14 @@ async function openCurriculumModal(subject) {
     document.querySelector('#curriculum-syllabus').value = data.config?.syllabus_text || '';
     document.querySelector('#curriculum-daily-new-limit').value = data.config?.daily_new_cards_limit ?? '';
     document.querySelector('#curriculum-max-micro-per-card').value = data.config?.max_micro_cards_per_card ?? '';
-    const strictness = data.config?.grading_strictness ?? 5;
+    const strictness = data.config?.grading_strictness ?? userSettings.default_grading_strictness ?? 5;
     document.querySelector('#curriculum-grading-strictness').value = strictness;
     updateStrictnessDisplay(strictness);
+    const retFloor = data.config?.retention_floor != null
+      ? Math.round(parseFloat(data.config.retention_floor) * 100)
+      : (userSettings.default_retention_floor ?? 75);
+    document.querySelector('#curriculum-retention-floor').value = retFloor;
+    document.querySelector('#curriculum-retention-floor-badge').textContent = `${retFloor}%`;
     const microEnabled = data.config?.micro_cards_enabled ?? true;
     document.querySelector('#curriculum-micro-cards-enabled').checked = microEnabled;
     document.querySelector('#curriculum-micro-spawn-siblings').checked = data.config?.micro_cards_spawn_siblings ?? false;
@@ -5199,8 +5746,12 @@ async function openCurriculumModal(subject) {
   } catch (_e) {
     document.querySelector('#curriculum-daily-new-limit').value = '';
     document.querySelector('#curriculum-max-micro-per-card').value = '';
-    document.querySelector('#curriculum-grading-strictness').value = 5;
-    updateStrictnessDisplay(5);
+    const defStrictness = userSettings.default_grading_strictness ?? 5;
+    document.querySelector('#curriculum-grading-strictness').value = defStrictness;
+    updateStrictnessDisplay(defStrictness);
+    const defRetFloor = userSettings.default_retention_floor ?? 75;
+    document.querySelector('#curriculum-retention-floor').value = defRetFloor;
+    document.querySelector('#curriculum-retention-floor-badge').textContent = `${defRetFloor}%`;
     document.querySelector('#curriculum-micro-cards-enabled').checked = true;
     document.querySelector('#curriculum-micro-spawn-siblings').checked = false;
     updateMicroCardsLimitVisibility(true);
@@ -5255,6 +5806,8 @@ document.querySelector('#curriculum-save-btn').addEventListener('click', async (
       fb.style.color = 'var(--fail-fg)';
       return;
     }
+    const retFloorRaw = parseInt(document.querySelector('#curriculum-retention-floor').value, 10);
+    const retFloorVal = Number.isFinite(retFloorRaw) ? Math.min(99, Math.max(50, retFloorRaw)) / 100 : 0.75;
     await postJson(`/curriculum/${encodeURIComponent(subject)}`, {
       syllabus_text:                document.querySelector('#curriculum-syllabus').value,
       daily_new_cards_limit:        parsedDailyLimit,
@@ -5263,7 +5816,8 @@ document.querySelector('#curriculum-save-btn').addEventListener('click', async (
       micro_cards_enabled:          microEnabled,
       micro_cards_spawn_siblings:   spawnSiblings,
       auto_variants_enabled:        autoVariants,
-      max_variants_per_card:        parsedMaxVariants
+      max_variants_per_card:        parsedMaxVariants,
+      retention_floor:              retFloorVal
     }, 'PUT');
     fb.textContent = 'Guardado.';
     fb.style.color = 'var(--pass-fg)';
@@ -5456,10 +6010,119 @@ function renderSqlValidationResults(results) {
       Resultados: <span style="color:var(--fail-fg)">${nonCompliant.length} no cumplen</span> · <span style="color:var(--pass-fg)">${compliant.length} cumplen</span>
     </p>
     ${nonCompliant.map(r => `
-      <div style="border-left:3px solid var(--fail-fg);padding:4px 8px;margin-bottom:5px;font-size:0.79rem">
-        <strong>${escHtml(r.prompt_text?.slice(0, 80) || 'Tarjeta')}</strong><br>
+      <div class="sql-violation-card" data-card-id="${r.card_id}" style="border-left:3px solid var(--fail-fg);padding:4px 8px;margin-bottom:5px;font-size:0.79rem">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;gap:6px;margin-bottom:3px;flex-wrap:wrap">
+          <strong style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(r.prompt_text?.slice(0, 80) || 'Tarjeta')}</strong>
+          <div style="display:flex;gap:4px;flex-shrink:0">
+            <button class="btn-ghost sql-violation-view-btn" data-card-id="${r.card_id}" style="font-size:0.72rem;padding:1px 6px">Ver tarjeta</button>
+            <button class="btn-ghost sql-violation-ai-fix-btn" data-card-id="${r.card_id}" style="font-size:0.72rem;padding:1px 6px">Corregir con IA</button>
+          </div>
+        </div>
         ${r.violations.map(v => `<span style="color:var(--fail-fg)">• ${escHtml(v.description)}</span>`).join('<br>')}
       </div>`).join('')}`;
+
+  el.querySelectorAll('.sql-violation-view-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const cardId = btn.dataset.cardId;
+      const prev = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '...';
+      try {
+        const data = await getJson(`/cards/${cardId}`);
+        if (data.card) showCardDetail(data.card);
+        else btn.textContent = 'No encontrada';
+      } catch (_) {
+        btn.textContent = 'Error';
+      } finally {
+        setTimeout(() => { btn.disabled = false; btn.textContent = prev; }, 1500);
+      }
+    });
+  });
+
+  el.querySelectorAll('.sql-violation-ai-fix-btn').forEach(btn => {
+    btn.addEventListener('click', () => openAiFixPanel(btn));
+  });
+}
+
+async function openAiFixPanel(triggerBtn) {
+  const cardId = triggerBtn.dataset.cardId;
+  const cardRow = triggerBtn.closest('.sql-violation-card');
+  if (!cardRow) return;
+
+  // Toggle: close if already open
+  const existing = cardRow.querySelector('.ai-fix-panel');
+  if (existing) { existing.remove(); return; }
+
+  triggerBtn.disabled = true;
+  triggerBtn.textContent = 'Consultando IA...';
+
+  const panel = document.createElement('div');
+  panel.className = 'ai-fix-panel';
+  panel.style.cssText = 'margin-top:8px;padding:10px 12px;border:1px solid var(--border-mid);border-radius:6px;background:var(--bg-subtle);font-size:0.8rem';
+
+  try {
+    const data = await postJson(`/cards/${cardId}/ai-fix-answer`, {});
+    const suggested = data.suggested_answer || '';
+
+    const label = document.createElement('div');
+    label.style.cssText = 'font-weight:600;margin-bottom:6px;color:var(--text-muted);font-size:0.75rem;text-transform:uppercase;letter-spacing:.04em';
+    label.textContent = 'Corrección sugerida por IA:';
+
+    const pre = document.createElement('pre');
+    pre.style.cssText = 'white-space:pre-wrap;word-break:break-word;background:var(--bg-code,#1e1e1e);color:var(--fg-code,#d4d4d4);padding:10px;border-radius:4px;font-size:0.8rem;max-height:260px;overflow-y:auto;margin:0 0 8px';
+    pre.textContent = suggested;
+
+    const actionsRow = document.createElement('div');
+    actionsRow.style.cssText = 'display:flex;gap:8px;align-items:center';
+
+    const confirmBtn = document.createElement('button');
+    confirmBtn.type = 'button';
+    confirmBtn.className = 'btn-secondary';
+    confirmBtn.style.fontSize = '0.82rem';
+    confirmBtn.textContent = 'Confirmar y guardar';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'btn-ghost';
+    cancelBtn.style.fontSize = '0.82rem';
+    cancelBtn.textContent = 'Cancelar';
+
+    const fb = document.createElement('span');
+    fb.style.cssText = 'font-size:0.78rem;margin-left:4px';
+
+    actionsRow.append(confirmBtn, cancelBtn, fb);
+    panel.append(label, pre, actionsRow);
+    cardRow.appendChild(panel);
+
+    cancelBtn.addEventListener('click', () => panel.remove());
+
+    confirmBtn.addEventListener('click', async () => {
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = 'Guardando...';
+      fb.textContent = '';
+      try {
+        const result = await postJson('/cards/batch', { action: 'edit', ids: [Number(cardId)], expected_answer_text: suggested });
+        if (!result?.updated) throw new Error('La tarjeta no se actualizó en la base de datos.');
+        fb.textContent = '✓ Guardado';
+        fb.style.color = 'var(--pass-fg)';
+        confirmBtn.textContent = 'Guardado';
+        cardRow.style.borderLeftColor = 'var(--pass-fg)';
+        setTimeout(() => panel.remove(), 1800);
+      } catch (_) {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = 'Confirmar y guardar';
+        fb.textContent = 'Error al guardar.';
+        fb.style.color = 'var(--fail-fg)';
+      }
+    });
+  } catch (err) {
+    panel.textContent = `Error: ${err.message || 'No se pudo obtener la corrección.'}`;
+    panel.style.color = 'var(--fail-fg)';
+    cardRow.appendChild(panel);
+  } finally {
+    triggerBtn.disabled = false;
+    triggerBtn.textContent = 'Corregir con IA';
+  }
 }
 
 async function loadSqlStandard(subject) {
@@ -5947,4 +6610,697 @@ async function initNotes() {
       }
     }, 800);
   });
+}
+
+// ── Bot chat panel ────────────────────────────────────────────────────────────
+
+const BOT_LAST_READ_KEY = 'discriminador_bot_last_read';
+
+function getBotLastRead() {
+  return localStorage.getItem(BOT_LAST_READ_KEY) || new Date(0).toISOString();
+}
+
+function setBotLastRead() {
+  localStorage.setItem(BOT_LAST_READ_KEY, new Date().toISOString());
+}
+
+function fmtChatTime(iso) {
+  const d = new Date(iso);
+  return d.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function renderMessages(messages) {
+  const container = document.querySelector('#bot-chat-messages');
+  if (!messages.length) {
+    container.innerHTML = '<div class="bot-chat-empty">Sin mensajes aún. El asistente te escribirá cuando detecte que una materia necesita atención.</div>';
+    return;
+  }
+  container.innerHTML = '';
+  for (const msg of messages) {
+    const bubble = document.createElement('div');
+    bubble.className = `bot-chat-bubble bot-chat-bubble--${msg.direction === 'outbound' ? 'bot' : 'user'}`;
+    bubble.innerHTML = `
+      <div class="bot-chat-bubble-body">${msg.body.replace(/\n/g, '<br>')}</div>
+      <div class="bot-chat-bubble-time">${fmtChatTime(msg.created_at)}</div>
+    `;
+    container.appendChild(bubble);
+  }
+  container.scrollTop = container.scrollHeight;
+}
+
+async function loadBotMessages() {
+  try {
+    const data = await getJson('/bot/messages?limit=50');
+    renderMessages(data.messages || []);
+  } catch { /* silent */ }
+}
+
+async function loadSnoozes() {
+  try {
+    const data = await getJson('/bot/snoozes');
+    const list  = document.querySelector('#bot-chat-snoozes-list');
+    const panel = document.querySelector('#bot-chat-snoozes');
+    const snoozes = data.snoozes || [];
+    if (!snoozes.length) {
+      panel.classList.add('hidden');
+      return;
+    }
+    list.innerHTML = '';
+    for (const s of snoozes) {
+      const row = document.createElement('div');
+      row.className = 'bot-snooze-row';
+      row.innerHTML = `
+        <span class="bot-snooze-subject">${s.subject}</span>
+        <span class="bot-snooze-until">hasta ${new Date(s.snoozed_until).toLocaleDateString('es-AR')}</span>
+        <button class="btn-ghost bot-snooze-cancel" data-subject="${s.subject}" title="Cancelar silencio">✕</button>
+      `;
+      row.querySelector('.bot-snooze-cancel').addEventListener('click', async (e) => {
+        const subj = e.target.dataset.subject;
+        try {
+          await fetch(`/bot/snoozes/${encodeURIComponent(subj)}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${localStorage.getItem('discriminador_token')}` }
+          });
+          await loadSnoozes();
+        } catch { /* silent */ }
+      });
+      list.appendChild(row);
+    }
+    panel.classList.remove('hidden');
+  } catch { /* silent */ }
+}
+
+async function updateBotBadge() {
+  try {
+    const since = getBotLastRead();
+    const data  = await getJson(`/bot/unread-count?since=${encodeURIComponent(since)}`);
+    const badge = document.querySelector('#bot-chat-badge');
+    const count = data.unread || 0;
+    if (count > 0) {
+      badge.textContent = count > 9 ? '9+' : String(count);
+      badge.classList.remove('hidden');
+    } else {
+      badge.classList.add('hidden');
+    }
+  } catch { /* silent */ }
+}
+
+function initBotChat() {
+  const fab          = document.querySelector('#bot-chat-fab');
+  const panel        = document.querySelector('#bot-chat-panel');
+  const closeBtn     = document.querySelector('#bot-chat-close');
+  const sendBtn      = document.querySelector('#bot-chat-send');
+  const statusBtn    = document.querySelector('#bot-chat-status-btn');
+  const input        = document.querySelector('#bot-chat-input');
+  const snoozesToggle = document.querySelector('#bot-chat-snoozes-btn');
+  const snoozesPanel  = document.querySelector('#bot-chat-snoozes');
+
+  if (!fab) return;
+
+  // Open panel
+  fab.addEventListener('click', async () => {
+    panel.classList.toggle('hidden');
+    if (!panel.classList.contains('hidden')) {
+      setBotLastRead();
+      document.querySelector('#bot-chat-badge').classList.add('hidden');
+      await loadBotMessages();
+      await loadSnoozes();
+      input.focus();
+    }
+  });
+
+  closeBtn.addEventListener('click', () => panel.classList.add('hidden'));
+
+  // Toggle snoozes section
+  snoozesToggle.addEventListener('click', () => {
+    snoozesPanel.classList.toggle('hidden');
+    if (!snoozesPanel.classList.contains('hidden')) loadSnoozes();
+  });
+
+  // Check system status on demand
+  statusBtn.addEventListener('click', async () => {
+    statusBtn.disabled = true;
+    const container = document.querySelector('#bot-chat-messages');
+    container.querySelector('.bot-chat-empty')?.remove();
+    const thinking = document.createElement('div');
+    thinking.className = 'bot-chat-bubble bot-chat-bubble--bot bot-chat-thinking';
+    thinking.innerHTML = '<div class="bot-chat-bubble-body">...</div>';
+    container.appendChild(thinking);
+    container.scrollTop = container.scrollHeight;
+    try {
+      const data = await postJson('/bot/status', {});
+      thinking.remove();
+      const botBubble = document.createElement('div');
+      botBubble.className = 'bot-chat-bubble bot-chat-bubble--bot';
+      botBubble.innerHTML = `<div class="bot-chat-bubble-body">${(data.reply || '').replace(/\n/g, '<br>')}</div><div class="bot-chat-bubble-time">ahora</div>`;
+      container.appendChild(botBubble);
+      container.scrollTop = container.scrollHeight;
+    } catch (err) {
+      thinking.remove();
+      const errBubble = document.createElement('div');
+      errBubble.className = 'bot-chat-bubble bot-chat-bubble--bot';
+      errBubble.innerHTML = `<div class="bot-chat-bubble-body" style="color:var(--fail-fg)">Error: ${err.message}</div>`;
+      container.appendChild(errBubble);
+    } finally {
+      statusBtn.disabled = false;
+    }
+  });
+
+  // Send message
+  async function sendMessage() {
+    const text = input.value.trim();
+    if (!text) return;
+
+    input.value = '';
+    sendBtn.disabled = true;
+
+    // Optimistically add user bubble
+    const container = document.querySelector('#bot-chat-messages');
+    const userBubble = document.createElement('div');
+    userBubble.className = 'bot-chat-bubble bot-chat-bubble--user';
+    userBubble.innerHTML = `<div class="bot-chat-bubble-body">${text.replace(/\n/g, '<br>')}</div><div class="bot-chat-bubble-time">ahora</div>`;
+    container.querySelector('.bot-chat-empty')?.remove();
+    container.appendChild(userBubble);
+    container.scrollTop = container.scrollHeight;
+
+    // Thinking indicator
+    const thinking = document.createElement('div');
+    thinking.className = 'bot-chat-bubble bot-chat-bubble--bot bot-chat-thinking';
+    thinking.innerHTML = '<div class="bot-chat-bubble-body">...</div>';
+    container.appendChild(thinking);
+    container.scrollTop = container.scrollHeight;
+
+    try {
+      const data = await postJson('/bot/reply', { text });
+      thinking.remove();
+      const botBubble = document.createElement('div');
+      botBubble.className = 'bot-chat-bubble bot-chat-bubble--bot';
+      botBubble.innerHTML = `<div class="bot-chat-bubble-body">${(data.reply || '').replace(/\n/g, '<br>')}</div><div class="bot-chat-bubble-time">ahora</div>`;
+      container.appendChild(botBubble);
+      container.scrollTop = container.scrollHeight;
+      await loadSnoozes();
+    } catch (err) {
+      thinking.remove();
+      const errBubble = document.createElement('div');
+      errBubble.className = 'bot-chat-bubble bot-chat-bubble--bot';
+      errBubble.innerHTML = `<div class="bot-chat-bubble-body" style="color:var(--fail-fg)">Error: ${err.message}</div>`;
+      container.appendChild(errBubble);
+    } finally {
+      sendBtn.disabled = false;
+      input.focus();
+    }
+  }
+
+  sendBtn.addEventListener('click', sendMessage);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  });
+
+  // Poll for unread badge every 60s
+  updateBotBadge();
+  setInterval(updateBotBadge, 60_000);
+}
+
+initBotChat();
+
+// ─── Settings tab ─────────────────────────────────────────────────────────────
+
+function initSettingsTab() {
+  const planningEl         = document.querySelector('#setting-session-planning');
+  const gratitudeEl        = document.querySelector('#setting-gratitude');
+  const timeRestrictEl     = document.querySelector('#setting-time-restriction');
+  const plannerGateEl      = document.querySelector('#setting-planner-gate');
+  const ttsEl              = document.querySelector('#setting-tts-enabled');
+  const defTimeEl          = document.querySelector('#setting-default-time');
+  const defEnergyEl        = document.querySelector('#setting-default-energy');
+  const dailyTargetEl      = document.querySelector('#setting-daily-target');
+  const dailyBudgetEl      = document.querySelector('#setting-daily-budget');
+  const defRetentionEl     = document.querySelector('#setting-default-retention');
+  const defStrictnessEl    = document.querySelector('#setting-default-strictness');
+  const statusEl           = document.querySelector('#settings-save-status');
+
+  // Populate from current state
+  planningEl.checked      = userSettings.session_planning_enabled;
+  gratitudeEl.checked     = userSettings.gratitude_enabled;
+  timeRestrictEl.checked  = userSettings.time_restriction_enabled;
+  plannerGateEl.checked   = userSettings.planner_gate_enabled;
+  ttsEl.checked           = getTTSEnabled();
+  defTimeEl.value         = getDefaultBriefingTime();
+  defEnergyEl.value       = getDefaultBriefingEnergy();
+  dailyTargetEl.value     = getDailyTarget();
+  dailyBudgetEl.value     = getDailyBudget();
+  if (userSettings.default_retention_floor    != null) defRetentionEl.value  = userSettings.default_retention_floor;
+  if (userSettings.default_grading_strictness != null) defStrictnessEl.value = userSettings.default_grading_strictness;
+
+  let saveTimer = null;
+
+  function flash() {
+    statusEl.textContent = 'Guardado.';
+    setTimeout(() => { statusEl.textContent = ''; }, 2000);
+  }
+
+  async function saveServerSettings() {
+    const payload = {
+      session_planning_enabled:   planningEl.checked,
+      gratitude_enabled:          gratitudeEl.checked,
+      time_restriction_enabled:   timeRestrictEl.checked,
+      planner_gate_enabled:       plannerGateEl.checked,
+      default_retention_floor:    defRetentionEl.value    !== '' ? parseInt(defRetentionEl.value)    : null,
+      default_grading_strictness: defStrictnessEl.value   !== '' ? parseInt(defStrictnessEl.value)   : null,
+    };
+    try {
+      const saved = await postJson('/settings', payload, 'PUT');
+      Object.assign(userSettings, saved);
+      flash();
+    } catch (err) {
+      statusEl.textContent = `Error al guardar: ${err.message}`;
+    }
+  }
+
+  function scheduleServerSave() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveServerSettings, 400);
+  }
+
+  // Server-persisted toggles
+  planningEl.addEventListener('change',     scheduleServerSave);
+  gratitudeEl.addEventListener('change',    scheduleServerSave);
+  timeRestrictEl.addEventListener('change', scheduleServerSave);
+  plannerGateEl.addEventListener('change',  scheduleServerSave);
+  defRetentionEl.addEventListener('change', scheduleServerSave);
+  defStrictnessEl.addEventListener('change', scheduleServerSave);
+
+  // localStorage — immediate
+  ttsEl.addEventListener('change', () => { setTTSEnabled(ttsEl.checked); flash(); });
+  defTimeEl.addEventListener('change',   () => { setDefaultBriefingTime(defTimeEl.value);     flash(); });
+  defEnergyEl.addEventListener('change', () => { setDefaultBriefingEnergy(defEnergyEl.value); flash(); });
+
+  dailyTargetEl.addEventListener('change', () => {
+    const n = parseInt(dailyTargetEl.value);
+    if (Number.isFinite(n) && n > 0) { setDailyTarget(n); flash(); }
+    else dailyTargetEl.value = getDailyTarget();
+  });
+
+  dailyBudgetEl.addEventListener('change', () => {
+    const n = parseInt(dailyBudgetEl.value);
+    if (Number.isFinite(n) && n >= 10) { setDailyBudget(n); flash(); }
+    else dailyBudgetEl.value = getDailyBudget();
+  });
+}
+
+// ─── Documentos tab ────────────────────────────────────────────────────────────
+
+function formatDocDate(isoStr) {
+  const d = new Date(isoStr);
+  const diffMs = Date.now() - d.getTime();
+  const diffMin = Math.round(diffMs / 60000);
+  if (diffMin < 1)  return 'ahora';
+  if (diffMin < 60) return `hace ${diffMin} min`;
+  const diffH = Math.round(diffMin / 60);
+  if (diffH < 24)   return `hace ${diffH} h`;
+  const diffD = Math.round(diffH / 24);
+  if (diffD === 1)  return 'ayer';
+  if (diffD < 30)   return `hace ${diffD} días`;
+  return d.toLocaleDateString('es-AR');
+}
+
+function initDocumentsTab() {
+  const createBtn = document.getElementById('doc-create-btn');
+  const nameInput = document.getElementById('doc-name-input');
+  const textInput = document.getElementById('doc-text-input');
+  const feedback  = document.getElementById('doc-create-feedback');
+  const listEl    = document.getElementById('docs-list');
+  const loadingEl = document.getElementById('docs-loading');
+  const emptyEl   = document.getElementById('docs-empty');
+
+  // documentId → setInterval id for background polling
+  const polling = new Map();
+
+  // ── Load list ────────────────────────────────────────────────────────────────
+  async function loadDocuments() {
+    loadingEl.classList.remove('hidden');
+    listEl.innerHTML = '';
+    emptyEl.classList.add('hidden');
+
+    try {
+      const data = await getJson('/api/documents');
+      loadingEl.classList.add('hidden');
+
+      if (!data || !data.documents || data.documents.length === 0) {
+        emptyEl.classList.remove('hidden');
+        return;
+      }
+      data.documents.forEach(doc => listEl.appendChild(renderDocItem(doc)));
+    } catch (err) {
+      loadingEl.classList.add('hidden');
+      loadingEl.textContent = `Error al cargar: ${err.message}`;
+    }
+  }
+
+  // ── Render a single document row ─────────────────────────────────────────────
+  function renderDocItem(doc) {
+    const item = document.createElement('div');
+    item.className = 'docs-document-item';
+    item.dataset.docId = doc.id;
+
+    const name      = doc.original_filename || 'Sin nombre';
+    const words     = doc.word_count != null ? `${Number(doc.word_count).toLocaleString('es-AR')} palabras` : '';
+    const date      = formatDocDate(doc.created_at);
+    const metaParts = [words, date].filter(Boolean);
+
+    item.innerHTML = `
+      <div class="docs-document-header">
+        <span class="docs-document-name" title="${escHtml(name)}">${escHtml(name)}</span>
+        <span class="docs-document-meta">${escHtml(metaParts.join(' · '))}</span>
+      </div>
+      <div class="docs-document-actions">
+        <button type="button" class="btn-secondary docs-extract-btn">Extraer conceptos</button>
+        <button type="button" class="docs-concepts-toggle hidden">
+          <span class="docs-toggle-count">0 conceptos</span>
+          <span class="docs-toggle-arrow">▼</span>
+        </button>
+        <button type="button" class="btn-secondary docs-clusterize-btn" disabled title="Extraé conceptos primero">Clusterizar</button>
+        <button type="button" class="docs-clusters-toggle hidden">
+          <span class="docs-clusters-count">0 clusters</span>
+          <span class="docs-toggle-arrow">▼</span>
+        </button>
+        <button type="button" class="btn-ghost docs-delete-btn" style="font-size:var(--fs-sm)">Eliminar</button>
+        <span class="docs-extract-status"></span>
+      </div>
+      <div class="docs-concepts-panel"></div>
+      <div class="docs-clusters-panel"></div>
+    `;
+
+    if (doc.concept_count > 0) updateConceptBadge(item, doc.concept_count);
+    if (doc.cluster_count > 0) updateClusterBadge(item, doc.cluster_count);
+
+    wire(item, doc.id);
+    return item;
+  }
+
+  // ── Wire button events ────────────────────────────────────────────────────────
+  function wire(item, docId) {
+    item.querySelector('.docs-extract-btn').addEventListener('click', () => extractConcepts(docId, item));
+    item.querySelector('.docs-concepts-toggle').addEventListener('click', () => togglePanel(docId, item));
+    item.querySelector('.docs-clusterize-btn').addEventListener('click', () => clusterizeConcepts(docId, item));
+    item.querySelector('.docs-clusters-toggle').addEventListener('click', () => toggleClustersPanel(docId, item));
+    item.querySelector('.docs-delete-btn').addEventListener('click', () => deleteDoc(docId, item));
+  }
+
+  // ── Update the concepts count badge ──────────────────────────────────────────
+  function updateConceptBadge(item, count) {
+    const toggle        = item.querySelector('.docs-concepts-toggle');
+    const label         = item.querySelector('.docs-toggle-count');
+    const clusterizeBtn = item.querySelector('.docs-clusterize-btn');
+    if (count > 0) {
+      label.textContent = `${count} concepto${count !== 1 ? 's' : ''}`;
+      toggle.classList.remove('hidden');
+      // Enable "Clusterizar" only when no clusters exist yet
+      if (item.querySelector('.docs-clusters-toggle').classList.contains('hidden')) {
+        clusterizeBtn.disabled = false;
+        clusterizeBtn.title    = '';
+      }
+    } else {
+      toggle.classList.add('hidden');
+      clusterizeBtn.disabled = true;
+      clusterizeBtn.title    = 'Extraé conceptos primero';
+    }
+  }
+
+  // ── Update the cluster count badge ───────────────────────────────────────────
+  function updateClusterBadge(item, count) {
+    const toggle        = item.querySelector('.docs-clusters-toggle');
+    const label         = item.querySelector('.docs-clusters-count');
+    const clusterizeBtn = item.querySelector('.docs-clusterize-btn');
+    if (count > 0) {
+      label.textContent = `${count} cluster${count !== 1 ? 's' : ''}`;
+      toggle.classList.remove('hidden');
+      clusterizeBtn.classList.add('hidden');  // replaced by toggle
+    } else {
+      toggle.classList.add('hidden');
+    }
+  }
+
+  // ── Toggle inline concepts panel ─────────────────────────────────────────────
+  async function togglePanel(docId, item) {
+    const panel  = item.querySelector('.docs-concepts-panel');
+    const toggle = item.querySelector('.docs-concepts-toggle');
+    const isOpen = panel.classList.contains('open');
+
+    panel.classList.toggle('open', !isOpen);
+    toggle.classList.toggle('open', !isOpen);
+
+    if (isOpen) return; // closing — no fetch needed
+
+    panel.innerHTML = '<span style="color:var(--text-muted);font-size:var(--fs-sm)">Cargando...</span>';
+
+    try {
+      const data = await getJson(`/api/documents/${docId}/concepts`);
+      renderConceptsInPanel(panel, data);
+      updateConceptBadge(item, data.concept_count);
+    } catch (err) {
+      panel.innerHTML = `<span style="color:var(--fail-fg);font-size:var(--fs-sm)">Error: ${escHtml(err.message)}</span>`;
+    }
+  }
+
+  function renderConceptsInPanel(panel, data) {
+    if (!data.concepts || data.concepts.length === 0) {
+      panel.innerHTML = '<p style="color:var(--text-muted);font-size:var(--fs-sm);margin:0">Sin conceptos extraídos aún.</p>';
+      return;
+    }
+    panel.innerHTML = data.concepts.map(c => `
+      <div class="docs-concept-item">
+        <div class="docs-concept-label">
+          ${escHtml(c.label)}
+          ${c.source_chunk_index != null
+            ? `<span class="docs-concept-chunk">fragmento ${c.source_chunk_index + 1}</span>`
+            : ''}
+        </div>
+        <div class="docs-concept-definition">${escHtml(c.definition)}</div>
+        ${c.evidence ? `<div class="docs-concept-evidence">"${escHtml(c.evidence)}"</div>` : ''}
+      </div>
+    `).join('');
+  }
+
+  // ── Cluster concepts ──────────────────────────────────────────────────────────
+  async function clusterizeConcepts(docId, item) {
+    const btn      = item.querySelector('.docs-clusterize-btn');
+    const statusEl = item.querySelector('.docs-extract-status');
+
+    btn.disabled    = true;
+    btn.textContent = 'Clusterizando...';
+    statusEl.textContent = '';
+    statusEl.style.color = '';
+
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
+
+      const res = await fetch(`/api/documents/${docId}/cluster-concepts`, { method: 'POST', headers });
+      Auth.handleRefreshToken(res);
+
+      const payload = await res.json().catch(() => ({}));
+
+      if (res.status === 409) {
+        // Already clustered — fetch existing clusters and show them
+        statusEl.textContent = 'Ya clusterizado.';
+        const existing = await getJson(`/api/documents/${docId}/clusters`).catch(() => null);
+        if (existing && existing.cluster_count > 0) {
+          updateClusterBadge(item, existing.cluster_count);
+          const panel = item.querySelector('.docs-clusters-panel');
+          renderClustersInPanel(panel, existing);
+          panel.classList.add('open');
+          item.querySelector('.docs-clusters-toggle').classList.add('open');
+        }
+        return;
+      }
+
+      if (!res.ok) throw new Error(payload.message || `HTTP ${res.status}`);
+
+      statusEl.textContent = `${payload.cluster_count} cluster${payload.cluster_count !== 1 ? 's' : ''} creados.`;
+      updateClusterBadge(item, payload.cluster_count);
+
+      const panel = item.querySelector('.docs-clusters-panel');
+      renderClustersInPanel(panel, payload);
+      panel.classList.add('open');
+      item.querySelector('.docs-clusters-toggle').classList.add('open');
+    } catch (err) {
+      statusEl.textContent = err.message;
+      statusEl.style.color = 'var(--fail-fg)';
+      btn.disabled    = false;
+      btn.textContent = 'Clusterizar';
+    }
+  }
+
+  // ── Toggle inline clusters panel ─────────────────────────────────────────────
+  async function toggleClustersPanel(docId, item) {
+    const panel  = item.querySelector('.docs-clusters-panel');
+    const toggle = item.querySelector('.docs-clusters-toggle');
+    const isOpen = panel.classList.contains('open');
+
+    panel.classList.toggle('open', !isOpen);
+    toggle.classList.toggle('open', !isOpen);
+
+    if (isOpen) return;
+
+    panel.innerHTML = '<span style="color:var(--text-muted);font-size:var(--fs-sm)">Cargando...</span>';
+
+    try {
+      const data = await getJson(`/api/documents/${docId}/clusters`);
+      renderClustersInPanel(panel, data);
+      updateClusterBadge(item, data.cluster_count);
+    } catch (err) {
+      panel.innerHTML = `<span style="color:var(--fail-fg);font-size:var(--fs-sm)">Error: ${escHtml(err.message)}</span>`;
+    }
+  }
+
+  function renderClustersInPanel(panel, data) {
+    if (!data.clusters || data.clusters.length === 0) {
+      panel.innerHTML = '<p style="color:var(--text-muted);font-size:var(--fs-sm);margin:0">Sin clusters aún.</p>';
+      return;
+    }
+    panel.innerHTML = data.clusters.map(cl => `
+      <div class="docs-cluster-item">
+        <div class="docs-cluster-name">${escHtml(cl.name)}</div>
+        <div class="docs-cluster-definition">${escHtml(cl.definition)}</div>
+        <div class="docs-cluster-concepts">
+          ${cl.concepts.map(c => `<span class="docs-cluster-concept-tag">${escHtml(c.label)}</span>`).join('')}
+        </div>
+      </div>
+    `).join('');
+  }
+
+  // ── Extract concepts ──────────────────────────────────────────────────────────
+  async function extractConcepts(docId, item) {
+    const btn      = item.querySelector('.docs-extract-btn');
+    const statusEl = item.querySelector('.docs-extract-status');
+
+    btn.disabled    = true;
+    btn.textContent = 'Extrayendo...';
+    statusEl.textContent = '';
+    statusEl.style.color = '';
+
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
+
+      const res = await fetch(`/api/documents/${docId}/extract-concepts`, { method: 'POST', headers });
+      Auth.handleRefreshToken(res);
+
+      if (res.status === 202) {
+        statusEl.textContent = 'Procesando en segundo plano...';
+        btn.textContent = 'Extraer conceptos';
+        btn.disabled    = false;
+        startPolling(docId, item);
+        return;
+      }
+
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload.message || `HTTP ${res.status}`);
+
+      statusEl.textContent = `${payload.concept_count} concepto${payload.concept_count !== 1 ? 's' : ''} extraídos.`;
+      updateConceptBadge(item, payload.concept_count);
+
+      const panel = item.querySelector('.docs-concepts-panel');
+      if (panel.classList.contains('open')) renderConceptsInPanel(panel, payload);
+    } catch (err) {
+      statusEl.textContent = err.message;
+      statusEl.style.color = 'var(--fail-fg)';
+    } finally {
+      btn.disabled    = false;
+      btn.textContent = 'Extraer conceptos';
+    }
+  }
+
+  // ── Background polling after async extraction ─────────────────────────────────
+  function startPolling(docId, item) {
+    if (polling.has(docId)) clearInterval(polling.get(docId));
+
+    const statusEl = item.querySelector('.docs-extract-status');
+    let attempts = 0;
+
+    const id = setInterval(async () => {
+      attempts++;
+      if (attempts > 200) { // 10 min max
+        clearInterval(id);
+        polling.delete(docId);
+        statusEl.textContent = 'La extracción tardó demasiado. Intentá de nuevo.';
+        return;
+      }
+      try {
+        const data = await getJson(`/api/documents/${docId}/concepts`);
+        if (data.concept_count > 0) {
+          clearInterval(id);
+          polling.delete(docId);
+          statusEl.textContent = `${data.concept_count} concepto${data.concept_count !== 1 ? 's' : ''} extraídos.`;
+          updateConceptBadge(item, data.concept_count);
+
+          const panel = item.querySelector('.docs-concepts-panel');
+          if (panel.classList.contains('open')) renderConceptsInPanel(panel, data);
+        }
+      } catch { /* ignore transient polling errors */ }
+    }, 3000);
+
+    polling.set(docId, id);
+  }
+
+  // ── Delete document ───────────────────────────────────────────────────────────
+  async function deleteDoc(docId, item) {
+    if (!confirm('¿Eliminar este documento y todos sus conceptos?')) return;
+
+    try {
+      const headers = {};
+      if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
+      const res = await fetch(`/api/documents/${docId}`, { method: 'DELETE', headers });
+      Auth.handleRefreshToken(res);
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        throw new Error(e.message || `HTTP ${res.status}`);
+      }
+
+      if (polling.has(docId)) { clearInterval(polling.get(docId)); polling.delete(docId); }
+      item.remove();
+      if (!listEl.querySelector('.docs-document-item')) emptyEl.classList.remove('hidden');
+    } catch (err) {
+      alert(`Error al eliminar: ${err.message}`);
+    }
+  }
+
+  // ── Create document ───────────────────────────────────────────────────────────
+  createBtn.addEventListener('click', async () => {
+    const text = textInput.value.trim();
+    if (!text) {
+      feedback.textContent = 'El texto no puede estar vacío.';
+      feedback.className = 'feedback error';
+      return;
+    }
+
+    createBtn.disabled = true;
+    feedback.textContent = '';
+    feedback.className = 'feedback';
+
+    try {
+      const data = await postJson('/api/documents', {
+        text,
+        original_filename: nameInput.value.trim() || null,
+      });
+
+      textInput.value = '';
+      nameInput.value = '';
+      feedback.textContent = 'Documento creado.';
+      feedback.className = 'feedback success';
+
+      emptyEl.classList.add('hidden');
+      listEl.insertBefore(renderDocItem(data.document), listEl.firstChild);
+
+      setTimeout(() => { if (feedback.textContent === 'Documento creado.') feedback.textContent = ''; }, 3000);
+    } catch (err) {
+      feedback.textContent = err.message;
+      feedback.className = 'feedback error';
+    } finally {
+      createBtn.disabled = false;
+    }
+  });
+
+  loadDocuments();
 }

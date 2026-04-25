@@ -72,14 +72,20 @@ Observación inicial: ${justification}`;
   });
 
   const text = response.content.find((b) => b.type === 'text')?.text ?? '';
+  if (!text.trim()) {
+    throw new Error('Socratic questions: received empty response from model');
+  }
+
   const q1 = text.match(/PREGUNTA_1:\s*([\s\S]+?)(?:\nPREGUNTA_2:|$)/i)?.[1]?.trim();
   const q2 = text.match(/PREGUNTA_2:\s*([\s\S]+?)(?:\n[A-Z_]+:|$)/i)?.[1]?.trim();
 
-  if (!q1 || !q2) {
-    throw new Error(`Could not parse Socratic questions from LLM response: "${text}"`);
-  }
-
-  return { questions: [q1, q2] };
+  // Fall back to generic probing questions rather than crashing the evaluation flow.
+  return {
+    questions: [
+      q1 || `¿Podés explicar con tus propias palabras qué entendés por "${prompt_text}"?`,
+      q2 || '¿Podés dar un ejemplo concreto que ilustre el concepto?'
+    ]
+  };
 }
 
 /**
@@ -131,6 +137,10 @@ ${dialogue}`;
   });
 
   const text = response.content.find((b) => b.type === 'text')?.text ?? '';
+  if (!text.trim()) {
+    throw new Error('Socratic re-evaluation: received empty response from model');
+  }
+
   const gradeMatch = text.match(/GRADE:\s*(PASS|FAIL)/i);
   const justMatch = text.match(/JUSTIFICATION:\s*([\s\S]+?)(?:\n[A-Z_]+:|$)/i);
 
@@ -177,6 +187,12 @@ ${dialogue}`;
   });
 
   const text = response.content.find((b) => b.type === 'text')?.text ?? '';
+  if (!text.trim()) {
+    return {
+      error_summary: 'No se pudo generar el feedback.',
+      correct_concept: 'Revisá la respuesta esperada para reforzar el concepto.'
+    };
+  }
   const errorMatch = text.match(/ERROR:\s*([\s\S]+?)(?:\nCONCEPTO:|$)/i);
   const conceptMatch = text.match(/CONCEPTO:\s*([\s\S]+?)(?:\n[A-Z_]+:|$)/i);
 
