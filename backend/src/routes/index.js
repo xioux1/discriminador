@@ -26,11 +26,13 @@ import botChatRouter from './bot-chat.js';
 import settingsRouter from './settings.js';
 import conceptsRouter from './concepts.routes.js';
 import clusterConceptsRouter from './cluster-concepts.routes.js';
+import rankClustersRouter from './rank-clusters.routes.js';
 
 const router = Router();
 
 router.use(conceptsRouter);
 router.use(clusterConceptsRouter);
+router.use(rankClustersRouter);
 router.use(cardsRouter);
 router.use(promptToolsRouter);
 router.use(studyDoubtRouter);
