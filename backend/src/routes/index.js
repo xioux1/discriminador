@@ -27,12 +27,14 @@ import settingsRouter from './settings.js';
 import conceptsRouter from './concepts.routes.js';
 import clusterConceptsRouter from './cluster-concepts.routes.js';
 import rankClustersRouter from './rank-clusters.routes.js';
+import generateCardsRouter from './generate-cards.routes.js';
 
 const router = Router();
 
 router.use(conceptsRouter);
 router.use(clusterConceptsRouter);
 router.use(rankClustersRouter);
+router.use(generateCardsRouter);
 router.use(cardsRouter);
 router.use(promptToolsRouter);
 router.use(studyDoubtRouter);
