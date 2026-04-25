@@ -7557,6 +7557,8 @@ function initDocumentsTab() {
   function renderCardDraftPanel(panel, data) {
     const difficultyLabel = { easy: 'Fácil', medium: 'Media', hard: 'Difícil' };
     const difficultyClass = { easy: 'diff-easy', medium: 'diff-medium', hard: 'diff-hard' };
+    const cardId = data.card_group?.id;
+    const subjectDefault = data.document?.subject_name || data.card_group?.subject || '';
 
     const variantsHTML = (data.variants || []).map((v, i) => {
       const rubricItems = (v.grading_rubric || []).map(r => `<li>${escHtml(r)}</li>`).join('');
@@ -7590,8 +7592,78 @@ function initDocumentsTab() {
         <span class="docs-card-draft-badge">draft</span>
       </div>
       <div class="docs-card-variants-list">${variantsHTML}</div>
+      <div class="docs-card-draft-accept" data-card-id="${cardId}">
+        <span class="docs-accept-label">Agregar a materia:</span>
+        <input type="text"
+          class="docs-accept-subject-input"
+          list="docs-accept-subjects-${cardId}"
+          placeholder="ej: Sistemas de Información"
+          value="${escHtml(subjectDefault)}"
+        >
+        <datalist id="docs-accept-subjects-${cardId}"></datalist>
+        <button type="button" class="btn-primary docs-accept-draft-btn">Agregar a materia</button>
+        <span class="docs-accept-draft-status"></span>
+      </div>
     `;
     panel.classList.remove('hidden');
+
+    // Populate datalist with known subjects
+    const datalist = panel.querySelector(`#docs-accept-subjects-${cardId}`);
+    getJson('/api/cards/subjects').then(res => {
+      if (datalist && res.subjects) {
+        datalist.innerHTML = res.subjects.map(s => `<option value="${escHtml(s)}">`).join('');
+      }
+    }).catch(() => {});
+
+    // Wire accept button
+    panel.querySelector('.docs-accept-draft-btn').addEventListener('click', () => {
+      const subject = panel.querySelector('.docs-accept-subject-input').value.trim();
+      acceptCardDraftUI(cardId, subject, panel);
+    });
+  }
+
+  // ── Accept card draft → activate + assign subject ─────────────────────────────
+  async function acceptCardDraftUI(cardId, subject, panel) {
+    const btn      = panel.querySelector('.docs-accept-draft-btn');
+    const statusEl = panel.querySelector('.docs-accept-draft-status');
+
+    btn.disabled    = true;
+    btn.textContent = 'Agregando...';
+    statusEl.textContent = '';
+    statusEl.className = 'docs-accept-draft-status';
+
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
+
+      const res = await fetch(`/api/cards/${cardId}/accept-draft`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ subject }),
+      });
+      Auth.handleRefreshToken(res);
+
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload.message || `HTTP ${res.status}`);
+
+      const finalSubject = payload.card?.subject || subject;
+      btn.textContent = finalSubject ? `Añadida a "${finalSubject}"` : 'Añadida';
+      btn.classList.add('docs-accept-draft-btn--done');
+
+      // Update the draft badge to "activa"
+      const badge = panel.querySelector('.docs-card-draft-badge');
+      if (badge) { badge.textContent = 'activa'; badge.classList.add('docs-card-draft-badge--active'); }
+
+      // Hide the accept form inputs, leaving only the confirmation button
+      panel.querySelector('.docs-accept-subject-input').style.display = 'none';
+      panel.querySelector(`[id^="docs-accept-subjects-"]`).remove();
+      panel.querySelector('.docs-accept-label').style.display = 'none';
+    } catch (err) {
+      statusEl.textContent = err.message;
+      statusEl.className = 'docs-accept-draft-status docs-accept-draft-status--error';
+      btn.disabled = false;
+      btn.textContent = 'Agregar a materia';
+    }
   }
 
   // ── Create document ───────────────────────────────────────────────────────────

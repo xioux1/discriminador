@@ -4556,7 +4556,59 @@ textarea.chinese-input {
 }
 .docs-variant-rubric li { margin-bottom: 3px; }
 
+/* ── Accept draft row ────────────────────────────────────────────────────── */
+.docs-card-draft-accept {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-subtle);
+}
+.docs-accept-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.docs-accept-subject-input {
+  flex: 1;
+  min-width: 160px;
+  max-width: 280px;
+  font-size: 0.82rem;
+  padding: 5px 9px;
+  border: 1.5px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--text);
+}
+.docs-accept-subject-input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+.docs-accept-draft-btn { font-size: 0.8rem; padding: 5px 14px; white-space: nowrap; }
+.docs-accept-draft-btn--done {
+  background: var(--pass-bg);
+  color: var(--pass-fg);
+  border-color: transparent;
+  cursor: default;
+}
+.docs-accept-draft-btn--done:hover { background: var(--pass-bg); }
+.docs-accept-draft-status {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+.docs-accept-draft-status--error { color: var(--fail-fg); }
+
+.docs-card-draft-badge--active {
+  background: var(--pass-bg);
+  color: var(--pass-fg);
+  border-color: rgba(90,143,90,0.25);
+}
+
 [data-theme="dark"] .docs-card-draft-panel { border-color: rgba(255,255,255,0.10); }
 [data-theme="dark"] .docs-card-draft-header { background: rgba(255,255,255,0.04); }
 [data-theme="dark"] .docs-card-variant { border-color: rgba(255,255,255,0.07); }
 [data-theme="dark"] .docs-variant-answer { background: rgba(255,255,255,0.04); }
+[data-theme="dark"] .docs-card-draft-accept { background: rgba(255,255,255,0.03); border-color: rgba(255,255,255,0.07); }
+[data-theme="dark"] .docs-accept-subject-input { background: var(--bg); border-color: rgba(255,255,255,0.15); }

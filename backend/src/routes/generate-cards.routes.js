@@ -157,7 +157,7 @@ router.get('/api/clusters/:id/card-draft', async (req, res, next) => {
 
   try {
     const { rows: cardRows } = await dbPool.query(
-      `SELECT id, prompt_text AS title, card_type, status
+      `SELECT id, prompt_text AS title, card_type, status, subject
        FROM cards WHERE cluster_id = $1 AND status = 'draft' LIMIT 1`,
       [clusterId]
     );
@@ -183,7 +183,7 @@ router.get('/api/clusters/:id/card-draft', async (req, res, next) => {
     return res.json({
       status: 'draft_found',
       cluster_id: clusterId,
-      card_group: { id: card.id, title: card.title, card_type: card.card_type, status: card.status },
+      card_group: { id: card.id, title: card.title, card_type: card.card_type, status: card.status, subject: card.subject },
       variants,
     });
   } catch (err) {
@@ -192,5 +192,77 @@ router.get('/api/clusters/:id/card-draft', async (req, res, next) => {
   }
 });
 
-export default router;
+// GET /api/cards/subjects — distinct subjects known to this user (for autocomplete)
+router.get('/api/cards/subjects', async (req, res, next) => {
+  const userId = req.user?.id;
+  try {
+    const { rows } = await dbPool.query(
+      `SELECT subject FROM (
+         SELECT DISTINCT subject FROM cards
+           WHERE user_id = $1 AND subject IS NOT NULL AND subject <> ''
+         UNION
+         SELECT DISTINCT subject FROM subject_configs
+           WHERE user_id = $1 AND subject IS NOT NULL AND subject <> ''
+       ) AS combined
+       ORDER BY subject`,
+      [userId]
+    );
+    return res.json({ subjects: rows.map(r => r.subject) });
+  } catch (err) {
+    return next(err);
+  }
+});
 
+// PATCH /api/cards/:id/accept-draft — activate draft card + variants, set subject
+router.patch('/api/cards/:id/accept-draft', async (req, res, next) => {
+  const cardId = parseInt(req.params.id, 10);
+  if (!Number.isFinite(cardId) || cardId <= 0) {
+    return res.status(400).json({ error: 'invalid_id', message: 'Card ID must be a positive integer.' });
+  }
+
+  const subject = typeof req.body?.subject === 'string' ? req.body.subject.trim() : null;
+
+  try {
+    const { rows: cardRows } = await dbPool.query(
+      `SELECT id FROM cards WHERE id = $1 AND status = 'draft'`,
+      [cardId]
+    );
+    if (!cardRows.length) {
+      return res.status(404).json({ error: 'not_found', message: 'Draft card not found.' });
+    }
+
+    const client = await dbPool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const { rows: updated } = await client.query(
+        `UPDATE cards
+         SET status = 'active',
+             subject = CASE WHEN $1 IS NOT NULL AND $1 <> '' THEN $1 ELSE subject END,
+             updated_at = NOW()
+         WHERE id = $2
+         RETURNING id, status, subject`,
+        [subject || null, cardId]
+      );
+
+      await client.query(
+        `UPDATE card_variants SET status = 'active' WHERE card_id = $1 AND status = 'draft'`,
+        [cardId]
+      );
+
+      await client.query('COMMIT');
+
+      return res.json({ status: 'accepted', card: updated[0] });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    logger.error('[acceptDraft] Error', { cardId, error: err.message });
+    return next(err);
+  }
+});
+
+export default router;
