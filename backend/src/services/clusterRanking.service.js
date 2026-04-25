@@ -85,35 +85,148 @@ export function computePriorityTier(score) {
   return 'D';
 }
 
-export function buildImportanceReasons({ density, coverage, intensity, program, exam }) {
+// ==================== Relative ranking functions ====================
+
+export function computeRelativeImportanceScores(scoredClusters) {
+  const scores = scoredClusters
+    .map(c => c.importance_score)
+    .filter(Number.isFinite);
+
+  if (scores.length === 0) {
+    return scoredClusters.map(c => ({ ...c, relative_importance_score: null }));
+  }
+
+  const min = Math.min(...scores);
+  const max = Math.max(...scores);
+
+  if (max === min) {
+    return scoredClusters.map(c => ({ ...c, relative_importance_score: 0.5 }));
+  }
+
+  return scoredClusters.map(c => ({
+    ...c,
+    relative_importance_score: clamp01((c.importance_score - min) / (max - min)),
+  }));
+}
+
+export function assignRelativePriorityTiers(scoredClusters) {
+  const sorted = [...scoredClusters].sort((a, b) => {
+    const diff = b.importance_score - a.importance_score;
+    if (diff !== 0) return diff;
+    return String(a.name || '').localeCompare(String(b.name || ''));
+  });
+
+  const n = sorted.length;
+  if (n === 0) return [];
+
+  let aCount = Math.max(1, Math.ceil(n * 0.20));
+  let bCount = Math.max(1, Math.ceil(n * 0.30));
+  let cCount = Math.max(1, Math.ceil(n * 0.30));
+
+  if (aCount + bCount + cCount > n) {
+    cCount = Math.max(0, n - aCount - bCount);
+  }
+
+  return sorted.map((cluster, index) => {
+    let tier = 'D';
+    if (index < aCount) {
+      tier = 'A';
+    } else if (index < aCount + bCount) {
+      tier = 'B';
+    } else if (index < aCount + bCount + cCount) {
+      tier = 'C';
+    }
+    return { ...cluster, relative_priority_tier: tier };
+  });
+}
+
+const TIER_RANK = { A: 4, B: 3, C: 2, D: 1 };
+
+export function promoteTier(currentTier, minimumTier) {
+  return TIER_RANK[currentTier] >= TIER_RANK[minimumTier] ? currentTier : minimumTier;
+}
+
+export function applyExternalSignalTierOverrides(cluster) {
+  let tier = cluster.relative_priority_tier;
+
+  if (cluster.exam_score != null && cluster.exam_score >= 0.75) {
+    tier = promoteTier(tier, 'A');
+  }
+
+  if (cluster.program_score != null && cluster.program_score >= 0.75) {
+    tier = promoteTier(tier, 'B');
+  }
+
+  return { ...cluster, relative_priority_tier: tier };
+}
+
+export function getMatchStrength(score) {
+  if (score == null) return 'unavailable';
+  if (score >= 0.82) return 'strong';
+  if (score >= 0.72) return 'moderate';
+  return 'weak';
+}
+
+// ==================== Importance reasons ====================
+
+export function buildImportanceReasons({
+  density,
+  coverage,
+  intensity,
+  program,
+  exam,
+  relativeTier,
+  rank,
+  totalClusters,
+}) {
   const reasons = [];
 
+  // Relative ranking reason (only when relative context is available)
+  if (relativeTier === 'A' && rank != null && totalClusters != null) {
+    reasons.push(`Está entre los clusters más importantes del documento (top ${Math.round((rank / totalClusters) * 100)}%).`);
+  } else if (relativeTier === 'B') {
+    reasons.push('Tiene importancia relativa alta dentro del documento.');
+  } else if (relativeTier === 'C') {
+    reasons.push('Tiene importancia relativa media dentro del documento.');
+  } else if (relativeTier === 'D') {
+    reasons.push('Tiene importancia relativa baja dentro del documento.');
+  }
+
+  // Density reason
   if (density >= 0.75) {
     reasons.push('Alta presencia del cluster en el documento.');
   } else if (density >= 0.50) {
     reasons.push('Presencia moderada del cluster en el documento.');
+  } else if (density >= 0.30) {
+    reasons.push('Presencia baja pero reconocible en el documento.');
   } else {
-    reasons.push('Baja presencia relativa del cluster en el documento.');
+    reasons.push('Baja presencia del cluster en el documento.');
   }
 
   if (coverage >= 0.50) {
-    reasons.push('El cluster aparece distribuido en varios chunks del documento.');
+    reasons.push('Aparece distribuido en varios fragmentos del documento.');
   }
 
   if (intensity >= 0.80) {
-    reasons.push('Algunos fragmentos del documento coinciden fuertemente con el cluster.');
+    reasons.push('Tiene fragmentos con alta similitud semántica al cluster.');
   }
 
-  if (program != null && program >= 0.82) {
-    reasons.push('Coincide fuertemente con el programa de la materia.');
-  } else if (program != null && program >= 0.72) {
-    reasons.push('Tiene coincidencia moderada con el programa de la materia.');
+  // Program reason — only if score reaches moderate threshold
+  if (program != null) {
+    if (program >= 0.82) {
+      reasons.push('Coincide fuertemente con el programa de la materia.');
+    } else if (program >= 0.72) {
+      reasons.push('Tiene coincidencia moderada con el programa de la materia.');
+    }
   }
 
-  if (exam != null && exam >= 0.82) {
-    reasons.push('Coincide fuertemente con material de examen.');
-  } else if (exam != null && exam >= 0.72) {
-    reasons.push('Tiene coincidencia moderada con material de examen.');
+  // Exam reason — only if score reaches moderate threshold
+  if (exam != null) {
+    if (exam >= 0.82) {
+      reasons.push('Coincide fuertemente con material de examen.');
+    } else if (exam >= 0.72) {
+      reasons.push('Tiene coincidencia moderada con material de examen.');
+    }
   }
 
   return reasons;
@@ -247,6 +360,8 @@ function bestMatch(centroid, items) {
 
 // ==================== Main pipeline ====================
 
+const TIER_SORT_ORDER = { A: 0, B: 1, C: 2, D: 3 };
+
 export async function rankClustersForDocument(documentId) {
   // Step 1 — Fetch document
   const { rows: docRows } = await dbPool.query(
@@ -327,7 +442,6 @@ export async function rankClustersForDocument(documentId) {
   const modelSet = new Set(rawConcepts.map(c => c.embedding_model).filter(Boolean));
   let embeddingModel;
   if (modelSet.size === 0) {
-    // embedding_model not tracked in this project version; fall back to env default
     embeddingModel = process.env.CONCEPT_EMBEDDING_MODEL || 'text-embedding-3-small';
   } else if (modelSet.size > 1) {
     const err = new Error(
@@ -405,75 +519,35 @@ export async function rankClustersForDocument(documentId) {
     }
   }
 
-  // Steps 5–12 — Score each cluster and persist
-  const ranked = [];
+  // Phase 1 — Compute absolute scores for all clusters (no persistence yet)
+  const phase1 = [];
 
   for (const cluster of clusters) {
     const centroid = cluster._centroid;
 
-    // Step 5: density
     const density = computeDensityScore(centroid, chunkEmbeddings, densityThreshold);
 
-    // Step 6: program
     let program_score = null;
     if (programItems && programItems.length > 0) {
       const match = bestMatch(centroid, programItems);
       if (match) program_score = clamp01(match.score);
     }
 
-    // Step 7: exam
     let exam_score = null;
     if (examItems && examItems.length > 0) {
       const match = bestMatch(centroid, examItems);
       if (match) exam_score = clamp01(match.score);
     }
 
-    // Step 8: final score
     const importance_score = computeImportanceScore({
       density: density.density_score,
       program: program_score,
       exam: exam_score,
     });
 
-    // Step 9: tier
     const priority_tier = computePriorityTier(importance_score);
 
-    // Step 10: reasons
-    const importance_reasons = buildImportanceReasons({
-      density: density.density_score,
-      coverage: density.density_coverage_score,
-      intensity: density.density_intensity_score,
-      program: program_score,
-      exam: exam_score,
-    });
-
-    // Step 11: persist
-    await dbPool.query(
-      `UPDATE clusters
-       SET density_score           = $1,
-           density_coverage_score  = $2,
-           density_intensity_score = $3,
-           program_score           = $4,
-           exam_score              = $5,
-           importance_score        = $6,
-           priority_tier           = $7,
-           importance_reasons      = $8::jsonb,
-           importance_computed_at  = NOW()
-       WHERE id = $9`,
-      [
-        density.density_score,
-        density.density_coverage_score,
-        density.density_intensity_score,
-        program_score,
-        exam_score,
-        importance_score,
-        priority_tier,
-        JSON.stringify(importance_reasons),
-        cluster.id,
-      ]
-    );
-
-    ranked.push({
+    phase1.push({
       id: cluster.id,
       name: cluster.name,
       definition: cluster.definition,
@@ -484,12 +558,101 @@ export async function rankClustersForDocument(documentId) {
       exam_score,
       importance_score,
       priority_tier,
+    });
+  }
+
+  // Phase 2 — Compute relative scores and tiers across all clusters in the document
+  const withRelScores = computeRelativeImportanceScores(phase1);
+  // Returns sorted by importance_score DESC; order tracked for rank parameter
+  const withRelTiers = assignRelativePriorityTiers(withRelScores);
+  const withOverrides = withRelTiers.map(applyExternalSignalTierOverrides);
+  const totalClusters = withOverrides.length;
+
+  // Phase 3 — Build reasons, persist, and collect final output
+  const ranked = [];
+
+  for (let i = 0; i < withOverrides.length; i++) {
+    const c = withOverrides[i];
+    // i is 0-based rank in importance_score DESC order
+    const rank = i + 1;
+
+    const importance_reasons = buildImportanceReasons({
+      density: c.density_score,
+      coverage: c.density_coverage_score,
+      intensity: c.density_intensity_score,
+      program: c.program_score,
+      exam: c.exam_score,
+      relativeTier: c.relative_priority_tier,
+      rank,
+      totalClusters,
+    });
+
+    await dbPool.query(
+      `UPDATE clusters
+       SET density_score              = $1,
+           density_coverage_score     = $2,
+           density_intensity_score    = $3,
+           program_score              = $4,
+           exam_score                 = $5,
+           importance_score           = $6,
+           priority_tier              = $7,
+           relative_importance_score  = $8,
+           relative_priority_tier     = $9,
+           importance_reasons         = $10::jsonb,
+           importance_computed_at     = NOW()
+       WHERE id = $11`,
+      [
+        c.density_score,
+        c.density_coverage_score,
+        c.density_intensity_score,
+        c.program_score,
+        c.exam_score,
+        c.importance_score,
+        c.priority_tier,
+        c.relative_importance_score,
+        c.relative_priority_tier,
+        JSON.stringify(importance_reasons),
+        c.id,
+      ]
+    );
+
+    ranked.push({
+      id: c.id,
+      name: c.name,
+      definition: c.definition,
+
+      density_score: c.density_score,
+      density_coverage_score: c.density_coverage_score,
+      density_intensity_score: c.density_intensity_score,
+
+      program_score: c.program_score,
+      program_match_strength: getMatchStrength(c.program_score),
+      has_program_match: c.program_score != null && c.program_score >= 0.72,
+
+      exam_score: c.exam_score,
+      exam_match_strength: getMatchStrength(c.exam_score),
+      has_exam_match: c.exam_score != null && c.exam_score >= 0.72,
+
+      importance_score: c.importance_score,
+      priority_tier: c.priority_tier,
+
+      relative_importance_score: c.relative_importance_score,
+      relative_priority_tier: c.relative_priority_tier,
+
       importance_reasons,
     });
   }
 
-  // Step 14: return sorted by importance_score DESC
-  ranked.sort((a, b) => b.importance_score - a.importance_score);
+  // Sort by relative_priority_tier first, then importance_score DESC, then name ASC
+  ranked.sort((a, b) => {
+    const tierDiff =
+      (TIER_SORT_ORDER[a.relative_priority_tier] ?? 4) -
+      (TIER_SORT_ORDER[b.relative_priority_tier] ?? 4);
+    if (tierDiff !== 0) return tierDiff;
+    const scoreDiff = b.importance_score - a.importance_score;
+    if (scoreDiff !== 0) return scoreDiff;
+    return String(a.name || '').localeCompare(String(b.name || ''));
+  });
 
   logger.info('[clusterRanking] Done', { documentId, clusterCount: ranked.length });
 

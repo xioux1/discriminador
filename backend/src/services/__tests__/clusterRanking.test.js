@@ -14,6 +14,11 @@ const {
   computeImportanceScore,
   computePriorityTier,
   buildImportanceReasons,
+  computeRelativeImportanceScores,
+  assignRelativePriorityTiers,
+  promoteTier,
+  applyExternalSignalTierOverrides,
+  getMatchStrength,
 } = await import('../clusterRanking.service.js');
 
 // ---- helpers ----
@@ -82,7 +87,6 @@ test('computeCentroid of two identical vectors equals that vector', () => {
 // ---- computeDensityScore ----
 
 test('computeDensityScore with all chunks above threshold gives coverage 1', () => {
-  // Cluster centroid and all chunk embeddings pointing in the same direction
   const dim = 4;
   const centroid = uniformVec(dim);
   const chunks = Array.from({ length: 5 }, () => ({ embedding: uniformVec(dim) }));
@@ -215,9 +219,14 @@ test('buildImportanceReasons includes moderate density message', () => {
   assert.ok(reasons.some(r => r.includes('moderada')), `expected moderada, got: ${JSON.stringify(reasons)}`);
 });
 
-test('buildImportanceReasons includes low density message', () => {
-  const reasons = buildImportanceReasons({ density: 0.3, coverage: 0.2, intensity: 0.4, program: null, exam: null });
+test('buildImportanceReasons includes low density message for density < 0.30', () => {
+  const reasons = buildImportanceReasons({ density: 0.2, coverage: 0.1, intensity: 0.3, program: null, exam: null });
   assert.ok(reasons.some(r => r.includes('Baja presencia')), `expected baja presencia, got: ${JSON.stringify(reasons)}`);
+});
+
+test('buildImportanceReasons includes recognizable-but-low density message for density in [0.30, 0.50)', () => {
+  const reasons = buildImportanceReasons({ density: 0.35, coverage: 0.2, intensity: 0.4, program: null, exam: null });
+  assert.ok(reasons.some(r => r.includes('reconocible')), `expected reconocible, got: ${JSON.stringify(reasons)}`);
 });
 
 test('buildImportanceReasons includes coverage message when coverage >= 0.50', () => {
@@ -248,4 +257,293 @@ test('buildImportanceReasons includes moderate exam match', () => {
 test('buildImportanceReasons returns non-empty array for any input', () => {
   const reasons = buildImportanceReasons({ density: 0, coverage: 0, intensity: 0, program: null, exam: null });
   assert.ok(Array.isArray(reasons) && reasons.length > 0);
+});
+
+// ---- buildImportanceReasons — new signal-strength and relative-tier rules ----
+
+test('buildImportanceReasons does not mention exam when exam_score < 0.72', () => {
+  const reasons = buildImportanceReasons({
+    density: 0.5, coverage: 0.3, intensity: 0.5,
+    program: null, exam: 0.57,
+  });
+  assert.ok(!reasons.some(r => r.toLowerCase().includes('examen')),
+    `should not mention examen for weak score, got: ${JSON.stringify(reasons)}`);
+});
+
+test('buildImportanceReasons does not mention programa when program_score < 0.72', () => {
+  const reasons = buildImportanceReasons({
+    density: 0.5, coverage: 0.3, intensity: 0.5,
+    program: 0.62, exam: null,
+  });
+  assert.ok(!reasons.some(r => r.toLowerCase().includes('programa')),
+    `should not mention programa for weak score, got: ${JSON.stringify(reasons)}`);
+});
+
+test('buildImportanceReasons adds tier-A relative reason mentioning top percentage', () => {
+  const reasons = buildImportanceReasons({
+    density: 0.6, coverage: 0.3, intensity: 0.5,
+    program: null, exam: null,
+    relativeTier: 'A', rank: 2, totalClusters: 10,
+  });
+  assert.ok(reasons.some(r => r.includes('top') && r.includes('%')),
+    `expected top-N% reason for tier A, got: ${JSON.stringify(reasons)}`);
+});
+
+test('buildImportanceReasons adds tier-B relative reason', () => {
+  const reasons = buildImportanceReasons({
+    density: 0.5, coverage: 0.3, intensity: 0.5,
+    program: null, exam: null,
+    relativeTier: 'B',
+  });
+  assert.ok(reasons.some(r => r.includes('importancia relativa alta')),
+    `expected alta reason for tier B, got: ${JSON.stringify(reasons)}`);
+});
+
+test('buildImportanceReasons adds tier-C relative reason', () => {
+  const reasons = buildImportanceReasons({
+    density: 0.5, coverage: 0.3, intensity: 0.5,
+    program: null, exam: null,
+    relativeTier: 'C',
+  });
+  assert.ok(reasons.some(r => r.includes('importancia relativa media')),
+    `expected media reason for tier C, got: ${JSON.stringify(reasons)}`);
+});
+
+test('buildImportanceReasons adds tier-D relative reason', () => {
+  const reasons = buildImportanceReasons({
+    density: 0.3, coverage: 0.1, intensity: 0.3,
+    program: null, exam: null,
+    relativeTier: 'D',
+  });
+  assert.ok(reasons.some(r => r.includes('importancia relativa baja')),
+    `expected baja reason for tier D, got: ${JSON.stringify(reasons)}`);
+});
+
+// ---- computeRelativeImportanceScores ----
+
+test('computeRelativeImportanceScores normalizes min-max correctly', () => {
+  const clusters = [
+    { id: '1', importance_score: 0.34 },
+    { id: '2', importance_score: 0.46 },
+    { id: '3', importance_score: 0.58 },
+  ];
+  const result = computeRelativeImportanceScores(clusters);
+  const byId = Object.fromEntries(result.map(c => [c.id, c]));
+
+  assert.ok(Math.abs(byId['3'].relative_importance_score - 1.0) < 1e-9,
+    `max cluster should have relative=1, got ${byId['3'].relative_importance_score}`);
+  assert.ok(Math.abs(byId['1'].relative_importance_score - 0.0) < 1e-9,
+    `min cluster should have relative=0, got ${byId['1'].relative_importance_score}`);
+  // mid: (0.46 - 0.34) / (0.58 - 0.34) = 0.12 / 0.24 = 0.5
+  assert.ok(Math.abs(byId['2'].relative_importance_score - 0.5) < 1e-9,
+    `mid cluster should have relative=0.5, got ${byId['2'].relative_importance_score}`);
+});
+
+test('computeRelativeImportanceScores returns 0.5 when all scores are equal', () => {
+  const clusters = [
+    { id: '1', importance_score: 0.45 },
+    { id: '2', importance_score: 0.45 },
+    { id: '3', importance_score: 0.45 },
+  ];
+  const result = computeRelativeImportanceScores(clusters);
+  for (const c of result) {
+    assert.ok(Math.abs(c.relative_importance_score - 0.5) < 1e-9,
+      `all equal scores should give relative=0.5, got ${c.relative_importance_score}`);
+  }
+});
+
+test('computeRelativeImportanceScores returns null when no finite scores', () => {
+  const clusters = [
+    { id: '1', importance_score: NaN },
+    { id: '2', importance_score: null },
+  ];
+  const result = computeRelativeImportanceScores(clusters);
+  for (const c of result) {
+    assert.equal(c.relative_importance_score, null);
+  }
+});
+
+// ---- assignRelativePriorityTiers ----
+
+test('assignRelativePriorityTiers assigns A/B/C/D by proportions for N=10', () => {
+  const clusters = Array.from({ length: 10 }, (_, i) => ({
+    id: String(i),
+    name: `C${i}`,
+    importance_score: (10 - i) / 10,
+  }));
+  const result = assignRelativePriorityTiers(clusters);
+
+  const tiers = result.map(c => c.relative_priority_tier);
+  const aCnt = tiers.filter(t => t === 'A').length;
+  const bCnt = tiers.filter(t => t === 'B').length;
+  const cCnt = tiers.filter(t => t === 'C').length;
+  const dCnt = tiers.filter(t => t === 'D').length;
+
+  // N=10: aCount=2, bCount=3, cCount=3, dCount=2
+  assert.equal(aCnt, 2, `expected 2 A tiers, got ${aCnt}`);
+  assert.equal(bCnt, 3, `expected 3 B tiers, got ${bCnt}`);
+  assert.equal(cCnt, 3, `expected 3 C tiers, got ${cCnt}`);
+  assert.equal(dCnt, 2, `expected 2 D tiers, got ${dCnt}`);
+  assert.equal(aCnt + bCnt + cCnt + dCnt, 10);
+});
+
+test('assignRelativePriorityTiers works with N=1', () => {
+  const result = assignRelativePriorityTiers([{ id: '1', name: 'X', importance_score: 0.5 }]);
+  assert.equal(result.length, 1);
+  // aCount=max(1,ceil(0.2))=1, everything is A
+  assert.equal(result[0].relative_priority_tier, 'A');
+});
+
+test('assignRelativePriorityTiers works with N=2', () => {
+  const result = assignRelativePriorityTiers([
+    { id: '1', name: 'A', importance_score: 0.8 },
+    { id: '2', name: 'B', importance_score: 0.4 },
+  ]);
+  assert.equal(result.length, 2);
+  const tiers = new Set(result.map(c => c.relative_priority_tier));
+  // aCount=1, bCount=1, total=2, cCount=max(0,2-1-1)=0, dCount=0
+  assert.ok(tiers.has('A'), 'should have A');
+  assert.ok(tiers.has('B'), 'should have B');
+  assert.ok(!tiers.has('D'), 'should not have D for N=2');
+});
+
+test('assignRelativePriorityTiers works with N=3', () => {
+  const clusters = [
+    { id: '1', name: 'A', importance_score: 0.9 },
+    { id: '2', name: 'B', importance_score: 0.6 },
+    { id: '3', name: 'C', importance_score: 0.3 },
+  ];
+  const result = assignRelativePriorityTiers(clusters);
+  assert.equal(result.length, 3);
+  // aCount=max(1,ceil(0.6))=1, bCount=max(1,ceil(0.9))=1, cCount=max(0,3-1-1)=1, dCount=0
+  const total = result.reduce((acc, c) => {
+    acc[c.relative_priority_tier] = (acc[c.relative_priority_tier] || 0) + 1;
+    return acc;
+  }, {});
+  assert.equal(total['A'], 1);
+  assert.equal(total['B'], 1);
+  assert.equal((total['C'] || 0) + (total['D'] || 0), 1);
+});
+
+test('assignRelativePriorityTiers returns empty array for empty input', () => {
+  assert.deepEqual(assignRelativePriorityTiers([]), []);
+});
+
+test('assignRelativePriorityTiers total tiers always equals cluster count', () => {
+  for (const n of [1, 2, 3, 5, 8, 18]) {
+    const clusters = Array.from({ length: n }, (_, i) => ({
+      id: String(i), name: `C${i}`, importance_score: Math.random(),
+    }));
+    const result = assignRelativePriorityTiers(clusters);
+    assert.equal(result.length, n, `total should be ${n} for n=${n}`);
+  }
+});
+
+// ---- promoteTier ----
+
+test('promoteTier does not lower a tier that is already higher', () => {
+  assert.equal(promoteTier('A', 'B'), 'A');
+  assert.equal(promoteTier('A', 'C'), 'A');
+  assert.equal(promoteTier('A', 'D'), 'A');
+  assert.equal(promoteTier('B', 'C'), 'B');
+  assert.equal(promoteTier('B', 'D'), 'B');
+});
+
+test('promoteTier promotes a lower tier to the minimum required', () => {
+  assert.equal(promoteTier('D', 'A'), 'A');
+  assert.equal(promoteTier('C', 'B'), 'B');
+  assert.equal(promoteTier('D', 'B'), 'B');
+  assert.equal(promoteTier('C', 'A'), 'A');
+});
+
+test('promoteTier keeps same tier when equal', () => {
+  assert.equal(promoteTier('A', 'A'), 'A');
+  assert.equal(promoteTier('B', 'B'), 'B');
+  assert.equal(promoteTier('C', 'C'), 'C');
+  assert.equal(promoteTier('D', 'D'), 'D');
+});
+
+// ---- applyExternalSignalTierOverrides ----
+
+test('applyExternalSignalTierOverrides promotes to A when exam_score >= 0.75', () => {
+  const result = applyExternalSignalTierOverrides({
+    id: '1', name: 'X',
+    importance_score: 0.4,
+    relative_priority_tier: 'C',
+    exam_score: 0.76,
+    program_score: null,
+  });
+  assert.equal(result.relative_priority_tier, 'A',
+    `exam >= 0.75 should force tier A, got ${result.relative_priority_tier}`);
+});
+
+test('applyExternalSignalTierOverrides promotes to A when exam_score >= 0.82', () => {
+  const result = applyExternalSignalTierOverrides({
+    id: '1', name: 'X',
+    importance_score: 0.3,
+    relative_priority_tier: 'D',
+    exam_score: 0.85,
+    program_score: null,
+  });
+  assert.equal(result.relative_priority_tier, 'A');
+});
+
+test('applyExternalSignalTierOverrides promotes minimum to B when program_score >= 0.75', () => {
+  const result = applyExternalSignalTierOverrides({
+    id: '1', name: 'X',
+    importance_score: 0.35,
+    relative_priority_tier: 'D',
+    exam_score: null,
+    program_score: 0.78,
+  });
+  assert.equal(result.relative_priority_tier, 'B',
+    `program >= 0.75 should force at least tier B, got ${result.relative_priority_tier}`);
+});
+
+test('applyExternalSignalTierOverrides does not downgrade A when only program >= 0.75', () => {
+  const result = applyExternalSignalTierOverrides({
+    id: '1', name: 'X',
+    importance_score: 0.9,
+    relative_priority_tier: 'A',
+    exam_score: null,
+    program_score: 0.80,
+  });
+  assert.equal(result.relative_priority_tier, 'A');
+});
+
+test('applyExternalSignalTierOverrides does not promote when scores are below thresholds', () => {
+  const result = applyExternalSignalTierOverrides({
+    id: '1', name: 'X',
+    importance_score: 0.35,
+    relative_priority_tier: 'D',
+    exam_score: 0.57,
+    program_score: 0.62,
+  });
+  assert.equal(result.relative_priority_tier, 'D',
+    `weak scores should not change tier, got ${result.relative_priority_tier}`);
+});
+
+// ---- getMatchStrength ----
+
+test('getMatchStrength returns unavailable for null', () => {
+  assert.equal(getMatchStrength(null), 'unavailable');
+  assert.equal(getMatchStrength(undefined), 'unavailable');
+});
+
+test('getMatchStrength returns weak for score < 0.72', () => {
+  assert.equal(getMatchStrength(0.0), 'weak');
+  assert.equal(getMatchStrength(0.57), 'weak');
+  assert.equal(getMatchStrength(0.719), 'weak');
+});
+
+test('getMatchStrength returns moderate for score in [0.72, 0.82)', () => {
+  assert.equal(getMatchStrength(0.72), 'moderate');
+  assert.equal(getMatchStrength(0.75), 'moderate');
+  assert.equal(getMatchStrength(0.819), 'moderate');
+});
+
+test('getMatchStrength returns strong for score >= 0.82', () => {
+  assert.equal(getMatchStrength(0.82), 'strong');
+  assert.equal(getMatchStrength(0.90), 'strong');
+  assert.equal(getMatchStrength(1.0), 'strong');
 });

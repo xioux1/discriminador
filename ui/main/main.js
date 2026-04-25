@@ -7414,32 +7414,61 @@ function initDocumentsTab() {
     const tierClass = { A: 'tier-a', B: 'tier-b', C: 'tier-c', D: 'tier-d' };
 
     panel.innerHTML = data.clusters.map(cl => {
-      const tier   = cl.priority_tier || '?';
-      const score  = cl.importance_score != null ? (cl.importance_score * 100).toFixed(0) : '—';
-      const pct    = cl.importance_score != null ? Math.round(cl.importance_score * 100) : 0;
+      // Use relative tier as primary badge; fall back to absolute if not present
+      const tier      = cl.relative_priority_tier || cl.priority_tier || '?';
+      const relScore  = cl.relative_importance_score;
+      const absScore  = cl.importance_score;
 
-      const densityPct  = cl.density_score  != null ? Math.round(cl.density_score  * 100) : null;
-      const programPct  = cl.program_score  != null ? Math.round(cl.program_score  * 100) : null;
-      const examPct     = cl.exam_score     != null ? Math.round(cl.exam_score     * 100) : null;
+      // Progress bar driven by relative score when available, else absolute
+      const barPct    = relScore != null ? Math.round(relScore * 100) : (absScore != null ? Math.round(absScore * 100) : 0);
+      const absLabel  = absScore != null ? (absScore * 100).toFixed(0) + '%' : '—';
+
+      const densityPct = cl.density_score != null ? Math.round(cl.density_score * 100) : null;
+
+      // Program signal — only show when not weak
+      let programLabel = null;
+      if (cl.program_score != null) {
+        const pct = Math.round(cl.program_score * 100);
+        const strength = cl.program_match_strength;
+        if (strength === 'strong' || strength === 'moderate') {
+          programLabel = `programa ${pct}%`;
+        } else {
+          programLabel = `programa débil ${pct}%`;
+        }
+      }
+
+      // Exam signal — only show when not weak
+      let examLabel = null;
+      if (cl.exam_score != null) {
+        const pct = Math.round(cl.exam_score * 100);
+        const strength = cl.exam_match_strength;
+        if (strength === 'strong' || strength === 'moderate') {
+          examLabel = `examen ${pct}%`;
+        } else {
+          examLabel = `examen débil ${pct}%`;
+        }
+      }
 
       const scoreDetails = [
         `density ${densityPct != null ? densityPct + '%' : '—'}`,
-        programPct != null ? `programa ${programPct}%` : null,
-        examPct    != null ? `examen ${examPct}%`     : null,
+        programLabel,
+        examLabel,
       ].filter(Boolean).join(' · ');
 
       const reasons = (cl.importance_reasons || [])
         .map(r => `<li>${escHtml(r)}</li>`)
         .join('');
 
+      const relLabel = relScore != null ? `Top relativo · ${absLabel} absoluto` : absLabel;
+
       return `
         <div class="docs-ranking-item">
           <div class="docs-ranking-item-head">
             <span class="docs-tier-badge ${tierClass[tier] || ''}">${escHtml(tier)}</span>
             <div class="docs-ranking-score-bar-wrap">
-              <div class="docs-ranking-score-bar" style="width:${pct}%"></div>
+              <div class="docs-ranking-score-bar" style="width:${barPct}%"></div>
             </div>
-            <span class="docs-ranking-score-num">${score}%</span>
+            <span class="docs-ranking-score-num">${escHtml(relLabel)}</span>
             <span class="docs-ranking-name">${escHtml(cl.name)}</span>
           </div>
           ${cl.definition ? `<div class="docs-ranking-def">${escHtml(cl.definition)}</div>` : ''}
