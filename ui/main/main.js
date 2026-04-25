@@ -6925,13 +6925,14 @@ function formatDocDate(isoStr) {
 }
 
 function initDocumentsTab() {
-  const createBtn = document.getElementById('doc-create-btn');
-  const nameInput = document.getElementById('doc-name-input');
-  const textInput = document.getElementById('doc-text-input');
-  const feedback  = document.getElementById('doc-create-feedback');
-  const listEl    = document.getElementById('docs-list');
-  const loadingEl = document.getElementById('docs-loading');
-  const emptyEl   = document.getElementById('docs-empty');
+  const createBtn     = document.getElementById('doc-create-btn');
+  const nameInput     = document.getElementById('doc-name-input');
+  const textInput     = document.getElementById('doc-text-input');
+  const subjectInput  = document.getElementById('doc-subject-input');
+  const feedback      = document.getElementById('doc-create-feedback');
+  const listEl        = document.getElementById('docs-list');
+  const loadingEl     = document.getElementById('docs-loading');
+  const emptyEl       = document.getElementById('docs-empty');
 
   // documentId → setInterval id for background polling
   const polling = new Map();
@@ -6973,6 +6974,17 @@ function initDocumentsTab() {
         <span class="docs-document-name" title="${escHtml(name)}">${escHtml(name)}</span>
         <span class="docs-document-meta">${escHtml(metaParts.join(' · '))}</span>
       </div>
+      <div class="docs-subject-row">
+        <span class="docs-subject-display ${doc.subject ? '' : 'docs-subject-empty'}">
+          ${doc.subject ? `<span class="docs-subject-label">Materia:</span> ${escHtml(doc.subject)}` : 'Sin materia asignada'}
+        </span>
+        <button type="button" class="btn-ghost docs-subject-edit-btn" title="Editar materia" style="font-size:var(--fs-sm);padding:2px 6px">✎</button>
+        <span class="docs-subject-form hidden">
+          <input type="text" class="docs-subject-input" list="subjects-list" placeholder="Ej: Derecho Civil" autocomplete="off" style="font-size:var(--fs-sm);padding:3px 8px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--input-bg);font-family:var(--font);width:200px">
+          <button type="button" class="btn-primary docs-subject-save-btn" style="font-size:var(--fs-sm);padding:3px 10px">Guardar</button>
+          <button type="button" class="btn-ghost docs-subject-cancel-btn" style="font-size:var(--fs-sm);padding:3px 8px">✕</button>
+        </span>
+      </div>
       <div class="docs-document-actions">
         <button type="button" class="btn-secondary docs-extract-btn">Extraer conceptos</button>
         <button type="button" class="docs-concepts-toggle hidden">
@@ -6984,27 +6996,104 @@ function initDocumentsTab() {
           <span class="docs-clusters-count">0 clusters</span>
           <span class="docs-toggle-arrow">▼</span>
         </button>
+        <button type="button" class="btn-secondary docs-rank-btn hidden" title="Calcular importancia de clusters">Rankear clusters</button>
+        <button type="button" class="docs-ranking-toggle hidden">
+          <span class="docs-ranking-label">ver ranking</span>
+          <span class="docs-toggle-arrow">▼</span>
+        </button>
         <button type="button" class="btn-ghost docs-delete-btn" style="font-size:var(--fs-sm)">Eliminar</button>
         <span class="docs-extract-status"></span>
       </div>
       <div class="docs-concepts-panel"></div>
       <div class="docs-clusters-panel"></div>
+      <div class="docs-ranking-panel"></div>
     `;
 
     if (doc.concept_count > 0) updateConceptBadge(item, doc.concept_count);
     if (doc.cluster_count > 0) updateClusterBadge(item, doc.cluster_count);
 
-    wire(item, doc.id);
+    wire(item, doc.id, doc.subject);
     return item;
   }
 
   // ── Wire button events ────────────────────────────────────────────────────────
-  function wire(item, docId) {
+  function wire(item, docId, initialSubject) {
     item.querySelector('.docs-extract-btn').addEventListener('click', () => extractConcepts(docId, item));
     item.querySelector('.docs-concepts-toggle').addEventListener('click', () => togglePanel(docId, item));
     item.querySelector('.docs-clusterize-btn').addEventListener('click', () => clusterizeConcepts(docId, item));
     item.querySelector('.docs-clusters-toggle').addEventListener('click', () => toggleClustersPanel(docId, item));
+    item.querySelector('.docs-rank-btn').addEventListener('click', () => rankClusters(docId, item));
+    item.querySelector('.docs-ranking-toggle').addEventListener('click', () => toggleRankingPanel(item));
     item.querySelector('.docs-delete-btn').addEventListener('click', () => deleteDoc(docId, item));
+    wireSubjectEdit(item, docId, initialSubject);
+  }
+
+  // ── Subject inline edit ───────────────────────────────────────────────────────
+  function wireSubjectEdit(item, docId, initialSubject) {
+    const editBtn    = item.querySelector('.docs-subject-edit-btn');
+    const display    = item.querySelector('.docs-subject-display');
+    const form       = item.querySelector('.docs-subject-form');
+    const input      = item.querySelector('.docs-subject-input');
+    const saveBtn    = item.querySelector('.docs-subject-save-btn');
+    const cancelBtn  = item.querySelector('.docs-subject-cancel-btn');
+
+    if (initialSubject) input.value = initialSubject;
+
+    editBtn.addEventListener('click', () => {
+      display.classList.add('hidden');
+      editBtn.classList.add('hidden');
+      form.classList.remove('hidden');
+      input.focus();
+    });
+
+    cancelBtn.addEventListener('click', () => {
+      form.classList.add('hidden');
+      display.classList.remove('hidden');
+      editBtn.classList.remove('hidden');
+    });
+
+    saveBtn.addEventListener('click', () => saveSubject(docId, item, input.value.trim()));
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') saveSubject(docId, item, input.value.trim());
+      if (e.key === 'Escape') cancelBtn.click();
+    });
+  }
+
+  async function saveSubject(docId, item, subject) {
+    const display   = item.querySelector('.docs-subject-display');
+    const form      = item.querySelector('.docs-subject-form');
+    const editBtn   = item.querySelector('.docs-subject-edit-btn');
+    const saveBtn   = item.querySelector('.docs-subject-save-btn');
+
+    saveBtn.disabled = true;
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
+      const res = await fetch(`/api/documents/${docId}/subject`, {
+        method: 'PATCH', headers, body: JSON.stringify({ subject: subject || null }),
+      });
+      Auth.handleRefreshToken(res);
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        throw new Error(e.message || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      const saved = data.subject || null;
+
+      display.className = `docs-subject-display ${saved ? '' : 'docs-subject-empty'}`;
+      display.innerHTML = saved
+        ? `<span class="docs-subject-label">Materia:</span> ${escHtml(saved)}`
+        : 'Sin materia asignada';
+
+      form.classList.add('hidden');
+      display.classList.remove('hidden');
+      editBtn.classList.remove('hidden');
+    } catch (err) {
+      alert(`Error al guardar materia: ${err.message}`);
+    } finally {
+      saveBtn.disabled = false;
+    }
   }
 
   // ── Update the concepts count badge ──────────────────────────────────────────
@@ -7032,12 +7121,15 @@ function initDocumentsTab() {
     const toggle        = item.querySelector('.docs-clusters-toggle');
     const label         = item.querySelector('.docs-clusters-count');
     const clusterizeBtn = item.querySelector('.docs-clusterize-btn');
+    const rankBtn       = item.querySelector('.docs-rank-btn');
     if (count > 0) {
       label.textContent = `${count} cluster${count !== 1 ? 's' : ''}`;
       toggle.classList.remove('hidden');
       clusterizeBtn.classList.add('hidden');  // replaced by toggle
+      rankBtn.classList.remove('hidden');
     } else {
       toggle.classList.add('hidden');
+      rankBtn.classList.add('hidden');
     }
   }
 
@@ -7266,6 +7358,98 @@ function initDocumentsTab() {
     }
   }
 
+  // ── Rank clusters ─────────────────────────────────────────────────────────────
+  async function rankClusters(docId, item) {
+    const btn      = item.querySelector('.docs-rank-btn');
+    const statusEl = item.querySelector('.docs-extract-status');
+
+    btn.disabled    = true;
+    btn.textContent = 'Rankeando...';
+    statusEl.textContent = '';
+    statusEl.style.color = '';
+
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
+      const res = await fetch(`/api/documents/${docId}/rank-clusters`, { method: 'POST', headers });
+      Auth.handleRefreshToken(res);
+
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload.message || `HTTP ${res.status}`);
+
+      statusEl.textContent = `Ranking calculado (${payload.cluster_count} clusters).`;
+
+      const panel = item.querySelector('.docs-ranking-panel');
+      renderRankingInPanel(panel, payload);
+      panel.classList.add('open');
+
+      const toggle = item.querySelector('.docs-ranking-toggle');
+      toggle.classList.remove('hidden');
+      toggle.classList.add('open');
+
+      btn.textContent = 'Re-rankear';
+    } catch (err) {
+      statusEl.textContent = err.message;
+      statusEl.style.color = 'var(--fail-fg)';
+      btn.textContent = 'Rankear clusters';
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  function toggleRankingPanel(item) {
+    const panel  = item.querySelector('.docs-ranking-panel');
+    const toggle = item.querySelector('.docs-ranking-toggle');
+    const isOpen = panel.classList.contains('open');
+    panel.classList.toggle('open', !isOpen);
+    toggle.classList.toggle('open', !isOpen);
+  }
+
+  function renderRankingInPanel(panel, data) {
+    if (!data.clusters || data.clusters.length === 0) {
+      panel.innerHTML = '<p style="color:var(--text-muted);font-size:var(--fs-sm);margin:0">Sin ranking disponible.</p>';
+      return;
+    }
+
+    const tierClass = { A: 'tier-a', B: 'tier-b', C: 'tier-c', D: 'tier-d' };
+
+    panel.innerHTML = data.clusters.map(cl => {
+      const tier   = cl.priority_tier || '?';
+      const score  = cl.importance_score != null ? (cl.importance_score * 100).toFixed(0) : '—';
+      const pct    = cl.importance_score != null ? Math.round(cl.importance_score * 100) : 0;
+
+      const densityPct  = cl.density_score  != null ? Math.round(cl.density_score  * 100) : null;
+      const programPct  = cl.program_score  != null ? Math.round(cl.program_score  * 100) : null;
+      const examPct     = cl.exam_score     != null ? Math.round(cl.exam_score     * 100) : null;
+
+      const scoreDetails = [
+        `density ${densityPct != null ? densityPct + '%' : '—'}`,
+        programPct != null ? `programa ${programPct}%` : null,
+        examPct    != null ? `examen ${examPct}%`     : null,
+      ].filter(Boolean).join(' · ');
+
+      const reasons = (cl.importance_reasons || [])
+        .map(r => `<li>${escHtml(r)}</li>`)
+        .join('');
+
+      return `
+        <div class="docs-ranking-item">
+          <div class="docs-ranking-item-head">
+            <span class="docs-tier-badge ${tierClass[tier] || ''}">${escHtml(tier)}</span>
+            <div class="docs-ranking-score-bar-wrap">
+              <div class="docs-ranking-score-bar" style="width:${pct}%"></div>
+            </div>
+            <span class="docs-ranking-score-num">${score}%</span>
+            <span class="docs-ranking-name">${escHtml(cl.name)}</span>
+          </div>
+          ${cl.definition ? `<div class="docs-ranking-def">${escHtml(cl.definition)}</div>` : ''}
+          <div class="docs-ranking-signals">${escHtml(scoreDetails)}</div>
+          ${reasons ? `<ul class="docs-ranking-reasons">${reasons}</ul>` : ''}
+        </div>
+      `;
+    }).join('');
+  }
+
   // ── Create document ───────────────────────────────────────────────────────────
   createBtn.addEventListener('click', async () => {
     const text = textInput.value.trim();
@@ -7283,10 +7467,12 @@ function initDocumentsTab() {
       const data = await postJson('/api/documents', {
         text,
         original_filename: nameInput.value.trim() || null,
+        subject: subjectInput.value.trim() || null,
       });
 
       textInput.value = '';
       nameInput.value = '';
+      subjectInput.value = '';
       feedback.textContent = 'Documento creado.';
       feedback.className = 'feedback success';
 

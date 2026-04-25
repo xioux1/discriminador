@@ -18,6 +18,7 @@ router.get('/api/documents', async (req, res, next) => {
       `SELECT
          d.id,
          d.original_filename,
+         d.subject,
          d.status,
          d.created_at,
          COALESCE(
@@ -47,23 +48,52 @@ router.get('/api/documents', async (req, res, next) => {
 // POST /api/documents — create a document from pasted text
 router.post('/api/documents', async (req, res, next) => {
   const userId = req.user.id;
-  const { text, original_filename } = req.body || {};
+  const { text, original_filename, subject } = req.body || {};
 
   if (!text || !String(text).trim()) {
     return res.status(400).json({ error: 'bad_request', message: 'text is required.' });
   }
 
+  const subjectVal = subject ? String(subject).trim() : null;
+
   try {
     const { rows } = await dbPool.query(
-      `INSERT INTO documents (user_id, text, original_filename)
-       VALUES ($1, $2, $3)
-       RETURNING id, original_filename, status, created_at`,
-      [userId, String(text).trim(), original_filename ? String(original_filename).trim() : null]
+      `INSERT INTO documents (user_id, text, original_filename, subject)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, original_filename, subject, status, created_at`,
+      [userId, String(text).trim(), original_filename ? String(original_filename).trim() : null, subjectVal]
     );
     const doc = rows[0];
     return res.status(201).json({
-      document: { ...doc, word_count: String(text).trim().split(/\s+/).filter(Boolean).length, concept_count: 0 }
+      document: { ...doc, word_count: String(text).trim().split(/\s+/).filter(Boolean).length, concept_count: 0, cluster_count: 0 }
     });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// PATCH /api/documents/:id/subject — update the subject linked to a document
+router.patch('/api/documents/:id/subject', async (req, res, next) => {
+  const userId = req.user.id;
+  const documentId = req.params.id;
+
+  if (!UUID_RE.test(documentId)) {
+    return res.status(400).json({ error: 'invalid_id', message: 'Document ID must be a valid UUID.' });
+  }
+
+  const subjectVal = req.body?.subject ? String(req.body.subject).trim() : null;
+
+  try {
+    const { rows } = await dbPool.query(
+      `UPDATE documents SET subject = $1, updated_at = NOW()
+       WHERE id = $2 AND user_id = $3
+       RETURNING id, subject`,
+      [subjectVal, documentId, userId]
+    );
+    if (!rows.length) {
+      return res.status(404).json({ error: 'not_found', message: 'Document not found.' });
+    }
+    return res.json({ subject: rows[0].subject });
   } catch (err) {
     return next(err);
   }
