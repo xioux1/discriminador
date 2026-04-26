@@ -1045,8 +1045,11 @@
           <input type="text" id="doc-name-input" placeholder="Ej: Clase 5 — Prescripción" style="width:100%;max-width:480px;margin-bottom:10px">
           <label for="doc-text-input" style="display:block;font-size:var(--fs-sm);color:var(--text-muted);margin-bottom:4px">Texto / transcripción</label>
           <textarea id="doc-text-input" rows="8" placeholder="Pegá el texto, apuntes o transcripción del material..."></textarea>
-          <label for="doc-subject-input" style="display:block;font-size:var(--fs-sm);color:var(--text-muted);margin-bottom:4px;margin-top:10px">Materia (opcional)</label>
-          <input type="text" id="doc-subject-input" list="subjects-list" placeholder="Ej: Derecho Civil" autocomplete="off" style="width:100%;max-width:360px;margin-bottom:10px">
+          <label for="doc-subject-input" style="display:block;font-size:var(--fs-sm);color:var(--text-muted);margin-bottom:4px;margin-top:10px">
+            Materia <span style="color:var(--review-fg);font-size:0.78rem">— necesario para la brújula de exámenes</span>
+          </label>
+          <input type="text" id="doc-subject-input" list="subjects-list" placeholder="Ej: Derecho Civil" autocomplete="off" style="width:100%;max-width:360px;margin-bottom:4px">
+          <p style="font-size:0.76rem;color:var(--text-muted);margin:0 0 10px">Sin materia, el exam_score quedará null al rankear clusters.</p>
           <div style="display:flex;align-items:center;gap:14px;margin-top:2px;flex-wrap:wrap">
             <button type="button" id="doc-create-btn" class="btn-primary">Crear documento</button>
             <p id="doc-create-feedback" class="feedback" style="margin:0"></p>
