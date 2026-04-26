@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { dbPool } from '../db/client.js';
 import { logger } from '../utils/logger.js';
+import { withRetry } from '../utils/retry.js';
 import { safeJsonParseArray } from './conceptExtractor.service.js';
 
 // ==================== Lazy client ====================
@@ -168,12 +169,15 @@ async function callAnthropicClustering(llmInput) {
   const model     = process.env.CONCEPT_CLUSTERING_MODEL || 'claude-sonnet-4-20250514';
   const inputJson = JSON.stringify(llmInput, null, 2);
 
-  const response = await getAnthropicClient().messages.create({
-    model,
-    max_tokens:  16000,
-    temperature: 0.1,
-    messages: [{ role: 'user', content: buildClusteringPrompt(inputJson) }],
-  });
+  const response = await withRetry(
+    () => getAnthropicClient().messages.create({
+      model,
+      max_tokens:  16000,
+      temperature: 0.1,
+      messages: [{ role: 'user', content: buildClusteringPrompt(inputJson) }],
+    }),
+    { label: 'callAnthropicClustering' },
+  );
 
   return response.content
     .map(part => (part.type === 'text' ? part.text : ''))
@@ -223,12 +227,15 @@ async function callAnthropicOrphanAssignment(namedClusters, orphanBatch) {
   const model    = process.env.CONCEPT_CLUSTERING_MODEL || 'claude-sonnet-4-20250514';
   const prompt   = buildOrphanAssignmentPrompt(namedClusters, orphanBatch);
 
-  const response = await getAnthropicClient().messages.create({
-    model,
-    max_tokens:  4096,
-    temperature: 0.1,
-    messages: [{ role: 'user', content: prompt }],
-  });
+  const response = await withRetry(
+    () => getAnthropicClient().messages.create({
+      model,
+      max_tokens:  4096,
+      temperature: 0.1,
+      messages: [{ role: 'user', content: prompt }],
+    }),
+    { label: 'callAnthropicOrphanAssignment' },
+  );
 
   return response.content
     .map(part => (part.type === 'text' ? part.text : ''))
