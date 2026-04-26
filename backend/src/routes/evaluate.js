@@ -21,10 +21,31 @@ export function __setCheckClientForTest(client) {
 
 // ─── Binary-check mode helpers ─────────────────────────────────────────────
 
+// Strip diacritics so 'cálculo' === 'calculo', 'física' === 'fisica', etc.
+function stripDiacritics(s) {
+  return s.normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+function normalizeForDetection(subject) {
+  return typeof subject === 'string'
+    ? stripDiacritics(subject.trim().toLowerCase())
+    : '';
+}
+
+// All keywords are plain ASCII (diacritics handled by normalizeForDetection).
 const MATH_SUBJECT_KEYWORDS = [
-  'mat', 'calc', 'alg', 'arithm', 'trig', 'fís', 'fis', 'quím', 'quim',
-  'estadíst', 'estadist', 'geom', 'prob', 'análisi', 'analisi',
-  'integral', 'difer', 'ecuac', 'vectori'
+  // Generic math terms
+  'mat', 'calc', 'alg', 'arithm', 'trig', 'geom', 'prob', 'estadist',
+  // Analysis / calculus
+  'analisi', 'integral', 'difer', 'ecuac', 'vectori',
+  // Physics (uses equations — math-first prompt applies)
+  'fis',
+  // Chemistry (equations, stoichiometry)
+  'quim',
+  // Argentine/Latin-American curriculum shortcodes
+  'am1', 'am2', 'am3', 'am4',   // Análisis Matemático 1-4
+  'edo',                          // Ecuaciones Diferenciales Ordinarias
+  'alc',                          // Álgebra y Cálculo (some curricula)
 ];
 const SQL_SUBJECT_KEYWORDS = [
   'sql', 'base', 'datos', 'bd', 'oracle', 'pl/sql', 'plsql', 'query',
@@ -32,7 +53,7 @@ const SQL_SUBJECT_KEYWORDS = [
 ];
 
 function detectCheckMode(subject) {
-  const s = typeof subject === 'string' ? subject.trim().toLowerCase() : '';
+  const s = normalizeForDetection(subject);
   if (!s) return 'generic';
   if (MATH_SUBJECT_KEYWORDS.some((k) => s.includes(k))) return 'math';
   if (SQL_SUBJECT_KEYWORDS.some((k) => s.includes(k)))  return 'sql';
@@ -186,6 +207,9 @@ function parseBinaryCheckOutput(text) {
 
   return { result: 'error', errorType: safeType, errorLabel: safeLabel, parsedOk: true };
 }
+
+// Exported for unit tests (pure functions, no HTTP layer needed).
+export { detectCheckMode, parseBinaryCheckOutput };
 
 const evaluateRouter = Router();
 
