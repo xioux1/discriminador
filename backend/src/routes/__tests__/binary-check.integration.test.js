@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import express from 'express';
 
-import evaluateRouter, { __setCheckClientForTest } from '../evaluate.js';
+import evaluateRouter, { __setCheckClientForTest, detectCheckMode, parseBinaryCheckOutput } from '../evaluate.js';
 import { dbPool } from '../../db/client.js';
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -304,5 +304,160 @@ test('contract: RESULTADO: ambiguo (ni OK ni ERROR) → ok sin log', async () =>
     assert.equal(body.result, 'ok');
     assert.equal(body.check_id, null);
     assert.equal(logged.length, 0);
+  });
+});
+
+// ─── Subject alias detection (pure unit tests — no HTTP, no rate limit) ────────
+// detectCheckMode is a pure function; we test it directly to avoid consuming
+// rate-limit budget with 20+ HTTP requests.
+
+const MATH_ALIAS_CASES = [
+  // Accented variants fixed by NFD normalization
+  ['cálculo',               'math'],
+  ['Cálculo 2',             'math'],
+  ['álgebra',               'math'],
+  ['Álgebra Lineal',        'math'],
+  ['análisis',              'math'],
+  ['Análisis Matemático 1', 'math'],
+  // Plain ASCII equivalents
+  ['calculo',               'math'],
+  ['algebra',               'math'],
+  ['analisis',              'math'],
+  // Argentine curriculum shortcodes
+  ['am1',  'math'], ['AM1',  'math'],
+  ['am2',  'math'], ['AM2',  'math'],
+  ['am3',  'math'], ['AM3',  'math'],
+  ['am4',  'math'],
+  ['edo',  'math'], ['EDO',  'math'],
+  // Physics → math (uses equations; math-first prompt applies)
+  ['física',         'math'],
+  ['Física I',       'math'],
+  ['fisica',         'math'],
+  ['Física Teórica', 'math'],
+  // Already-working — regression guard
+  ['matemática',    'math'],
+  ['integrales',    'math'],
+  ['trigonometría', 'math'],
+  // SQL stays SQL
+  ['bases-de-datos', 'sql'],
+  ['SQL',            'sql'],
+  ['pl/sql',         'sql'],
+  // Unknown stays generic
+  ['',          'generic'],
+  ['misc',      'generic'],
+  ['Literatura','generic'],
+];
+
+for (const [subject, expected] of MATH_ALIAS_CASES) {
+  test(`detectCheckMode("${subject}") → ${expected}`, () => {
+    assert.equal(detectCheckMode(subject), expected);
+  });
+}
+
+// ─── parseBinaryCheckOutput unit tests ────────────────────────────────────────
+
+test('parse: RESULTADO: OK → ok parsedOk=true', () => {
+  const r = parseBinaryCheckOutput('RESULTADO: OK');
+  assert.equal(r.result, 'ok');
+  assert.equal(r.parsedOk, true);
+  assert.equal(r.errorType, null);
+});
+
+test('parse: sin RESULTADO → ok parsedOk=false (safe fallback)', () => {
+  const r = parseBinaryCheckOutput('Lo siento, no puedo evaluar esto.');
+  assert.equal(r.result, 'ok');
+  assert.equal(r.parsedOk, false);
+});
+
+test('parse: RESULTADO: MAYBE → ok parsedOk=false (safe fallback)', () => {
+  const r = parseBinaryCheckOutput('RESULTADO: MAYBE');
+  assert.equal(r.result, 'ok');
+  assert.equal(r.parsedOk, false);
+});
+
+test('parse: RESULTADO: ERROR conceptual → error parsedOk=true con label', () => {
+  const r = parseBinaryCheckOutput(
+    'RESULTADO: ERROR\nERROR_TYPE: conceptual\nERROR_LABEL: signo incorrecto'
+  );
+  assert.equal(r.result, 'error');
+  assert.equal(r.parsedOk, true);
+  assert.equal(r.errorType, 'conceptual');
+  assert.equal(r.errorLabel, 'signo incorrecto');
+});
+
+test('parse: RESULTADO: ERROR syntactic → errorLabel null', () => {
+  const r = parseBinaryCheckOutput(
+    'RESULTADO: ERROR\nERROR_TYPE: syntactic\nERROR_LABEL: espaciado raro'
+  );
+  assert.equal(r.result, 'error');
+  assert.equal(r.errorType, 'syntactic');
+  assert.equal(r.errorLabel, null, 'syntactic errors must never expose a label');
+});
+
+test('parse: RESULTADO: ERROR sin ERROR_TYPE → unknown, errorLabel null', () => {
+  const r = parseBinaryCheckOutput('RESULTADO: ERROR');
+  assert.equal(r.result, 'error');
+  assert.equal(r.errorType, 'unknown');
+  assert.equal(r.errorLabel, null);
+  assert.equal(r.parsedOk, true);
+});
+
+// ─── Scheduler downstream safety (integration) ────────────────────────────────
+// binary_check_log rows with error_type != 'conceptual' OR error_label IS NULL
+// are excluded by the scheduler query:
+//   WHERE id = ANY($1) AND error_type = 'conceptual' AND error_label IS NOT NULL
+// These tests confirm the INSERT params match that contract.
+// Use a high user ID (9901/9902) to avoid exhausting the shared rate-limit pool.
+
+async function withSchedulerServer(userId, runTest) {
+  const app = express();
+  app.use(express.json());
+  app.use((req, _res, next) => { req.user = { id: userId }; next(); });
+  app.use(evaluateRouter);
+  const server = http.createServer(app);
+  await new Promise((resolve) => server.listen(0, resolve));
+  const { port } = server.address();
+  try {
+    await runTest(`http://127.0.0.1:${port}`);
+  } finally {
+    await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  }
+}
+
+test('scheduler safety: syntactic error → error_label null en INSERT', async () => {
+  const logged = [];
+  installDbMock({ captureLog: (entry) => logged.push(entry) });
+  mockAnthropicResponse('RESULTADO: ERROR\nERROR_TYPE: syntactic\nERROR_LABEL: espaciado raro');
+
+  await withSchedulerServer(9901, async (base) => {
+    const { body } = await binaryCheck(base, {
+      prompt_text:      'Ejercicio SQL',
+      user_answer_text: 'SELECT*FROM t',
+      subject:          SQL_SUBJECT
+    });
+    assert.equal(body.result, 'error');
+    assert.equal(body.error_type, 'syntactic');
+    assert.equal(body.error_label, null);
+    assert.equal(logged.length, 1);
+    assert.equal(logged[0].params[5], null, 'binary_check_log.error_label debe ser null para syntactic');
+  });
+});
+
+test('scheduler safety: unknown error_type → error_label null en INSERT', async () => {
+  const logged = [];
+  installDbMock({ captureLog: (entry) => logged.push(entry) });
+  mockAnthropicResponse('RESULTADO: ERROR');
+
+  await withSchedulerServer(9902, async (base) => {
+    const { body } = await binaryCheck(base, {
+      prompt_text:      'Ejercicio',
+      user_answer_text: 'respuesta',
+      subject:          SQL_SUBJECT
+    });
+    assert.equal(body.result, 'error');
+    assert.equal(body.error_type, 'unknown');
+    assert.equal(body.error_label, null);
+    assert.equal(logged.length, 1);
+    assert.equal(logged[0].params[5], null, 'binary_check_log.error_label debe ser null para unknown');
   });
 });
