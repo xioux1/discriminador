@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { dbPool } from '../db/client.js';
 import { logger } from '../utils/logger.js';
+import { withRetry } from '../utils/retry.js';
 
 // ==================== Lazy clients ====================
 
@@ -273,12 +274,15 @@ ${chunk}`;
 async function callAnthropicConceptExtraction(chunkText) {
   const model = process.env.CONCEPT_EXTRACTION_MODEL || 'claude-sonnet-4-20250514';
 
-  const response = await getAnthropicClient().messages.create({
-    model,
-    max_tokens: 1200,
-    temperature: 0.1,
-    messages: [{ role: 'user', content: buildConceptPrompt(chunkText) }],
-  });
+  const response = await withRetry(
+    () => getAnthropicClient().messages.create({
+      model,
+      max_tokens: 1200,
+      temperature: 0.1,
+      messages: [{ role: 'user', content: buildConceptPrompt(chunkText) }],
+    }),
+    { label: 'callAnthropicConceptExtraction' },
+  );
 
   return response.content
     .map(part => (part.type === 'text' ? part.text : ''))
