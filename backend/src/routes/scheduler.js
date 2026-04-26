@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { dbPool } from '../db/client.js';
 import { computeNextReview, isPassGrade, isFailGrade } from '../services/scheduler.js';
-import { generateMicroCard, generateMicroCardFromCheckError, generateChineseMicroCard, isChineseCard } from '../services/micro-generator.js';
+import { generateMicroCard, generateMicroCardFromCheckError, generateChineseMicroCard, isChineseCard, rankGaps } from '../services/micro-generator.js';
 import { generateVariant, buildChineseListeningVariant } from '../services/variant-generator.js';
 import Anthropic from '@anthropic-ai/sdk';
 
@@ -490,11 +490,16 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
       ? conceptGaps.length                       // no limit → one per gap (frontend sends top gaps)
       : Math.max(0, maxPerCard - existingCount); // fill up to the cap
 
-    // Pick the top N valid concepts (N = slotsAvailable).
-    const targetConcepts = conceptGaps
-      .filter((c) => typeof c === 'string' && c.trim().length > 0)
-      .slice(0, slotsAvailable)
-      .map((c) => c.trim());
+    // Rank gaps by acquisition difficulty before slicing, so the most
+    // valuable concept always gets the first microcard slot.
+    const validGaps = conceptGaps.filter((c) => typeof c === 'string' && c.trim().length > 0).map((c) => c.trim());
+    const rankedGaps = await rankGaps({
+      prompt_text:          card.prompt_text,
+      expected_answer_text: card.expected_answer_text,
+      user_answer:          userAnswer,
+      gaps:                 validGaps,
+    });
+    const targetConcepts = rankedGaps.slice(0, slotsAvailable);
 
     for (const concept of targetConcepts) {
       try {
@@ -693,10 +698,14 @@ async function reviewMicroCard(res, microCardId, grade, conceptGaps, userAnswer,
           ? gaps.length
           : Math.max(0, maxPerCard - existingCount);
 
-        const targetConcepts = gaps
-          .filter((c) => typeof c === 'string' && c.trim().length > 0)
-          .slice(0, slotsAvailable)
-          .map((c) => c.trim());
+        const validSiblingGaps = gaps.filter((c) => typeof c === 'string' && c.trim().length > 0).map((c) => c.trim());
+        const rankedSiblingGaps = await rankGaps({
+          prompt_text:          parent.prompt_text,
+          expected_answer_text: parent.expected_answer_text,
+          user_answer:          userAnswer || '',
+          gaps:                 validSiblingGaps,
+        });
+        const targetConcepts = rankedSiblingGaps.slice(0, slotsAvailable);
 
         for (const concept of targetConcepts) {
           try {

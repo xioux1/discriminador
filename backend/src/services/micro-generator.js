@@ -223,3 +223,62 @@ Generá la micro-pregunta que ataque el concepto general del error, sin menciona
     expected_answer: answerMatch?.[1]?.trim() || expected_answer_text,
   };
 }
+
+/**
+ * Rank gaps from most to least difficult to acquire, so the most valuable
+ * concept gets turned into a microcard first.
+ *
+ * Falls back to the original order if the LLM call fails or returns
+ * an unparseable response.
+ */
+export async function rankGaps({ prompt_text, expected_answer_text, user_answer = '', gaps }) {
+  if (!gaps || gaps.length <= 1) return gaps ?? [];
+
+  const numberedList = gaps.map((g, i) => `${i + 1}. ${g}`).join('\n');
+
+  const prompt = `A student failed a flashcard. The evaluator identified the following gaps in their answer. Your job is to rank these gaps from MOST to LEAST difficult to acquire, so the most valuable concept gets turned into a microcard first.
+
+## Card context
+- Front (prompt): ${prompt_text}
+- Expected answer: ${expected_answer_text}
+- Student's answer: ${user_answer}
+
+## Gaps identified
+${numberedList}
+
+## Ranking criteria (apply in order)
+
+1. LEXICAL gaps first — unknown or confused vocabulary items.
+2. Within lexical: prioritize words the student clearly attempted but got wrong over words they skipped entirely (skipped = likely just didn't know, less nuanced to fix).
+3. If two gaps are equivalent in difficulty, prefer the one more central to the card's core meaning.
+
+## Output format
+Return ONLY a JSON array of the gap strings in ranked order, most difficult first. No explanation, no preamble, no markdown fences.
+
+Example output:
+["gap 3 text", "gap 1 text", "gap 2 text"]`;
+
+  try {
+    const response = await getClient().messages.create({
+      model:      LLM_MODEL,
+      max_tokens: 256,
+      temperature: 0,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    const text = response.content.find((b) => b.type === 'text')?.text?.trim() ?? '';
+    const ranked = JSON.parse(text);
+
+    if (!Array.isArray(ranked)) return gaps;
+
+    // Validate every item is a known gap string; discard hallucinations.
+    const gapSet = new Set(gaps);
+    const filtered = ranked.filter((g) => typeof g === 'string' && gapSet.has(g));
+
+    // Append any gaps the LLM dropped (safety net).
+    const missing = gaps.filter((g) => !filtered.includes(g));
+    return [...filtered, ...missing];
+  } catch {
+    return gaps;
+  }
+}
