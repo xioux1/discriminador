@@ -19,6 +19,7 @@ const {
   promoteTier,
   applyExternalSignalTierOverrides,
   getMatchStrength,
+  averageTopK,
 } = await import('../clusterRanking.service.js');
 
 // ---- helpers ----
@@ -546,4 +547,105 @@ test('getMatchStrength returns strong for score >= 0.82', () => {
   assert.equal(getMatchStrength(0.82), 'strong');
   assert.equal(getMatchStrength(0.90), 'strong');
   assert.equal(getMatchStrength(1.0), 'strong');
+});
+
+// ---- averageTopK ----
+
+test('averageTopK returns null for empty items', () => {
+  const centroid = [1, 0, 0];
+  assert.equal(averageTopK(centroid, []), null);
+  assert.equal(averageTopK(centroid, null), null);
+});
+
+test('averageTopK with a single item returns that item score', () => {
+  const centroid = uniformVec(4);
+  const items = [{ embedding: uniformVec(4), text: 'a' }];
+  const result = averageTopK(centroid, items, 3);
+  assert.ok(result !== null);
+  assert.ok(Math.abs(result.score - 1) < 1e-9, `expected score ~1, got ${result.score}`);
+  assert.equal(result.text, 'a');
+});
+
+test('averageTopK averages top-k when more than k items exist', () => {
+  const dim = 4;
+  const centroid = uniformVec(dim);
+  // One identical item (sim=1), two partially matching (sim~0.5), three orthogonal (sim=0)
+  const items = [
+    { embedding: uniformVec(dim), text: 'best' },
+    { embedding: makeVec(dim, [0, 1], [1, 1]), text: 'mid1' },
+    { embedding: makeVec(dim, [0, 1], [2, 1]), text: 'mid2' },
+    { embedding: makeVec(dim, [1, 1]), text: 'low1' },
+    { embedding: makeVec(dim, [2, 1]), text: 'low2' },
+    { embedding: makeVec(dim, [3, 1]), text: 'low3' },
+  ];
+  const top1 = averageTopK(centroid, items, 1);
+  const top3 = averageTopK(centroid, items, 3);
+  assert.ok(top1 !== null && top3 !== null);
+  // top-1 score is the single best (sim=1); top-3 average is lower (diluted by mid scores)
+  assert.ok(top3.score < top1.score,
+    `top-3 average (${top3.score}) should be lower than top-1 (${top1.score}) when mid items dilute`);
+  // text is always the best match
+  assert.equal(top3.text, 'best');
+});
+
+test('averageTopK top-3 score is more stable than top-1 when one outlier exists', () => {
+  const dim = 8;
+  const centroid = uniformVec(dim);
+  // Outlier item with very high similarity (false positive), rest are moderate
+  const outlier = { embedding: uniformVec(dim), text: 'outlier' };
+  const moderates = Array.from({ length: 5 }, (_, i) => ({
+    embedding: makeVec(dim, [i, 1]),
+    text: `m${i}`,
+  }));
+  const items = [outlier, ...moderates];
+
+  const top1 = averageTopK(centroid, items, 1);
+  const top3 = averageTopK(centroid, items, 3);
+  assert.ok(top1 !== null && top3 !== null);
+  // top-3 smooths the outlier, so its score is lower than top-1
+  assert.ok(top3.score <= top1.score,
+    `top-3 (${top3.score}) should be <= top-1 (${top1.score})`);
+});
+
+test('averageTopK uses k=3 by default', () => {
+  const dim = 4;
+  const centroid = uniformVec(dim);
+  const items = [
+    { embedding: uniformVec(dim), text: 'a' },
+    { embedding: makeVec(dim, [0, 1], [1, 0.5]), text: 'b' },
+    { embedding: makeVec(dim, [1, 1], [2, 0.5]), text: 'c' },
+    { embedding: makeVec(dim, [2, 1]), text: 'd' },
+  ];
+  const defaultK = averageTopK(centroid, items);
+  const explicit3 = averageTopK(centroid, items, 3);
+  assert.ok(Math.abs(defaultK.score - explicit3.score) < 1e-9,
+    `default k should be 3, got different scores: ${defaultK.score} vs ${explicit3.score}`);
+});
+
+// ---- ranking with no exams (exam_score stays null) ----
+
+test('computeImportanceScore with exam=null falls back to density-only', () => {
+  const densityOnly = computeImportanceScore({ density: 0.7, program: null, exam: null });
+  assert.ok(Math.abs(densityOnly - 0.7) < 1e-9,
+    `density-only score should equal density (0.7), got ${densityOnly}`);
+});
+
+test('ranking pipeline still produces valid tiers when all exam_scores are null', () => {
+  // Simulates the relative-scoring step with null exam_scores
+  const clusters = [
+    { id: '1', name: 'A', importance_score: 0.7, exam_score: null, program_score: null, density_score: 0.7, relative_priority_tier: null },
+    { id: '2', name: 'B', importance_score: 0.5, exam_score: null, program_score: null, density_score: 0.5, relative_priority_tier: null },
+    { id: '3', name: 'C', importance_score: 0.3, exam_score: null, program_score: null, density_score: 0.3, relative_priority_tier: null },
+  ];
+  const withRel  = computeRelativeImportanceScores(clusters);
+  const withTiers = assignRelativePriorityTiers(withRel);
+  const withOverrides = withTiers.map(applyExternalSignalTierOverrides);
+
+  for (const c of withOverrides) {
+    assert.ok(['A', 'B', 'C', 'D'].includes(c.relative_priority_tier),
+      `expected valid tier, got: ${c.relative_priority_tier}`);
+  }
+  // Top cluster by importance_score should be tier A
+  const top = withOverrides.find(c => c.id === '1');
+  assert.equal(top.relative_priority_tier, 'A', 'top cluster should be A when no exams');
 });

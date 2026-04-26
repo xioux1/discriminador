@@ -6969,6 +6969,8 @@ function initDocumentsTab() {
     const date      = formatDocDate(doc.created_at);
     const metaParts = [words, date].filter(Boolean);
 
+    item.dataset.subject = doc.subject || '';
+
     item.innerHTML = `
       <div class="docs-document-header">
         <span class="docs-document-name" title="${escHtml(name)}">${escHtml(name)}</span>
@@ -6984,6 +6986,9 @@ function initDocumentsTab() {
           <button type="button" class="btn-primary docs-subject-save-btn" style="font-size:var(--fs-sm);padding:3px 10px">Guardar</button>
           <button type="button" class="btn-ghost docs-subject-cancel-btn" style="font-size:var(--fs-sm);padding:3px 8px">✕</button>
         </span>
+      </div>
+      <div class="docs-no-subject-warning ${doc.subject ? 'hidden' : ''}">
+        ⚠ Sin materia asignada — el exam_score quedará null al rankear. Asigná una materia para activar la brújula de exámenes.
       </div>
       <div class="docs-document-actions">
         <button type="button" class="btn-secondary docs-extract-btn">Extraer conceptos</button>
@@ -7001,12 +7006,16 @@ function initDocumentsTab() {
           <span class="docs-ranking-label">ver ranking</span>
           <span class="docs-toggle-arrow">▼</span>
         </button>
+        <button type="button" class="btn-ghost docs-view-content-btn" style="font-size:var(--fs-sm)" title="Ver texto del documento">Ver contenido</button>
+        <button type="button" class="btn-ghost docs-load-exam-btn ${doc.subject ? '' : 'hidden'}" style="font-size:var(--fs-sm)" title="Cargar examen de referencia para esta materia">+ Examen de referencia</button>
         <button type="button" class="btn-ghost docs-delete-btn" style="font-size:var(--fs-sm)">Eliminar</button>
         <span class="docs-extract-status"></span>
       </div>
       <div class="docs-concepts-panel"></div>
       <div class="docs-clusters-panel"></div>
       <div class="docs-ranking-panel"></div>
+      <div class="docs-content-panel hidden"></div>
+      <div class="docs-exam-load-panel hidden"></div>
     `;
 
     if (doc.concept_count > 0) updateConceptBadge(item, doc.concept_count);
@@ -7025,6 +7034,8 @@ function initDocumentsTab() {
     item.querySelector('.docs-rank-btn').addEventListener('click', () => rankClusters(docId, item));
     item.querySelector('.docs-ranking-toggle').addEventListener('click', () => toggleRankingPanel(item));
     item.querySelector('.docs-delete-btn').addEventListener('click', () => deleteDoc(docId, item));
+    item.querySelector('.docs-view-content-btn').addEventListener('click', () => toggleContentPanel(docId, item));
+    item.querySelector('.docs-load-exam-btn').addEventListener('click', () => toggleExamLoadPanel(item));
     wireSubjectEdit(item, docId, initialSubject);
   }
 
@@ -7085,6 +7096,13 @@ function initDocumentsTab() {
       display.innerHTML = saved
         ? `<span class="docs-subject-label">Materia:</span> ${escHtml(saved)}`
         : 'Sin materia asignada';
+
+      // Update compass warning and exam loader button visibility
+      item.dataset.subject = saved || '';
+      const warning = item.querySelector('.docs-no-subject-warning');
+      if (warning) warning.classList.toggle('hidden', Boolean(saved));
+      const loadExamBtn = item.querySelector('.docs-load-exam-btn');
+      if (loadExamBtn) loadExamBtn.classList.toggle('hidden', !saved);
 
       form.classList.add('hidden');
       display.classList.remove('hidden');
@@ -7437,16 +7455,25 @@ function initDocumentsTab() {
         }
       }
 
-      // Exam signal — only show when not weak
+      // Exam signal with state label
       let examLabel = null;
+      let examStateBadge = '';
       if (cl.exam_score != null) {
         const pct = Math.round(cl.exam_score * 100);
         const strength = cl.exam_match_strength;
-        if (strength === 'strong' || strength === 'moderate') {
+        if (strength === 'strong') {
           examLabel = `examen ${pct}%`;
+          examStateBadge = `<span class="docs-exam-state exam-state--strong">señal fuerte</span>`;
+        } else if (strength === 'moderate') {
+          examLabel = `examen ${pct}%`;
+          examStateBadge = `<span class="docs-exam-state exam-state--moderate">señal moderada</span>`;
         } else {
           examLabel = `examen débil ${pct}%`;
+          examStateBadge = `<span class="docs-exam-state exam-state--weak">señal débil</span>`;
         }
+      } else {
+        examLabel = 'sin examen';
+        examStateBadge = `<span class="docs-exam-state exam-state--none">sin datos de examen</span>`;
       }
 
       const scoreDetails = [
@@ -7470,6 +7497,7 @@ function initDocumentsTab() {
             </div>
             <span class="docs-ranking-score-num">${escHtml(relLabel)}</span>
             <span class="docs-ranking-name">${escHtml(cl.name)}</span>
+            ${examStateBadge}
           </div>
           ${cl.definition ? `<div class="docs-ranking-def">${escHtml(cl.definition)}</div>` : ''}
           <div class="docs-ranking-signals">${escHtml(scoreDetails)}</div>
@@ -7482,6 +7510,16 @@ function initDocumentsTab() {
         </div>
       `;
     }).join('');
+
+    // Show no-exam banner if all clusters have exam_score null
+    const allNullExam = data.clusters.every(cl => cl.exam_score == null);
+    if (allNullExam && data.clusters.length > 0) {
+      panel.insertAdjacentHTML('afterbegin',
+        `<div class="docs-no-exam-banner">
+          Sin exámenes de referencia para esta materia. El ranking se basa solo en densidad.
+         </div>`
+      );
+    }
 
     // Wire generate-card buttons
     panel.querySelectorAll('.docs-generate-card-btn').forEach(btn => {
@@ -7620,6 +7658,132 @@ function initDocumentsTab() {
       const subject = panel.querySelector('.docs-accept-subject-input').value.trim();
       acceptCardDraftUI(cardId, subject, panel);
     });
+  }
+
+  // ── Toggle content viewer panel ───────────────────────────────────────────────
+  async function toggleContentPanel(docId, item) {
+    const panel  = item.querySelector('.docs-content-panel');
+    const isOpen = !panel.classList.contains('hidden');
+
+    if (isOpen) {
+      panel.classList.add('hidden');
+      panel.innerHTML = '';
+      return;
+    }
+
+    panel.classList.remove('hidden');
+    panel.innerHTML = '<span style="color:var(--text-muted);font-size:var(--fs-sm)">Cargando contenido...</span>';
+
+    try {
+      const data = await getJson(`/api/documents/${docId}/content`);
+      const wordCountLabel = data.word_count != null ? ` · ${Number(data.word_count).toLocaleString('es-AR')} palabras` : '';
+      panel.innerHTML = `
+        <div class="docs-content-viewer">
+          <div class="docs-content-viewer-meta">
+            ${data.subject ? `<span>Materia: ${escHtml(data.subject)}</span>` : ''}
+            <span>${escHtml(data.original_filename || 'Sin nombre')}${escHtml(wordCountLabel)}</span>
+          </div>
+          <pre class="docs-content-viewer-text">${escHtml(data.text || '(sin texto)')}</pre>
+        </div>
+      `;
+    } catch (err) {
+      panel.innerHTML = `<span style="color:var(--fail-fg);font-size:var(--fs-sm)">Error: ${escHtml(err.message)}</span>`;
+    }
+  }
+
+  // ── Toggle exam loader panel ──────────────────────────────────────────────────
+  function toggleExamLoadPanel(item) {
+    const panel   = item.querySelector('.docs-exam-load-panel');
+    const isOpen  = !panel.classList.contains('hidden');
+
+    if (isOpen) {
+      panel.classList.add('hidden');
+      panel.innerHTML = '';
+      return;
+    }
+
+    const subject = item.dataset.subject;
+    if (!subject) return;
+
+    panel.classList.remove('hidden');
+    panel.innerHTML = `
+      <div class="docs-exam-load-form">
+        <div class="docs-exam-load-title">Cargar examen de referencia — <em>${escHtml(subject)}</em></div>
+        <div class="docs-exam-load-row">
+          <input type="number" class="docs-exam-year-input" placeholder="Año (ej: 2023)" min="2000" max="2030" style="width:130px">
+          <input type="text" class="docs-exam-label-input" placeholder="Ej: 2do Parcial 2023" style="flex:1">
+          <select class="docs-exam-type-select">
+            <option value="parcial">Parcial</option>
+            <option value="final">Final</option>
+          </select>
+        </div>
+        <textarea class="docs-exam-content-input" rows="5" placeholder="Pegá las preguntas del examen..."></textarea>
+        <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+          <button type="button" class="btn-primary docs-exam-submit-btn">Guardar examen</button>
+          <button type="button" class="btn-ghost docs-exam-cancel-btn" style="font-size:var(--fs-sm)">Cancelar</button>
+          <span class="docs-exam-load-feedback"></span>
+        </div>
+      </div>
+    `;
+
+    panel.querySelector('.docs-exam-cancel-btn').addEventListener('click', () => {
+      panel.classList.add('hidden');
+      panel.innerHTML = '';
+    });
+
+    panel.querySelector('.docs-exam-submit-btn').addEventListener('click', () => {
+      const contentText = panel.querySelector('.docs-exam-content-input').value.trim();
+      if (!contentText) {
+        panel.querySelector('.docs-exam-load-feedback').textContent = 'El contenido no puede estar vacío.';
+        return;
+      }
+      submitReferenceExam(
+        subject,
+        panel.querySelector('.docs-exam-year-input').value || null,
+        panel.querySelector('.docs-exam-label-input').value.trim() || null,
+        panel.querySelector('.docs-exam-type-select').value,
+        contentText,
+        panel
+      );
+    });
+  }
+
+  async function submitReferenceExam(subject, year, label, examType, contentText, panel) {
+    const btn      = panel.querySelector('.docs-exam-submit-btn');
+    const feedback = panel.querySelector('.docs-exam-load-feedback');
+
+    btn.disabled    = true;
+    btn.textContent = 'Guardando...';
+    feedback.textContent = '';
+
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
+
+      const body = { content_text: contentText, exam_type: examType };
+      if (year) body.year = Number(year);
+      if (label) body.label = label;
+
+      const res = await fetch(`/curriculum/${encodeURIComponent(subject)}/exams`, {
+        method: 'POST', headers, body: JSON.stringify(body),
+      });
+      Auth.handleRefreshToken(res);
+
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload.message || `HTTP ${res.status}`);
+
+      feedback.textContent = `Examen guardado (${payload.exams?.length ?? 1} en total para "${subject}").`;
+      feedback.style.color = 'var(--pass-fg)';
+      panel.querySelector('.docs-exam-content-input').value = '';
+      panel.querySelector('.docs-exam-year-input').value = '';
+      panel.querySelector('.docs-exam-label-input').value = '';
+    } catch (err) {
+      feedback.textContent = err.message;
+      feedback.style.color = 'var(--fail-fg)';
+    } finally {
+      btn.disabled    = false;
+      btn.textContent = 'Guardar examen';
+    }
   }
 
   // ── Accept card draft → activate + assign subject ─────────────────────────────

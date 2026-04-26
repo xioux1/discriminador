@@ -178,6 +178,42 @@ router.post('/api/documents/:id/extract-concepts', async (req, res, next) => {
   }
 });
 
+// GET /api/documents/:id/content — return document text and basic metadata
+router.get('/api/documents/:id/content', async (req, res, next) => {
+  const userId = req.user.id;
+  const documentId = req.params.id;
+
+  if (!UUID_RE.test(documentId)) {
+    return res.status(400).json({ error: 'invalid_id', message: 'Document ID must be a valid UUID.' });
+  }
+
+  try {
+    const { rows } = await dbPool.query(
+      `SELECT id, original_filename, subject, status, created_at,
+              COALESCE(text, content, transcript) AS document_text
+       FROM documents
+       WHERE id = $1 AND user_id = $2`,
+      [documentId, userId]
+    );
+    if (!rows.length) {
+      return res.status(404).json({ error: 'not_found', message: 'Document not found.' });
+    }
+    const doc = rows[0];
+    const text = doc.document_text || '';
+    return res.json({
+      id: doc.id,
+      original_filename: doc.original_filename,
+      subject: doc.subject,
+      status: doc.status,
+      created_at: doc.created_at,
+      text,
+      word_count: text ? text.split(/\s+/).filter(Boolean).length : 0,
+    });
+  } catch (err) {
+    return next(err);
+  }
+});
+
 // GET /api/documents/:id/concepts
 router.get('/api/documents/:id/concepts', async (req, res, next) => {
   const documentId = req.params.id;

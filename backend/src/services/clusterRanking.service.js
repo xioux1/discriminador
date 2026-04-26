@@ -343,19 +343,22 @@ async function embedTextChunks(text, embeddingModel) {
   return result;
 }
 
-// Returns { score, text } for the chunk most similar to centroid, or null if items is empty.
-function bestMatch(centroid, items) {
+// Returns { score, text } using the average of the top-k similarities (default k=3).
+// Averaging over top-k smooths out false positives that top-1 can produce.
+export function averageTopK(centroid, items, k = 3) {
   if (!items || items.length === 0) return null;
-  let best = -Infinity;
-  let bestText = null;
-  for (const item of items) {
-    const sim = cosineSimilarity(centroid, item.embedding);
-    if (sim > best) {
-      best = sim;
-      bestText = item.text;
-    }
-  }
-  return { score: best, text: bestText };
+
+  const scored = items
+    .map(item => ({ score: cosineSimilarity(centroid, item.embedding), text: item.text }))
+    .filter(x => Number.isFinite(x.score))
+    .sort((a, b) => b.score - a.score);
+
+  if (scored.length === 0) return null;
+
+  const topK = scored.slice(0, Math.min(k, scored.length));
+  const avgScore = topK.reduce((sum, x) => sum + x.score, 0) / topK.length;
+
+  return { score: avgScore, text: scored[0].text };
 }
 
 // ==================== Main pipeline ====================
@@ -529,13 +532,13 @@ export async function rankClustersForDocument(documentId) {
 
     let program_score = null;
     if (programItems && programItems.length > 0) {
-      const match = bestMatch(centroid, programItems);
+      const match = averageTopK(centroid, programItems);
       if (match) program_score = clamp01(match.score);
     }
 
     let exam_score = null;
     if (examItems && examItems.length > 0) {
-      const match = bestMatch(centroid, examItems);
+      const match = averageTopK(centroid, examItems);
       if (match) exam_score = clamp01(match.score);
     }
 

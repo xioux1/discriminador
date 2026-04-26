@@ -4612,3 +4612,129 @@ textarea.chinese-input {
 [data-theme="dark"] .docs-variant-answer { background: rgba(255,255,255,0.04); }
 [data-theme="dark"] .docs-card-draft-accept { background: rgba(255,255,255,0.03); border-color: rgba(255,255,255,0.07); }
 [data-theme="dark"] .docs-accept-subject-input { background: var(--bg); border-color: rgba(255,255,255,0.15); }
+
+/* ── No-subject warning ──────────────────────────────────────────────────── */
+.docs-no-subject-warning {
+  font-size: 0.78rem;
+  color: var(--review-fg);
+  background: var(--review-bg);
+  border: 1px solid rgba(180,145,75,0.25);
+  border-radius: var(--radius-sm);
+  padding: 5px 10px;
+  margin: 4px 0 6px;
+}
+.docs-no-subject-warning.hidden { display: none; }
+
+/* ── No-exam banner ──────────────────────────────────────────────────────── */
+.docs-no-exam-banner {
+  font-size: 0.80rem;
+  color: var(--text-muted);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  margin-bottom: 10px;
+}
+
+/* ── Exam state badges ───────────────────────────────────────────────────── */
+.docs-exam-state {
+  display: inline-block;
+  font-size: 0.70rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 10px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.exam-state--none     { background: var(--bg-subtle); color: var(--text-light); border: 1px solid var(--border); }
+.exam-state--weak     { background: var(--review-bg); color: var(--review-fg); border: 1px solid rgba(180,145,75,0.22); }
+.exam-state--moderate { background: var(--easy-bg);   color: var(--easy-fg);   border: 1px solid rgba(55,120,200,0.22); }
+.exam-state--strong   { background: var(--pass-bg);   color: var(--pass-fg);   border: 1px solid rgba(90,143,90,0.22); }
+
+/* ── Content viewer panel ────────────────────────────────────────────────── */
+.docs-content-panel {
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.docs-content-panel.hidden { display: none; }
+.docs-content-viewer-meta {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  padding: 6px 12px;
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--border);
+}
+.docs-content-viewer-text {
+  margin: 0;
+  padding: 12px 14px;
+  font-family: var(--font);
+  font-size: 0.80rem;
+  line-height: 1.65;
+  color: var(--text-light);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--surface);
+}
+
+/* ── Exam load panel ─────────────────────────────────────────────────────── */
+.docs-exam-load-panel {
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.docs-exam-load-panel.hidden { display: none; }
+.docs-exam-load-form {
+  padding: 12px 14px;
+  background: var(--bg-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.docs-exam-load-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+.docs-exam-load-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.docs-exam-load-row input,
+.docs-exam-load-row select {
+  font-size: 0.82rem;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font);
+}
+.docs-exam-content-input {
+  font-size: 0.82rem;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font);
+  resize: vertical;
+}
+.docs-exam-load-feedback { font-size: 0.78rem; color: var(--text-muted); }
+
+[data-theme="dark"] .docs-no-subject-warning { background: rgba(160,120,40,0.15); }
+[data-theme="dark"] .docs-no-exam-banner { background: rgba(255,255,255,0.03); }
+[data-theme="dark"] .docs-content-viewer-text { background: rgba(255,255,255,0.04); }
+[data-theme="dark"] .docs-exam-load-form { background: rgba(255,255,255,0.03); }
+[data-theme="dark"] .docs-exam-load-row input,
+[data-theme="dark"] .docs-exam-load-row select,
+[data-theme="dark"] .docs-exam-content-input { background: var(--bg); border-color: rgba(255,255,255,0.12); }
