@@ -14,6 +14,179 @@ function getCheckClient() {
   return _checkClient;
 }
 
+// For tests only — inject a mock client.
+export function __setCheckClientForTest(client) {
+  _checkClient = client;
+}
+
+// ─── Binary-check mode helpers ─────────────────────────────────────────────
+
+const MATH_SUBJECT_KEYWORDS = [
+  'mat', 'calc', 'alg', 'arithm', 'trig', 'fís', 'fis', 'quím', 'quim',
+  'estadíst', 'estadist', 'geom', 'prob', 'análisi', 'analisi',
+  'integral', 'difer', 'ecuac', 'vectori'
+];
+const SQL_SUBJECT_KEYWORDS = [
+  'sql', 'base', 'datos', 'bd', 'oracle', 'pl/sql', 'plsql', 'query',
+  'consult', 'stored', 'cursor', 'trigger', 'procedure'
+];
+
+function detectCheckMode(subject) {
+  const s = typeof subject === 'string' ? subject.trim().toLowerCase() : '';
+  if (!s) return 'generic';
+  if (MATH_SUBJECT_KEYWORDS.some((k) => s.includes(k))) return 'math';
+  if (SQL_SUBJECT_KEYWORDS.some((k) => s.includes(k)))  return 'sql';
+  return 'generic';
+}
+
+function getBinaryCheckPrompt(mode) {
+  if (mode === 'math') {
+    return `Sos un verificador matemático en tiempo real. El estudiante está resolviendo un ejercicio y su respuesta puede estar INCOMPLETA.
+
+Tu única tarea: detectar si el estudiante YA cometió un error matemático real. NO evaluás si siguió el camino de la solución de referencia.
+
+PRINCIPIO CENTRAL: la solución esperada es un objetivo/referencia, NO el único procedimiento válido. Aceptá cualquier camino alternativo matemáticamente correcto.
+
+━━━ DECÍ OK cuando ━━━
+• El trabajo actual es matemáticamente válido aunque esté incompleto
+• El alumno usa un camino distinto (sustitución diferente, fórmula directa, integración por partes, otro método) pero correcto
+• En integrales: antiderivadas que difieren por constante — ambas son correctas
+• En ecuaciones diferenciales: formas implícitas o explícitas equivalentes que satisfacen la ecuación
+• Simplificación algebraica equivalente, reordenamiento, factorización diferente
+• La respuesta está incompleta pero lo escrito no contiene error claro
+• Hay ambigüedad razonable o no podés determinar con certeza si hay error
+• Notación levemente diferente pero matemáticamente equivalente
+
+━━━ DECÍ ERROR solo cuando ━━━
+• Hay un error matemático claro e inequívoco: derivada/integral mal calculada, regla mal aplicada
+• Error algebraico claro: expansión incorrecta, simplificación que altera la expresión
+• Cambio injustificado del integrando o de la expresión original
+• Error conceptual que demuestra incomprensión real del tema (no ambigüedad de notación)
+
+━━━ NUNCA es ERROR ━━━
+• Seguir un camino diferente al de la solución de referencia
+• Usar una fórmula conocida en lugar de derivarla paso a paso
+• Tener menos o más pasos que la solución esperada
+• Cualquier ambigüedad — ante la duda, OK
+
+No reveles la solución ni des pistas largas.
+
+Cuando el resultado es ERROR, clasificalo:
+• ERROR_TYPE: "conceptual" → error matemático que afecta la corrección del resultado
+• ERROR_TYPE: "syntactic" → error de notación sin impacto matemático real
+• ERROR_LABEL: descripción breve del error en ≤60 caracteres (solo para conceptual)
+
+Respondé ÚNICAMENTE en este formato exacto, sin texto adicional:
+
+Para respuesta correcta o ambigua:
+RESULTADO: OK
+
+Para error claro:
+RESULTADO: ERROR
+ERROR_TYPE: conceptual|syntactic
+ERROR_LABEL: descripción breve (solo si conceptual)`;
+  }
+
+  if (mode === 'sql') {
+    return `Sos un verificador en tiempo real de ejercicios de SQL/PL-SQL. El estudiante está escribiendo su respuesta y puede estar INCOMPLETA. Tu única tarea: detectar si ya cometió un error real, no si ya terminó.
+
+PRINCIPIO GUÍA: preferí decir OK cuando tenés dudas. Un falso ERROR interrumpe al estudiante sin razón. Un falso OK simplemente no lo ayuda todavía.
+
+━━━ DECÍ OK cuando ━━━
+• Lo escrito está en la dirección correcta, aunque falte código por escribir
+• El código está incompleto de forma natural: BEGIN sin END, DECLARE vacío, paréntesis abiertos, bloques a medio escribir, sentencias sin terminar
+• Hay errores de forma que no afectan la lógica: mayúsculas, espaciado, convenciones de nombres, typos menores
+• No podés determinar con certeza si es un error (la respuesta está muy incompleta para juzgar)
+
+━━━ DECÍ ERROR solo cuando ━━━
+• Usa la estructura equivocada para lo pedido: FUNCTION cuando pide PROCEDURE, SELECT sin cursor cuando claramente necesita uno, etc.
+• La lógica del algoritmo es incorrecta: condición invertida, operación con sentido equivocado, loop que nunca termina por diseño incorrecto
+• Usa una cláusula SQL con propósito equivocado: WHERE en lugar de HAVING para grupos, JOIN incorrecto para la relación pedida
+• Hay un error conceptual claro que demuestra incomprensión del tema central — no un typo, no una convención
+
+━━━ NUNCA es ERROR ━━━
+• Código incompleto (falta cerrar bloques, terminar sentencias, agregar parámetros, escribir el resto)
+• Convenciones de nombres (prefijos pro_, f_, v_, etc.) — lo evalúa otro sistema
+• Tablas o columnas inexistentes (no tenés el esquema)
+• Cualquier ambigüedad — si no estás seguro, OK
+
+Cuando el resultado es ERROR, clasificalo:
+• ERROR_TYPE: "conceptual" → error de lógica o concepto que afecta la corrección del resultado
+• ERROR_TYPE: "syntactic" → detalle de forma sin impacto en el resultado
+• ERROR_LABEL: descripción breve del error en ≤60 caracteres (solo para conceptual)
+
+Respondé ÚNICAMENTE en este formato, sin texto adicional:
+Para respuesta correcta → RESULTADO: OK
+Para error →
+RESULTADO: ERROR
+ERROR_TYPE: conceptual|syntactic
+ERROR_LABEL: descripción breve (solo si conceptual)`;
+  }
+
+  // generic fallback
+  return `Sos un verificador en tiempo real de ejercicios académicos. El estudiante está escribiendo su respuesta y puede estar INCOMPLETA. Tu única tarea: detectar si ya cometió un error real, no si ya terminó.
+
+PRINCIPIO GUÍA: preferí decir OK cuando tenés dudas. Un falso ERROR interrumpe al estudiante sin razón. Un falso OK simplemente no lo ayuda todavía.
+
+━━━ DECÍ OK cuando ━━━
+• Lo escrito está en la dirección correcta, aunque falte contenido por escribir
+• La respuesta está incompleta de forma natural
+• Hay errores de forma que no afectan la lógica
+• No podés determinar con certeza si es un error
+
+━━━ DECÍ ERROR solo cuando ━━━
+• Usa la estructura equivocada para lo pedido
+• La lógica es incorrecta de forma clara e inequívoca
+• Hay un error conceptual claro que demuestra incomprensión del tema central
+
+━━━ NUNCA es ERROR ━━━
+• Respuesta incompleta
+• Cualquier ambigüedad — si no estás seguro, OK
+
+Cuando el resultado es ERROR, clasificalo:
+• ERROR_TYPE: "conceptual" → error de lógica o concepto que afecta la corrección del resultado
+• ERROR_TYPE: "syntactic" → detalle de forma sin impacto en el resultado
+• ERROR_LABEL: descripción breve del error en ≤60 caracteres (solo para conceptual)
+
+Respondé ÚNICAMENTE en este formato, sin texto adicional:
+Para respuesta correcta → RESULTADO: OK
+Para error →
+RESULTADO: ERROR
+ERROR_TYPE: conceptual|syntactic
+ERROR_LABEL: descripción breve (solo si conceptual)`;
+}
+
+// Returns { result, errorType, errorLabel, parsedOk }
+// parsedOk=false means the model response was malformed — caller must NOT log to binary_check_log.
+function parseBinaryCheckOutput(text) {
+  if (!/RESULTADO:/i.test(text)) {
+    // No RESULTADO line at all — completely malformed response, safe fallback
+    return { result: 'ok', errorType: null, errorLabel: null, parsedOk: false };
+  }
+
+  if (/RESULTADO:\s*OK/i.test(text)) {
+    return { result: 'ok', errorType: null, errorLabel: null, parsedOk: true };
+  }
+
+  if (!/RESULTADO:\s*ERROR/i.test(text)) {
+    // Has RESULTADO: but value is neither OK nor ERROR — ambiguous, safe fallback
+    return { result: 'ok', errorType: null, errorLabel: null, parsedOk: false };
+  }
+
+  // Confirmed ERROR — extract type and label
+  const lines = text.replace(/\r\n/g, '\n').trim().split('\n').map((l) => l.trim()).filter(Boolean);
+  const errorTypeLine = lines.find((l) => /^ERROR_TYPE:/i.test(l));
+  const errorLblLine  = lines.find((l) => /^ERROR_LABEL:/i.test(l));
+
+  const rawType  = errorTypeLine ? errorTypeLine.replace(/^ERROR_TYPE:\s*/i, '').trim().toLowerCase() : null;
+  const rawLabel = errorLblLine  ? (errorLblLine.replace(/^ERROR_LABEL:\s*/i, '').trim() || null) : null;
+
+  const safeType  = (rawType === 'conceptual' || rawType === 'syntactic') ? rawType : 'unknown';
+  const safeLabel = safeType === 'conceptual' ? rawLabel : null;
+
+  return { result: 'error', errorType: safeType, errorLabel: safeLabel, parsedOk: true };
+}
+
 const evaluateRouter = Router();
 
 const REQUIRED_FIELDS = [
@@ -417,73 +590,31 @@ evaluateRouter.post('/evaluate/binary-check', llmRateLimit, async (req, res) => 
     return res.status(422).json({ error: 'validation_error', message: 'One or more fields exceed the maximum allowed length.' });
   }
 
+  const mode = detectCheckMode(subject);
+
   try {
     const response = await getCheckClient().messages.create({
       model: LLM_MODELS.binary,
-      max_tokens: 80,
+      max_tokens: 120,
       temperature: 0,
-      system: `Sos un verificador en tiempo real de ejercicios académicos. El estudiante está escribiendo su respuesta y puede estar INCOMPLETA. Tu única tarea: detectar si ya cometió un error real, no si ya terminó.
-
-PRINCIPIO GUÍA: preferí decir OK cuando tenés dudas. Un falso ERROR interrumpe al estudiante sin razón. Un falso OK simplemente no lo ayuda todavía.
-
-━━━ DECÍ OK cuando ━━━
-• Lo escrito está en la dirección correcta, aunque falte código por escribir
-• El código está incompleto de forma natural: BEGIN sin END, DECLARE vacío, paréntesis abiertos, bloques a medio escribir, sentencias sin terminar
-• Hay errores de forma que no afectan la lógica: mayúsculas, espaciado, convenciones de nombres, typos menores
-• No podés determinar con certeza si es un error (la respuesta está muy incompleta para juzgar)
-
-━━━ DECÍ ERROR solo cuando ━━━
-• Usa la estructura equivocada para lo pedido: FUNCTION cuando pide PROCEDURE, SELECT sin cursor cuando claramente necesita uno, etc.
-• La lógica del algoritmo es incorrecta: condición invertida, operación con sentido equivocado, loop que nunca termina por diseño incorrecto
-• Usa una cláusula SQL con propósito equivocado: WHERE en lugar de HAVING para grupos, JOIN incorrecto para la relación pedida
-• Hay un error conceptual claro que demuestra incomprensión del tema central — no un typo, no una convención
-
-━━━ NUNCA es ERROR ━━━
-• Código incompleto (falta cerrar bloques, terminar sentencias, agregar parámetros, escribir el resto)
-• Convenciones de nombres (prefijos pro_, f_, v_, etc.) — lo evalúa otro sistema
-• Tablas o columnas inexistentes (no tenés el esquema)
-• Cualquier ambigüedad — si no estás seguro, OK
-
-Cuando el resultado es ERROR, clasificalo:
-• ERROR_TYPE: "conceptual" → error de lógica o concepto que afecta la corrección del resultado
-• ERROR_TYPE: "syntactic" → detalle de forma sin impacto en el resultado
-• ERROR_LABEL: descripción breve del error en ≤60 caracteres (solo para conceptual)
-
-Respondé ÚNICAMENTE en este formato, sin texto adicional:
-Para respuesta correcta → RESULTADO: OK
-Para error →
-RESULTADO: ERROR
-ERROR_TYPE: conceptual|syntactic
-ERROR_LABEL: descripción breve (solo si conceptual)`,
+      system: getBinaryCheckPrompt(mode),
       messages: [{
         role: 'user',
-        content: `Ejercicio:\n${prompt_text}${expected_answer_text ? `\n\nSolución de referencia (usala para evaluar dirección, no la menciones):\n${expected_answer_text}` : ''}\n\nRespuesta del estudiante hasta ahora (puede estar incompleta):\n${user_answer_text}`
+        content: `Ejercicio:\n${prompt_text}${expected_answer_text ? `\n\nSolución de referencia (usala como referencia del objetivo, no como único camino válido):\n${expected_answer_text}` : ''}\n\nRespuesta del estudiante hasta ahora (puede estar incompleta):\n${user_answer_text}`
       }]
     });
 
-    const text  = response.content.find((b) => b.type === 'text')?.text ?? '';
-    const lines = text.replace(/\r\n/g, '\n').trim().split('\n').map((l) => l.trim()).filter(Boolean);
+    const text = response.content.find((b) => b.type === 'text')?.text ?? '';
+    const { result, errorType, errorLabel, parsedOk } = parseBinaryCheckOutput(text);
 
-    const resultLine    = lines.find((l) => /^RESULTADO:/i.test(l));
-    const errorTypeLine = lines.find((l) => /^ERROR_TYPE:/i.test(l));
-    const errorLblLine  = lines.find((l) => /^ERROR_LABEL:/i.test(l));
-
-    const result     = /RESULTADO:\s*OK/i.test(text) ? 'ok' : 'error';
-    const errorType  = errorTypeLine ? errorTypeLine.replace(/^ERROR_TYPE:\s*/i, '').trim().toLowerCase() : null;
-    const errorLabel = errorLblLine  ? (errorLblLine.replace(/^ERROR_LABEL:\s*/i, '').trim() || null) : null;
-
-    // Normalise error_type to known values only
-    const safeErrorType = (errorType === 'conceptual' || errorType === 'syntactic')
-      ? errorType
-      : (result === 'error' ? 'unknown' : null);
-
+    // Only log confirmed errors — never log format-fallback OKs (parsedOk=false)
     let checkId = null;
-    if (result === 'error' && userId) {
+    if (result === 'error' && parsedOk && userId) {
       const logRes = await dbPool.query(
         `INSERT INTO binary_check_log (user_id, card_id, subject, user_answer, result, error_type, error_label)
          VALUES ($1, $2, $3, $4, 'error', $5, $6) RETURNING id`,
         [userId, card_id ? Number(card_id) : null, subject || null, user_answer_text,
-         safeErrorType, safeErrorType === 'conceptual' ? errorLabel : null]
+         errorType, errorType === 'conceptual' ? errorLabel : null]
       );
       checkId = logRes.rows[0]?.id ?? null;
     }
@@ -491,8 +622,8 @@ ERROR_LABEL: descripción breve (solo si conceptual)`,
     return res.json({
       result,
       check_id:    checkId,
-      error_type:  safeErrorType,
-      error_label: safeErrorType === 'conceptual' ? errorLabel : null
+      error_type:  result === 'error' ? errorType : null,
+      error_label: errorType === 'conceptual' ? errorLabel : null
     });
   } catch (err) {
     console.error('POST /evaluate/binary-check', err.message);
