@@ -270,7 +270,10 @@ async function clusterInPhases(groups, orphans, conceptMap) {
     const assignedIds = new Set();
     for (const { id, cluster_index } of assignments) {
       if (typeof cluster_index !== 'number' || cluster_index < 0 || cluster_index >= namedClusters.length) {
-        throw new Error(`Phase 2: invalid cluster_index ${cluster_index} for concept ${id}.`);
+        logger.warn('[clusterInPhases] Phase 2: skipping out-of-range cluster_index', {
+          cluster_index, id, namedClustersLength: namedClusters.length,
+        });
+        continue;
       }
       if (!namedClusters[cluster_index].concept_ids.includes(id)) {
         namedClusters[cluster_index].concept_ids.push(id);
@@ -280,7 +283,9 @@ async function clusterInPhases(groups, orphans, conceptMap) {
 
     const missing = batchIds.filter(id => !assignedIds.has(id));
     if (missing.length > 0) {
-      throw new Error(`Phase 2: LLM did not assign ${missing.length} concept(s) from batch at index ${i}: ${missing.join(', ')}`);
+      logger.warn('[clusterInPhases] Phase 2: unassigned concepts will be handled by sanitizeClusters', {
+        count: missing.length, batchIndex: i,
+      });
     }
   }
 
