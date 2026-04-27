@@ -1115,6 +1115,34 @@ textarea:focus, input[type="text"]:focus, select:focus {
 }
 
 .study-result-justification { color: var(--text-muted); font-size: 0.9rem; margin: 4px 0 10px; }
+.study-result-quick {
+  padding: 10px 12px;
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+}
+.study-advanced-toggle-btn {
+  margin-top: 8px;
+  width: 100%;
+}
+.study-advanced-panel {
+  margin-top: 12px;
+  border-top: 1px dashed var(--border-mid);
+  padding-top: 8px;
+}
+.study-advanced-panel > summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.84rem;
+  font-weight: 600;
+  user-select: none;
+  margin-bottom: 8px;
+}
+.study-decision-hint {
+  margin: 4px 0 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
 .justification-detail { display: block; }
 .justification-priority-gap {
   display: block;

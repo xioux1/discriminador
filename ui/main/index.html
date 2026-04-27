@@ -469,62 +469,69 @@
                 <button type="button" id="study-binary-check-btn" class="study-binary-check-btn">Verificar</button>
                 <span id="study-check-feedback" class="study-check-feedback"></span>
               </div>
-              <div id="study-check-error-tags" class="study-check-error-tags hidden"></div>
+              <div id="study-check-error-tags-input" class="study-check-error-tags hidden"></div>
               <button type="button" id="study-eval-btn" class="btn-primary study-eval-btn">Evaluar respuesta</button>
             </div>
 
             <div id="study-result-block" class="study-result-block hidden">
-              <div class="study-result-header">
-                <span id="study-result-grade" class="study-grade-inline"></span>
-                <span id="study-result-time" class="study-result-time"></span>
+              <div class="study-result-quick">
+                <div class="study-result-header">
+                  <span id="study-result-grade" class="study-grade-inline"></span>
+                  <span id="study-result-time" class="study-result-time"></span>
+                </div>
+                <p id="study-result-justification" class="study-result-justification"></p>
+                <div class="study-result-actions">
+                  <button type="button" id="study-next-btn" class="btn-primary study-next-btn">Siguiente</button>
+                  <button type="button" id="study-advanced-toggle-btn" class="btn-ghost study-advanced-toggle-btn" aria-expanded="false">Ver explicación</button>
+                </div>
               </div>
-              <p id="study-result-justification" class="study-result-justification"></p>
-              <p id="study-result-missing" class="hidden" style="font-size:0.88rem;margin-top:4px"></p>
-              <div id="study-check-error-tags" class="study-check-error-tags hidden"></div>
-              <div id="study-result-expected" class="study-result-expected hidden"></div>
-              <div id="study-tts-bar" class="study-tts-bar hidden">
-                <button type="button" id="study-tts-btn" class="study-tts-btn" title="Escuchar pronunciación">🔊 Escuchar</button>
-              </div>
-              <div id="study-decision-block" class="study-result-micro hidden">
-                <strong>Firma de evaluación (obligatoria)</strong>
-                <div class="study-decision-actions" style="margin-top:8px">
-                  <button type="button" class="study-decision-accept-btn" data-study-action="accept">Aceptar sugerencia</button>
-                  <div class="study-grade-override-group">
-                    <span class="study-grade-override-label">Corregir a:</span>
-                    <button type="button" class="study-grade-btn grade-again" data-study-action="correct-again">Again</button>
-                    <button type="button" class="study-grade-btn grade-hard"  data-study-action="correct-hard">Hard</button>
-                    <button type="button" class="study-grade-btn grade-good"  data-study-action="correct-good">Good</button>
-                    <button type="button" class="study-grade-btn grade-easy"  data-study-action="correct-easy">Easy</button>
+              <details id="study-advanced-panel" class="study-advanced-panel">
+                <summary>Detalles avanzados</summary>
+                <p id="study-result-missing" class="hidden" style="font-size:0.88rem;margin-top:4px"></p>
+                <div id="study-check-error-tags-result" class="study-check-error-tags hidden"></div>
+                <div id="study-result-expected" class="study-result-expected hidden"></div>
+                <div id="study-tts-bar" class="study-tts-bar hidden">
+                  <button type="button" id="study-tts-btn" class="study-tts-btn" title="Escuchar pronunciación">🔊 Escuchar</button>
+                </div>
+                <div id="study-decision-block" class="study-result-micro hidden">
+                  <strong>Firma de evaluación</strong>
+                  <p class="study-decision-hint">En casos triviales podés seguir directo con “Siguiente” (se acepta automáticamente la sugerencia).</p>
+                  <div class="study-decision-actions" style="margin-top:8px">
+                    <button type="button" class="study-decision-accept-btn" data-study-action="accept">Aceptar sugerencia</button>
+                    <div class="study-grade-override-group">
+                      <span class="study-grade-override-label">Corregir a:</span>
+                      <button type="button" class="study-grade-btn grade-again" data-study-action="correct-again">Again</button>
+                      <button type="button" class="study-grade-btn grade-hard"  data-study-action="correct-hard">Hard</button>
+                      <button type="button" class="study-grade-btn grade-good"  data-study-action="correct-good">Good</button>
+                      <button type="button" class="study-grade-btn grade-easy"  data-study-action="correct-easy">Easy</button>
+                    </div>
+                    <button type="button" class="study-decision-misc-btn" data-study-action="uncertain">Marcar duda</button>
+                    <button type="button" class="study-decision-misc-btn" data-study-action="archive-card" id="study-archive-card-btn">Archivar tarjeta</button>
                   </div>
-                  <button type="button" class="study-decision-misc-btn" data-study-action="uncertain">Marcar duda</button>
-                  <button type="button" class="study-decision-misc-btn" data-study-action="archive-card" id="study-archive-card-btn">Archivar tarjeta</button>
+                  <label for="study-correction-reason" style="display:block;margin-top:8px;font-size:0.82rem;color:var(--text-muted)">Motivo (obligatorio si corriges, marcas duda o archivas)</label>
+                  <textarea id="study-correction-reason" rows="2"></textarea>
+                  <p id="study-decision-feedback" class="feedback" style="margin-top:6px"></p>
                 </div>
-                <label for="study-correction-reason" style="display:block;margin-top:8px;font-size:0.82rem;color:var(--text-muted)">Motivo (obligatorio si corriges, marcas duda o archivas)</label>
-                <textarea id="study-correction-reason" rows="2"></textarea>
-                <p id="study-decision-feedback" class="feedback" style="margin-top:6px"></p>
-              </div>
-              <div class="study-result-actions">
-                <button type="button" id="study-next-btn" class="btn-primary study-next-btn">Siguiente</button>
                 <button type="button" id="study-variant-btn" class="btn-ghost study-variant-btn hidden">+ Guardar variante</button>
-              </div>
-              <p id="study-variant-feedback" class="hidden" style="font-size:0.82rem;margin-top:6px"></p>
-              <div id="study-variant-preview" class="hidden" style="margin-top:10px;padding:10px 12px;border:1px solid var(--border-mid);border-radius:6px;font-size:0.84rem;background:var(--bg-subtle)">
-                <div style="font-weight:600;margin-bottom:4px;color:var(--text-muted);font-size:0.78rem;text-transform:uppercase;letter-spacing:.04em">Variante generada</div>
-                <div style="margin-bottom:6px"><span style="color:var(--text-muted)">P: </span><span id="study-variant-preview-q"></span></div>
-                <div><span style="color:var(--text-muted)">R: </span><span id="study-variant-preview-a"></span></div>
-              </div>
-
-              <!-- ── Duda post-respuesta ──────────────────────────────────── -->
-              <div id="study-doubt-section" class="study-doubt-section hidden">
-                <button type="button" id="study-doubt-toggle" class="btn-ghost study-doubt-toggle">
-                  ¿Quedaste con una duda? Consultá aquí
-                </button>
-                <div id="study-doubt-form" class="hidden">
-                  <textarea id="study-doubt-input" rows="2" placeholder="¿Qué no entendiste? Hacé una pregunta concreta..."></textarea>
-                  <button type="button" id="study-doubt-btn" class="btn-secondary" style="margin-top:6px;font-size:0.85rem">Consultar</button>
-                  <div id="study-doubt-answer" class="study-doubt-answer hidden"></div>
+                <p id="study-variant-feedback" class="hidden" style="font-size:0.82rem;margin-top:6px"></p>
+                <div id="study-variant-preview" class="hidden" style="margin-top:10px;padding:10px 12px;border:1px solid var(--border-mid);border-radius:6px;font-size:0.84rem;background:var(--bg-subtle)">
+                  <div style="font-weight:600;margin-bottom:4px;color:var(--text-muted);font-size:0.78rem;text-transform:uppercase;letter-spacing:.04em">Variante generada</div>
+                  <div style="margin-bottom:6px"><span style="color:var(--text-muted)">P: </span><span id="study-variant-preview-q"></span></div>
+                  <div><span style="color:var(--text-muted)">R: </span><span id="study-variant-preview-a"></span></div>
                 </div>
-              </div>
+
+                <!-- ── Duda post-respuesta ──────────────────────────────────── -->
+                <div id="study-doubt-section" class="study-doubt-section hidden">
+                  <button type="button" id="study-doubt-toggle" class="btn-ghost study-doubt-toggle">
+                    ¿Quedaste con una duda? Consultá aquí
+                  </button>
+                  <div id="study-doubt-form" class="hidden">
+                    <textarea id="study-doubt-input" rows="2" placeholder="¿Qué no entendiste? Hacé una pregunta concreta..."></textarea>
+                    <button type="button" id="study-doubt-btn" class="btn-secondary" style="margin-top:6px;font-size:0.85rem">Consultar</button>
+                    <div id="study-doubt-answer" class="study-doubt-answer hidden"></div>
+                  </div>
+                </div>
+              </details>
             </div>
           </div>
         </div>
