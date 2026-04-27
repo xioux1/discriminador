@@ -36,27 +36,28 @@ plannerRouter.get('/planner/week', async (req, res) => {
       [userId, start]
     );
     const { rows: activityRows } = await dbPool.query(
-      `WITH localized_activity AS (
+      `WITH localized_sessions AS (
          SELECT
-           created_at AT TIME ZONE 'America/Argentina/Buenos_Aires' AS local_created_at,
-           COALESCE(response_time_ms, 0) + COALESCE(review_time_ms, 0) AS total_time_ms
-         FROM activity_log
+           started_at AT TIME ZONE 'America/Argentina/Buenos_Aires' AS local_started_at,
+           COALESCE(actual_minutes, 0)    AS total_minutes,
+           COALESCE(actual_card_count, 0) AS card_count
+         FROM study_sessions
          WHERE user_id = $1
-           AND activity_type IN ('study', 'evaluate')
+           AND actual_minutes IS NOT NULL
        )
        SELECT
-         EXTRACT(DOW FROM local_created_at)::int AS day_index,
+         EXTRACT(DOW FROM local_started_at)::int AS day_index,
          to_char(
-           date_trunc('hour', local_created_at)
-           + (CASE WHEN EXTRACT(MINUTE FROM local_created_at) >= 30 THEN INTERVAL '30 minutes' ELSE INTERVAL '0 minutes' END),
+           date_trunc('hour', local_started_at)
+           + (CASE WHEN EXTRACT(MINUTE FROM local_started_at) >= 30 THEN INTERVAL '30 minutes' ELSE INTERVAL '0 minutes' END),
            'HH24:MI'
          ) AS slot_time,
-         COUNT(*)::int AS events_count,
-         ROUND(SUM(total_time_ms) / 60000.0)::int AS study_minutes,
-         MAX(local_created_at) AS last_event_at
-       FROM localized_activity
-       WHERE local_created_at >= $2::date
-         AND local_created_at < ($2::date + INTERVAL '7 day')
+         SUM(card_count)::int                AS events_count,
+         ROUND(SUM(total_minutes))::int      AS study_minutes,
+         MAX(local_started_at)               AS last_event_at
+       FROM localized_sessions
+       WHERE local_started_at >= $2::date
+         AND local_started_at < ($2::date + INTERVAL '7 day')
        GROUP BY day_index, slot_time
        ORDER BY day_index, slot_time`,
       [userId, start]
