@@ -36,22 +36,45 @@ plannerRouter.get('/planner/week', async (req, res) => {
       [userId, start]
     );
     const { rows: activityRows } = await dbPool.query(
-      `WITH session_slots AS (
+      `WITH session_spans AS (
+         -- Compute local start/end for each completed session this week.
          SELECT
-           EXTRACT(DOW FROM (started_at AT TIME ZONE 'America/Argentina/Buenos_Aires'))::int AS day_index,
-           to_char(
-             date_trunc('hour', started_at AT TIME ZONE 'America/Argentina/Buenos_Aires')
-             + (CASE WHEN EXTRACT(MINUTE FROM started_at AT TIME ZONE 'America/Argentina/Buenos_Aires') >= 30 THEN INTERVAL '30 minutes' ELSE INTERVAL '0 minutes' END),
-             'HH24:MI'
-           ) AS slot_time,
-           SUM(actual_card_count)::int      AS events_count,
-           ROUND(SUM(actual_minutes))::int  AS study_minutes,
-           MAX(started_at AT TIME ZONE 'America/Argentina/Buenos_Aires') AS last_event_at
+           actual_card_count,
+           started_at,
+           (started_at AT TIME ZONE 'America/Argentina/Buenos_Aires') AS local_start,
+           (COALESCE(ended_at, started_at + actual_minutes * INTERVAL '1 minute')
+             AT TIME ZONE 'America/Argentina/Buenos_Aires') AS local_end
          FROM study_sessions
          WHERE user_id = $1
            AND actual_minutes IS NOT NULL
            AND (started_at AT TIME ZONE 'America/Argentina/Buenos_Aires') >= $2::date
            AND (started_at AT TIME ZONE 'America/Argentina/Buenos_Aires') < ($2::date + INTERVAL '7 day')
+       ),
+       session_slots AS (
+         -- Expand each session across every 30-min slot it overlaps and compute
+         -- how many minutes of that session fall within each slot.
+         SELECT
+           EXTRACT(DOW FROM gs)::int AS day_index,
+           to_char(gs, 'HH24:MI') AS slot_time,
+           SUM(s.actual_card_count)::int AS events_count,
+           ROUND(SUM(
+             GREATEST(0,
+               EXTRACT(EPOCH FROM (
+                 LEAST(s.local_end, gs + INTERVAL '30 minutes')
+                 - GREATEST(s.local_start, gs)
+               )) / 60.0
+             )
+           ))::int AS study_minutes,
+           MAX(s.started_at AT TIME ZONE 'America/Argentina/Buenos_Aires') AS last_event_at
+         FROM session_spans s
+         CROSS JOIN LATERAL generate_series(
+           date_trunc('hour', s.local_start)
+             + (CASE WHEN EXTRACT(MINUTE FROM s.local_start) >= 30 THEN INTERVAL '30 minutes' ELSE INTERVAL '0' END),
+           date_trunc('hour', s.local_end)
+             + (CASE WHEN EXTRACT(MINUTE FROM s.local_end) >= 30 THEN INTERVAL '30 minutes' ELSE INTERVAL '0' END),
+           INTERVAL '30 minutes'
+         ) AS gs
+         WHERE LEAST(s.local_end, gs + INTERVAL '30 minutes') > GREATEST(s.local_start, gs)
          GROUP BY day_index, slot_time
        ),
        activity_slots AS (
