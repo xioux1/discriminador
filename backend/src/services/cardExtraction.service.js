@@ -6,13 +6,16 @@ function getClient() {
   if (!_client) {
     _client = new Anthropic({
       apiKey: process.env.ANTHROPIC_API_KEY,
-      timeout: Number(process.env.CARD_EXTRACTION_LLM_TIMEOUT_MS || 90_000),
+      timeout: Number(process.env.CARD_EXTRACTION_LLM_TIMEOUT_MS || 120_000),
     });
   }
   return _client;
 }
 
 const VALID_STATUSES = new Set(['ready', 'ambiguous', 'needs_edit', 'rejected']);
+
+// Maximum input characters sent to the LLM. Larger texts are truncated with a warning.
+const MAX_INPUT_CHARS = 30_000;
 
 const SYSTEM_PROMPT = `Sos un asistente especializado en extraer tarjetas de estudio a partir de texto fuente.
 
@@ -56,63 +59,118 @@ function buildUserPrompt(text, subject) {
   return `${subjectLine}Texto fuente:\n\n${text}`;
 }
 
-function parseAndValidateLLMResponse(raw) {
-  // Try direct parse
-  let parsed;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    // Try to extract JSON object from surrounding text / markdown fences
-    const start = raw.indexOf('{');
-    const end = raw.lastIndexOf('}');
-    if (start !== -1 && end > start) {
-      try {
-        parsed = JSON.parse(raw.slice(start, end + 1));
-      } catch {
-        logger.warn('[cardExtraction] JSON parse failed after fallback', { raw: raw.slice(0, 300) });
-        return { cards: [], warnings: ['LLM devolvió JSON inválido.'] };
+// Strip markdown code fences that Sonnet sometimes adds despite instructions.
+function stripFences(raw) {
+  return raw
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```\s*$/i, '')
+    .trim();
+}
+
+// Brace-matching extractor: finds each complete card object even when the
+// outer JSON array is truncated (max_tokens hit mid-response).
+function extractCardObjectsFromText(text) {
+  const marker = text.indexOf('"cards"');
+  if (marker === -1) return [];
+  const bracketPos = text.indexOf('[', marker);
+  if (bracketPos === -1) return [];
+
+  const objects = [];
+  let pos = bracketPos + 1;
+
+  while (pos < text.length) {
+    const objStart = text.indexOf('{', pos);
+    if (objStart === -1) break;
+
+    let depth = 0;
+    let objEnd = -1;
+    for (let i = objStart; i < text.length; i++) {
+      const ch = text[i];
+      if (ch === '{') depth++;
+      else if (ch === '}') {
+        depth--;
+        if (depth === 0) { objEnd = i; break; }
       }
-    } else {
-      logger.warn('[cardExtraction] No JSON object found in response', { raw: raw.slice(0, 300) });
-      return { cards: [], warnings: ['LLM no devolvió JSON.'] };
+    }
+
+    if (objEnd === -1) break; // truncated — stop
+
+    try {
+      const obj = JSON.parse(text.slice(objStart, objEnd + 1));
+      if (obj && typeof obj === 'object') objects.push(obj);
+    } catch { /* skip malformed object */ }
+
+    pos = objEnd + 1;
+  }
+
+  return objects;
+}
+
+function normalizeCard(c, warnings) {
+  if (!c || typeof c !== 'object') return null;
+
+  const question = typeof c.question === 'string' ? c.question.trim() : '';
+  const answer   = typeof c.answer   === 'string' ? c.answer.trim()   : '';
+
+  if (!question || !answer) {
+    warnings.push('Tarjeta descartada por falta de pregunta o respuesta.');
+    return null;
+  }
+
+  const sourceExcerpt = typeof c.source_excerpt === 'string' ? c.source_excerpt.trim() : '';
+  const confidence =
+    typeof c.confidence === 'number' && c.confidence >= 0 && c.confidence <= 1
+      ? c.confidence
+      : 0.5;
+  const status = VALID_STATUSES.has(c.status) ? c.status : 'needs_edit';
+  const notes  = typeof c.notes === 'string' ? c.notes.trim() : undefined;
+
+  const card = { question, answer, source_excerpt: sourceExcerpt, confidence, status };
+  if (notes) card.notes = notes;
+  return card;
+}
+
+function parseAndValidateLLMResponse(raw) {
+  const stripped = stripFences(raw);
+  const warnings = [];
+
+  // Stage 1: direct parse on fence-stripped content.
+  let parsed = null;
+  try {
+    parsed = JSON.parse(stripped);
+  } catch {
+    // Stage 2: extract the outermost { … } block (handles extra text around JSON).
+    const start = stripped.indexOf('{');
+    const end   = stripped.lastIndexOf('}');
+    if (start !== -1 && end > start) {
+      try { parsed = JSON.parse(stripped.slice(start, end + 1)); } catch { /* continue */ }
     }
   }
 
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    logger.warn('[cardExtraction] Unexpected top-level type', { type: typeof parsed });
-    return { cards: [], warnings: ['LLM devolvió formato inesperado.'] };
-  }
-
-  const rawCards = Array.isArray(parsed.cards) ? parsed.cards : [];
-  const warnings = Array.isArray(parsed.warnings)
-    ? parsed.warnings.filter(w => typeof w === 'string')
-    : [];
-
-  const cards = [];
-  for (const c of rawCards) {
-    if (!c || typeof c !== 'object') continue;
-
-    const question = typeof c.question === 'string' ? c.question.trim() : '';
-    const answer = typeof c.answer === 'string' ? c.answer.trim() : '';
-    const sourceExcerpt = typeof c.source_excerpt === 'string' ? c.source_excerpt.trim() : '';
-    const confidence =
-      typeof c.confidence === 'number' && c.confidence >= 0 && c.confidence <= 1
-        ? c.confidence
-        : 0.5;
-    const status = VALID_STATUSES.has(c.status) ? c.status : 'needs_edit';
-    const notes = typeof c.notes === 'string' ? c.notes.trim() : undefined;
-
-    if (!question || !answer) {
-      warnings.push('Tarjeta descartada por falta de pregunta o respuesta.');
-      continue;
+  // Stages 1-2 succeeded.
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    const rawCards = Array.isArray(parsed.cards) ? parsed.cards : [];
+    if (Array.isArray(parsed.warnings)) {
+      parsed.warnings.filter(w => typeof w === 'string').forEach(w => warnings.push(w));
     }
-
-    const card = { question, answer, source_excerpt: sourceExcerpt, confidence, status };
-    if (notes) card.notes = notes;
-    cards.push(card);
+    const cards = rawCards.map(c => normalizeCard(c, warnings)).filter(Boolean);
+    return { cards, warnings };
   }
 
-  return { cards, warnings };
+  // Stage 3: brace-matching recovery for truncated JSON.
+  logger.warn('[cardExtraction] Full JSON parse failed — attempting brace-match recovery', {
+    preview: stripped.slice(0, 200),
+  });
+
+  const recovered = extractCardObjectsFromText(stripped);
+  if (recovered.length > 0) {
+    warnings.push('Respuesta truncada por el modelo: se recuperaron las tarjetas completas.');
+    const cards = recovered.map(c => normalizeCard(c, warnings)).filter(Boolean);
+    return { cards, warnings };
+  }
+
+  logger.warn('[cardExtraction] Brace-match recovery found no cards', { preview: stripped.slice(0, 300) });
+  return { cards: [], warnings: ['LLM devolvió JSON inválido o vacío.'] };
 }
 
 function deduplicateCandidates(cards) {
@@ -137,26 +195,44 @@ export async function extractCandidateCardsFromText({ text, subject, document_id
     throw err;
   }
 
+  const extraWarnings = [];
+  let inputText = trimmedText;
+  if (trimmedText.length > MAX_INPUT_CHARS) {
+    inputText = trimmedText.slice(0, MAX_INPUT_CHARS);
+    extraWarnings.push(`El texto fue truncado a ${MAX_INPUT_CHARS} caracteres para el procesamiento.`);
+  }
+
   const model = process.env.CARD_EXTRACTION_MODEL || 'claude-sonnet-4-6';
 
-  logger.info('[cardExtraction] Calling LLM', { model, textLength: trimmedText.length, subject });
+  logger.info('[cardExtraction] Calling LLM', { model, textLength: inputText.length, subject });
 
   const client = getClient();
   const message = await client.messages.create({
     model,
-    max_tokens: 4000,
+    max_tokens: 8192,
     temperature: 0,
     system: SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: buildUserPrompt(trimmedText, subject) }],
+    messages: [{ role: 'user', content: buildUserPrompt(inputText, subject) }],
   });
 
   const rawContent = message.content?.find(b => b.type === 'text')?.text ?? '';
-  logger.info('[cardExtraction] Raw response', { length: rawContent.length, preview: rawContent.slice(0, 200) });
+  const stopReason = message.stop_reason;
+
+  logger.info('[cardExtraction] Raw response', {
+    length: rawContent.length,
+    stop_reason: stopReason,
+    preview: rawContent.slice(0, 200),
+  });
+
+  if (stopReason === 'max_tokens') {
+    extraWarnings.push('El modelo alcanzó el límite de tokens: pueden faltar tarjetas del final del texto.');
+  }
 
   const { cards, warnings } = parseAndValidateLLMResponse(rawContent);
   const deduped = deduplicateCandidates(cards);
+  const allWarnings = [...extraWarnings, ...warnings];
 
-  logger.info('[cardExtraction] Done', { cardCount: deduped.length, warnings });
+  logger.info('[cardExtraction] Done', { cardCount: deduped.length, warnings: allWarnings });
 
-  return { cards: deduped, warnings };
+  return { cards: deduped, warnings: allWarnings };
 }
