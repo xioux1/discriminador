@@ -4738,3 +4738,66 @@ textarea.chinese-input {
 [data-theme="dark"] .docs-exam-load-row input,
 [data-theme="dark"] .docs-exam-load-row select,
 [data-theme="dark"] .docs-exam-content-input { background: var(--bg); border-color: rgba(255,255,255,0.12); }
+
+/* ── AI extraction section ────────────────────────────────────────────────── */
+.ai-extraction-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ai-candidate-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  background: var(--surface);
+}
+
+.ai-candidate-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ai-candidate-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 0.82rem;
+}
+
+.ai-candidate-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ai-status-badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 10px;
+  letter-spacing: 0.01em;
+}
+
+.ai-status-ready    { background: #d4edda; color: #155724; }
+.ai-status-ambiguous { background: #fff3cd; color: #856404; }
+.ai-status-needs_edit { background: #cce5ff; color: #004085; }
+.ai-status-rejected { background: #f8d7da; color: #721c24; }
+
+.ai-confidence { color: var(--text-muted); font-size: 0.78rem; }
+
+.ai-source-excerpt {
+  margin-top: 6px;
+}
+
+[data-theme="dark"] .ai-status-ready     { background: rgba(40,120,60,0.25);  color: #7edc9e; }
+[data-theme="dark"] .ai-status-ambiguous  { background: rgba(160,120,0,0.25); color: #f0cc70; }
+[data-theme="dark"] .ai-status-needs_edit { background: rgba(30,80,160,0.25); color: #7ab4f0; }
+[data-theme="dark"] .ai-status-rejected   { background: rgba(140,20,30,0.25); color: #f07080; }

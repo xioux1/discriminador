@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { dbPool } from '../db/client.js';
 import Anthropic from '@anthropic-ai/sdk';
+import { llmRateLimit } from '../middleware/llm-rate-limit.js';
+import { extractCandidateCardsFromText } from '../services/cardExtraction.service.js';
 
 const cardsRouter = Router();
 
@@ -513,6 +515,100 @@ cardsRouter.post('/cards/merge-as-variants', async (req, res) => {
     console.error('POST /cards/merge-as-variants', err.message);
     return res.status(500).json({ error: 'server_error', message: err.message });
   }
+});
+
+// POST /cards/extract-candidates — extract candidate cards from raw text using LLM (no DB write)
+cardsRouter.post('/cards/extract-candidates', llmRateLimit, async (req, res) => {
+  const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
+  if (!text) {
+    return res.status(422).json({ error: 'validation_error', message: 'text es obligatorio.' });
+  }
+
+  const subject = typeof req.body?.subject === 'string' ? req.body.subject.trim() : undefined;
+  const document_id = typeof req.body?.document_id === 'string' ? req.body.document_id.trim() : undefined;
+
+  try {
+    const { cards, warnings } = await extractCandidateCardsFromText({ text, subject, document_id });
+    return res.json({ cards, warnings });
+  } catch (err) {
+    if (err.code === 'validation_error') {
+      return res.status(422).json({ error: 'validation_error', message: err.message });
+    }
+    console.error('POST /cards/extract-candidates', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+// POST /cards/import-reviewed — insert only the reviewed cards confirmed by the user
+cardsRouter.post('/cards/import-reviewed', async (req, res) => {
+  const userId = req.user.id;
+  const cardsRaw = Array.isArray(req.body?.cards) ? req.body.cards : [];
+  const subject = typeof req.body?.subject === 'string' ? req.body.subject.trim() : null;
+  const document_id = typeof req.body?.document_id === 'string' ? req.body.document_id.trim() : null;
+
+  if (!cardsRaw.length) {
+    return res.status(422).json({ error: 'validation_error', message: 'cards no puede estar vacío.' });
+  }
+
+  const validationErrors = [];
+  const toInsert = [];
+
+  for (let i = 0; i < cardsRaw.length; i++) {
+    const c = cardsRaw[i];
+    if (!c || typeof c !== 'object') {
+      validationErrors.push({ index: i, issue: 'elemento inválido' });
+      continue;
+    }
+
+    if (c.status === 'rejected') continue;
+
+    const question = typeof c.question === 'string' ? c.question.trim() : '';
+    const answer = typeof c.answer === 'string' ? c.answer.trim() : '';
+
+    if (!question) { validationErrors.push({ index: i, issue: 'question es obligatorio' }); continue; }
+    if (!answer)   { validationErrors.push({ index: i, issue: 'answer es obligatorio' }); continue; }
+
+    const cardSubject = (typeof c.subject === 'string' && c.subject.trim()) ? c.subject.trim() : subject;
+    const sourceExcerpt = typeof c.source_excerpt === 'string' ? c.source_excerpt.trim() : null;
+    const confidence = typeof c.confidence === 'number' ? c.confidence : null;
+
+    toInsert.push({ question, answer, subject: cardSubject, source_excerpt: sourceExcerpt, confidence, document_id });
+  }
+
+  if (validationErrors.length && !toInsert.length) {
+    return res.status(422).json({ error: 'validation_error', message: 'Ninguna tarjeta válida para importar.', details: validationErrors });
+  }
+
+  const insertedIds = [];
+  const client = await dbPool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const card of toInsert) {
+      const { rows } = await client.query(
+        `INSERT INTO cards (user_id, subject, prompt_text, expected_answer_text, document_id, notes, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, now(), now())
+         RETURNING id`,
+        [
+          userId,
+          card.subject || null,
+          card.question,
+          card.answer,
+          card.document_id || null,
+          card.source_excerpt ? `[fuente] ${card.source_excerpt.slice(0, 500)}` : null,
+        ]
+      );
+      insertedIds.push(rows[0].id);
+    }
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('POST /cards/import-reviewed', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  } finally {
+    client.release();
+  }
+
+  return res.json({ inserted: insertedIds.length, ids: insertedIds, validation_errors: validationErrors });
 });
 
 export default cardsRouter;

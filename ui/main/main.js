@@ -781,6 +781,222 @@ function initBrowserTab() {
     feedback.textContent = `Error al cargar navegador: ${err.message}`;
     feedback.className = 'feedback error';
   });
+
+  initAiExtraction();
+}
+
+// ── AI-assisted bulk card extraction ─────────────────────────────────────────
+
+function initAiExtraction() {
+  const toggleBtn   = document.querySelector('#ai-extraction-toggle');
+  const body        = document.querySelector('#ai-extraction-body');
+  const extractBtn  = document.querySelector('#ai-extract-btn');
+  const statusEl    = document.querySelector('#ai-extract-status');
+  const candidatesWrap = document.querySelector('#ai-candidates-wrap');
+  const candidatesList = document.querySelector('#ai-candidates-list');
+  const candidatesCount = document.querySelector('#ai-candidates-count');
+  const saveFeedback = document.querySelector('#ai-save-feedback');
+  const saveBtn     = document.querySelector('#ai-save-btn');
+  const selectAllBtn   = document.querySelector('#ai-select-all-btn');
+  const deselectAllBtn = document.querySelector('#ai-deselect-all-btn');
+
+  if (!toggleBtn || !body) return;
+
+  // Collapse/expand
+  toggleBtn.addEventListener('click', () => {
+    const isHidden = body.classList.contains('hidden');
+    body.classList.toggle('hidden', !isHidden);
+    toggleBtn.textContent = isHidden ? 'Colapsar' : 'Expandir';
+  });
+
+  // State: array of candidate card objects with client-side fields
+  let candidates = [];
+
+  function statusBadge(status) {
+    const map = { ready: '✓ lista', ambiguous: '? ambigua', needs_edit: '✎ revisar', rejected: '✕ rechazada' };
+    return map[status] || status;
+  }
+
+  function confidencePct(c) {
+    return typeof c === 'number' ? `${Math.round(c * 100)}%` : '—';
+  }
+
+  function renderCandidates() {
+    candidatesList.innerHTML = '';
+    if (!candidates.length) return;
+
+    candidates.forEach((card, idx) => {
+      const div = document.createElement('div');
+      div.className = 'ai-candidate-card';
+      div.dataset.idx = idx;
+
+      const autoSelected = card.status === 'ready';
+      const checked = card._selected !== undefined ? card._selected : autoSelected;
+      card._selected = checked;
+
+      const statusClass = `ai-status-${card.status}`;
+
+      div.innerHTML = `
+        <div class="ai-candidate-header">
+          <label class="ai-candidate-check">
+            <input type="checkbox" class="ai-card-checkbox" data-idx="${idx}" ${checked ? 'checked' : ''}>
+            <span class="ai-status-badge ${statusClass}">${escHtml(statusBadge(card.status))}</span>
+            <span class="ai-confidence">Confianza: ${confidencePct(card.confidence)}</span>
+          </label>
+          <button type="button" class="btn-ghost ai-discard-btn" data-idx="${idx}" style="font-size:0.8rem;padding:2px 8px">Descartar</button>
+        </div>
+        <div class="ai-candidate-fields">
+          <label style="font-size:0.78rem;color:var(--text-muted)">Pregunta</label>
+          <textarea class="ai-edit-question" data-idx="${idx}" rows="2" style="width:100%;box-sizing:border-box;resize:vertical">${escHtml(card.question)}</textarea>
+          <label style="font-size:0.78rem;color:var(--text-muted)">Respuesta</label>
+          <textarea class="ai-edit-answer" data-idx="${idx}" rows="2" style="width:100%;box-sizing:border-box;resize:vertical">${escHtml(card.answer)}</textarea>
+          ${card.source_excerpt ? `<details class="ai-source-excerpt"><summary style="font-size:0.78rem;color:var(--text-muted);cursor:pointer">Fragmento fuente</summary><blockquote style="margin:4px 0 0;font-size:0.8rem;color:var(--text-muted);border-left:3px solid var(--border);padding-left:8px">${escHtml(card.source_excerpt)}</blockquote></details>` : ''}
+          ${card.notes ? `<p style="font-size:0.78rem;color:#b07d00;margin:4px 0 0"><em>${escHtml(card.notes)}</em></p>` : ''}
+        </div>`;
+
+      candidatesList.appendChild(div);
+    });
+
+    // Bind events
+    candidatesList.querySelectorAll('.ai-card-checkbox').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const i = parseInt(cb.dataset.idx, 10);
+        candidates[i]._selected = cb.checked;
+      });
+    });
+
+    candidatesList.querySelectorAll('.ai-edit-question').forEach(ta => {
+      ta.addEventListener('input', () => {
+        candidates[parseInt(ta.dataset.idx, 10)].question = ta.value;
+      });
+    });
+
+    candidatesList.querySelectorAll('.ai-edit-answer').forEach(ta => {
+      ta.addEventListener('input', () => {
+        candidates[parseInt(ta.dataset.idx, 10)].answer = ta.value;
+      });
+    });
+
+    candidatesList.querySelectorAll('.ai-discard-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const i = parseInt(btn.dataset.idx, 10);
+        candidates.splice(i, 1);
+        renderCandidates();
+        updateCount();
+      });
+    });
+  }
+
+  function updateCount() {
+    const total = candidates.length;
+    const selected = candidates.filter(c => c._selected).length;
+    candidatesCount.textContent = `${total} tarjeta(s) extraída(s) · ${selected} seleccionada(s)`;
+  }
+
+  // Select / deselect all
+  selectAllBtn?.addEventListener('click', () => {
+    candidates.forEach(c => { c._selected = true; });
+    renderCandidates();
+    updateCount();
+  });
+
+  deselectAllBtn?.addEventListener('click', () => {
+    candidates.forEach(c => { c._selected = false; });
+    renderCandidates();
+    updateCount();
+  });
+
+  // Extract
+  extractBtn?.addEventListener('click', async () => {
+    const text = document.querySelector('#ai-extract-text')?.value?.trim() ?? '';
+    if (!text) {
+      statusEl.textContent = 'Ingresá el texto antes de extraer.';
+      statusEl.style.color = '#c00';
+      return;
+    }
+
+    const subject = document.querySelector('#ai-extract-subject')?.value?.trim() || undefined;
+    extractBtn.disabled = true;
+    statusEl.textContent = 'Extrayendo tarjetas con IA…';
+    statusEl.style.color = 'var(--text-muted)';
+    candidatesWrap.classList.add('hidden');
+    saveFeedback.textContent = '';
+
+    try {
+      const data = await postJson('/api/cards/extract-candidates', { text, subject });
+      candidates = (data.cards || []).map(c => ({ ...c, _selected: c.status === 'ready' }));
+
+      if (!candidates.length) {
+        statusEl.textContent = 'No se encontraron tarjetas en el texto.';
+        statusEl.style.color = '#b07d00';
+        return;
+      }
+
+      const warnings = data.warnings || [];
+      statusEl.textContent = warnings.length ? `Advertencias: ${warnings.join(' | ')}` : '';
+      statusEl.style.color = warnings.length ? '#b07d00' : '';
+
+      renderCandidates();
+      updateCount();
+      candidatesWrap.classList.remove('hidden');
+    } catch (err) {
+      statusEl.textContent = `Error: ${err.message}`;
+      statusEl.style.color = '#c00';
+    } finally {
+      extractBtn.disabled = false;
+    }
+  });
+
+  // Save selected
+  saveBtn?.addEventListener('click', async () => {
+    const toSave = candidates.filter(c => c._selected && c.status !== 'rejected');
+    if (!toSave.length) {
+      saveFeedback.textContent = 'No hay tarjetas seleccionadas para guardar.';
+      saveFeedback.className = 'feedback error';
+      return;
+    }
+
+    const subject = document.querySelector('#ai-extract-subject')?.value?.trim() || null;
+
+    saveBtn.disabled = true;
+    saveFeedback.textContent = 'Guardando…';
+    saveFeedback.className = 'feedback';
+
+    try {
+      const payload = {
+        subject,
+        cards: toSave.map(c => ({
+          question: c.question,
+          answer: c.answer,
+          source_excerpt: c.source_excerpt,
+          confidence: c.confidence,
+          status: c.status,
+        })),
+      };
+
+      const result = await postJson('/api/cards/import-reviewed', payload);
+      saveFeedback.textContent = `${result.inserted} tarjeta(s) guardada(s) correctamente.`;
+      saveFeedback.className = 'feedback success';
+
+      // Remove saved cards from the list
+      const savedQuestions = new Set(toSave.map(c => c.question));
+      candidates = candidates.filter(c => !savedQuestions.has(c.question));
+      renderCandidates();
+      updateCount();
+
+      loadBrowserCards().catch(() => {});
+      loadStudyOverview().catch(() => {});
+
+      setTimeout(() => {
+        if (saveFeedback.textContent.includes('guardada')) saveFeedback.textContent = '';
+      }, 3000);
+    } catch (err) {
+      saveFeedback.textContent = `Error: ${err.message}`;
+      saveFeedback.className = 'feedback error';
+    } finally {
+      saveBtn.disabled = false;
+    }
+  });
 }
 
 // ── Redundant card detection & merge ────────────────────────────────────────
