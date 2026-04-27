@@ -923,7 +923,7 @@ function initAiExtraction() {
     saveFeedback.textContent = '';
 
     try {
-      const data = await postJson('/api/cards/extract-candidates', { text, subject });
+      const data = await postJson('/cards/extract-candidates', { text, subject });
       candidates = (data.cards || []).map(c => ({ ...c, _selected: c.status === 'ready' }));
 
       if (!candidates.length) {
@@ -974,7 +974,7 @@ function initAiExtraction() {
         })),
       };
 
-      const result = await postJson('/api/cards/import-reviewed', payload);
+      const result = await postJson('/cards/import-reviewed', payload);
       saveFeedback.textContent = `${result.inserted} tarjeta(s) guardada(s) correctamente.`;
       saveFeedback.className = 'feedback success';
 
