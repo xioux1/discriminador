@@ -195,7 +195,9 @@ export async function generateChineseListeningMicroCard({ expected_answer_text, 
     }],
   });
 
-  const hanzi = response.content.find((b) => b.type === 'text')?.text?.trim() || expected_answer_text;
+  const raw   = response.content.find((b) => b.type === 'text')?.text?.trim() ?? '';
+  // Validate the LLM actually returned Hanzi; fall back to the full sentence otherwise.
+  const hanzi = CJK_RE.test(raw) ? raw : expected_answer_text;
   return { question: hanzi, expected_answer: hanzi };
 }
 

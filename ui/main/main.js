@@ -4259,7 +4259,9 @@ function showStudyCard() {
     if (item.data.presentation === 'listening') {
       // Listening micro-card: hide question text, play audio of the Hanzi to drill.
       promptEl.innerHTML = '';
-      _ttsListeningText = item.data.question;
+      // Guard: if question has no CJK (bad legacy data), fall back to parent context.
+      const _q = item.data.question || '';
+      _ttsListeningText = /[一-鿿㐀-䶿]/u.test(_q) ? _q : (item.data.parent_prompt || _q);
       if (listeningBar) listeningBar.classList.remove('hidden');
       if (getTTSEnabled()) playChineseTTS(_ttsListeningText, '#study-listening-replay-btn');
     } else {
