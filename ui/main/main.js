@@ -584,7 +584,9 @@ function showCardDetail(card) {
   document.querySelector('#cdp-badge').className = `browser-status-pill ${status}`;
   document.querySelector('#cdp-subject').textContent = card.subject ? ` · ${card.subject}` : '';
   document.querySelector('#cdp-prompt').innerHTML  = formatPromptForDisplay(card.prompt_text || '');
-  document.querySelector('#cdp-answer').innerHTML  = renderCodeMarkdown(card.expected_answer_text || '');
+  const cdpExpectedAnswer = getExpectedAnswerFromData(card);
+  const cdpPinyinHint = getPinyinHintFromData(card);
+  document.querySelector('#cdp-answer').innerHTML  = `${renderCodeMarkdown(cdpExpectedAnswer)}${buildPinyinDetailsHtml(cdpPinyinHint)}`;
 
   document.querySelector('#cdp-reviews').textContent  = reviews;
   document.querySelector('#cdp-pass-rate').textContent = passRate;
@@ -653,7 +655,7 @@ async function loadVariantsTree(cardId, variantCount) {
 function renderVariantsTreeHTML(card, variants) {
   const trunc = (s, n) => s.length > n ? s.slice(0, n) + '…' : s;
 
-  const nodeHTML = (label, prompt, answer, isRoot) => `
+  const nodeHTML = (label, prompt, answer, pinyinHint, isRoot) => `
     <div class="cvt-node${isRoot ? ' cvt-node--root' : ''}">
       <div class="cvt-node-head">
         <span class="cvt-node-badge">${escHtml(label)}</span>
@@ -664,14 +666,15 @@ function renderVariantsTreeHTML(card, variants) {
         <div class="cvt-node-full-prompt">${escHtml(prompt)}</div>
         <div class="cvt-node-answer-label">Respuesta esperada</div>
         <div class="cvt-node-answer">${escHtml(answer)}</div>
+        ${pinyinHint ? `<details class="study-pinyin-toggle"><summary>Pinyin</summary><div class="study-pinyin-content">${escHtml(pinyinHint)}</div></details>` : ''}
       </div>
     </div>`;
 
-  const rootHTML = nodeHTML(`#${card.id} · Original`, card.prompt_text, card.expected_answer_text, true);
+  const rootHTML = nodeHTML(`#${card.id} · Original`, card.prompt_text, getExpectedAnswerFromData(card), getPinyinHintFromData(card), true);
 
   const childrenHTML = variants.map((v, i) => `
     <div class="cvt-branch">
-      ${nodeHTML(`#${v.id} · Variante ${i + 1}`, v.prompt_text, v.expected_answer_text, false)}
+      ${nodeHTML(`#${v.id} · Variante ${i + 1}`, v.prompt_text, getExpectedAnswerFromData(v), getPinyinHintFromData(v), false)}
     </div>`).join('');
 
   return `<div class="cvt-root">${rootHTML}${variants.length ? `<div class="cvt-children">${childrenHTML}</div>` : ''}</div>`;
@@ -2595,6 +2598,22 @@ function hasChinese(text) {
   return /[\u4e00-\u9fff\u3400-\u4dbf\u{20000}-\u{2a6df}]/u.test(text || '');
 }
 
+function getExpectedAnswerFromData(data = {}) {
+  const direct = String(data.expected_answer || '').trim();
+  if (direct) return direct;
+  return String(data.expected_answer_text || '').trim();
+}
+
+function getPinyinHintFromData(data = {}) {
+  return String(data.pinyin_hint || '').trim();
+}
+
+function buildPinyinDetailsHtml(pinyinHint) {
+  const hint = String(pinyinHint || '').trim();
+  if (!hint) return '';
+  return `<details class="study-pinyin-toggle"><summary>Pinyin</summary><div class="study-pinyin-content">${escHtml(hint)}</div></details>`;
+}
+
 let _ttsAudio = null;                    // keep reference to stop previous playback
 let _ttsCurrentText = null;             // Hanzi text for the post-eval TTS bar
 let _ttsListeningText = null;           // Hanzi text for the listening variant prompt bar
@@ -3469,7 +3488,7 @@ function initStudyTab() {
         card_id:              item.data.id,
         prompt_text:          item.data.prompt_text,
         user_answer_text:     answer,
-        expected_answer_text: item.data.expected_answer_text,
+        expected_answer_text: getExpectedAnswerFromData(item.data),
         subject:              item.data.subject || undefined
       });
       if (resp.result === 'ok') {
@@ -4354,7 +4373,7 @@ function showStudyCard() {
   SqlEditor.refresh();
 
   // Enlarge textarea font for Chinese cards so Hanzi are readable while typing
-  const _expectedForFont = item.type === 'micro' ? item.data.expected_answer : item.data.expected_answer_text;
+  const _expectedForFont = item.type === 'micro' ? item.data.expected_answer : getExpectedAnswerFromData(item.data);
   _studyInput.classList.toggle('chinese-input', hasChinese(_expectedForFont));
   document.querySelector('#study-answer-block').classList.remove('hidden');
   document.querySelector('#study-result-block').classList.add('hidden');
@@ -4554,7 +4573,7 @@ function openStudyAnswerEdit(item, expectedEl) {
   if (item.type === 'micro') return;
   if (document.querySelector('#study-answer-edit-container')) return;
 
-  const currentText = item.data.expected_answer_text || '';
+  const currentText = getExpectedAnswerFromData(item.data);
 
   const container = document.createElement('div');
   container.id = 'study-answer-edit-container';
@@ -4601,7 +4620,8 @@ function openStudyAnswerEdit(item, expectedEl) {
     saveBtn.textContent = 'Guardando...';
     fb.textContent = '';
     try {
-      await postJson('/cards/batch', { action: 'edit', ids: [item.data.id], expected_answer_text: newText });
+      await postJson('/cards/batch', { action: 'edit', ids: [item.data.id], expected_answer: newText });
+      item.data.expected_answer = newText;
       item.data.expected_answer_text = newText;
       container.remove();
       // Replace the "Respuesta esperada" block in the display
@@ -4639,7 +4659,7 @@ async function clarifyStudyPrompt() {
 
   const expectedAnswer = (item.type === 'micro'
     ? (item.data.expected_answer || item.data.parent_expected)
-    : item.data.expected_answer_text
+    : getExpectedAnswerFromData(item.data)
   ) || '';
 
   try {
@@ -4709,9 +4729,10 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
     subject              = item.data.parent_subject ?? item.data.subject;
   } else {
     prompt_text          = getStudyPromptText(item);
-    expected_answer_text = item.data.expected_answer_text;
+    expected_answer_text = getExpectedAnswerFromData(item.data);
     subject              = item.data.subject;
   }
+  const pinyinHint = item.type === 'micro' ? '' : getPinyinHintFromData(item.data);
 
   const normalizedPrompt = normalize(prompt_text || '');
   const normalizedExpected = normalize(expected_answer_text || '');
@@ -4813,6 +4834,7 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       ${groupedTags}
       ${formatAnswerBlock('Tu respuesta', answer)}
       ${formatAnswerBlock('Respuesta esperada', expected_answer_text)}
+      ${buildPinyinDetailsHtml(pinyinHint)}
     `;
     expectedEl.classList.remove('hidden');
 
@@ -4876,7 +4898,7 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
         grade: autoGrade,
         passed,
         prompt_text:          currentItem?.data?.prompt_text || currentItem?.data?.question || '',
-        expected_answer_text: currentItem?.data?.expected_answer_text || currentItem?.data?.expected_answer || '',
+        expected_answer_text: getExpectedAnswerFromData(currentItem?.data || {}),
         cardData:             currentItem?.data
       });
     } else {
@@ -5129,7 +5151,7 @@ document.querySelector('#study-doubt-btn').addEventListener('click', async () =>
 
   const isMicro = item?.type === 'micro';
   const cardPrompt    = isMicro ? item.data.question    : item.data.prompt_text;
-  const expectedAns   = isMicro ? (item.data.expected_answer || item.data.parent_expected) : item.data.expected_answer_text;
+  const expectedAns   = isMicro ? (item.data.expected_answer || item.data.parent_expected) : getExpectedAnswerFromData(item.data);
   const subject       = isMicro ? (item.data.parent_subject ?? item.data.subject) : item.data.subject;
   const userAnswer    = MathPreview.serialize(document.querySelector('#study-answer-input')).trim();
   const grade         = evalResult ? String(evalResult.suggested_grade || '').toLowerCase() : '';
@@ -5282,7 +5304,7 @@ async function handleStudyNextCard() {
       review_time_ms:               studyState.reviewTimeMs   || undefined,
       user_answer:                  studyState.currentEvalContext?.user_answer_text || '',
       variant_prompt_text:          item.data.variant_id ? item.data.prompt_text          : undefined,
-      variant_expected_answer_text: item.data.variant_id ? item.data.expected_answer_text : undefined,
+      variant_expected_answer_text: item.data.variant_id ? getExpectedAnswerFromData(item.data) : undefined,
       variant_type:                 item.data.variant_id ? item.data.variant_type          : undefined
     }).then((reviewResp) => {
       // Insert generated micro-cards *after* the card currently on screen.

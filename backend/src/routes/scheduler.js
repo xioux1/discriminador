@@ -4,6 +4,7 @@ import { computeNextReview, isPassGrade, isFailGrade } from '../services/schedul
 import { generateMicroCard, generateMicroCardFromCheckError, generateChineseMicroCard, generateChineseListeningMicroCard, isChineseCard, rankGaps } from '../services/micro-generator.js';
 import { generateVariant, buildChineseListeningVariant } from '../services/variant-generator.js';
 import Anthropic from '@anthropic-ai/sdk';
+import { splitExpectedAnswerAndPinyin } from '../utils/pinyin.js';
 
 const LLM_MODEL = 'claude-haiku-4-5-20251001';
 let _aiClient = null;
@@ -66,14 +67,15 @@ function pickTopConcept(concepts = []) {
 
 // ─── Register / upsert a card ─────────────────────────────────────────────────
 schedulerRouter.post('/scheduler/cards', async (req, res) => {
-  const { subject, prompt_text, expected_answer_text } = req.body || {};
+  const { subject, prompt_text, expected_answer_text, expected_answer, pinyin_hint } = req.body || {};
   const userId = req.user.id;
   const normalizedSubject = subject?.trim() || null;
+  const parsed = splitExpectedAnswerAndPinyin(expected_answer || expected_answer_text, pinyin_hint);
 
-  if (!prompt_text?.trim() || !expected_answer_text?.trim()) {
+  if (!prompt_text?.trim() || !parsed.expected_answer) {
     return res.status(422).json({
       error: 'validation_error',
-      message: 'prompt_text and expected_answer_text are required.'
+      message: 'prompt_text and expected_answer are required.'
     });
   }
 
@@ -94,10 +96,10 @@ schedulerRouter.post('/scheduler/cards', async (req, res) => {
     }
 
     const result = await dbPool.query(
-      `INSERT INTO cards (subject, prompt_text, expected_answer_text, user_id, next_review_at)
-       VALUES ($1, $2, $3, $4, COALESCE($5, now()))
+      `INSERT INTO cards (subject, prompt_text, expected_answer_text, expected_answer, pinyin_hint, user_id, next_review_at)
+       VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6, COALESCE($7, now()))
        RETURNING *`,
-      [normalizedSubject, prompt_text.trim(), expected_answer_text.trim(), userId, releaseAt]
+      [normalizedSubject, prompt_text.trim(), parsed.expected_answer, parsed.expected_answer, parsed.pinyin_hint, userId, releaseAt]
     );
     return res.status(200).json(result.rows[0]);
   } catch (err) {
@@ -223,7 +225,8 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
       `SELECT mc.*,
          c.subject           AS parent_subject,
          c.prompt_text       AS parent_prompt,
-         c.expected_answer_text AS parent_expected
+         COALESCE(c.expected_answer, c.expected_answer_text) AS parent_expected,
+         c.pinyin_hint       AS parent_pinyin_hint
        FROM micro_cards mc
        JOIN cards c ON mc.parent_card_id = c.id
        WHERE mc.status = 'active'
@@ -264,7 +267,8 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
       if (parseInt(card.variant_count) === 0) return card;
 
       const vRes = await dbPool.query(
-        `SELECT id, prompt_text, expected_answer_text, variant_type FROM card_variants WHERE card_id = $1 AND (user_id = $2 OR user_id IS NULL)`,
+        `SELECT id, prompt_text, COALESCE(expected_answer, expected_answer_text) AS expected_answer_text, pinyin_hint, variant_type
+           FROM card_variants WHERE card_id = $1 AND (user_id = $2 OR user_id IS NULL)`,
         [card.id, card.user_id]
       );
       const variants = vRes.rows;
@@ -279,6 +283,8 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
         ...card,
         prompt_text:          v.prompt_text,
         expected_answer_text: v.expected_answer_text,
+        expected_answer:      v.expected_answer_text,
+        pinyin_hint:          v.pinyin_hint,
         variant_id:           v.id,
         variant_type:         v.variant_type
       };
@@ -377,9 +383,9 @@ async function autoGenerateVariant(cardId, card, userId) {
       console.warn('[auto-variant] discarded degenerate regular variant (prompt == answer)', { cardId, subject: card.subject });
     } else {
       await dbPool.query(
-        `INSERT INTO card_variants (card_id, prompt_text, expected_answer_text, user_id, variant_type)
-         VALUES ($1, $2, $3, $4, 'regular')`,
-        [cardId, variant.prompt_text, variant.expected_answer_text, userId]
+        `INSERT INTO card_variants (card_id, prompt_text, expected_answer_text, expected_answer, pinyin_hint, user_id, variant_type)
+         VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6, 'regular')`,
+        [cardId, variant.prompt_text, variant.expected_answer_text, variant.expected_answer_text, variant.pinyin_hint || '', userId]
       );
       console.info('[auto-variant] generated regular', { cardId, subject: card.subject });
     }
@@ -389,9 +395,9 @@ async function autoGenerateVariant(cardId, card, userId) {
   if (isChineseCard(card) && !variantCounts['listening']) {
     const lv = buildChineseListeningVariant(card);
     await dbPool.query(
-      `INSERT INTO card_variants (card_id, prompt_text, expected_answer_text, user_id, variant_type)
-       VALUES ($1, $2, $3, $4, 'listening')`,
-      [cardId, lv.prompt_text, lv.expected_answer_text, userId]
+      `INSERT INTO card_variants (card_id, prompt_text, expected_answer_text, expected_answer, pinyin_hint, user_id, variant_type)
+       VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6, 'listening')`,
+      [cardId, lv.prompt_text, lv.expected_answer_text, lv.expected_answer_text, lv.pinyin_hint || '', userId]
     );
     console.info('[auto-variant] generated listening', { cardId, subject: card.subject });
   }
@@ -1010,7 +1016,7 @@ schedulerRouter.post('/scheduler/cards/:id/variant', async (req, res) => {
 
   try {
     const cardRes = await dbPool.query(
-      `SELECT id, subject, prompt_text, expected_answer_text
+      `SELECT id, subject, prompt_text, COALESCE(expected_answer, expected_answer_text) AS expected_answer_text, pinyin_hint
        FROM cards
        WHERE id = $1 AND user_id = $2 AND archived_at IS NULL AND suspended_at IS NULL`,
       [cardId, userId]
@@ -1025,9 +1031,9 @@ schedulerRouter.post('/scheduler/cards/:id/variant', async (req, res) => {
     });
 
     const insertRes = await dbPool.query(
-      `INSERT INTO card_variants (card_id, prompt_text, expected_answer_text, user_id, variant_type)
-       VALUES ($1, $2, $3, $4, 'regular') RETURNING *`,
-      [cardId, variant.prompt_text, variant.expected_answer_text, userId]
+      `INSERT INTO card_variants (card_id, prompt_text, expected_answer_text, expected_answer, pinyin_hint, user_id, variant_type)
+       VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6, 'regular') RETURNING *`,
+      [cardId, variant.prompt_text, variant.expected_answer_text, variant.expected_answer_text, variant.pinyin_hint || '', userId]
     );
 
     return res.status(200).json({
@@ -1049,7 +1055,7 @@ schedulerRouter.get('/scheduler/cards/:id/variants', async (req, res) => {
 
   try {
     const cardRes = await dbPool.query(
-      `SELECT id, subject, prompt_text, expected_answer_text, created_at
+      `SELECT id, subject, prompt_text, COALESCE(expected_answer, expected_answer_text) AS expected_answer_text, pinyin_hint, created_at
        FROM cards
        WHERE id = $1 AND user_id = $2 AND archived_at IS NULL`,
       [cardId, userId]
@@ -1057,7 +1063,7 @@ schedulerRouter.get('/scheduler/cards/:id/variants', async (req, res) => {
     if (!cardRes.rows.length) return res.status(404).json({ error: 'not_found', message: 'Card not found.' });
 
     const variantsRes = await dbPool.query(
-      `SELECT id, prompt_text, expected_answer_text, created_at
+      `SELECT id, prompt_text, COALESCE(expected_answer, expected_answer_text) AS expected_answer_text, pinyin_hint, created_at
        FROM card_variants
        WHERE card_id = $1 AND (user_id = $2 OR user_id IS NULL)
        ORDER BY created_at ASC`,

@@ -3,6 +3,7 @@ import { dbPool } from '../db/client.js';
 import Anthropic from '@anthropic-ai/sdk';
 import { llmRateLimit } from '../middleware/llm-rate-limit.js';
 import { extractCandidateCardsFromText } from '../services/cardExtraction.service.js';
+import { splitExpectedAnswerAndPinyin } from '../utils/pinyin.js';
 
 const cardsRouter = Router();
 
@@ -21,7 +22,9 @@ cardsRouter.get('/cards/browser', async (req, res) => {
        c.id,
        c.subject,
        c.prompt_text,
-       c.expected_answer_text,
+       COALESCE(c.expected_answer, c.expected_answer_text) AS expected_answer_text,
+       COALESCE(c.expected_answer, c.expected_answer_text) AS expected_answer,
+       c.pinyin_hint,
        c.next_review_at,
        c.last_reviewed_at,
        c.created_at,
@@ -54,7 +57,10 @@ cardsRouter.get('/cards/:id', async (req, res) => {
   try {
     const { rows } = await dbPool.query(
       `SELECT
-         c.id, c.subject, c.prompt_text, c.expected_answer_text,
+         c.id, c.subject, c.prompt_text,
+         COALESCE(c.expected_answer, c.expected_answer_text) AS expected_answer_text,
+         COALESCE(c.expected_answer, c.expected_answer_text) AS expected_answer,
+         c.pinyin_hint,
          c.next_review_at, c.last_reviewed_at, c.created_at,
          c.review_count, c.pass_count, c.interval_days, c.ease_factor,
          c.flagged, c.notes, c.suspended_at,
@@ -256,11 +262,14 @@ cardsRouter.post('/cards/batch', async (req, res) => {
   if (action === 'edit') {
     const nextSubject = typeof req.body?.subject === 'string' ? req.body.subject.trim() : '';
     const nextPrompt = typeof req.body?.prompt_text === 'string' ? req.body.prompt_text.trim() : '';
-    const nextAnswer = typeof req.body?.expected_answer_text === 'string' ? req.body.expected_answer_text.trim() : '';
-    if (!nextSubject && !nextPrompt && !nextAnswer) {
+    const nextAnswerRaw = (typeof req.body?.expected_answer === 'string' ? req.body.expected_answer : req.body?.expected_answer_text) || '';
+    const nextPinyinRaw = typeof req.body?.pinyin_hint === 'string' ? req.body.pinyin_hint : '';
+    const parsedAnswer = splitExpectedAnswerAndPinyin(nextAnswerRaw, nextPinyinRaw);
+    const nextAnswer = parsedAnswer.expected_answer;
+    if (!nextSubject && !nextPrompt && !nextAnswer && !parsedAnswer.pinyin_hint) {
       return res.status(422).json({
         error: 'validation_error',
-        message: 'subject, prompt_text, or expected_answer_text is required for edit.'
+        message: 'subject, prompt_text, expected_answer, or pinyin_hint is required for edit.'
       });
     }
     const { rowCount } = await dbPool.query(
@@ -268,11 +277,13 @@ cardsRouter.post('/cards/batch', async (req, res) => {
        SET subject = CASE WHEN $1 = '' THEN subject ELSE $1 END,
            prompt_text = CASE WHEN $2 = '' THEN prompt_text ELSE $2 END,
            expected_answer_text = CASE WHEN $3 = '' THEN expected_answer_text ELSE $3 END,
+           expected_answer = CASE WHEN $3 = '' THEN expected_answer ELSE $3 END,
+           pinyin_hint = CASE WHEN $4 = '' THEN pinyin_hint ELSE $4 END,
            updated_at = now()
-       WHERE user_id = $4
-         AND id = ANY($5::int[])
+       WHERE user_id = $5
+         AND id = ANY($6::int[])
          AND archived_at IS NULL`,
-      [nextSubject, nextPrompt, nextAnswer, userId, ids]
+      [nextSubject, nextPrompt, nextAnswer, parsedAnswer.pinyin_hint, userId, ids]
     );
     return res.json({ updated: rowCount });
   }
@@ -486,7 +497,8 @@ cardsRouter.post('/cards/merge-as-variants', async (req, res) => {
   try {
     const allIds = [primaryId, ...secondaryIds];
     const { rows: ownedCards } = await dbPool.query(
-      `SELECT id, prompt_text, expected_answer_text FROM cards WHERE id = ANY($1::int[]) AND user_id = $2 AND archived_at IS NULL`,
+      `SELECT id, prompt_text, COALESCE(expected_answer, expected_answer_text) AS expected_answer_text, pinyin_hint
+         FROM cards WHERE id = ANY($1::int[]) AND user_id = $2 AND archived_at IS NULL`,
       [allIds, userId]
     );
     const ownedMap = new Map(ownedCards.map((c) => [c.id, c]));
@@ -500,8 +512,9 @@ cardsRouter.post('/cards/merge-as-variants', async (req, res) => {
       const card = ownedMap.get(secId);
       if (!card) continue;
       await dbPool.query(
-        `INSERT INTO card_variants (card_id, prompt_text, expected_answer_text, user_id) VALUES ($1, $2, $3, $4)`,
-        [primaryId, card.prompt_text, card.expected_answer_text, userId]
+        `INSERT INTO card_variants (card_id, prompt_text, expected_answer_text, expected_answer, pinyin_hint, user_id)
+         VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6)`,
+        [primaryId, card.prompt_text, card.expected_answer_text, card.expected_answer_text, card.pinyin_hint || '', userId]
       );
       await dbPool.query(
         `UPDATE cards SET archived_at = now(), archived_reason = $1, updated_at = now() WHERE id = $2 AND user_id = $3`,
@@ -584,15 +597,18 @@ cardsRouter.post('/cards/import-reviewed', async (req, res) => {
   try {
     await client.query('BEGIN');
     for (const card of toInsert) {
+      const parsedAnswer = splitExpectedAnswerAndPinyin(card.answer);
       const { rows } = await client.query(
-        `INSERT INTO cards (user_id, subject, prompt_text, expected_answer_text, document_id, notes, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, now(), now())
+        `INSERT INTO cards (user_id, subject, prompt_text, expected_answer_text, expected_answer, pinyin_hint, document_id, notes, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, NULLIF($6, ''), $7, $8, now(), now())
          RETURNING id`,
         [
           userId,
           card.subject || null,
           card.question,
-          card.answer,
+          parsedAnswer.expected_answer,
+          parsedAnswer.expected_answer,
+          parsedAnswer.pinyin_hint,
           card.document_id || null,
           card.source_excerpt ? `[fuente] ${card.source_excerpt.slice(0, 500)}` : null,
         ]
