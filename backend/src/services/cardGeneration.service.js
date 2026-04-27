@@ -231,23 +231,33 @@ Objetivo:
 - La familia de tarjeta representa el cluster.
 - Cada variante evalúa un concepto importante o una relación importante entre conceptos del cluster.
 - Las respuestas deben basarse únicamente en el material provisto.
+- Redacción breve, operativa y fácil de etiquetar.
 
 Reglas estrictas:
 1. Usá sólo el material provisto. No inventes datos externos.
-2. Las preguntas deben ser abiertas, no multiple choice, no verdadero/falso.
-3. Cada pregunta debe evaluar comprensión, no repetición mecánica.
-4. Cada respuesta esperada debe poder decirse oralmente en 40–60 segundos.
-5. Cada respuesta esperada debe tener aproximadamente 80–140 palabras.
-6. No generes variantes duplicadas.
-7. Si varios conceptos se solapan, combinalos en una variante más fuerte.
-8. Cada variante debe incluir una rúbrica de corrección con 3 a 6 bullets.
-9. La rúbrica debe indicar qué elementos mínimos debe mencionar el estudiante para aprobar.
-10. No generes más de ${maxVariants} variantes.
-11. Cada variante debe incluir source_concept_ids usando sólo IDs reales provistos.
-12. Cada variante debe incluir source_chunk_indexes usando sólo índices reales provistos.
-13. Si no hay source_chunk_index disponible para una variante, usar [].
-14. No modifiques los UUIDs.
-15. Respondé sólo con JSON. Sin markdown, sin backticks, sin texto adicional.
+2. No expandas ni extrapoles más allá de la evidencia textual disponible.
+3. Cada afirmación de la respuesta debe poder rastrearse a source_concept_ids y source_chunk_indexes.
+4. Estilo por defecto obligatorio:
+   - bullets/ítems;
+   - frases cortas;
+   - lenguaje operativo;
+   - sin relleno, sin introducciones largas, sin tono académico extenso.
+5. Las preguntas deben ser abiertas, no multiple choice, no verdadero/falso.
+6. Cada pregunta debe evaluar comprensión, no repetición mecánica.
+7. expected_answer debe estar en bullets con 3 a 5 ítems.
+8. Cada bullet de expected_answer debe tener entre 6 y 18 palabras.
+9. Cada expected_answer completo debe tener aproximadamente 35–95 palabras.
+10. No generes variantes duplicadas.
+11. Si varios conceptos se solapan, combinalos en una variante más fuerte.
+12. Cada variante debe incluir una rúbrica de corrección con 3 a 6 bullets.
+13. La rúbrica debe indicar elementos mínimos para aprobar, en frases cortas.
+14. No generes más de ${maxVariants} variantes.
+15. Cada variante debe incluir source_concept_ids usando sólo IDs reales provistos.
+16. Cada variante debe incluir source_chunk_indexes usando sólo índices reales provistos.
+17. Si no hay source_chunk_index disponible para una variante, usar [].
+18. Cada variante debe incluir tag_labels (2 a 5 etiquetas cortas, snake_case) para tagging posterior.
+19. No modifiques los UUIDs.
+20. Respondé sólo con JSON. Sin markdown, sin backticks, sin texto adicional.
 
 Tipo de card:
 theoretical_open
@@ -264,7 +274,7 @@ Formato exacto de salida:
   "variants": [
     {
       "question": "pregunta abierta",
-      "expected_answer": "respuesta esperada",
+      "expected_answer": "- item 1\n- item 2\n- item 3",
       "grading_rubric": [
         "criterio 1",
         "criterio 2",
@@ -272,6 +282,7 @@ Formato exacto de salida:
       ],
       "source_concept_ids": ["uuid"],
       "source_chunk_indexes": [1],
+      "tag_labels": ["etiqueta_1", "etiqueta_2"],
       "difficulty": "easy|medium|hard",
       "answer_time_seconds": 50
     }
@@ -290,9 +301,9 @@ ${sourceExcerptsJson}
 Recordá:
 - Si el material no alcanza para una variante, no la generes.
 - Es mejor generar 2 buenas variantes que 5 mediocres.
-- La respuesta debe sonar como una respuesta oral clara de estudiante.
+- Priorizá claridad y escaneabilidad para revisión rápida y etiquetado.
 - No conviertas cada label automáticamente en una pregunta si hay solapamiento.
-- Priorizá preguntas que ayuden a aprobar un examen oral/escrito teórico.`;
+- Priorizá fidelidad al material fuente por encima de completitud aparente.`;
 }
 
 // ==================== validateGeneratedCardDraft ====================
@@ -340,9 +351,11 @@ export function validateGeneratedCardDraft(output, context, maxVariants) {
     ...context.concepts.map(c => c.source_chunk_index).filter(i => i != null),
     ...context.source_excerpts.map(e => e.chunk_index),
   ]);
+  const minCoverage = Math.max(1, Math.ceil(context.concepts.length * 0.6));
 
   const seenQuestions = new Set();
   const validVariants = [];
+  const coveredConcepts = new Set();
   const variantErrors = [];
 
   for (let i = 0; i < output.variants.length; i++) {
@@ -364,8 +377,31 @@ export function validateGeneratedCardDraft(output, context, maxVariants) {
       vErrs.push('expected_answer is empty');
     } else {
       const wordCount = v.expected_answer.trim().split(/\s+/).length;
-      if (wordCount < 50 || wordCount > 180) {
-        vErrs.push(`expected_answer has ${wordCount} words (expected 50–180)`);
+      if (wordCount < 35 || wordCount > 110) {
+        vErrs.push(`expected_answer has ${wordCount} words (expected 35–110)`);
+      }
+
+      const bullets = v.expected_answer
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => /^[-*•]\s+/.test(line));
+
+      if (bullets.length < 3 || bullets.length > 5) {
+        vErrs.push(`expected_answer must contain 3–5 bullets, got ${bullets.length}`);
+      } else {
+        for (const bullet of bullets) {
+          const bulletWords = bullet.replace(/^[-*•]\s+/, '').split(/\s+/).filter(Boolean).length;
+          if (bulletWords < 6 || bulletWords > 18) {
+            vErrs.push(`expected_answer bullet has ${bulletWords} words (expected 6–18)`);
+            break;
+          }
+        }
+      }
+
+      const questionWords = (v.question || '').trim().split(/\s+/).filter(Boolean).length || 1;
+      const relLength = wordCount / questionWords;
+      if (relLength > 6) {
+        vErrs.push(`expected_answer too long relative to question (ratio ${relLength.toFixed(2)}, max 6)`);
       }
     }
 
@@ -382,6 +418,9 @@ export function validateGeneratedCardDraft(output, context, maxVariants) {
       if (invalid.length > 0) {
         vErrs.push(`source_concept_ids contains unknown IDs: ${invalid.join(', ')}`);
       }
+      if (v.source_concept_ids.length === 0) {
+        vErrs.push('source_concept_ids must contain at least one concept');
+      }
     }
 
     if (!Array.isArray(v.source_chunk_indexes)) {
@@ -390,6 +429,15 @@ export function validateGeneratedCardDraft(output, context, maxVariants) {
       const invalid = v.source_chunk_indexes.filter(idx => !validChunkIndexes.has(idx));
       if (invalid.length > 0) {
         vErrs.push(`source_chunk_indexes contains unknown indexes: ${invalid.join(', ')}`);
+      }
+    }
+
+    if (!Array.isArray(v.tag_labels) || v.tag_labels.length < 2 || v.tag_labels.length > 5) {
+      vErrs.push(`tag_labels must have 2–5 items, got ${Array.isArray(v.tag_labels) ? v.tag_labels.length : 'non-array'}`);
+    } else {
+      const invalidTags = v.tag_labels.filter((tag) => typeof tag !== 'string' || !/^[a-z0-9]+(?:_[a-z0-9]+)*$/.test(tag));
+      if (invalidTags.length > 0) {
+        vErrs.push('tag_labels must be snake_case strings');
       }
     }
 
@@ -407,6 +455,7 @@ export function validateGeneratedCardDraft(output, context, maxVariants) {
       variantErrors.push({ index: i, errors: vErrs });
     } else {
       validVariants.push(v);
+      for (const conceptId of v.source_concept_ids) coveredConcepts.add(conceptId);
     }
   }
 
@@ -414,6 +463,16 @@ export function validateGeneratedCardDraft(output, context, maxVariants) {
     return {
       valid: false,
       errors: ['No valid variants after validation', ...variantErrors.map(e => `v${e.index}: ${e.errors.join('; ')}`)],
+      validVariants: [],
+    };
+  }
+
+  if (coveredConcepts.size < minCoverage) {
+    return {
+      valid: false,
+      errors: [
+        `Concept coverage too low: ${coveredConcepts.size}/${context.concepts.length} (minimum ${minCoverage})`,
+      ],
       validVariants: [],
     };
   }
