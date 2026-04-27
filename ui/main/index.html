@@ -717,6 +717,49 @@
             <tbody id="browser-table-body"></tbody>
           </table>
         </div>
+
+        <!-- ═══ Extracción con IA ══════════════════════════════════════════════ -->
+        <div class="card" id="ai-extraction-section">
+          <div class="ai-extraction-header">
+            <h3 style="margin:0">Extracción con IA</h3>
+            <button type="button" id="ai-extraction-toggle" class="btn-ghost" style="font-size:0.82rem">Expandir</button>
+          </div>
+
+          <div id="ai-extraction-body" class="hidden">
+            <p style="font-size:0.84rem;color:var(--text-muted);margin:8px 0 14px">
+              Pegá un bloque de texto y la IA extraerá tarjetas candidatas para que las revisés antes de guardar.
+            </p>
+
+            <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+              <div style="flex:1;min-width:180px">
+                <label for="ai-extract-subject" style="font-size:0.82rem;display:block;margin-bottom:4px">Materia (opcional)</label>
+                <input type="text" id="ai-extract-subject" list="subjects-list" placeholder="Ej: Sistemas de Información" style="width:100%;box-sizing:border-box" autocomplete="off" />
+              </div>
+            </div>
+
+            <label for="ai-extract-text" style="font-size:0.82rem;display:block;margin-bottom:4px">Texto fuente</label>
+            <textarea id="ai-extract-text" rows="8" placeholder="Pegá aquí el texto del que querés extraer tarjetas..." style="width:100%;box-sizing:border-box;resize:vertical"></textarea>
+
+            <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
+              <button type="button" id="ai-extract-btn" class="btn-primary">Extraer tarjetas</button>
+              <span id="ai-extract-status" style="font-size:0.83rem;color:var(--text-muted)"></span>
+            </div>
+
+            <!-- Review list -->
+            <div id="ai-candidates-wrap" class="hidden" style="margin-top:18px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+                <span id="ai-candidates-count" style="font-weight:600;font-size:0.9rem"></span>
+                <div style="display:flex;gap:8px">
+                  <button type="button" id="ai-select-all-btn" class="btn-ghost" style="font-size:0.82rem">Seleccionar todo</button>
+                  <button type="button" id="ai-deselect-all-btn" class="btn-ghost" style="font-size:0.82rem">Deseleccionar todo</button>
+                  <button type="button" id="ai-save-btn" class="btn-primary">Guardar seleccionadas</button>
+                </div>
+              </div>
+              <p id="ai-save-feedback" class="feedback"></p>
+              <div id="ai-candidates-list"></div>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- ═══ Card detail popup ══════════════════════════════════════════════ -->
