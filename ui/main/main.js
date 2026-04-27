@@ -3500,6 +3500,23 @@ function initStudyTab() {
   });
 
   restorePersistedStudySession();
+
+  // Auto-pause when the user switches away from the tab; auto-resume on return.
+  document.addEventListener('visibilitychange', () => {
+    const sessionVisible = !document.querySelector('#study-session')?.classList.contains('hidden');
+    if (!sessionVisible) return;
+    if (document.hidden) {
+      if (!studyState.isPaused) {
+        studyState._autopaused = true;
+        pauseStudySession(true);
+      }
+    } else {
+      if (studyState._autopaused) {
+        studyState._autopaused = false;
+        resumeStudySession(true);
+      }
+    }
+  });
 }
 
 function bindStudyKeyboardShortcuts() {
@@ -3782,7 +3799,7 @@ function toggleStudyPause() {
   }
 }
 
-function pauseStudySession() {
+function pauseStudySession(silent = false) {
   if (studyState.isPaused) return;
   if (studyState.timerInterval) {
     clearInterval(studyState.timerInterval);
@@ -3791,15 +3808,17 @@ function pauseStudySession() {
   studyState.isPaused = true;
   studyState.pausedAt = Date.now();
 
-  const pauseBtn = document.querySelector('#study-pause-btn');
-  if (pauseBtn) { pauseBtn.textContent = 'Reanudar'; pauseBtn.classList.add('study-pause-btn--active'); }
-  document.querySelector('#study-pause-overlay')?.classList.remove('hidden');
-  document.querySelector('#study-answer-input').disabled = true;
-  const evalBtn = document.querySelector('#study-eval-btn');
-  if (evalBtn) evalBtn.disabled = true;
+  if (!silent) {
+    const pauseBtn = document.querySelector('#study-pause-btn');
+    if (pauseBtn) { pauseBtn.textContent = 'Reanudar'; pauseBtn.classList.add('study-pause-btn--active'); }
+    document.querySelector('#study-pause-overlay')?.classList.remove('hidden');
+    document.querySelector('#study-answer-input').disabled = true;
+    const evalBtn = document.querySelector('#study-eval-btn');
+    if (evalBtn) evalBtn.disabled = true;
+  }
 }
 
-function resumeStudySession() {
+function resumeStudySession(silent = false) {
   if (!studyState.isPaused) return;
   const pauseDuration = Date.now() - studyState.pausedAt;
   studyState.cardPausedMs += pauseDuration;
@@ -3807,12 +3826,14 @@ function resumeStudySession() {
   studyState.isPaused = false;
   studyState.pausedAt = 0;
 
-  const pauseBtn = document.querySelector('#study-pause-btn');
-  if (pauseBtn) { pauseBtn.textContent = 'Pausar'; pauseBtn.classList.remove('study-pause-btn--active'); }
-  document.querySelector('#study-pause-overlay')?.classList.add('hidden');
-  document.querySelector('#study-answer-input').disabled = false;
-  const evalBtn = document.querySelector('#study-eval-btn');
-  if (evalBtn) evalBtn.disabled = false;
+  if (!silent) {
+    const pauseBtn = document.querySelector('#study-pause-btn');
+    if (pauseBtn) { pauseBtn.textContent = 'Pausar'; pauseBtn.classList.remove('study-pause-btn--active'); }
+    document.querySelector('#study-pause-overlay')?.classList.add('hidden');
+    document.querySelector('#study-answer-input').disabled = false;
+    const evalBtn = document.querySelector('#study-eval-btn');
+    if (evalBtn) evalBtn.disabled = false;
+  }
 
   const timerEl = document.querySelector('#study-timer');
   studyState.timerInterval = setInterval(() => {
