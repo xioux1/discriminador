@@ -2510,37 +2510,55 @@ textarea:focus, input[type="text"]:focus, select:focus {
   box-shadow: 0 22px 58px rgba(120, 128, 150, 0.14);
 }
 .window-chrome {
-  height: 68px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 34px 0 36px;
-  background: linear-gradient(180deg, rgba(236, 238, 242, 0.94), rgba(232, 234, 239, 0.88));
-  border-bottom: 1px solid rgba(196, 201, 212, 0.72);
+  padding: 20px 28px 18px;
+  background: #ffffff;
+  border-bottom: none;
 }
-.window-brand { font-size: 2rem; color: #727884; }
-.window-controls { display: inline-flex; gap: 10px; }
-.window-controls span { width: 10px; height: 10px; border-radius: 2px; background: #b1b5bc; }
+.window-brand {
+  font-size: 1.375rem;
+  font-weight: 500;
+  color: var(--text);
+  letter-spacing: -0.01em;
+  font-family: var(--font);
+}
+.window-brand-tld { color: var(--text-light); font-weight: 400; }
+.window-controls { display: inline-flex; gap: 4px; }
+.window-controls span { width: 6px; height: 6px; border-radius: 50%; background: #a8a39a; }
 
 .tab-nav {
   justify-content: flex-start;
-  background: rgba(241, 242, 245, 0.96);
-  border-bottom: 1px solid rgba(202, 207, 216, 0.8);
-  padding: 10px 14px;
+  background: #ffffff;
+  border-bottom: 1px solid #e8e4da;
+  padding: 0 10px;
   position: static;
+  gap: 0;
 }
 .tab-btn {
   border-bottom: 2px solid transparent;
-  padding: 12px 20px 11px;
-  color: #6f7680;
+  margin-bottom: -1px;
+  padding: 14px 18px;
+  font-size: 0.875rem;
+  font-weight: 400;
+  color: var(--text-muted);
 }
-.tab-btn.active { color: #22262d; border-bottom-color: rgba(34, 38, 45, 0.8); background: transparent; }
+.tab-btn:hover { color: var(--text); background: transparent; }
+.tab-btn.active {
+  color: var(--text);
+  font-weight: 500;
+  border-bottom-color: var(--text);
+  background: transparent;
+}
 .logout-btn {
   margin-left: auto;
-  border: 1px solid rgba(183, 189, 199, 0.9);
-  background: rgba(252, 252, 253, 0.7);
-  color: #555c68;
-  padding: 10px 18px;
+  border: 1px solid #e8e4da;
+  background: transparent;
+  color: var(--text-muted);
+  padding: 8px 22px;
+  border-radius: 6px;
+  margin-bottom: 8px;
 }
 .container { max-width: 1060px; padding: 36px 22px 48px; }
 
@@ -3706,24 +3724,25 @@ textarea.chinese-input {
   box-shadow: 0 22px 58px rgba(0, 0, 0, 0.40);
 }
 [data-theme="dark"] .window-chrome {
-  background: linear-gradient(180deg, rgba(16, 22, 36, 0.98), rgba(13, 18, 30, 0.95));
-  border-bottom-color: rgba(38, 52, 82, 0.85);
+  background: rgba(12, 16, 26, 0.98);
+  border-bottom: none;
 }
-[data-theme="dark"] .window-brand              { color: #3a4d68; }
-[data-theme="dark"] .window-controls span      { background: #1e2d48; }
+[data-theme="dark"] .window-brand     { color: var(--text); }
+[data-theme="dark"] .window-brand-tld { color: var(--text-light); }
+[data-theme="dark"] .window-controls span { background: rgba(255,255,255,0.18); }
 
 /* ── Dark: large-screen tab nav overrides ──────────────────────────────── */
 [data-theme="dark"] .tab-nav {
-  background: rgba(12, 18, 30, 0.96);
-  border-bottom-color: rgba(38, 52, 82, 0.85);
+  background: rgba(12, 16, 26, 0.98);
+  border-bottom-color: rgba(255,255,255,0.08);
 }
-[data-theme="dark"] .tab-btn         { color: #7090b5; }   /* was #4e6380 (~3.2:1) → now ~5.9:1 */
-[data-theme="dark"] .tab-btn:hover   { color: var(--text); background: rgba(40, 60, 95, 0.25); }
-[data-theme="dark"] .tab-btn.active  { color: var(--text); border-bottom-color: var(--primary); background: rgba(40, 65, 110, 0.22); }
+[data-theme="dark"] .tab-btn        { color: var(--text-muted); }
+[data-theme="dark"] .tab-btn:hover  { color: var(--text); background: transparent; }
+[data-theme="dark"] .tab-btn.active { color: var(--text); border-bottom-color: var(--text); background: transparent; }
 [data-theme="dark"] .logout-btn {
-  border-color: rgba(55, 72, 105, 0.90);
-  background: rgba(14, 20, 32, 0.70);
-  color: #8aa8c8;
+  border-color: rgba(255,255,255,0.12);
+  background: transparent;
+  color: var(--text-muted);
 }
 
 /* ── Dark: auth screen ─────────────────────────────────────────────────── */
