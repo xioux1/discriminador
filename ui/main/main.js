@@ -5160,6 +5160,10 @@ function finishStudySession() {
   studyState.pendingMicroGeneration = 0;
   renderStudyBackgroundStatus();
   clearPersistedStudySession();
+  // Nullify sessionStartTime so any in-flight async callback that calls
+  // persistStudySession() (e.g. micro-card generation) hits the early-return
+  // guard and doesn't re-persist a completed session.
+  studyState.sessionStartTime = null;
 
   loadStudyOverview();
 }
@@ -5173,6 +5177,7 @@ function finishExamSession() {
   document.querySelector('#study-session').classList.add('hidden');
   document.querySelector('#exam-mode-badge').classList.add('hidden');
   clearPersistedStudySession();
+  studyState.sessionStartTime = null;
 
   const items   = studyState.examItemResults;
   const total   = items.length;
