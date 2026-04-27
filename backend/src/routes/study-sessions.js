@@ -8,7 +8,7 @@ studySessionsRouter.post('/study/sessions', async (req, res) => {
   const userId = req.user.id;
   const { planned_minutes, planned_card_count, energy_level } = req.body || {};
 
-  if (!planned_minutes || typeof planned_minutes !== 'number' || planned_minutes < 1) {
+  if (planned_minutes == null || typeof planned_minutes !== 'number' || planned_minutes < 0) {
     return res.status(422).json({ error: 'validation_error', message: 'planned_minutes es obligatorio.' });
   }
 
