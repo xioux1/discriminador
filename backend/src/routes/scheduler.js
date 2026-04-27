@@ -370,12 +370,19 @@ async function autoGenerateVariant(cardId, card, userId) {
       expected_answer_text: card.expected_answer_text,
       subject:              card.subject
     });
-    await dbPool.query(
-      `INSERT INTO card_variants (card_id, prompt_text, expected_answer_text, user_id, variant_type)
-       VALUES ($1, $2, $3, $4, 'regular')`,
-      [cardId, variant.prompt_text, variant.expected_answer_text, userId]
-    );
-    console.info('[auto-variant] generated regular', { cardId, subject: card.subject });
+    // Discard degenerate variants where the question became identical to the expected
+    // answer — this happens when the LLM accidentally writes the prompt in the target
+    // language (e.g. Chinese) making the card unsolvable without copying the prompt.
+    if (variant.prompt_text.trim() === variant.expected_answer_text.trim()) {
+      console.warn('[auto-variant] discarded degenerate regular variant (prompt == answer)', { cardId, subject: card.subject });
+    } else {
+      await dbPool.query(
+        `INSERT INTO card_variants (card_id, prompt_text, expected_answer_text, user_id, variant_type)
+         VALUES ($1, $2, $3, $4, 'regular')`,
+        [cardId, variant.prompt_text, variant.expected_answer_text, userId]
+      );
+      console.info('[auto-variant] generated regular', { cardId, subject: card.subject });
+    }
   }
 
   // For Chinese cards, generate exactly one listening variant (audio-only front).
