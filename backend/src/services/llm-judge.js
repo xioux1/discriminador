@@ -136,7 +136,9 @@ MISSING: <concepto1>, <concepto2> | NONE
   • Respondió "no sé", dejó en blanco o escribió texto irrelevante al concepto pedido
   • La respuesta contradice directamente el concepto esperado (ej: define algo como lo opuesto de lo que es)
   • No hay ningún elemento correcto de los elementos esenciales requeridos
+  • El estudiante solo reescribió o parafraseó el enunciado sin aportar ningún desarrollo ni solución (ej: copió la ecuación o la pregunta tal cual sin resolverla)
   Ejemplo: "¿Qué es un cursor en PL/SQL?" → "es una tabla temporal" → AGAIN (error conceptual grave)
+  Ejemplo: "Resolvé dy/dx + y/x = x^3" → "dy/dx + y/x = x^3" → AGAIN (solo copió el enunciado)
 
 ▸ HARD — Idea general correcta, pero le faltan detalles técnicos críticos.
   Usá HARD cuando:
