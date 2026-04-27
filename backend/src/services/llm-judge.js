@@ -111,14 +111,14 @@ El docente configuró alta exigencia. Aplicá criterios estrictos:
   // 9-10
   return `
 ━━━ NIVEL DE EXIGENCIA: MÁXIMA (${strictness}/10) ━━━
-El docente configuró exigencia máxima. Evaluá como un profesor muy estricto en examen oral:
-• GOOD requiere: todos los elementos esenciales + vocabulario técnico preciso + formulación sin ambigüedades.
-• Si hay imprecisiones en la formulación aunque el concepto esté bien, asignale HARD.
-• Buscá activamente lo que falta: condiciones no mencionadas, excepciones omitidas, imprecisiones sutiles.
-• AGAIN si el estudiante solo nombra el concepto sin poder explicar su mecanismo o propósito.
-• EASY solo para respuestas que claramente superan el nivel universitario esperado en detalle y precisión.
-• Ante la duda entre cualquier par de notas consecutivas, bajá la nota.
-• Estándar de referencia: ¿con esta respuesta el estudiante sacaría 9 o 10 en un oral con un profesor exigente? Si no, bajá la nota.`;
+El docente configuró exigencia máxima. La regla es BINARIA: o la tarjeta está perfecta, o es AGAIN.
+• HARD NO SE USA en este nivel. Está deshabilitado. No lo asignes bajo ninguna circunstancia.
+• GOOD requiere: todos los elementos esenciales + vocabulario técnico preciso + formulación sin ambigüedades + ningún detalle importante omitido.
+• Si algo falta, es impreciso, vago, o menciona una palabra similar pero no exacta → AGAIN directamente.
+• AGAIN para cualquier respuesta que no sea técnicamente perfecta: imprecisiones, sinónimos inexactos, elementos faltantes, formulaciones ambiguas, todo es AGAIN.
+• EASY solo para respuestas que claramente superan lo esperado en detalle, profundidad o amplitud.
+• Ante la duda entre AGAIN y GOOD → AGAIN. Ante la duda entre GOOD y EASY → GOOD.
+• Estándar de referencia: ¿la respuesta es técnicamente perfecta tal como está? Si tenés cualquier duda → AGAIN.`;
 }
 
 function buildSystemPrompt(examples, strictness = 5) {
