@@ -1335,15 +1335,18 @@ function setDailyBudget(n) { localStorage.setItem('discriminador_daily_budget', 
 async function loadDashboard() {
   const loading = document.querySelector('#dashboard-loading');
   const content = document.querySelector('#dashboard-content');
+  const agendaContainer = document.querySelector('#dashboard-agenda');
+
   loading.classList.remove('hidden');
   content.innerHTML = '';
+  if (agendaContainer) agendaContainer.innerHTML = '';
 
   try {
-    const [overview, dueCounts, calendarData, dailySummary] = await Promise.all([
+    const [overview, dueCounts, calendarData, agendaData] = await Promise.all([
       getJson('/stats/overview').catch(() => ({ subjects: [] })),
       getJson('/scheduler/due-counts').catch(() => ({ cards: {}, micros: {} })),
       getJson('/exam-calendar').catch(() => ({ exams: [] })),
-      getJson(`/scheduler/daily-summary?budget_minutes=${getDailyBudget()}`).catch(() => null)
+      getJson('/scheduler/agenda').catch(() => null),
     ]);
 
     loading.classList.add('hidden');
@@ -1355,8 +1358,9 @@ async function loadDashboard() {
 
     const subjects = (overview.subjects || []).map((subj) => ({
       ...subj,
-      subject: normalizeSubject(subj.subject)
+      subject: normalizeSubject(subj.subject),
     }));
+
     if (!subjects.length) {
       const card = document.createElement('div');
       card.className = 'onboarding-card card';
@@ -1400,167 +1404,273 @@ async function loadDashboard() {
       return;
     }
 
-    // Due counts per subject from the dedicated counts endpoint (no LIMIT).
-    const pendingCardsBySubject  = dueCounts.cards  || {};
-    const activeMicrosBySubject  = dueCounts.micros || {};
+    const pendingCardsBySubject = dueCounts.cards  || {};
+    const activeMicrosBySubject = dueCounts.micros || {};
     const totalPendingCards = Object.values(pendingCardsBySubject).reduce((a, b) => a + b, 0);
     const totalActiveMicros = Object.values(activeMicrosBySubject).reduce((a, b) => a + b, 0);
     const totalDue = totalPendingCards + totalActiveMicros;
 
-    // Pending banner — compact stat row, neutral surface (no blue)
-    {
-      const banner = document.createElement('div');
-      banner.className = 'dashboard-pending-banner card';
-      if (totalDue > 0) {
-        banner.textContent = `${totalDue} pendientes hoy (${totalPendingCards} tarjetas principales + ${totalActiveMicros} microconsignas).`;
-      } else {
-        banner.textContent = 'Sin pendientes hoy.';
-      }
-      content.appendChild(banner);
+    const parseDashExamDate = (raw) => {
+      const s = String(raw).slice(0, 10);
+      const [y, m, d] = s.split('-').map(Number);
+      return new Date(y, m - 1, d);
+    };
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // All future exams sorted ascending
+    const allFutureExams = (calendarData?.exams || [])
+      .map((e) => {
+        const d = parseDashExamDate(e.exam_date);
+        const days = Math.round((d - today) / 86400000);
+        const weekday = d.toLocaleDateString('es-AR', { weekday: 'short' });
+        const dateStr  = d.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' });
+        return { ...e, days, dateLabel: `${weekday} ${dateStr}`, readiness: (Number(e.scope_pct) || 0) / 100 };
+      })
+      .filter((e) => e.days > 0)
+      .sort((a, b) => a.days - b.days);
+
+    // Map each subject to its soonest upcoming exam
+    const examBySubject = {};
+    for (const exam of allFutureExams) {
+      const subj = normalizeSubject(exam.subject);
+      if (!examBySubject[subj]) examBySubject[subj] = exam;
     }
 
-    // Daily progress widget
-    if (dailySummary) {
-      const target = getDailyTarget();
-      const done   = dailySummary.reviews_done_today;
-      const pct    = Math.min(100, Math.round((done / target) * 100));
-      const minText = dailySummary.minutes_studied_today > 0
-        ? `${Math.round(dailySummary.minutes_studied_today)}min estudiados hoy`
-        : '';
-
-      const widget = document.createElement('div');
-      widget.className = 'card daily-progress-widget';
-      widget.innerHTML = `
-        <div class="daily-progress-header">
-          <span class="daily-progress-label">Meta diaria: <strong>${done} / ${target}</strong> revisiones</span>
-          <button class="btn-ghost daily-target-edit" title="Cambiar meta">✎</button>
-        </div>
-        <div class="daily-progress-bar-track">
-          <div class="daily-progress-bar-fill" style="width:${pct}%"></div>
-        </div>
-        ${minText ? `<div class="daily-progress-subtext">${minText}</div>` : ''}
-      `;
-      widget.querySelector('.daily-target-edit').addEventListener('click', () => {
-        const raw = window.prompt('Meta de revisiones diarias:', String(target));
-        const n = parseInt(raw);
-        if (Number.isFinite(n) && n > 0) { setDailyTarget(n); loadDashboard(); }
-      });
-      content.appendChild(widget);
-
-      // Per-subject priority card
-      const prioritySubjects = (dailySummary.subject_priority || [])
-        .filter((s) => s.days_until_exam != null && (s.cards_due + s.micros_due) > 0);
-
-      if (prioritySubjects.length > 0) {
-        const budget = getDailyBudget();
-        const priorityCard = document.createElement('div');
-        priorityCard.className = 'card daily-priority-card';
-
-        const rows = prioritySubjects.map((s) => {
-          const icon = s.urgency === 'critical' ? '🔴' : s.urgency === 'high' ? '🟠' : s.urgency === 'medium' ? '🟡' : '🟢';
-          const examText = s.days_until_exam === 0 ? 'hoy'
-                         : s.days_until_exam === 1 ? 'mañana'
-                         : `en ${s.days_until_exam} días`;
-          return `
-            <div class="priority-row">
-              <span class="priority-icon">${icon}</span>
-              <span class="priority-subject">${s.subject}</span>
-              <span class="priority-exam">${s.exam_label || 'examen'} ${examText}</span>
-              <span class="priority-time">${s.suggested_minutes}min</span>
-            </div>`;
-        }).join('');
-
-        priorityCard.innerHTML = `
-          <div class="daily-priority-header">
-            Para hoy (${budget}min disponibles):
-            <button class="btn-ghost daily-budget-edit" title="Cambiar tiempo disponible">✎</button>
-          </div>
-          ${rows}
-        `;
-        priorityCard.querySelector('.daily-budget-edit').addEventListener('click', () => {
-          const raw = window.prompt('¿Cuántos minutos tenés disponibles hoy?', String(budget));
-          const n = parseInt(raw);
-          if (Number.isFinite(n) && n >= 10) { setDailyBudget(n); loadDashboard(); }
-        });
-        content.appendChild(priorityCard);
-      }
-    }
-
-    const panel = document.createElement('div');
-    panel.className = 'subjects-panel card';
-    panel.innerHTML = '<h3 class="subjects-panel-title">Materias</h3>';
-
-    const list = document.createElement('ul');
-    list.className = 'subjects-list';
-
+    // Subject list sorted by pending desc then alpha
     const subjectNames = [...new Set([
-      ...subjects.map((subj) => subj.subject),
+      ...subjects.map((s) => s.subject),
       ...Object.keys(pendingCardsBySubject),
-      ...Object.keys(activeMicrosBySubject)
-    ])].sort((a, b) => a.localeCompare(b, 'es'));
-
-    for (const subjectName of subjectNames) {
-      const pendingMainCards = pendingCardsBySubject[subjectName] || 0;
-      const activeMicros = activeMicrosBySubject[subjectName] || 0;
-
-      const totalDueForSubject = (pendingMainCards || 0) + (activeMicros || 0);
-      const metaParts = [];
-      if (pendingMainCards > 0) metaParts.push(`${pendingMainCards} pend.`);
-      if (activeMicros > 0) metaParts.push(`${activeMicros} micro${activeMicros !== 1 ? 's' : ''}`);
-      const metaText = metaParts.join(' · ');
-
-      const row = document.createElement('li');
-      row.className = 'subjects-list-item';
-      row.innerHTML = `
-        <div class="subjects-list-beat ${totalDueForSubject > 0 ? 'has-due' : 'is-clear'}">
-          ${totalDueForSubject > 0 ? totalDueForSubject : '●'}
-        </div>
-        <div class="subjects-list-main">
-          <div class="subjects-list-name">${subjectName}</div>
-          ${metaText ? `<div class="subjects-list-meta">${metaText}</div>` : ''}
-        </div>
-        <div class="subjects-list-actions">
-          <button type="button" class="btn-secondary deck-study-btn" data-subject="${subjectName}">Estudiar</button>
-          <button type="button" class="btn-secondary deck-config-btn" data-subject="${subjectName}">Configurar</button>
-          <button type="button" class="btn-secondary deck-rename-btn" data-subject="${subjectName}">Renombrar</button>
-        </div>
-      `;
-      list.appendChild(row);
-    }
-
-    panel.appendChild(list);
-
-    // Exam calendar — always render (shows empty state if no dates configured)
-    content.appendChild(await renderExamCalendar(calendarData?.exams || []));
-
-    content.appendChild(panel);
-
-    list.addEventListener('click', async (e) => {
-      if (e.target.classList.contains('deck-study-btn')) {
-        const studyTabBtn = document.querySelector('[data-tab="study"]');
-        studyTabBtn.dataset.subjectFromDashboard = e.target.dataset.subject || '';
-        studyTabBtn.click();
-      }
-      if (e.target.classList.contains('deck-config-btn')) {
-        openCurriculumModal(e.target.dataset.subject);
-      }
-      if (e.target.classList.contains('deck-rename-btn')) {
-        const oldSubject = e.target.dataset.subject;
-        const newSubject = window.prompt(`Renombrar "${oldSubject}" a:`, oldSubject);
-        if (newSubject === null || newSubject.trim() === '' || newSubject.trim() === oldSubject) return;
-        try {
-          const result = await postJson('/cards/rename-subject', { old_subject: oldSubject, new_subject: newSubject.trim() });
-          const n = result.updated ?? 0;
-          if (n > 0) loadDashboard();
-          else alert('No se encontraron tarjetas para renombrar.');
-        } catch (err) {
-          alert(`Error: ${err.message}`);
-        }
-      }
+      ...Object.keys(activeMicrosBySubject),
+    ])].sort((a, b) => {
+      const pa = pendingCardsBySubject[a] || 0;
+      const pb = pendingCardsBySubject[b] || 0;
+      return pb - pa || a.localeCompare(b, 'es');
     });
 
-    // Load agenda below subjects
-    loadDashboardAgenda().catch(() => {});
+    const totalSubjects = subjectNames.length;
+    const totalPendingAll = subjectNames.reduce((sum, n) => sum + (pendingCardsBySubject[n] || 0), 0);
+
+    // ── 1. Headline ──────────────────────────────────────────────────────────
+    {
+      const el = document.createElement('h1');
+      el.className = 'dsh-headline';
+      if (totalDue > 0) {
+        el.innerHTML = `${totalDue} pendientes hoy <span class="dsh-headline-sub">(${totalPendingCards} tarjetas principales + ${totalActiveMicros} microconsignas).</span>`;
+      } else {
+        el.textContent = 'Sin pendientes hoy.';
+      }
+      content.appendChild(el);
+    }
+
+    // ── 2. Próximos exámenes (top 5, future only) ────────────────────────────
+    const topExams = allFutureExams.slice(0, 5);
+    if (topExams.length > 0) {
+      const card = document.createElement('div');
+      card.className = 'dsh-card dsh-exam-strip';
+
+      const rows = topExams.map((e, i) => {
+        const rPct = Math.round(e.readiness * 100);
+        const rCls = e.readiness >= 0.4 ? 'good' : e.readiness >= 0.2 ? 'amber' : 'bad';
+        return `
+          <div class="dsh-exam-row${i > 0 ? ' dsh-row-border' : ''}">
+            <span class="dsh-exam-days">${e.days}d</span>
+            <span class="dsh-exam-name">${escHtml(e.subject)}${e.label ? ' · ' + escHtml(e.label) : ''}</span>
+            <span class="dsh-exam-date">${e.dateLabel}</span>
+            <div class="dsh-readiness-wrap">
+              <div class="dsh-readiness-track">
+                <div class="dsh-readiness-fill dsh-r-${rCls}" style="width:${rPct}%"></div>
+              </div>
+              <span class="dsh-readiness-pct">${rPct}%</span>
+            </div>
+          </div>`;
+      }).join('');
+
+      card.innerHTML = `
+        <div class="dsh-card-header">
+          <span>
+            <span class="dsh-card-title">Próximos exámenes</span>
+            <span class="dsh-card-meta"> · siguiente en ${topExams[0].days} días</span>
+          </span>
+          <span class="dsh-card-link dsh-exam-ver-todos">ver todos →</span>
+        </div>
+        ${rows}`;
+
+      card.querySelector('.dsh-exam-ver-todos').addEventListener('click', () => {
+        document.querySelector('[data-tab="planner"]')?.click();
+      });
+      content.appendChild(card);
+    }
+
+    // ── 3. Materias ───────────────────────────────────────────────────────────
+    {
+      const card = document.createElement('div');
+      card.className = 'dsh-card dsh-materias-card';
+
+      const rows = subjectNames.map((name, i) => {
+        const pend    = pendingCardsBySubject[name] || 0;
+        const hasPend = pend > 0;
+        const exam    = examBySubject[name];
+        const r       = exam ? exam.readiness : null;
+        const rPct    = r !== null ? Math.round(r * 100) : null;
+        const rCls    = r !== null ? (r >= 0.4 ? 'good' : r >= 0.2 ? 'amber' : 'bad') : '';
+
+        const examCell = exam
+          ? `${escHtml(exam.label || '')} <span class="dsh-exam-days-sm">en ${exam.days}d</span>`
+          : `<span class="dsh-cell-empty">—</span>`;
+
+        const readinessCell = r !== null
+          ? `<div class="dsh-readiness-wrap">
+               <div class="dsh-readiness-track dsh-track-sm">
+                 <div class="dsh-readiness-fill dsh-r-${rCls}" style="width:${rPct}%"></div>
+               </div>
+               <span class="dsh-readiness-pct">${rPct}%</span>
+             </div>`
+          : `<span class="dsh-cell-empty">—</span>`;
+
+        return `
+          <div class="dsh-mat-row${i > 0 ? ' dsh-row-border' : ''}">
+            <span class="dsh-mat-pend ${hasPend ? 'pend-has' : 'pend-zero'}">${hasPend ? pend : '·'}</span>
+            <span class="dsh-mat-name ${hasPend ? 'name-active' : 'name-dim'}">${escHtml(name)}</span>
+            <span class="dsh-mat-event">${examCell}</span>
+            <span class="dsh-mat-readiness">${readinessCell}</span>
+            <div class="dsh-mat-actions">
+              <button type="button" class="${hasPend ? 'dsh-btn-study-primary' : 'dsh-btn-study-secondary'} deck-study-btn" data-subject="${escHtml(name)}">Estudiar</button>
+              <button type="button" class="dsh-btn-icon deck-config-btn" data-subject="${escHtml(name)}" title="Configurar">⚙</button>
+              <button type="button" class="dsh-btn-icon deck-rename-btn" data-subject="${escHtml(name)}" title="Renombrar">✎</button>
+            </div>
+          </div>`;
+      }).join('');
+
+      card.innerHTML = `
+        <div class="dsh-card-header">
+          <span>
+            <span class="dsh-card-title">Materias</span>
+            <span class="dsh-card-meta"> (${totalSubjects} · ${totalPendingAll} pendientes)</span>
+          </span>
+          <div class="dsh-card-header-right">
+            <span class="dsh-card-meta">orden: pendientes ↓</span>
+            <span class="dsh-card-link dsh-btn-new-subject">+ nueva</span>
+          </div>
+        </div>
+        <div class="dsh-mat-colhead">
+          <span class="dsh-col-pend">pend.</span>
+          <span>materia</span>
+          <span>próximo evento</span>
+          <span>preparación</span>
+          <span class="dsh-col-actions">acciones</span>
+        </div>
+        ${rows}`;
+
+      card.querySelector('.dsh-btn-new-subject').addEventListener('click', () => {
+        document.querySelector('[data-tab="browser"]')?.click();
+      });
+
+      card.addEventListener('click', async (e) => {
+        if (e.target.classList.contains('deck-study-btn')) {
+          const studyTabBtn = document.querySelector('[data-tab="study"]');
+          studyTabBtn.dataset.subjectFromDashboard = e.target.dataset.subject || '';
+          studyTabBtn.click();
+        }
+        if (e.target.classList.contains('deck-config-btn')) {
+          openCurriculumModal(e.target.dataset.subject);
+        }
+        if (e.target.classList.contains('deck-rename-btn')) {
+          const oldSubject = e.target.dataset.subject;
+          const newSubject = window.prompt(`Renombrar "${oldSubject}" a:`, oldSubject);
+          if (newSubject === null || newSubject.trim() === '' || newSubject.trim() === oldSubject) return;
+          try {
+            const result = await postJson('/cards/rename-subject', { old_subject: oldSubject, new_subject: newSubject.trim() });
+            const n = result.updated ?? 0;
+            if (n > 0) loadDashboard();
+            else alert('No se encontraron tarjetas para renombrar.');
+          } catch (err) {
+            alert(`Error: ${err.message}`);
+          }
+        }
+      });
+
+      content.appendChild(card);
+    }
+
+    // ── 4. Agenda (collapsible, collapsed by default) ─────────────────────────
+    if (agendaData) {
+      const s = agendaData.summary || {};
+      const buckets = agendaData.buckets ?? {};
+      const totalCards = Object.values(buckets).reduce((n, arr) => n + arr.length, 0);
+
+      if (totalCards > 0) {
+        const card = document.createElement('div');
+        card.className = 'dsh-card dsh-agenda-card';
+
+        const badgesHtml = [
+          s.overdue      ? `<span class="dsh-badge dsh-badge-bad">${s.overdue} vencida${s.overdue !== 1 ? 's' : ''}</span>` : '',
+          s.due_tomorrow ? `<span class="dsh-badge dsh-badge-amber">${s.due_tomorrow} mañana</span>` : '',
+          s.total_cards  ? `<span class="dsh-badge dsh-badge-neutral">${s.total_cards} total</span>` : '',
+        ].join('');
+
+        const header = document.createElement('div');
+        header.className = 'dsh-agenda-header';
+        header.innerHTML = `
+          <div class="dsh-agenda-badges">
+            <span class="dsh-card-title">Agenda</span>
+            ${badgesHtml}
+          </div>
+          <span class="dsh-agenda-chevron">⌄</span>`;
+        card.appendChild(header);
+
+        const body = document.createElement('div');
+        body.className = 'dsh-agenda-body';
+        body.style.display = 'none';
+
+        // Collect up to 10 preview cards across all buckets
+        const previewCards = [];
+        for (const key of Object.keys(BUCKET_LABELS)) {
+          for (const c of (buckets[key] ?? [])) {
+            previewCards.push(c);
+            if (previewCards.length >= 10) break;
+          }
+          if (previewCards.length >= 10) break;
+        }
+
+        previewCards.forEach((c, i) => {
+          const dueDate = new Date(c.next_review_at);
+          const dueStr = formatDue(dueDate);
+          const item = document.createElement('div');
+          item.className = `dsh-agenda-item${i > 0 ? ' dsh-row-border' : ''}`;
+          item.innerHTML = `
+            <div class="dsh-agenda-item-meta">
+              ${c.subject ? `<span class="dsh-agenda-badge">${escHtml(c.subject)}</span>` : ''}
+              <span class="dsh-agenda-ago">${dueStr}</span>
+              <span class="dsh-agenda-stats">${c.review_count} revis. · ${c.pass_count} ok</span>
+            </div>
+            <div class="dsh-agenda-item-text">${escHtml(truncate(c.prompt_text, 100))}</div>`;
+          body.appendChild(item);
+        });
+
+        if (totalCards > previewCards.length) {
+          const more = document.createElement('div');
+          more.className = 'dsh-agenda-more';
+          more.textContent = `ver las ${totalCards - previewCards.length} restantes →`;
+          more.addEventListener('click', () => {
+            document.querySelector('[data-tab="study"]')?.click();
+          });
+          body.appendChild(more);
+        }
+
+        card.appendChild(body);
+
+        let expanded = false;
+        header.addEventListener('click', () => {
+          expanded = !expanded;
+          body.style.display = expanded ? 'block' : 'none';
+          header.querySelector('.dsh-agenda-chevron').textContent = expanded ? '⌃' : '⌄';
+        });
+
+        content.appendChild(card);
+      }
+    }
 
   } catch (err) {
     loading.classList.add('hidden');
