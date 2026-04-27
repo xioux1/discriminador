@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import Anthropic from '@anthropic-ai/sdk';
-import { scoreEvaluation } from '../services/scoring.js';
+// import { scoreEvaluation } from '../services/scoring.js';
 import { judgeWithLLM } from '../services/llm-judge.js';
-import { isLLMJudgeEnabled, LLM_MODELS } from '../config/env.js';
+import { LLM_MODELS } from '../config/env.js';
 import { dbPool } from '../db/client.js';
 import { llmRateLimit } from '../middleware/llm-rate-limit.js';
 
@@ -345,64 +345,40 @@ evaluateRouter.post('/evaluate', llmRateLimit, async (req, res) => {
     } catch (_) { /* non-critical — proceed with default */ }
   }
 
-  const heuristicResult = scoreEvaluation({
-    prompt_text: normalizedFields.prompt_text,
-    user_answer_text: normalizedFields.user_answer_text,
-    expected_answer_text: normalizedFields.expected_answer_text,
-    subject: normalizedSubject,
-    evaluation_id: evaluationId
-  });
+  // const heuristicResult = scoreEvaluation({ ... }); // disabled — LLM is sole evaluator
 
-  // LLM judge: primary evaluator when enabled.
-  // Falls back to heuristic if the API call fails.
   let llmJudge = null;
   let llmFallback = false;
-  if (isLLMJudgeEnabled()) {
-    try {
-      llmJudge = await judgeWithLLM(dbPool, {
-        prompt_text: normalizedFields.prompt_text,
-        user_answer_text: normalizedFields.user_answer_text,
-        expected_answer_text: normalizedFields.expected_answer_text,
-        subject: normalizedSubject,
-        strictness: gradingStrictness
-      });
-    } catch (llmError) {
-      llmFallback = true;
-      if (llmError.status === 429) {
-        console.warn('[LLM judge] Rate limit reached, falling back to heuristic.', { message: llmError.message });
-      } else if (llmError.message?.toLowerCase().includes('parse')) {
-        console.error('[LLM judge] Response parse failure, falling back to heuristic.', { message: llmError.message });
-      } else if (llmError.status >= 500) {
-        console.warn('[LLM judge] API server error, falling back to heuristic.', { status: llmError.status, message: llmError.message });
-      } else {
-        console.error('[LLM judge] Unexpected error, falling back to heuristic.', { message: llmError.message });
-      }
+  try {
+    llmJudge = await judgeWithLLM(dbPool, {
+      prompt_text: normalizedFields.prompt_text,
+      user_answer_text: normalizedFields.user_answer_text,
+      expected_answer_text: normalizedFields.expected_answer_text,
+      subject: normalizedSubject,
+      strictness: gradingStrictness
+    });
+  } catch (llmError) {
+    llmFallback = true;
+    if (llmError.status === 429) {
+      console.warn('[LLM judge] Rate limit reached.', { message: llmError.message });
+    } else if (llmError.message?.toLowerCase().includes('parse')) {
+      console.error('[LLM judge] Response parse failure.', { message: llmError.message });
+    } else if (llmError.status >= 500) {
+      console.warn('[LLM judge] API server error.', { status: llmError.status, message: llmError.message });
+    } else {
+      console.error('[LLM judge] Unexpected error.', { message: llmError.message });
     }
   }
 
-  // Merge: LLM grade + justification override heuristic when available.
   const result = {
-    ...heuristicResult,
-    suggested_grade: llmJudge?.suggested_grade ?? heuristicResult.suggested_grade,
-    justification_short: llmJudge?.justification ?? heuristicResult.justification_short,
-    missing_concepts: llmJudge?.missing_concepts ?? [],
-    signals: {
-      ...heuristicResult.signals,
-      ...(llmJudge ? { llm_judge: llmJudge } : {})
-    }
+    suggested_grade:    llmJudge?.suggested_grade  ?? 'HARD',
+    justification_short: llmJudge?.justification   ?? 'No se pudo evaluar automáticamente.',
+    missing_concepts:   llmJudge?.missing_concepts  ?? [],
+    dimensions:         { core_idea: null, conceptual_accuracy: null, completeness: null, memorization_risk: null },
+    overall_score:      null,
+    model_confidence:   null,
+    signals:            { ...(llmJudge ? { llm_judge: llmJudge } : {}) },
   };
-
-  // Safety guard: if all heuristic dimensions scored 0 (no answer content detected)
-  // but the LLM returned GOOD or EASY, the LLM hallucinated. Cap to HARD.
-  if (
-    llmJudge &&
-    (result.suggested_grade === 'GOOD' || result.suggested_grade === 'EASY') &&
-    heuristicResult.dimensions.core_idea === 0 &&
-    heuristicResult.dimensions.conceptual_accuracy === 0 &&
-    heuristicResult.dimensions.completeness === 0
-  ) {
-    result.suggested_grade = 'HARD';
-  }
 
   const sourceRecordId = evaluationId;
 
