@@ -392,6 +392,18 @@ evaluateRouter.post('/evaluate', llmRateLimit, async (req, res) => {
     }
   };
 
+  // Safety guard: if all heuristic dimensions scored 0 (no answer content detected)
+  // but the LLM returned GOOD or EASY, the LLM hallucinated. Cap to HARD.
+  if (
+    llmJudge &&
+    (result.suggested_grade === 'GOOD' || result.suggested_grade === 'EASY') &&
+    heuristicResult.dimensions.core_idea === 0 &&
+    heuristicResult.dimensions.conceptual_accuracy === 0 &&
+    heuristicResult.dimensions.completeness === 0
+  ) {
+    result.suggested_grade = 'HARD';
+  }
+
   const sourceRecordId = evaluationId;
 
   const inputPayload = {
