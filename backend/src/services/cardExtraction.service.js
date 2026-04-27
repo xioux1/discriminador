@@ -1,11 +1,12 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { logger } from '../utils/logger.js';
 
 let _client = null;
 function getClient() {
   if (!_client) {
     _client = new Anthropic({
       apiKey: process.env.ANTHROPIC_API_KEY,
-      timeout: Number(process.env.CARD_EXTRACTION_LLM_TIMEOUT_MS || 60_000),
+      timeout: Number(process.env.CARD_EXTRACTION_LLM_TIMEOUT_MS || 120_000),
     });
   }
   return _client;
@@ -13,96 +14,165 @@ function getClient() {
 
 const VALID_STATUSES = new Set(['ready', 'ambiguous', 'needs_edit', 'rejected']);
 
+// Maximum input characters sent to the LLM. Larger texts are truncated with a warning.
+const MAX_INPUT_CHARS = 30_000;
+
 const SYSTEM_PROMPT = `Sos un asistente especializado en extraer tarjetas de estudio a partir de texto fuente.
 
-Reglas estrictas:
-1. NO inventes información. NO uses conocimiento externo.
-2. Solo extrae tarjetas directamente soportadas por el texto provisto.
-3. NO mejores ni expandas la respuesta más allá de lo que dice el texto.
-4. Preferí preguntas de respuesta corta y directa.
-5. Siempre incluí el fragmento fuente (source_excerpt) que justifica la tarjeta.
-6. Si una tarjeta es ambigua o incompleta según el texto, marcala como "ambiguous" o "needs_edit".
-7. Si el texto no permite formular una tarjeta confiable, marcala como "rejected".
-8. Evitá duplicados: si dos preguntas evalúan exactamente lo mismo, generá solo una.
-9. No generes más tarjetas de las que el texto genuinamente soporta.
-10. Respondé ÚNICAMENTE con JSON válido. Sin markdown, sin texto adicional, sin backticks.
+Tu tarea principal es identificar pares pregunta-respuesta que estén EXPLÍCITAMENTE presentes en el texto y convertirlos en tarjetas de estudio.
 
-Formato exacto de salida:
+Tipos de texto que debés procesar:
+- Textos con preguntas numeradas seguidas de respuestas (ej: "8.4.2 ¿Qué es X?: Y es Z.")
+- Textos con definiciones ("X se define como Y")
+- Textos con explicaciones de conceptos ("X ocurre cuando Y")
+- Fragmentos con información factual clara
+
+Reglas de extracción:
+1. NO inventes información ni uses conocimiento externo.
+2. La respuesta debe estar textualmente en el texto fuente; copiala con mínima paráfrasis.
+3. Si el texto contiene una pregunta con su respuesta explícita, siempre extraela como tarjeta "ready".
+4. Si la información es útil pero incompleta, usá "needs_edit". Si es ambigua, usá "ambiguous".
+5. Reservá "rejected" solo para texto que genuinamente no contiene información educativa.
+6. Siempre incluí source_excerpt: el fragmento exacto del texto que respalda la tarjeta.
+7. Evitá duplicados: si dos preguntas evalúan lo mismo, generá solo una.
+8. Respondé ÚNICAMENTE con JSON puro. Sin markdown, sin backticks, sin texto antes o después del JSON.
+
+Formato de salida (JSON exacto, sin ningún wrapper):
 {
   "cards": [
     {
       "question": "pregunta clara y específica",
-      "answer": "respuesta concisa basada solo en el texto",
-      "source_excerpt": "fragmento textual del texto fuente que justifica la tarjeta",
+      "answer": "respuesta concisa extraída del texto",
+      "source_excerpt": "fragmento textual exacto del texto fuente",
       "confidence": 0.95,
-      "status": "ready",
-      "notes": "opcional: observación si la tarjeta necesita revisión"
+      "status": "ready"
     }
   ],
-  "warnings": ["aviso global si corresponde"]
+  "warnings": []
 }
 
-Valores válidos de status:
-- "ready": tarjeta clara, bien soportada, lista para usar
-- "ambiguous": el texto no define claramente la respuesta
-- "needs_edit": la tarjeta es útil pero requiere revisión humana
-- "rejected": el texto no provee información suficiente para la tarjeta
-
-confidence debe ser un número entre 0.0 y 1.0.`;
+confidence: número entre 0.0 y 1.0.
+El campo "notes" es opcional: usalo solo si la tarjeta necesita aclaración para el revisor.`;
 
 function buildUserPrompt(text, subject) {
   const subjectLine = subject ? `Materia: ${subject}\n\n` : '';
   return `${subjectLine}Texto fuente:\n\n${text}`;
 }
 
-function parseAndValidateLLMResponse(raw) {
-  let parsed;
+// Strip markdown code fences that Sonnet sometimes adds despite instructions.
+function stripFences(raw) {
+  return raw
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```\s*$/i, '')
+    .trim();
+}
 
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    const start = raw.indexOf('{');
-    const end = raw.lastIndexOf('}');
-    if (start !== -1 && end > start) {
-      try {
-        parsed = JSON.parse(raw.slice(start, end + 1));
-      } catch {
-        return { cards: [], warnings: ['LLM devolvió JSON inválido.'] };
-      }
-    } else {
-      return { cards: [], warnings: ['LLM no devolvió JSON.'] };
-    }
-  }
-
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return { cards: [], warnings: ['LLM devolvió formato inesperado.'] };
-  }
-
-  const rawCards = Array.isArray(parsed.cards) ? parsed.cards : [];
-  const warnings = Array.isArray(parsed.warnings) ? parsed.warnings.filter(w => typeof w === 'string') : [];
+// Brace-matching extractor: finds and returns each top-level card object
+// even when the outer JSON is truncated (max_tokens hit mid-array).
+function extractCardObjectsFromText(text) {
+  const marker = text.indexOf('"cards"');
+  if (marker === -1) return [];
+  const bracketPos = text.indexOf('[', marker);
+  if (bracketPos === -1) return [];
 
   const cards = [];
-  for (const c of rawCards) {
-    if (!c || typeof c !== 'object') continue;
+  let pos = bracketPos + 1;
 
-    const question = typeof c.question === 'string' ? c.question.trim() : '';
-    const answer = typeof c.answer === 'string' ? c.answer.trim() : '';
-    const sourceExcerpt = typeof c.source_excerpt === 'string' ? c.source_excerpt.trim() : '';
-    const confidence = typeof c.confidence === 'number' && c.confidence >= 0 && c.confidence <= 1 ? c.confidence : 0.5;
-    const status = VALID_STATUSES.has(c.status) ? c.status : 'needs_edit';
-    const notes = typeof c.notes === 'string' ? c.notes.trim() : undefined;
+  while (pos < text.length) {
+    const objStart = text.indexOf('{', pos);
+    if (objStart === -1) break;
 
-    if (!question || !answer) {
-      warnings.push(`Tarjeta descartada por falta de pregunta o respuesta.`);
-      continue;
+    let depth = 0;
+    let objEnd = -1;
+    for (let i = objStart; i < text.length; i++) {
+      const ch = text[i];
+      if (ch === '{') depth++;
+      else if (ch === '}') {
+        depth--;
+        if (depth === 0) { objEnd = i; break; }
+      }
     }
 
-    const card = { question, answer, source_excerpt: sourceExcerpt, confidence, status };
-    if (notes) card.notes = notes;
-    cards.push(card);
+    if (objEnd === -1) break; // truncated card — stop
+
+    try {
+      const obj = JSON.parse(text.slice(objStart, objEnd + 1));
+      if (obj && typeof obj === 'object') cards.push(obj);
+    } catch { /* skip malformed card */ }
+
+    pos = objEnd + 1;
   }
 
-  return { cards, warnings };
+  return cards;
+}
+
+function normalizeCard(c, warnings) {
+  if (!c || typeof c !== 'object') return null;
+
+  const question = typeof c.question === 'string' ? c.question.trim() : '';
+  const answer   = typeof c.answer   === 'string' ? c.answer.trim()   : '';
+
+  if (!question || !answer) {
+    warnings.push('Tarjeta descartada por falta de pregunta o respuesta.');
+    return null;
+  }
+
+  const sourceExcerpt = typeof c.source_excerpt === 'string' ? c.source_excerpt.trim() : '';
+  const confidence =
+    typeof c.confidence === 'number' && c.confidence >= 0 && c.confidence <= 1
+      ? c.confidence
+      : 0.5;
+  const status = VALID_STATUSES.has(c.status) ? c.status : 'needs_edit';
+  const notes  = typeof c.notes === 'string' ? c.notes.trim() : undefined;
+
+  const card = { question, answer, source_excerpt: sourceExcerpt, confidence, status };
+  if (notes) card.notes = notes;
+  return card;
+}
+
+function parseAndValidateLLMResponse(raw) {
+  const stripped = stripFences(raw);
+  const warnings = [];
+
+  // 1. Try direct JSON parse on the stripped content.
+  let parsed = null;
+  try {
+    parsed = JSON.parse(stripped);
+  } catch {
+    // 2. Try extracting the outermost { … } block.
+    const start = stripped.indexOf('{');
+    const end   = stripped.lastIndexOf('}');
+    if (start !== -1 && end > start) {
+      try {
+        parsed = JSON.parse(stripped.slice(start, end + 1));
+      } catch { /* fall through to brace-matching */ }
+    }
+  }
+
+  // 3. Fast path: full parse succeeded.
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    const rawCards = Array.isArray(parsed.cards) ? parsed.cards : [];
+    if (Array.isArray(parsed.warnings)) {
+      parsed.warnings.filter(w => typeof w === 'string').forEach(w => warnings.push(w));
+    }
+    const cards = rawCards.map(c => normalizeCard(c, warnings)).filter(Boolean);
+    return { cards, warnings };
+  }
+
+  // 4. Full parse failed (likely truncated JSON). Try brace-matching recovery.
+  logger.warn('[cardExtraction] Full JSON parse failed — attempting brace-match recovery', {
+    preview: stripped.slice(0, 200),
+  });
+
+  const rawCards = extractCardObjectsFromText(stripped);
+  if (rawCards.length > 0) {
+    warnings.push('Respuesta truncada por el modelo: se recuperaron las tarjetas completas.');
+    const cards = rawCards.map(c => normalizeCard(c, warnings)).filter(Boolean);
+    return { cards, warnings };
+  }
+
+  logger.warn('[cardExtraction] Brace-match recovery also found no cards', { preview: stripped.slice(0, 300) });
+  return { cards: [], warnings: ['LLM devolvió JSON inválido o vacío.'] };
 }
 
 function deduplicateCandidates(cards) {
@@ -127,20 +197,44 @@ export async function extractCandidateCardsFromText({ text, subject, document_id
     throw err;
   }
 
-  const model = process.env.CARD_EXTRACTION_MODEL || 'claude-haiku-4-5-20251001';
+  const warnings = [];
+  let inputText = trimmedText;
+  if (trimmedText.length > MAX_INPUT_CHARS) {
+    inputText = trimmedText.slice(0, MAX_INPUT_CHARS);
+    warnings.push(`El texto fue truncado a ${MAX_INPUT_CHARS} caracteres para el procesamiento.`);
+  }
+
+  const model = process.env.CARD_EXTRACTION_MODEL || 'claude-sonnet-4-6';
+
+  logger.info('[cardExtraction] Calling LLM', { model, textLength: inputText.length, subject });
 
   const client = getClient();
   const message = await client.messages.create({
     model,
-    max_tokens: 4000,
+    max_tokens: 8192,
     temperature: 0,
     system: SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: buildUserPrompt(trimmedText, subject) }],
+    messages: [{ role: 'user', content: buildUserPrompt(inputText, subject) }],
   });
 
   const rawContent = message.content?.find(b => b.type === 'text')?.text ?? '';
-  const { cards, warnings } = parseAndValidateLLMResponse(rawContent);
-  const deduped = deduplicateCandidates(cards);
+  const stopReason = message.stop_reason;
 
-  return { cards: deduped, warnings };
+  logger.info('[cardExtraction] Raw response', {
+    length: rawContent.length,
+    stop_reason: stopReason,
+    preview: rawContent.slice(0, 200),
+  });
+
+  if (stopReason === 'max_tokens') {
+    warnings.push('El modelo alcanzó el límite de tokens: pueden faltar tarjetas del final del texto.');
+  }
+
+  const { cards: parsedCards, warnings: parseWarnings } = parseAndValidateLLMResponse(rawContent);
+  const allWarnings = [...warnings, ...parseWarnings];
+  const deduped = deduplicateCandidates(parsedCards);
+
+  logger.info('[cardExtraction] Done', { cardCount: deduped.length, warnings: allWarnings });
+
+  return { cards: deduped, warnings: allWarnings };
 }
