@@ -15,6 +15,8 @@
 
 (function () {
   'use strict';
+  var HL_COLORS = ['yellow', 'blue', 'green', 'pink'];
+  var DEFAULT_HL_COLOR = 'yellow';
 
   /* ── Cursor helpers ──────────────────────────────────────────────────── */
 
@@ -129,7 +131,18 @@
   // Apply or remove a highlight on the current selection.
   // - If there is a non-collapsed selection: wrap it in .mp-highlight.
   // - If the cursor sits inside an existing highlight: remove that highlight.
-  function applyHighlight(editor) {
+  function normalizeHlColor(color) {
+    return HL_COLORS.indexOf(color) >= 0 ? color : DEFAULT_HL_COLOR;
+  }
+
+  function setHighlightColorClass(el, color) {
+    var normalized = normalizeHlColor(color);
+    HL_COLORS.forEach(function (key) { el.classList.remove('hl-' + key); });
+    el.classList.add('hl-' + normalized);
+    el.dataset.hlColor = normalized;
+  }
+
+  function applyHighlight(editor, color) {
     var sel = window.getSelection();
     if (!sel || !sel.rangeCount) return;
     var range = sel.getRangeAt(0);
@@ -150,6 +163,7 @@
     var hl = document.createElement('span');
     hl.className = 'mp-highlight';
     hl.dataset.mathType = 'highlight';
+    setHighlightColorClass(hl, color);
 
     try {
       range.surroundContents(hl);
@@ -268,7 +282,27 @@
     hlBtn.title = 'Resaltar selección (Ctrl+H)';
     hlBtn.innerHTML = '<span class="math-toolbar-btn-icon"></span>Resaltar';
     toolbar.appendChild(hlBtn);
+
+    var hlQuickPicker = document.createElement('select');
+    hlQuickPicker.className = 'hl-picker';
+    hlQuickPicker.title = 'Color de resaltado';
+    hlQuickPicker.innerHTML = ''
+      + '<option value="yellow">🟨 Amarillo</option>'
+      + '<option value="blue">🟦 Azul</option>'
+      + '<option value="green">🟩 Verde</option>'
+      + '<option value="pink">🩷 Rosa</option>';
+    toolbar.appendChild(hlQuickPicker);
     textarea.parentNode.insertBefore(toolbar, textarea);
+
+    var activeHlColor = normalizeHlColor(textarea.dataset.hlColor || DEFAULT_HL_COLOR);
+    textarea.dataset.hlColor = activeHlColor;
+    hlQuickPicker.value = activeHlColor;
+
+    function readActiveHlColor() {
+      activeHlColor = normalizeHlColor(textarea.dataset.hlColor || activeHlColor);
+      hlQuickPicker.value = activeHlColor;
+      return activeHlColor;
+    }
 
     // Keep highlight button state in sync with cursor position
     function updateHlBtn() {
@@ -278,9 +312,14 @@
 
     hlBtn.addEventListener('mousedown', function (e) {
       e.preventDefault(); // don't steal focus from editor
-      applyHighlight(editor);
+      applyHighlight(editor, readActiveHlColor());
       updateHlBtn();
       sync();
+    });
+
+    hlQuickPicker.addEventListener('change', function () {
+      activeHlColor = normalizeHlColor(hlQuickPicker.value);
+      textarea.dataset.hlColor = activeHlColor;
     });
 
     /* ── Editor ─────────────────────────────────────────────────────────── */
@@ -314,7 +353,13 @@
       // Ctrl+H / Cmd+H — toggle highlight on selection
       if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key === 'h') {
         e.preventDefault();
-        applyHighlight(editor);
+        if (e.shiftKey) {
+          var idx = HL_COLORS.indexOf(readActiveHlColor());
+          activeHlColor = HL_COLORS[(idx + 1) % HL_COLORS.length];
+          textarea.dataset.hlColor = activeHlColor;
+          hlQuickPicker.value = activeHlColor;
+        }
+        applyHighlight(editor, readActiveHlColor());
         updateHlBtn();
         sync();
         return;
@@ -443,6 +488,7 @@
 
     textarea._mathEditorUpdate = update;
     textarea._mathEditorEl = editor;
+    textarea._mathEditorToolbar = toolbar;
     update();
   }
 
@@ -456,6 +502,19 @@
       if (!ta) return;
       ta.value = '';
       if (ta._mathEditorEl) ta._mathEditorEl.innerHTML = '';
+    },
+    serialize: function (ta) {
+      if (!ta) return '';
+      if (ta._mathEditorEl) return extractText(ta._mathEditorEl);
+      return ta.value || '';
+    },
+    setHighlightColor: function (ta, color) {
+      if (!ta) return;
+      ta.dataset.hlColor = normalizeHlColor(color);
+      if (ta._mathEditorToolbar) {
+        var picker = ta._mathEditorToolbar.querySelector('.hl-picker');
+        if (picker) picker.value = ta.dataset.hlColor;
+      }
     }
   };
 })();

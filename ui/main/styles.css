@@ -68,6 +68,16 @@
   --bg-subtle: rgba(225, 232, 242, 0.55);
   --text-main: var(--text);
   --input-bg:  rgba(255, 255, 255, 0.72);
+
+  /* Highlight palette */
+  --hl-yellow-bg: rgba(255, 210, 50, 0.32);
+  --hl-yellow-br: rgba(190, 145, 0, 0.40);
+  --hl-blue-bg:   rgba(95, 165, 255, 0.28);
+  --hl-blue-br:   rgba(55, 120, 210, 0.45);
+  --hl-green-bg:  rgba(120, 200, 130, 0.26);
+  --hl-green-br:  rgba(70, 145, 80, 0.45);
+  --hl-pink-bg:   rgba(245, 130, 190, 0.24);
+  --hl-pink-br:   rgba(190, 70, 130, 0.45);
 }
 
 /* ─── Reset & Base ───────────────────────────────────────────────────────────── */
@@ -3039,13 +3049,18 @@ textarea:focus, input[type="text"]:focus, select:focus {
 
 .mp-highlight {
   display: inline;
-  background: rgba(255, 210, 50, 0.32);
-  border: 1.5px solid rgba(190, 145, 0, 0.40);
+  background: var(--hl-yellow-bg);
+  border: 1.5px solid var(--hl-yellow-br);
   border-radius: 3px;
   padding: 0 3px;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
 }
+
+.hl-yellow { background: var(--hl-yellow-bg) !important; border-color: var(--hl-yellow-br) !important; }
+.hl-blue   { background: var(--hl-blue-bg) !important; border-color: var(--hl-blue-br) !important; }
+.hl-green  { background: var(--hl-green-bg) !important; border-color: var(--hl-green-br) !important; }
+.hl-pink   { background: var(--hl-pink-bg) !important; border-color: var(--hl-pink-br) !important; }
 
 /* ── Math mini-toolbar ───────────────────────────────────────────────────── */
 
@@ -3054,6 +3069,7 @@ textarea:focus, input[type="text"]:focus, select:focus {
   gap: 6px;
   align-items: center;
   margin-bottom: 4px;
+  flex-wrap: wrap;
 }
 
 .math-mini-toolbar.hidden { display: none; }
@@ -3099,6 +3115,22 @@ textarea:focus, input[type="text"]:focus, select:focus {
 
 .math-toolbar-btn--active .math-toolbar-btn-icon {
   background: rgba(255, 180, 0, 0.75);
+}
+
+.hl-picker {
+  height: 28px;
+  padding: 3px 8px;
+  border: 1.5px solid var(--border-mid);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-family: var(--font);
+  font-size: 0.78rem;
+}
+
+.hl-picker:focus {
+  outline: none;
+  border-color: var(--primary);
 }
 
 /* ── Grading strictness slider ───────────────────────────────────────────── */

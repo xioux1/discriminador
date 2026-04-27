@@ -450,6 +450,12 @@
                 <label for="study-answer-input">Tu respuesta</label>
                 <div class="study-answer-actions">
                   <span id="study-timer" class="study-timer">0s</span>
+                  <select id="study-hl-color" class="hl-picker" title="Color de resaltado Math">
+                    <option value="yellow">🟨</option>
+                    <option value="blue">🟦</option>
+                    <option value="green">🟩</option>
+                    <option value="pink">🩷</option>
+                  </select>
                   <div id="study-mode-btns" class="study-mode-btns" hidden>
                     <button type="button" class="study-mode-btn" data-mode="">Texto</button>
                     <button type="button" class="study-mode-btn" data-mode="sql">SQL/PL</button>
@@ -575,12 +581,21 @@
 
             <div class="field-header">
               <label for="subject">Materia (opcional)</label>
-              <label for="editor-mode-select" class="editor-mode-label">Editor:</label>
-              <select id="editor-mode-select" class="editor-mode-select">
-                <option value="">Auto</option>
-                <option value="math">∑ Matemática</option>
-                <option value="sql">SQL</option>
-              </select>
+              <div style="display:flex;align-items:center;gap:6px">
+                <label for="eval-hl-color" class="editor-mode-label">Resaltado:</label>
+                <select id="eval-hl-color" class="hl-picker" title="Color de resaltado Math">
+                  <option value="yellow">🟨</option>
+                  <option value="blue">🟦</option>
+                  <option value="green">🟩</option>
+                  <option value="pink">🩷</option>
+                </select>
+                <label for="editor-mode-select" class="editor-mode-label">Editor:</label>
+                <select id="editor-mode-select" class="editor-mode-select">
+                  <option value="">Auto</option>
+                  <option value="math">∑ Matemática</option>
+                  <option value="sql">SQL</option>
+                </select>
+              </div>
             </div>
             <input id="subject" name="subject" type="text" list="subjects-list" autocomplete="off" />
             <datalist id="subjects-list"></datalist>
