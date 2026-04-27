@@ -15,7 +15,7 @@ function getClient() {
 const VALID_STATUSES = new Set(['ready', 'ambiguous', 'needs_edit', 'rejected']);
 
 // Maximum input characters sent to the LLM. Larger texts are truncated with a warning.
-const MAX_INPUT_CHARS = 30_000;
+const MAX_INPUT_CHARS = 15_000;
 
 const SYSTEM_PROMPT = `Sos un asistente especializado en extraer tarjetas de estudio a partir de texto fuente.
 
@@ -209,7 +209,7 @@ export async function extractCandidateCardsFromText({ text, subject, document_id
   const client = getClient();
   const message = await client.messages.create({
     model,
-    max_tokens: 8192,
+    max_tokens: 4096,
     temperature: 0,
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: buildUserPrompt(inputText, subject) }],
