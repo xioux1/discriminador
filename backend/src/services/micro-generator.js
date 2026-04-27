@@ -165,6 +165,40 @@ Clasificá y generá la micro-tarjeta.`
   };
 }
 
+const CJK_RE = /[一-鿿㐀-䶿]/u;
+
+/**
+ * Generate a listening micro-card for a Chinese listening-variant failure.
+ * The student hears the Hanzi via TTS and must type it — the same mechanic as
+ * the listening variant itself, but scoped to the specific concept they missed.
+ *
+ * If the concept is already Hanzi, use it directly.
+ * Otherwise, ask the LLM to extract/derive the matching Hanzi from the full sentence.
+ *
+ * @param {{ expected_answer_text: string, concept: string }} params
+ * @returns {{ question: string, expected_answer: string }}
+ */
+export async function generateChineseListeningMicroCard({ expected_answer_text, concept }) {
+  if (CJK_RE.test(concept)) {
+    const hanzi = concept.trim();
+    return { question: hanzi, expected_answer: hanzi };
+  }
+
+  const response = await getClient().messages.create({
+    model:       LLM_MODEL_STRONG,
+    max_tokens:  60,
+    temperature: 0,
+    system: `Sos un tutor de chino mandarín. Dado el concepto que el estudiante falló y la oración china completa, devolvé ÚNICAMENTE los caracteres hanzi que corresponden a ese concepto — sin pinyin, sin explicaciones, sin puntuación extra.`,
+    messages: [{
+      role:    'user',
+      content: `Oración completa: ${expected_answer_text}\nConcepto fallado: ${concept}`,
+    }],
+  });
+
+  const hanzi = response.content.find((b) => b.type === 'text')?.text?.trim() || expected_answer_text;
+  return { question: hanzi, expected_answer: hanzi };
+}
+
 /**
  * Generate a targeted micro-card from a conceptual error detected by the binary verifier.
  * Uses a stronger model (Sonnet) since the error label already tells us exactly what went wrong.

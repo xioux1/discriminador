@@ -4249,7 +4249,6 @@ function showStudyCard() {
   if (item.type === 'micro') {
     badge.textContent = 'Micro-concepto';
     badge.classList.remove('hidden');
-    renderStudyPrompt(promptEl, getStudyPromptText(item));
     // Show parent card as context so student knows what topic this stems from
     if (item.data.parent_prompt) {
       parentPromptEl.textContent = item.data.parent_prompt;
@@ -4257,8 +4256,17 @@ function showStudyCard() {
     } else {
       parentContextEl.classList.add('hidden');
     }
-    if (listeningBar) listeningBar.classList.add('hidden');
-    _ttsListeningText = null;
+    if (item.data.presentation === 'listening') {
+      // Listening micro-card: hide question text, play audio of the Hanzi to drill.
+      promptEl.innerHTML = '';
+      _ttsListeningText = item.data.question;
+      if (listeningBar) listeningBar.classList.remove('hidden');
+      if (getTTSEnabled()) playChineseTTS(_ttsListeningText, '#study-listening-replay-btn');
+    } else {
+      renderStudyPrompt(promptEl, getStudyPromptText(item));
+      if (listeningBar) listeningBar.classList.add('hidden');
+      _ttsListeningText = null;
+    }
   } else {
     badge.classList.add('hidden');
     parentContextEl.classList.add('hidden');
@@ -5156,7 +5164,8 @@ async function handleStudyNextCard() {
       review_time_ms:               studyState.reviewTimeMs   || undefined,
       user_answer:                  studyState.currentEvalContext?.user_answer_text || '',
       variant_prompt_text:          item.data.variant_id ? item.data.prompt_text          : undefined,
-      variant_expected_answer_text: item.data.variant_id ? item.data.expected_answer_text : undefined
+      variant_expected_answer_text: item.data.variant_id ? item.data.expected_answer_text : undefined,
+      variant_type:                 item.data.variant_id ? item.data.variant_type          : undefined
     }).then((reviewResp) => {
       // Insert generated micro-cards *after* the card currently on screen.
       // If we insert at `studyState.index`, we would silently replace the logical
@@ -5173,6 +5182,14 @@ async function handleStudyNextCard() {
       studyState.pendingMicroGeneration = Math.max(0, (studyState.pendingMicroGeneration || 0) - 1);
       renderStudyBackgroundStatus();
     });
+  }
+
+  // Micro-cards graded Again re-enter the session at the end so they're drilled
+  // until the student answers correctly — they never escape to tomorrow's review
+  // mid-session.
+  if (item.type === 'micro' && normalizeSuggestedGrade(grade) === 'AGAIN') {
+    studyState.queue.push({ type: 'micro', data: item.data });
+    persistStudySession();
   }
 
   advanceStudyCard();
