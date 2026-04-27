@@ -36,29 +36,50 @@ plannerRouter.get('/planner/week', async (req, res) => {
       [userId, start]
     );
     const { rows: activityRows } = await dbPool.query(
-      `WITH localized_sessions AS (
+      `WITH session_slots AS (
          SELECT
-           started_at AT TIME ZONE 'America/Argentina/Buenos_Aires' AS local_started_at,
-           COALESCE(actual_minutes, 0)    AS total_minutes,
-           COALESCE(actual_card_count, 0) AS card_count
+           EXTRACT(DOW FROM (started_at AT TIME ZONE 'America/Argentina/Buenos_Aires'))::int AS day_index,
+           to_char(
+             date_trunc('hour', started_at AT TIME ZONE 'America/Argentina/Buenos_Aires')
+             + (CASE WHEN EXTRACT(MINUTE FROM started_at AT TIME ZONE 'America/Argentina/Buenos_Aires') >= 30 THEN INTERVAL '30 minutes' ELSE INTERVAL '0 minutes' END),
+             'HH24:MI'
+           ) AS slot_time,
+           SUM(actual_card_count)::int      AS events_count,
+           ROUND(SUM(actual_minutes))::int  AS study_minutes,
+           MAX(started_at AT TIME ZONE 'America/Argentina/Buenos_Aires') AS last_event_at
          FROM study_sessions
          WHERE user_id = $1
            AND actual_minutes IS NOT NULL
+           AND (started_at AT TIME ZONE 'America/Argentina/Buenos_Aires') >= $2::date
+           AND (started_at AT TIME ZONE 'America/Argentina/Buenos_Aires') < ($2::date + INTERVAL '7 day')
+         GROUP BY day_index, slot_time
+       ),
+       activity_slots AS (
+         SELECT
+           EXTRACT(DOW FROM (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires'))::int AS day_index,
+           to_char(
+             date_trunc('hour', created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')
+             + (CASE WHEN EXTRACT(MINUTE FROM created_at AT TIME ZONE 'America/Argentina/Buenos_Aires') >= 30 THEN INTERVAL '30 minutes' ELSE INTERVAL '0 minutes' END),
+             'HH24:MI'
+           ) AS slot_time,
+           COUNT(*)::int AS events_count,
+           ROUND(SUM(COALESCE(response_time_ms, 0) + COALESCE(review_time_ms, 0)) / 60000.0)::int AS study_minutes,
+           MAX(created_at AT TIME ZONE 'America/Argentina/Buenos_Aires') AS last_event_at
+         FROM activity_log
+         WHERE user_id = $1
+           AND activity_type IN ('study', 'evaluate')
+           AND (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires') >= $2::date
+           AND (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires') < ($2::date + INTERVAL '7 day')
+         GROUP BY day_index, slot_time
        )
        SELECT
-         EXTRACT(DOW FROM local_started_at)::int AS day_index,
-         to_char(
-           date_trunc('hour', local_started_at)
-           + (CASE WHEN EXTRACT(MINUTE FROM local_started_at) >= 30 THEN INTERVAL '30 minutes' ELSE INTERVAL '0 minutes' END),
-           'HH24:MI'
-         ) AS slot_time,
-         SUM(card_count)::int                AS events_count,
-         ROUND(SUM(total_minutes))::int      AS study_minutes,
-         MAX(local_started_at)               AS last_event_at
-       FROM localized_sessions
-       WHERE local_started_at >= $2::date
-         AND local_started_at < ($2::date + INTERVAL '7 day')
-       GROUP BY day_index, slot_time
+         COALESCE(s.day_index,     a.day_index)     AS day_index,
+         COALESCE(s.slot_time,     a.slot_time)     AS slot_time,
+         COALESCE(s.events_count,  a.events_count)  AS events_count,
+         COALESCE(s.study_minutes, a.study_minutes) AS study_minutes,
+         COALESCE(s.last_event_at, a.last_event_at) AS last_event_at
+       FROM activity_slots a
+       LEFT JOIN session_slots s USING (day_index, slot_time)
        ORDER BY day_index, slot_time`,
       [userId, start]
     );
