@@ -5128,14 +5128,19 @@ async function handleStudyNextCard() {
   }
 
   if (grade && item.type === 'micro') {
-    // Two-consecutive-correct rule: micro-cards need two Good/Easy answers in a row
-    // before they exit the session. Track the streak on item.data._sessionCorrectStreak.
+    // Two-consecutive-correct rule applies only to Chinese single-word vocabulary
+    // micro-cards (e.g. front: "película", back: "电影"). Detected by: expected
+    // answer contains CJK and has ≤4 CJK characters (word, not sentence).
+    const _cjkInExpected = (item.data.expected_answer || '').match(/[一-鿿㐀-䶿]/gu) || [];
+    const isChineseVocabMicro = _cjkInExpected.length > 0 && _cjkInExpected.length <= 4;
+
     const normalizedGrade   = normalizeSuggestedGrade(grade);
     const isPass            = normalizedGrade === 'GOOD' || normalizedGrade === 'EASY';
     const currentStreak     = item.data._sessionCorrectStreak ?? 0;
-    const skipArchive       = isPass && currentStreak < 1;  // first correct — don't archive yet
+    // skip_archive and requeue only apply to Chinese vocab micro-cards
+    const skipArchive       = isChineseVocabMicro && isPass && currentStreak < 1;
     const nextStreak        = isPass ? currentStreak + 1 : 0;
-    const requeueInSession  = !isPass || skipArchive;       // wrong OR first correct → requeue
+    const requeueInSession  = isChineseVocabMicro && (!isPass || skipArchive);
 
     postJson('/scheduler/review', {
       micro_card_id:    item.data.id,
