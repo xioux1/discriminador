@@ -4641,6 +4641,7 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
 
   evalBtn.disabled = true;
   evalBtn.textContent = 'Evaluando...';
+  setStudyPromptFeedback('');
 
   let prompt_text, expected_answer_text, subject;
 
@@ -4869,9 +4870,13 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
   } catch (err) {
     evalBtn.disabled = false;
     evalBtn.textContent = 'Evaluar';
+    const isNetworkErr = err instanceof TypeError && /fetch|network/i.test(err.message);
     const validationIssues = formatValidationIssues(err);
-    const message = validationIssues ? `${err.message}\n${validationIssues}` : err.message;
-    alert(`Error al evaluar: ${message}`);
+    const detail = validationIssues ? `${err.message}\n${validationIssues}` : err.message;
+    const userMsg = isNetworkErr
+      ? 'Sin conexión con el servidor. Puede estar reiniciándose — intentá de nuevo.'
+      : `Error al evaluar: ${detail}`;
+    setStudyPromptFeedback(userMsg, 'error');
   }
 });
 
