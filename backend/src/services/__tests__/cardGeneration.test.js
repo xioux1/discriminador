@@ -43,15 +43,19 @@ const CONTEXT = {
 
 const VALID_VARIANT = {
   question: '¿Qué es un ERP y qué problema busca resolver dentro de una organización?',
-  expected_answer: 'Un ERP es un sistema empresarial interfuncional compuesto por módulos integrados que dan soporte a los procesos internos básicos de una organización. Su objetivo principal es integrar la información de distintas áreas funcionales, como ventas, finanzas, recursos humanos y producción, evitando la dispersión de datos y la falta de coordinación entre departamentos. Funciona como una columna vertebral que automatiza y estandariza los procesos internos, facilitando la toma de decisiones basada en información actualizada y consistente.',
+  expected_answer: `- ERP integra procesos clave de ventas, finanzas, RRHH y operaciones.
+- Centraliza datos para evitar silos entre áreas y tareas duplicadas.
+- Estandariza flujos internos y mejora control operativo diario.
+- Aumenta trazabilidad para decidir con información consistente y actualizada.`,
   grading_rubric: [
     'Menciona que el ERP es un sistema interfuncional.',
     'Menciona integración de módulos o áreas.',
     'Explica que resuelve la dispersión de datos o silos de información.',
     'Relaciona el ERP con la automatización de procesos internos.',
   ],
-  source_concept_ids: [CONCEPT_A.id],
-  source_chunk_indexes: [3],
+  source_concept_ids: [CONCEPT_A.id, CONCEPT_B.id],
+  source_chunk_indexes: [3, 4],
+  tag_labels: ['erp_fundamentos', 'integracion_modular'],
   difficulty: 'medium',
   answer_time_seconds: 50,
 };
@@ -196,12 +200,50 @@ test('validateGeneratedCardDraft rejects grading_rubric with fewer than 3 items'
   assert.equal(result.valid, false);
 });
 
+test('validateGeneratedCardDraft rejects expected_answer without bullet structure', () => {
+  const output = {
+    card_group: { title: 'Fundamentos ERP arquitectura', card_type: 'theoretical_open' },
+    variants: [{
+      ...VALID_VARIANT,
+      expected_answer: 'Respuesta corrida sin bullets para probar la validación de densidad y formato.',
+    }],
+  };
+  const result = validateGeneratedCardDraft(output, CONTEXT, 5);
+  assert.equal(result.valid, false);
+});
+
+test('validateGeneratedCardDraft rejects variant without tag_labels', () => {
+  const output = {
+    card_group: { title: 'Fundamentos ERP arquitectura', card_type: 'theoretical_open' },
+    variants: [{
+      ...VALID_VARIANT,
+      tag_labels: [],
+    }],
+  };
+  const result = validateGeneratedCardDraft(output, CONTEXT, 5);
+  assert.equal(result.valid, false);
+});
+
+test('validateGeneratedCardDraft rejects low concept coverage across variants', () => {
+  const output = {
+    card_group: { title: 'Fundamentos ERP arquitectura', card_type: 'theoretical_open' },
+    variants: [
+      { ...VALID_VARIANT, source_concept_ids: [CONCEPT_A.id] },
+    ],
+  };
+  const result = validateGeneratedCardDraft(output, CONTEXT, 5);
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some(e => e.includes('Concept coverage too low')));
+});
+
 test('validateGeneratedCardDraft discards invalid variant and keeps valid ones', () => {
-  const goodVariant = VALID_VARIANT;
+  const goodVariant = { ...VALID_VARIANT, source_concept_ids: [CONCEPT_A.id, CONCEPT_B.id], source_chunk_indexes: [3, 4] };
   const badVariant = {
     ...VALID_VARIANT,
     question: '¿Cuáles son los módulos funcionales del ERP dentro de la organización?',
     difficulty: 'extreme', // invalid
+    source_concept_ids: [CONCEPT_B.id],
+    source_chunk_indexes: [4],
   };
   const output = {
     card_group: { title: 'Fundamentos ERP arquitectura', card_type: 'theoretical_open' },
