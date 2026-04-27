@@ -6519,9 +6519,7 @@ function renderExamDatesList(examDates, subject) {
       try {
         const data = await deleteJson(`/curriculum/${encodeURIComponent(subj)}/exam-dates/${btn.dataset.id}`);
         renderExamDatesList(data.exam_dates || [], subj);
-      } catch (_e) {
-    document.querySelector('#curriculum-daily-new-limit').value = '';
-  }
+      } catch (_e) {}
     });
   });
 }
@@ -6556,10 +6554,23 @@ function renderExamsList(exams, subject) {
   const el = document.querySelector('#curriculum-exams-list');
   if (!exams.length) { el.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem">Sin exámenes de referencia.</p>'; return; }
   el.innerHTML = exams.map(e => `
-    <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
-      <span style="flex:1;font-size:0.85rem">${escHtml(e.label || e.exam_type)} ${e.year || ''}</span>
-      <button type="button" class="btn-ghost exam-delete-btn" data-id="${e.id}" data-subject="${escHtml(subject)}" style="font-size:0.75rem;padding:2px 8px">Eliminar</button>
+    <div class="ref-exam-item" style="border-bottom:1px solid var(--border)">
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 0">
+        <span style="flex:1;font-size:0.85rem;font-weight:600">${escHtml(e.label || e.exam_type)} ${e.year ? escHtml(String(e.year)) : ''}</span>
+        <button type="button" class="btn-ghost ref-exam-toggle-btn" style="font-size:0.72rem;padding:1px 7px">Ver</button>
+        <button type="button" class="btn-ghost exam-delete-btn" data-id="${e.id}" data-subject="${escHtml(subject)}" style="font-size:0.75rem;padding:2px 8px">Eliminar</button>
+      </div>
+      <div class="ref-exam-body hidden" style="padding:0 0 8px;font-size:0.8rem;white-space:pre-wrap;color:var(--text);line-height:1.5">${escHtml(e.content_text || '')}</div>
     </div>`).join('');
+
+  el.querySelectorAll('.ref-exam-toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const body = btn.closest('.ref-exam-item').querySelector('.ref-exam-body');
+      const opening = body.classList.contains('hidden');
+      body.classList.toggle('hidden', !opening);
+      btn.textContent = opening ? 'Ocultar' : 'Ver';
+    });
+  });
 
   el.querySelectorAll('.exam-delete-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -6568,9 +6579,7 @@ function renderExamsList(exams, subject) {
         await deleteJson(`/curriculum/${encodeURIComponent(subj)}/exams/${btn.dataset.id}`);
         const data = await getJson(`/curriculum/${encodeURIComponent(subj)}`);
         renderExamsList(data.exams || [], subj);
-      } catch (_e) {
-    document.querySelector('#curriculum-daily-new-limit').value = '';
-  }
+      } catch (_e) {}
     });
   });
 }
