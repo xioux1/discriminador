@@ -5148,13 +5148,15 @@ async function handleStudyNextCard() {
 
   if (shouldGenerateMicros) {
     postJson('/scheduler/review', {
-      card_id:          item.data.id,
+      card_id:                      item.data.id,
       grade,
-      concept_gaps:     gaps,
-      check_fail_ids:   studyState.checkFails,
-      response_time_ms: studyState.responseTimeMs || undefined,
-      review_time_ms:   studyState.reviewTimeMs   || undefined,
-      user_answer:      studyState.currentEvalContext?.user_answer_text || ''
+      concept_gaps:                 gaps,
+      check_fail_ids:               studyState.checkFails,
+      response_time_ms:             studyState.responseTimeMs || undefined,
+      review_time_ms:               studyState.reviewTimeMs   || undefined,
+      user_answer:                  studyState.currentEvalContext?.user_answer_text || '',
+      variant_prompt_text:          item.data.variant_id ? item.data.prompt_text          : undefined,
+      variant_expected_answer_text: item.data.variant_id ? item.data.expected_answer_text : undefined
     }).then((reviewResp) => {
       // Insert generated micro-cards *after* the card currently on screen.
       // If we insert at `studyState.index`, we would silently replace the logical

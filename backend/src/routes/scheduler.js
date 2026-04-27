@@ -304,7 +304,7 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
 // check_fail_ids: IDs from binary_check_log for negative in-session checks.
 //   When non-empty and final grade is negative, an extra ease penalty applies.
 schedulerRouter.post('/scheduler/review', async (req, res) => {
-  const { card_id, micro_card_id, grade, concept_gaps = [], response_time_ms, review_time_ms, user_answer = '', check_fail_ids = [] } = req.body || {};
+  const { card_id, micro_card_id, grade, concept_gaps = [], response_time_ms, review_time_ms, user_answer = '', check_fail_ids = [], variant_prompt_text, variant_expected_answer_text } = req.body || {};
   const userId = req.user.id;
 
   const VALID_GRADES = new Set(['pass', 'fail', 'review', 'again', 'hard', 'good', 'easy']);
@@ -327,7 +327,7 @@ schedulerRouter.post('/scheduler/review', async (req, res) => {
       return await reviewMicroCard(res, Number(micro_card_id), effectiveGrade, concept_gaps, user_answer, rtMs, rvtMs, userId);
     } else if (card_id) {
       const checkFailIds = Array.isArray(check_fail_ids) ? check_fail_ids.map(Number).filter(Boolean) : [];
-      return await reviewCard(res, Number(card_id), effectiveGrade, concept_gaps, rtMs, rvtMs, userId, user_answer, checkFailIds);
+      return await reviewCard(res, Number(card_id), effectiveGrade, concept_gaps, rtMs, rvtMs, userId, user_answer, checkFailIds, variant_prompt_text, variant_expected_answer_text);
     }
     return res.status(422).json({
       error: 'validation_error',
@@ -398,7 +398,7 @@ async function autoGenerateVariant(cardId, card, userId) {
 }
 
 // ─── Internal: review a full card ────────────────────────────────────────────
-async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, reviewTimeMs, userId, userAnswer = '', checkFailIds = []) {
+async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, reviewTimeMs, userId, userAnswer = '', checkFailIds = [], variantPromptText, variantExpectedAnswerText) {
   const checkFailCount = checkFailIds.length;
   const { rows } = await dbPool.query(
     'SELECT * FROM cards WHERE id = $1 AND user_id = $2 AND archived_at IS NULL AND suspended_at IS NULL',
@@ -409,6 +409,11 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
   }
 
   const card = rows[0];
+  // Use the variant's text for microcard generation when the student studied a variant;
+  // fall back to the primary card's text when no variant was involved.
+  const microPromptText    = variantPromptText?.trim()          || card.prompt_text;
+  const microExpectedText  = variantExpectedAnswerText?.trim()  || card.expected_answer_text;
+
   let schedule = computeNextReview({
     stability:     parseFloat(card.stability),
     difficulty:    parseFloat(card.difficulty),
@@ -501,8 +506,8 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
     // valuable concept always gets the first microcard slot.
     const validGaps = conceptGaps.filter((c) => typeof c === 'string' && c.trim().length > 0).map((c) => c.trim());
     const rankedGaps = await rankGaps({
-      prompt_text:          card.prompt_text,
-      expected_answer_text: card.expected_answer_text,
+      prompt_text:          microPromptText,
+      expected_answer_text: microExpectedText,
       user_answer:          userAnswer,
       gaps:                 validGaps,
     });
@@ -512,11 +517,11 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
       try {
         const _microFn = isChineseCard(card) ? generateChineseMicroCard : generateMicroCard;
         const micro = await _microFn({
-          prompt_text: card.prompt_text,
-          expected_answer_text: card.expected_answer_text,
-          subject: card.subject,
+          prompt_text:          microPromptText,
+          expected_answer_text: microExpectedText,
+          subject:              card.subject,
           concept,
-          user_answer: userAnswer
+          user_answer:          userAnswer
         });
 
         const inserted = await dbPool.query(
@@ -526,7 +531,7 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
            RETURNING *`,
           [cardId, concept, micro.question, micro.expected_answer, userId, card.subject || null]
         );
-        if (inserted.rows.length) newMicroCards.push({ ...inserted.rows[0], parent_subject: card.subject || null, parent_prompt: card.prompt_text });
+        if (inserted.rows.length) newMicroCards.push({ ...inserted.rows[0], parent_subject: card.subject || null, parent_prompt: microPromptText });
       } catch (microErr) {
         console.warn(`Failed to generate micro-card for concept "${concept}":`, microErr.message);
       }
@@ -569,8 +574,8 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
         for (const errRow of targetErrors) {
           try {
             const micro = await generateMicroCardFromCheckError({
-              prompt_text:          card.prompt_text,
-              expected_answer_text: card.expected_answer_text,
+              prompt_text:          microPromptText,
+              expected_answer_text: microExpectedText,
               subject:              card.subject,
               error_label:          errRow.error_label,
               user_answer:          errRow.user_answer || userAnswer,
@@ -583,7 +588,7 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
                RETURNING *`,
               [cardId, errRow.error_label, micro.question, micro.expected_answer, userId, card.subject || null]
             );
-            if (inserted.rows.length) newMicroCards.push({ ...inserted.rows[0], parent_subject: card.subject || null, parent_prompt: card.prompt_text });
+            if (inserted.rows.length) newMicroCards.push({ ...inserted.rows[0], parent_subject: card.subject || null, parent_prompt: microPromptText });
           } catch (microErr) {
             console.error(`[check micro] Failed to generate micro-card for error "${errRow.error_label}":`, microErr.message);
           }
