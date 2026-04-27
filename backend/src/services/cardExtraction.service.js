@@ -15,7 +15,7 @@ function getClient() {
 const VALID_STATUSES = new Set(['ready', 'ambiguous', 'needs_edit', 'rejected']);
 
 // Maximum input characters sent to the LLM. Larger texts are truncated with a warning.
-const MAX_INPUT_CHARS = 15_000;
+const MAX_INPUT_CHARS = 14_000; // safety net; frontend chunks at 12k
 
 const SYSTEM_PROMPT = `Sos un asistente especializado en extraer tarjetas de estudio a partir de texto fuente.
 

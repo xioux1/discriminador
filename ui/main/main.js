@@ -907,6 +907,25 @@ function initAiExtraction() {
   });
 
   // Extract
+  // Split text into chunks that fit within the backend's token budget.
+  // Prefers splitting at newlines; falls back to the hard size limit.
+  function chunkText(text, size = 12000, overlap = 300) {
+    if (text.length <= size) return [text];
+    const chunks = [];
+    let start = 0;
+    while (start < text.length) {
+      let end = Math.min(start + size, text.length);
+      if (end < text.length) {
+        const nl = text.lastIndexOf('\n', end);
+        if (nl > start + size * 0.6) end = nl + 1;
+      }
+      chunks.push(text.slice(start, end));
+      if (end >= text.length) break;
+      start = end - overlap;
+    }
+    return chunks;
+  }
+
   extractBtn?.addEventListener('click', async () => {
     const text = document.querySelector('#ai-extract-text')?.value?.trim() ?? '';
     if (!text) {
@@ -916,35 +935,61 @@ function initAiExtraction() {
     }
 
     const subject = document.querySelector('#ai-extract-subject')?.value?.trim() || undefined;
+    const chunks = chunkText(text);
+
     extractBtn.disabled = true;
-    statusEl.textContent = 'Extrayendo tarjetas con IA…';
-    statusEl.style.color = 'var(--text-muted)';
     candidatesWrap.classList.add('hidden');
     saveFeedback.textContent = '';
 
-    try {
-      const data = await postJson('/cards/extract-candidates', { text, subject });
-      candidates = (data.cards || []).map(c => ({ ...c, _selected: c.status === 'ready' }));
+    const seenQuestions = new Set();
+    const merged = [];
+    const userWarnings = [];
+    let hadError = false;
 
+    for (let i = 0; i < chunks.length; i++) {
+      statusEl.textContent = chunks.length > 1
+        ? `Procesando fragmento ${i + 1} de ${chunks.length}…`
+        : 'Extrayendo tarjetas con IA…';
+      statusEl.style.color = 'var(--text-muted)';
+
+      try {
+        const data = await postJson('/cards/extract-candidates', { text: chunks[i], subject });
+        for (const card of (data.cards || [])) {
+          const key = card.question.toLowerCase().replace(/\s+/g, ' ');
+          if (!seenQuestions.has(key)) {
+            seenQuestions.add(key);
+            merged.push({ ...card, _selected: card.status === 'ready' });
+          }
+        }
+        // Surface only meaningful warnings (skip internal truncation noise)
+        for (const w of (data.warnings || [])) {
+          if (!w.includes('truncado') && !w.includes('límite de tokens') && !w.includes('truncada')) {
+            userWarnings.push(w);
+          }
+        }
+      } catch (err) {
+        statusEl.textContent = `Error en fragmento ${i + 1}: ${err.message}`;
+        statusEl.style.color = '#c00';
+        hadError = true;
+        break;
+      }
+    }
+
+    if (!hadError) {
+      candidates = merged;
       if (!candidates.length) {
         statusEl.textContent = 'No se encontraron tarjetas en el texto.';
         statusEl.style.color = '#b07d00';
-        return;
+      } else {
+        statusEl.textContent = userWarnings.length ? `Advertencias: ${userWarnings.join(' | ')}` : '';
+        statusEl.style.color = userWarnings.length ? '#b07d00' : '';
+        renderCandidates();
+        updateCount();
+        candidatesWrap.classList.remove('hidden');
       }
-
-      const warnings = data.warnings || [];
-      statusEl.textContent = warnings.length ? `Advertencias: ${warnings.join(' | ')}` : '';
-      statusEl.style.color = warnings.length ? '#b07d00' : '';
-
-      renderCandidates();
-      updateCount();
-      candidatesWrap.classList.remove('hidden');
-    } catch (err) {
-      statusEl.textContent = `Error: ${err.message}`;
-      statusEl.style.color = '#c00';
-    } finally {
-      extractBtn.disabled = false;
     }
+
+    extractBtn.disabled = false;
   });
 
   // Save selected
