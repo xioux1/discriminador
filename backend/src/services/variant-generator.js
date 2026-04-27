@@ -32,7 +32,7 @@ Reglas estrictas:
 - NO agregués ni quitées conceptos.
 - La respuesta esperada debe seguir la misma estructura que la original.
 - CRÍTICO: Si la pregunta original contiene una ecuación, fórmula matemática, expresión algebraica o cualquier objeto matemático concreto, la variante DEBE incluir también una ecuación o expresión concreta equivalente. NUNCA generes una pregunta más genérica que la original omitiendo la ecuación específica. Por ejemplo, si la original pregunta sobre "dy/dt = mt/y", la variante debe preguntar sobre otra ecuación diferencial concreta, no simplemente "Halle la solución general de la ecuación diferencial" sin especificarla.
-- Escribí EXACTAMENTE en el mismo idioma que la respuesta esperada original. Si la respuesta original está en chino mandarín, la variante debe estar en chino mandarín. Si está en japonés, en japonés. Nunca cambies el idioma de escritura, aunque el contenido de la pregunta mencione palabras, lugares o personas de otro idioma.
+- Mantené EXACTAMENTE el idioma original de cada parte: la QUESTION debe estar en el mismo idioma que la pregunta original, y el ANSWER debe estar en el mismo idioma que la respuesta esperada original. Si la tarjeta es bilingüe (por ejemplo, pregunta en español y respuesta en chino mandarín), la variante debe mantener esa misma estructura: pregunta en español y respuesta en chino. NUNCA traduzcas la pregunta al idioma de la respuesta ni viceversa.
 - Si la pregunta o respuesta contiene SQL, SIEMPRE incluí un bloque TABLES que liste los esquemas de TODAS las tablas que aparecen en la variante, en el formato: NOMBRE_TABLA(COL1, COL2, COL3(FK)). Si la pregunta original no tenía tablas, inventialas con nombres coherentes y listalas igual.
 
 Respondé ÚNICAMENTE en este formato exacto:
