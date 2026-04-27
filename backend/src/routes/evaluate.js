@@ -444,7 +444,7 @@ evaluateRouter.post('/evaluate', llmRateLimit, async (req, res) => {
     const gradeSuggestionInsertValues = [
       evaluationItem.id,
       result.suggested_grade.toLowerCase(),
-      result.model_confidence,
+      result.model_confidence ?? 1.0,
       llmJudge ? 'llm_judge' : 'heuristic_discriminator',
       llmJudge ? llmJudge.model : 'v1',
       result.justification_short
