@@ -351,7 +351,7 @@ export function validateGeneratedCardDraft(output, context, maxVariants) {
     ...context.concepts.map(c => c.source_chunk_index).filter(i => i != null),
     ...context.source_excerpts.map(e => e.chunk_index),
   ]);
-  const minCoverage = Math.max(1, Math.ceil(context.concepts.length * 0.6));
+  const minCoverage = Math.max(1, Math.floor(context.concepts.length * 0.5));
 
   const seenQuestions = new Set();
   const validVariants = [];
