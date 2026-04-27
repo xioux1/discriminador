@@ -38,6 +38,7 @@ let userSettings = {
   gratitude_enabled:          true,
   time_restriction_enabled:   true,
   planner_gate_enabled:       true,
+  realtime_break_notifications_enabled: true,
   default_retention_floor:    null,   // integer 50-99, null = use hardcoded 75
   default_grading_strictness: null,   // integer 0-10,  null = use hardcoded 5
 };
@@ -3234,6 +3235,7 @@ function persistStudySession() {
       sessionLimitMs: studyState.sessionLimitMs ?? null,
       sessionEnergyLevel: studyState.sessionEnergyLevel ?? null,
       sessionPausedMs: studyState.sessionPausedMs ?? 0,
+      lastBreakNudgeMinuteKey: studyState.lastBreakNudgeMinuteKey ?? null,
       selectedTime: briefingState.selectedTime,
       selectedEnergy: briefingState.selectedEnergy,
       selectedSubject: briefingState.selectedSubject
@@ -3275,6 +3277,7 @@ function restorePersistedStudySession() {
     studyState.sessionLimitMs     = saved.sessionLimitMs ? Number(saved.sessionLimitMs) : null;
     studyState.sessionEnergyLevel = saved.sessionEnergyLevel || null;
     studyState.sessionPausedMs    = Number(saved.sessionPausedMs) || 0;
+    studyState.lastBreakNudgeMinuteKey = saved.lastBreakNudgeMinuteKey || null;
     studyState.isPaused = false;
     studyState.pausedAt = 0;
     studyState.cardPausedMs = 0;
@@ -3283,6 +3286,7 @@ function restorePersistedStudySession() {
     document.querySelector('#study-overview').classList.add('hidden');
     document.querySelector('#study-complete').classList.add('hidden');
     document.querySelector('#study-session').classList.remove('hidden');
+    startStudyRealtimeScheduler();
     showStudyCard();
     return true;
   } catch (_) {
@@ -3769,6 +3773,7 @@ function _doStartPlannedSession() {
   studyState.sessionPausedMs       = 0;
   studyState.isPaused              = false;
   studyState.pausedAt              = 0;
+  studyState.lastBreakNudgeMinuteKey = null;
 
   // Record session start for calibration
   postJson('/study/sessions', {
@@ -3782,6 +3787,7 @@ function _doStartPlannedSession() {
   document.querySelector('#study-complete').classList.add('hidden');
   document.querySelector('#study-session').classList.remove('hidden');
 
+  startStudyRealtimeScheduler();
   persistStudySession();
   showStudyCard();
 }
@@ -3824,6 +3830,7 @@ function exitStudySession() {
     clearInterval(studyState.timerInterval);
     studyState.timerInterval = null;
   }
+  stopStudyRealtimeScheduler();
   document.querySelector('#study-session').classList.add('hidden');
   document.querySelector('#study-overview').classList.remove('hidden');
   recordSessionCompletion(studyState.results.length);
@@ -3845,6 +3852,7 @@ function pauseStudySession(silent = false) {
     clearInterval(studyState.timerInterval);
     studyState.timerInterval = null;
   }
+  stopStudyRealtimeScheduler();
   studyState.isPaused = true;
   studyState.pausedAt = Date.now();
 
@@ -3880,6 +3888,7 @@ function resumeStudySession(silent = false) {
     const elapsed = Math.round((Date.now() - studyState.cardStartTime - studyState.cardPausedMs) / 1000);
     timerEl.textContent = `${elapsed}s`;
   }, 1000);
+  startStudyRealtimeScheduler();
 }
 
 async function loadStudyOverview() {
@@ -3981,6 +3990,8 @@ const studyState = {
   sessionStartTime: 0,
   sessionLimitMs: null,
   sessionEnergyLevel: null,
+  sessionSchedulerInterval: null,
+  lastBreakNudgeMinuteKey: null,
   // Exam mode extras
   examMode: false,
   examSubject: null,
@@ -3989,6 +4000,50 @@ const studyState = {
   checkFails: [],       // IDs from binary_check_log for negative checks this card
   checkErrorLabels: []  // conceptual error labels to show in result block
 };
+
+function maybeSendBreakNudge() {
+  if (!userSettings.realtime_break_notifications_enabled) return;
+  if (!studyState.sessionStartTime || studyState.isPaused) return;
+  const now = new Date();
+  const minute = now.getMinutes();
+  if (minute !== 25 && minute !== 55) return;
+
+  const minuteKey = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}-${now.getHours()}-${minute}`;
+  if (studyState.lastBreakNudgeMinuteKey === minuteKey) return;
+  studyState.lastBreakNudgeMinuteKey = minuteKey;
+  persistStudySession();
+
+  if (!('Notification' in window)) return;
+  const body = minute === 25
+    ? 'Descanso sugerido. Volvé en el minuto 30.'
+    : 'Descanso sugerido. Volvé en el minuto 00.';
+  const title = 'Pausa de estudio';
+  const emit = () => {
+    try { new Notification(title, { body }); } catch (_) {}
+  };
+
+  if (Notification.permission === 'granted') {
+    emit();
+  } else if (Notification.permission === 'default') {
+    Notification.requestPermission().then((permission) => {
+      if (permission === 'granted') emit();
+    }).catch(() => {});
+  }
+}
+
+function stopStudyRealtimeScheduler() {
+  if (!studyState.sessionSchedulerInterval) return;
+  clearInterval(studyState.sessionSchedulerInterval);
+  studyState.sessionSchedulerInterval = null;
+}
+
+function startStudyRealtimeScheduler() {
+  stopStudyRealtimeScheduler();
+  studyState.sessionSchedulerInterval = setInterval(() => {
+    maybeSendBreakNudge();
+  }, 1000);
+  maybeSendBreakNudge();
+}
 
 function renderStudyBackgroundStatus() {
   const statusEl = document.querySelector('#study-background-status');
@@ -4043,6 +4098,7 @@ function startExamSession(cards, subject) {
   studyState.sessionPausedMs    = 0;
   studyState.isPaused           = false;
   studyState.pausedAt           = 0;
+  studyState.lastBreakNudgeMinuteKey = null;
 
   postJson('/study/sessions', {
     planned_minutes:    0,
@@ -4056,6 +4112,7 @@ function startExamSession(cards, subject) {
   document.querySelector('#study-session').classList.remove('hidden');
   document.querySelector('#exam-mode-badge').classList.remove('hidden');
 
+  startStudyRealtimeScheduler();
   persistStudySession();
   showStudyCard();
 }
@@ -4183,6 +4240,7 @@ async function _doStartStudySession() {
   studyState.sessionPausedMs    = 0;
   studyState.isPaused           = false;
   studyState.pausedAt           = 0;
+  studyState.lastBreakNudgeMinuteKey = null;
   renderStudyBackgroundStatus();
 
   if (studyState.queue.length === 0) {
@@ -4201,6 +4259,7 @@ async function _doStartStudySession() {
   document.querySelector('#study-complete').classList.add('hidden');
   document.querySelector('#study-session').classList.remove('hidden');
 
+  startStudyRealtimeScheduler();
   persistStudySession();
   showStudyCard();
 }
@@ -5329,6 +5388,7 @@ function finishStudySession() {
     clearInterval(studyState.timerInterval);
     studyState.timerInterval = null;
   }
+  stopStudyRealtimeScheduler();
   // Update progress bar to 100%
   document.querySelector('#study-progress-fill').style.width = '100%';
 
@@ -5376,6 +5436,7 @@ function finishExamSession() {
     clearInterval(studyState.timerInterval);
     studyState.timerInterval = null;
   }
+  stopStudyRealtimeScheduler();
   document.querySelector('#study-progress-fill').style.width = '100%';
   document.querySelector('#study-session').classList.add('hidden');
   document.querySelector('#exam-mode-badge').classList.add('hidden');
@@ -7255,6 +7316,7 @@ function initSettingsTab() {
   const gratitudeEl        = document.querySelector('#setting-gratitude');
   const timeRestrictEl     = document.querySelector('#setting-time-restriction');
   const plannerGateEl      = document.querySelector('#setting-planner-gate');
+  const realtimeBreakEl    = document.querySelector('#setting-realtime-break-notifications');
   const ttsEl              = document.querySelector('#setting-tts-enabled');
   const defTimeEl          = document.querySelector('#setting-default-time');
   const defEnergyEl        = document.querySelector('#setting-default-energy');
@@ -7269,6 +7331,7 @@ function initSettingsTab() {
   gratitudeEl.checked     = userSettings.gratitude_enabled;
   timeRestrictEl.checked  = userSettings.time_restriction_enabled;
   plannerGateEl.checked   = userSettings.planner_gate_enabled;
+  realtimeBreakEl.checked = userSettings.realtime_break_notifications_enabled;
   ttsEl.checked           = getTTSEnabled();
   defTimeEl.value         = getDefaultBriefingTime();
   defEnergyEl.value       = getDefaultBriefingEnergy();
@@ -7290,6 +7353,7 @@ function initSettingsTab() {
       gratitude_enabled:          gratitudeEl.checked,
       time_restriction_enabled:   timeRestrictEl.checked,
       planner_gate_enabled:       plannerGateEl.checked,
+      realtime_break_notifications_enabled: realtimeBreakEl.checked,
       default_retention_floor:    defRetentionEl.value    !== '' ? parseInt(defRetentionEl.value)    : null,
       default_grading_strictness: defStrictnessEl.value   !== '' ? parseInt(defStrictnessEl.value)   : null,
     };
@@ -7312,6 +7376,7 @@ function initSettingsTab() {
   gratitudeEl.addEventListener('change',    scheduleServerSave);
   timeRestrictEl.addEventListener('change', scheduleServerSave);
   plannerGateEl.addEventListener('change',  scheduleServerSave);
+  realtimeBreakEl.addEventListener('change', scheduleServerSave);
   defRetentionEl.addEventListener('change', scheduleServerSave);
   defStrictnessEl.addEventListener('change', scheduleServerSave);
 
