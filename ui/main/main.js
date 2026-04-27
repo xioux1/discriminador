@@ -5175,6 +5175,14 @@ async function handleStudyNextCard() {
     });
   }
 
+  // Micro-cards graded Again re-enter the session at the end so they're drilled
+  // until the student answers correctly — they never escape to tomorrow's review
+  // mid-session.
+  if (item.type === 'micro' && normalizeSuggestedGrade(grade) === 'AGAIN') {
+    studyState.queue.push({ type: 'micro', data: item.data });
+    persistStudySession();
+  }
+
   advanceStudyCard();
 }
 
