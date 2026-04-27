@@ -3776,6 +3776,23 @@ async function startPlannedSession() {
   showGratitudeModal(() => _doStartPlannedSession());
 }
 
+function recordSessionCompletion(cardCount) {
+  if (!studyState.sessionId || !studyState.sessionStartTime) return;
+  // Flush any active pause before measuring
+  if (studyState.isPaused) {
+    studyState.sessionPausedMs += Date.now() - studyState.pausedAt;
+    studyState.isPaused = false;
+    studyState.pausedAt = 0;
+  }
+  const actualMinutes = (Date.now() - studyState.sessionStartTime - studyState.sessionPausedMs) / 60000;
+  const sessionId = studyState.sessionId;
+  studyState.sessionId = null;
+  return postJson(`/study/sessions/${sessionId}`, {
+    actual_minutes:    Math.round(actualMinutes * 100) / 100,
+    actual_card_count: cardCount ?? studyState.results.length
+  }, 'PATCH').catch(() => {});
+}
+
 function exitStudySession() {
   if (studyState.isPaused) {
     studyState.sessionPausedMs += Date.now() - studyState.pausedAt;
@@ -3788,6 +3805,8 @@ function exitStudySession() {
   }
   document.querySelector('#study-session').classList.add('hidden');
   document.querySelector('#study-overview').classList.remove('hidden');
+  recordSessionCompletion(studyState.results.length);
+  studyState.sessionStartTime = null;
   persistStudySession();
 }
 
@@ -5255,23 +5274,19 @@ function finishStudySession() {
     ${microsPassed > 0 ? `<p style="color:#4a7;font-size:0.9rem">${microsPassed} micro-concepto${microsPassed !== 1 ? 's' : ''} superado${microsPassed !== 1 ? 's' : ''}.</p>` : ''}
   `;
 
-  // Record actual session time for calibration (exclude paused time)
+  // Record actual session time for calibration (exclude paused time).
   if (studyState.sessionId && studyState.sessionStartTime) {
-    const actualMinutes = (Date.now() - studyState.sessionStartTime - studyState.sessionPausedMs) / 60000;
-    postJson(`/study/sessions/${studyState.sessionId}`, {
-      actual_minutes:    Math.round(actualMinutes * 100) / 100,
-      actual_card_count: results.length
-    }, 'PATCH').then(() => {
+    const elapsedMs  = Date.now() - studyState.sessionStartTime - studyState.sessionPausedMs;
+    const actualMin  = Math.round(elapsedMs / 60000);
+    recordSessionCompletion(results.length)?.then(() => {
       const plannedMin = briefingState.selectedTime || 0;
-      const actualMin  = Math.round(actualMinutes);
       if (plannedMin > 0) {
         const timingEl = document.createElement('p');
         timingEl.style.cssText = 'font-size:0.85rem;color:var(--text-muted);margin-top:4px';
         timingEl.textContent = `Planificaste ${plannedMin} min · Tardaste ${actualMin} min`;
         document.querySelector('#study-complete-summary').appendChild(timingEl);
       }
-    }).catch(() => {});
-    studyState.sessionId = null;
+    });
   }
   studyState.pendingMicroGeneration = 0;
   renderStudyBackgroundStatus();
@@ -5292,6 +5307,7 @@ function finishExamSession() {
   document.querySelector('#study-progress-fill').style.width = '100%';
   document.querySelector('#study-session').classList.add('hidden');
   document.querySelector('#exam-mode-badge').classList.add('hidden');
+  recordSessionCompletion(studyState.examItemResults?.length ?? 0);
   clearPersistedStudySession();
   studyState.sessionStartTime = null;
 
