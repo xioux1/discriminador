@@ -5128,13 +5128,28 @@ async function handleStudyNextCard() {
   }
 
   if (grade && item.type === 'micro') {
+    // Two-consecutive-correct rule applies only to Chinese single-word vocabulary
+    // micro-cards (e.g. front: "película", back: "电影"). Detected by: expected
+    // answer contains CJK and has ≤4 CJK characters (word, not sentence).
+    const _cjkInExpected = (item.data.expected_answer || '').match(/[一-鿿㐀-䶿]/gu) || [];
+    const isChineseVocabMicro = _cjkInExpected.length > 0 && _cjkInExpected.length <= 4;
+
+    const normalizedGrade   = normalizeSuggestedGrade(grade);
+    const isPass            = normalizedGrade === 'GOOD' || normalizedGrade === 'EASY';
+    const currentStreak     = item.data._sessionCorrectStreak ?? 0;
+    // skip_archive and requeue only apply to Chinese vocab micro-cards
+    const skipArchive       = isChineseVocabMicro && isPass && currentStreak < 1;
+    const nextStreak        = isPass ? currentStreak + 1 : 0;
+    const requeueInSession  = isChineseVocabMicro && (!isPass || skipArchive);
+
     postJson('/scheduler/review', {
       micro_card_id:    item.data.id,
       grade,
       concept_gaps:     gaps,
       user_answer:      studyState.currentEvalContext?.user_answer_text || '',
       response_time_ms: studyState.responseTimeMs || undefined,
-      review_time_ms:   studyState.reviewTimeMs   || undefined
+      review_time_ms:   studyState.reviewTimeMs   || undefined,
+      skip_archive:     skipArchive
     }).then((reviewResp) => {
       const newSiblings = (reviewResp?.new_micro_cards ?? []).map((m) => ({ type: 'micro', data: m }));
       if (newSiblings.length) {
@@ -5150,6 +5165,11 @@ async function handleStudyNextCard() {
         renderStudyBackgroundStatus();
       }
     });
+
+    if (requeueInSession) {
+      studyState.queue.push({ type: 'micro', data: { ...item.data, _sessionCorrectStreak: nextStreak } });
+      persistStudySession();
+    }
   }
 
   studyState.results.push({
@@ -5187,14 +5207,6 @@ async function handleStudyNextCard() {
       studyState.pendingMicroGeneration = Math.max(0, (studyState.pendingMicroGeneration || 0) - 1);
       renderStudyBackgroundStatus();
     });
-  }
-
-  // Micro-cards graded Again re-enter the session at the end so they're drilled
-  // until the student answers correctly — they never escape to tomorrow's review
-  // mid-session.
-  if (item.type === 'micro' && normalizeSuggestedGrade(grade) === 'AGAIN') {
-    studyState.queue.push({ type: 'micro', data: item.data });
-    persistStudySession();
   }
 
   advanceStudyCard();

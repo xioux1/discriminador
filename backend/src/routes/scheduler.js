@@ -304,7 +304,7 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
 // check_fail_ids: IDs from binary_check_log for negative in-session checks.
 //   When non-empty and final grade is negative, an extra ease penalty applies.
 schedulerRouter.post('/scheduler/review', async (req, res) => {
-  const { card_id, micro_card_id, grade, concept_gaps = [], response_time_ms, review_time_ms, user_answer = '', check_fail_ids = [], variant_prompt_text, variant_expected_answer_text, variant_type } = req.body || {};
+  const { card_id, micro_card_id, grade, concept_gaps = [], response_time_ms, review_time_ms, user_answer = '', check_fail_ids = [], variant_prompt_text, variant_expected_answer_text, variant_type, skip_archive } = req.body || {};
   const userId = req.user.id;
 
   const VALID_GRADES = new Set(['pass', 'fail', 'review', 'again', 'hard', 'good', 'easy']);
@@ -324,7 +324,7 @@ schedulerRouter.post('/scheduler/review', async (req, res) => {
 
   try {
     if (micro_card_id) {
-      return await reviewMicroCard(res, Number(micro_card_id), effectiveGrade, concept_gaps, user_answer, rtMs, rvtMs, userId);
+      return await reviewMicroCard(res, Number(micro_card_id), effectiveGrade, concept_gaps, user_answer, rtMs, rvtMs, userId, Boolean(skip_archive));
     } else if (card_id) {
       const checkFailIds = Array.isArray(check_fail_ids) ? check_fail_ids.map(Number).filter(Boolean) : [];
       return await reviewCard(res, Number(card_id), effectiveGrade, concept_gaps, rtMs, rvtMs, userId, user_answer, checkFailIds, variant_prompt_text, variant_expected_answer_text, variant_type);
@@ -612,7 +612,7 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
 }
 
 // ─── Internal: review a micro-card ───────────────────────────────────────────
-async function reviewMicroCard(res, microCardId, grade, conceptGaps, userAnswer, responseTimeMs, reviewTimeMs, userId) {
+async function reviewMicroCard(res, microCardId, grade, conceptGaps, userAnswer, responseTimeMs, reviewTimeMs, userId, skipArchive = false) {
   const { rows } = await dbPool.query(
     `SELECT mc.*, c.subject AS parent_subject
      FROM micro_cards mc
@@ -634,8 +634,9 @@ async function reviewMicroCard(res, microCardId, grade, conceptGaps, userAnswer,
     isNew: micro.review_count === 0
   });
 
-  // Archive immediately on any pass-grade (good/easy).
-  const newStatus = isPassGrade(grade) ? 'archived' : micro.status;
+  // Archive on pass-grade unless the frontend is holding the card in-session
+  // for a second consecutive correct answer (skip_archive = true).
+  const newStatus = (isPassGrade(grade) && !skipArchive) ? 'archived' : micro.status;
 
   const updated = await dbPool.query(
     `UPDATE micro_cards
@@ -650,7 +651,7 @@ async function reviewMicroCard(res, microCardId, grade, conceptGaps, userAnswer,
 
   let parentUnblocked = false;
 
-  if (isPassGrade(grade)) {
+  if (isPassGrade(grade) && !skipArchive) {
     // Check remaining active micros for this parent (excluding the one we just updated).
     const { rows: remaining } = await dbPool.query(
       `SELECT COUNT(*) AS cnt FROM micro_cards
