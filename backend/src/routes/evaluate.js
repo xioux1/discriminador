@@ -473,45 +473,44 @@ evaluateRouter.post('/evaluate', llmRateLimit, async (req, res) => {
       RETURNING id, created_at
     `;
 
-    const evaluationSignalsInsertValues = [
-      evaluationItem.id,
-      evaluationId,
-      normalizedFields.prompt_text,
-      normalizedSubject || null,
-      result.signals.keywordCoverage,
-      result.signals.answerLengthRatio,
-      result.signals.lexicalSimilarity,
-      JSON.stringify(result.dimensions),
-      result.suggested_grade.toLowerCase()
-    ];
-
     let evaluationSignals = null;
 
-    await client.query('SAVEPOINT persist_evaluation_signals');
+    // evaluation_signals requires heuristic columns (NOT NULL); skip when not available.
+    const hasHeuristicSignals = result.signals.keywordCoverage != null;
+    if (hasHeuristicSignals) {
+      const evaluationSignalsInsertValues = [
+        evaluationItem.id,
+        evaluationId,
+        normalizedFields.prompt_text,
+        normalizedSubject || null,
+        result.signals.keywordCoverage,
+        result.signals.answerLengthRatio,
+        result.signals.lexicalSimilarity,
+        JSON.stringify(result.dimensions),
+        result.suggested_grade.toLowerCase()
+      ];
 
-    try {
-      const evaluationSignalsInsertResult = await client.query(
-        evaluationSignalsInsertQuery,
-        evaluationSignalsInsertValues
-      );
+      await client.query('SAVEPOINT persist_evaluation_signals');
 
-      evaluationSignals = evaluationSignalsInsertResult.rows[0];
-    } catch (signalsError) {
-      await client.query('ROLLBACK TO SAVEPOINT persist_evaluation_signals');
-
-      if (signalsError?.code === '42P01') {
-        console.warn(
-          'Skipping evaluation_signals persistence because table does not exist.',
-          {
+      try {
+        const evaluationSignalsInsertResult = await client.query(
+          evaluationSignalsInsertQuery,
+          evaluationSignalsInsertValues
+        );
+        evaluationSignals = evaluationSignalsInsertResult.rows[0];
+      } catch (signalsError) {
+        await client.query('ROLLBACK TO SAVEPOINT persist_evaluation_signals');
+        if (signalsError?.code === '42P01') {
+          console.warn('Skipping evaluation_signals persistence because table does not exist.', {
             code: signalsError.code,
             message: signalsError.message
-          }
-        );
-      } else {
-        throw signalsError;
+          });
+        } else {
+          throw signalsError;
+        }
+      } finally {
+        await client.query('RELEASE SAVEPOINT persist_evaluation_signals');
       }
-    } finally {
-      await client.query('RELEASE SAVEPOINT persist_evaluation_signals');
     }
 
     // Persist concept gaps extracted by the LLM judge (best-effort, non-blocking).
