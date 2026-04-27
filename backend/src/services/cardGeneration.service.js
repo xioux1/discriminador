@@ -245,8 +245,8 @@ Reglas estrictas:
 5. Las preguntas deben ser abiertas, no multiple choice, no verdadero/falso.
 6. Cada pregunta debe evaluar comprensión, no repetición mecánica.
 7. expected_answer debe estar en bullets con 3 a 5 ítems.
-8. Cada bullet de expected_answer debe tener entre 6 y 18 palabras.
-9. Cada expected_answer completo debe tener aproximadamente 35–95 palabras.
+8. Cada bullet de expected_answer debe tener entre 4 y 18 palabras.
+9. Cada expected_answer completo debe tener aproximadamente 20–110 palabras.
 10. No generes variantes duplicadas.
 11. Si varios conceptos se solapan, combinalos en una variante más fuerte.
 12. Cada variante debe incluir una rúbrica de corrección con 3 a 6 bullets.
@@ -377,8 +377,8 @@ export function validateGeneratedCardDraft(output, context, maxVariants) {
       vErrs.push('expected_answer is empty');
     } else {
       const wordCount = v.expected_answer.trim().split(/\s+/).length;
-      if (wordCount < 35 || wordCount > 110) {
-        vErrs.push(`expected_answer has ${wordCount} words (expected 35–110)`);
+      if (wordCount < 20 || wordCount > 110) {
+        vErrs.push(`expected_answer has ${wordCount} words (expected 20–110)`);
       }
 
       const bullets = v.expected_answer
@@ -391,8 +391,8 @@ export function validateGeneratedCardDraft(output, context, maxVariants) {
       } else {
         for (const bullet of bullets) {
           const bulletWords = bullet.replace(/^[-*•]\s+/, '').split(/\s+/).filter(Boolean).length;
-          if (bulletWords < 6 || bulletWords > 18) {
-            vErrs.push(`expected_answer bullet has ${bulletWords} words (expected 6–18)`);
+          if (bulletWords < 4 || bulletWords > 18) {
+            vErrs.push(`expected_answer bullet has ${bulletWords} words (expected 4–18)`);
             break;
           }
         }
