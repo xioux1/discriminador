@@ -4004,6 +4004,11 @@ function startExamSession(cards, subject) {
   studyState.isPaused           = false;
   studyState.pausedAt           = 0;
 
+  postJson('/study/sessions', {
+    planned_minutes:    0,
+    planned_card_count: studyState.queue.length
+  }).then(d => { studyState.sessionId = d?.session_id ?? null; }).catch(() => {});
+
   document.querySelector('#study-overview').classList.add('hidden');
   document.querySelector('#study-complete').classList.add('hidden');
   document.querySelector('#exam-complete').classList.add('hidden');
@@ -4131,6 +4136,7 @@ async function _doStartStudySession() {
   studyState.currentEvalResult  = null;
   studyState.currentEvalContext = null;
   studyState.currentDecision    = null;
+  studyState.sessionId          = null;
   studyState.sessionStartTime   = Date.now();
   studyState.sessionLimitMs     = null; // ad-hoc: no time limit (8 h expiry)
   studyState.sessionEnergyLevel = briefingState.selectedEnergy || null;
@@ -4143,6 +4149,12 @@ async function _doStartStudySession() {
     loadStudyOverview();
     return;
   }
+
+  postJson('/study/sessions', {
+    planned_minutes:    0,
+    planned_card_count: studyState.queue.length,
+    energy_level:       studyState.sessionEnergyLevel
+  }).then(d => { studyState.sessionId = d?.session_id ?? null; }).catch(() => {});
 
   document.querySelector('#study-overview').classList.add('hidden');
   document.querySelector('#study-add-form').classList.add('hidden');
