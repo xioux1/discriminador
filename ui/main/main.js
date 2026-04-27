@@ -2009,6 +2009,23 @@ MathPalette.init();
 
 const _evalAnswerTextarea = document.querySelector('#user_answer_text');
 const _editorModeSelect   = document.querySelector('#editor-mode-select');
+const _evalHlColorSelect  = document.querySelector('#eval-hl-color');
+const _studyHlColorSelect = document.querySelector('#study-hl-color');
+const HL_COLOR_STORAGE_KEY = 'math-hl-color';
+
+function getMathHighlightColor() {
+  const saved = localStorage.getItem(HL_COLOR_STORAGE_KEY) || 'yellow';
+  return ['yellow', 'blue', 'green', 'pink'].includes(saved) ? saved : 'yellow';
+}
+
+function setMathHighlightColor(color) {
+  const safe = ['yellow', 'blue', 'green', 'pink'].includes(color) ? color : 'yellow';
+  localStorage.setItem(HL_COLOR_STORAGE_KEY, safe);
+  if (_evalHlColorSelect) _evalHlColorSelect.value = safe;
+  if (_studyHlColorSelect) _studyHlColorSelect.value = safe;
+  MathPreview.setHighlightColor(_evalAnswerTextarea, safe);
+  MathPreview.setHighlightColor(document.querySelector('#study-answer-input'), safe);
+}
 
 _evalAnswerTextarea.addEventListener('focus', function () {
   MathPalette.setActiveTextarea(_evalAnswerTextarea);
@@ -2028,6 +2045,9 @@ function attachMathTabInsertion(textarea, isMathModeFn) {
 
 attachMathTabInsertion(_evalAnswerTextarea, () => (_editorModeSelect?.value || '') === 'math');
 MathPreview.attach(_evalAnswerTextarea, () => (_editorModeSelect?.value || '') === 'math');
+setMathHighlightColor(getMathHighlightColor());
+_evalHlColorSelect?.addEventListener('change', (e) => setMathHighlightColor(e.target.value));
+_studyHlColorSelect?.addEventListener('change', (e) => setMathHighlightColor(e.target.value));
 
 function _subjectModeKey(subject) {
   return 'editor-mode:' + (subject || '').trim().toLowerCase();
@@ -2699,7 +2719,7 @@ form.addEventListener('submit', async (event) => {
 
   const payload = {
     prompt_text: normalize(form.prompt_text.value),
-    user_answer_text: normalize(form.user_answer_text.value),
+    user_answer_text: normalize(MathPreview.serialize(form.user_answer_text)),
     expected_answer_text: normalize(form.expected_answer_text.value),
     subject: normalize(form.subject.value),
   };
@@ -3416,6 +3436,7 @@ function initStudyTab() {
     document.querySelector('#study-answer-input'),
     () => studyState.currentInputMode === 'math'
   );
+  setMathHighlightColor(getMathHighlightColor());
   bindStudyKeyboardShortcuts();
 
   // Single TTS replay button listener (registered once; _ttsCurrentText drives which text to play)
@@ -3433,7 +3454,7 @@ function initStudyTab() {
     const item = studyState.queue[studyState.index];
     if (!item || item.type !== 'card') return;
 
-    const answer = document.querySelector('#study-answer-input').value.trim();
+    const answer = MathPreview.serialize(document.querySelector('#study-answer-input')).trim();
     if (!answer) return;
 
     const btn = document.querySelector('#study-binary-check-btn');
@@ -4635,7 +4656,7 @@ async function clarifyStudyPrompt() {
 const _studyVerifyBtn = document.querySelector('#study-verify-btn');
 if (_studyVerifyBtn) {
   _studyVerifyBtn.addEventListener('click', async function () {
-    const sql = (document.querySelector('#study-answer-input').value || '').trim();
+    const sql = MathPreview.serialize(document.querySelector('#study-answer-input')).trim();
     if (!sql) return;
     const out = document.querySelector('#study-compiler-output');
     const evalBtn = document.querySelector('#study-eval-btn');
@@ -4648,7 +4669,7 @@ if (_studyVerifyBtn) {
 
 document.querySelector('#study-eval-btn').addEventListener('click', async () => {
   const item     = studyState.queue[studyState.index];
-  const answer   = document.querySelector('#study-answer-input').value.trim();
+  const answer   = MathPreview.serialize(document.querySelector('#study-answer-input')).trim();
   const evalBtn  = document.querySelector('#study-eval-btn');
 
   if (!answer) return;
@@ -4749,11 +4770,11 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       dimsEl.innerHTML = weakDimensions.map(([dimension, value]) => {
         const pct = Math.round(Number(value) * 100);
         const label = DIM_LABELS[dimension] || dimension;
-        return `<span class="study-dimension-chip weak">${label}: ${pct}%</span>`;
+        return `<span class="study-dimension-chip weak hl-pink">${label}: ${pct}%</span>`;
       }).join('');
       dimsEl.classList.remove('hidden');
     } else {
-      dimsEl.innerHTML = '<span class="study-dimension-chip ok">Buen dominio general en esta respuesta.</span>';
+      dimsEl.innerHTML = '<span class="study-dimension-chip ok hl-green">Buen dominio general en esta respuesta.</span>';
       dimsEl.classList.remove('hidden');
     }
 
@@ -4764,9 +4785,9 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
     const weakTags = weakDimensions.map(([dimension, value]) => {
       const label = DIM_LABELS[dimension] || dimension;
       const pct = Math.round(Number(value) * 100);
-      return `<span class="study-dimension-chip weak">${label}: ${pct}%</span>`;
+      return `<span class="study-dimension-chip weak hl-pink">${label}: ${pct}%</span>`;
     }).join(' ');
-    const missingTags = concepts.map((c) => `<span class="concept-tag">${escHtml(c)}</span>`).join(' ');
+    const missingTags = concepts.map((c) => `<span class="concept-tag hl-yellow">${escHtml(c)}</span>`).join(' ');
     const groupedTags = (weakTags || missingTags)
       ? `<div class="study-answer-compare-block"><strong>Etiquetas:</strong> ${weakTags}${weakTags && missingTags ? ' ' : ''}${missingTags}</div>`
       : '';
@@ -5084,7 +5105,7 @@ document.querySelector('#study-doubt-btn').addEventListener('click', async () =>
   const cardPrompt    = isMicro ? item.data.question    : item.data.prompt_text;
   const expectedAns   = isMicro ? (item.data.expected_answer || item.data.parent_expected) : item.data.expected_answer_text;
   const subject       = isMicro ? (item.data.parent_subject ?? item.data.subject) : item.data.subject;
-  const userAnswer    = (document.querySelector('#study-answer-input').value || '').trim();
+  const userAnswer    = MathPreview.serialize(document.querySelector('#study-answer-input')).trim();
   const grade         = evalResult ? String(evalResult.suggested_grade || '').toLowerCase() : '';
 
   try {
