@@ -1,0 +1,1 @@
+ALTER TABLE micro_cards ADD COLUMN IF NOT EXISTS presentation TEXT NOT NULL DEFAULT 'text';

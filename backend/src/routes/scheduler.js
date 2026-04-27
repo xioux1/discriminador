@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { dbPool } from '../db/client.js';
 import { computeNextReview, isPassGrade, isFailGrade } from '../services/scheduler.js';
-import { generateMicroCard, generateMicroCardFromCheckError, generateChineseMicroCard, isChineseCard, rankGaps } from '../services/micro-generator.js';
+import { generateMicroCard, generateMicroCardFromCheckError, generateChineseMicroCard, generateChineseListeningMicroCard, isChineseCard, rankGaps } from '../services/micro-generator.js';
 import { generateVariant, buildChineseListeningVariant } from '../services/variant-generator.js';
 import Anthropic from '@anthropic-ai/sdk';
 
@@ -304,7 +304,7 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
 // check_fail_ids: IDs from binary_check_log for negative in-session checks.
 //   When non-empty and final grade is negative, an extra ease penalty applies.
 schedulerRouter.post('/scheduler/review', async (req, res) => {
-  const { card_id, micro_card_id, grade, concept_gaps = [], response_time_ms, review_time_ms, user_answer = '', check_fail_ids = [], variant_prompt_text, variant_expected_answer_text } = req.body || {};
+  const { card_id, micro_card_id, grade, concept_gaps = [], response_time_ms, review_time_ms, user_answer = '', check_fail_ids = [], variant_prompt_text, variant_expected_answer_text, variant_type } = req.body || {};
   const userId = req.user.id;
 
   const VALID_GRADES = new Set(['pass', 'fail', 'review', 'again', 'hard', 'good', 'easy']);
@@ -327,7 +327,7 @@ schedulerRouter.post('/scheduler/review', async (req, res) => {
       return await reviewMicroCard(res, Number(micro_card_id), effectiveGrade, concept_gaps, user_answer, rtMs, rvtMs, userId);
     } else if (card_id) {
       const checkFailIds = Array.isArray(check_fail_ids) ? check_fail_ids.map(Number).filter(Boolean) : [];
-      return await reviewCard(res, Number(card_id), effectiveGrade, concept_gaps, rtMs, rvtMs, userId, user_answer, checkFailIds, variant_prompt_text, variant_expected_answer_text);
+      return await reviewCard(res, Number(card_id), effectiveGrade, concept_gaps, rtMs, rvtMs, userId, user_answer, checkFailIds, variant_prompt_text, variant_expected_answer_text, variant_type);
     }
     return res.status(422).json({
       error: 'validation_error',
@@ -398,7 +398,7 @@ async function autoGenerateVariant(cardId, card, userId) {
 }
 
 // ─── Internal: review a full card ────────────────────────────────────────────
-async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, reviewTimeMs, userId, userAnswer = '', checkFailIds = [], variantPromptText, variantExpectedAnswerText) {
+async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, reviewTimeMs, userId, userAnswer = '', checkFailIds = [], variantPromptText, variantExpectedAnswerText, variantType) {
   const checkFailCount = checkFailIds.length;
   const { rows } = await dbPool.query(
     'SELECT * FROM cards WHERE id = $1 AND user_id = $2 AND archived_at IS NULL AND suspended_at IS NULL',
@@ -513,23 +513,26 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
     });
     const targetConcepts = rankedGaps.slice(0, slotsAvailable);
 
+    const isListeningReview = variantType === 'listening';
+
     for (const concept of targetConcepts) {
       try {
-        const _microFn = isChineseCard(card) ? generateChineseMicroCard : generateMicroCard;
-        const micro = await _microFn({
-          prompt_text:          microPromptText,
-          expected_answer_text: microExpectedText,
-          subject:              card.subject,
-          concept,
-          user_answer:          userAnswer
-        });
+        let micro, presentation;
+        if (isListeningReview) {
+          micro        = await generateChineseListeningMicroCard({ expected_answer_text: microExpectedText, concept });
+          presentation = 'listening';
+        } else {
+          const _microFn = isChineseCard(card) ? generateChineseMicroCard : generateMicroCard;
+          micro        = await _microFn({ prompt_text: microPromptText, expected_answer_text: microExpectedText, subject: card.subject, concept, user_answer: userAnswer });
+          presentation = 'text';
+        }
 
         const inserted = await dbPool.query(
-          `INSERT INTO micro_cards (parent_card_id, concept, question, expected_answer, user_id, subject)
-           VALUES ($1, $2, $3, $4, $5, $6)
+          `INSERT INTO micro_cards (parent_card_id, concept, question, expected_answer, user_id, subject, presentation)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
            ON CONFLICT DO NOTHING
            RETURNING *`,
-          [cardId, concept, micro.question, micro.expected_answer, userId, card.subject || null]
+          [cardId, concept, micro.question, micro.expected_answer, userId, card.subject || null, presentation]
         );
         if (inserted.rows.length) newMicroCards.push({ ...inserted.rows[0], parent_subject: card.subject || null, parent_prompt: microPromptText });
       } catch (microErr) {
