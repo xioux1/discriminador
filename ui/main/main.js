@@ -4243,7 +4243,7 @@ async function startStudySession() {
 }
 
 function addCheckErrorTag(label) {
-  const container = document.querySelector('#study-check-error-tags');
+  const container = document.querySelector('#study-check-error-tags-result');
   if (!container) return;
   const existing = Array.from(container.querySelectorAll('.check-error-tag-label'))
     .map((el) => el.textContent);
@@ -4256,10 +4256,19 @@ function addCheckErrorTag(label) {
 }
 
 function clearCheckErrorTags() {
-  const container = document.querySelector('#study-check-error-tags');
+  const container = document.querySelector('#study-check-error-tags-result');
   if (!container) return;
   container.innerHTML = '';
   container.classList.add('hidden');
+}
+
+function summarizeJustificationLine(result = {}) {
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = buildJustificationHtml(result);
+  const text = (wrapper.textContent || '').replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  const [first] = text.split(/[.!?]\s+/).filter(Boolean);
+  return (first || text).trim().replace(/[.!?]+$/, '') + '.';
 }
 
 function showStudyCard() {
@@ -4350,6 +4359,13 @@ function showStudyCard() {
   document.querySelector('#study-answer-block').classList.remove('hidden');
   document.querySelector('#study-result-block').classList.add('hidden');
   document.querySelector('#study-doubt-section')?.classList.add('hidden');
+  const advancedPanel = document.querySelector('#study-advanced-panel');
+  const advancedToggleBtn = document.querySelector('#study-advanced-toggle-btn');
+  if (advancedPanel) advancedPanel.open = false;
+  if (advancedToggleBtn) {
+    advancedToggleBtn.textContent = 'Ver explicación';
+    advancedToggleBtn.setAttribute('aria-expanded', 'false');
+  }
   // In exam mode hide secondary controls that don't belong in a simulation
   const studyFlagBtn   = document.querySelector('#study-flag-btn');
   const studyClarify   = document.querySelector('#study-clarify-prompt-btn');
@@ -4746,7 +4762,7 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
 
     gradeEl.textContent = getSuggestedGradeLabel(result.suggested_grade);
     gradeEl.className   = `study-grade-inline ${grade.toLowerCase()}`;
-    renderJustification(justEl, result);
+    justEl.textContent = summarizeJustificationLine(result);
     justEl.classList.remove('hidden');
 
     const timeEl = document.querySelector('#study-result-time');
@@ -4864,10 +4880,10 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
         cardData:             currentItem?.data
       });
     } else {
-      nextBtn.disabled = true;
+      nextBtn.disabled = false;
       if (decisionReason) decisionReason.value = '';
       if (decisionFb) {
-        decisionFb.textContent = 'Firmá esta evaluación para continuar.';
+        decisionFb.textContent = 'Podés ajustar la firma si querés; si no, “Siguiente” acepta automáticamente la sugerencia.';
         decisionFb.className = 'feedback';
       }
       if (decisionBlock) {
@@ -4986,6 +5002,35 @@ async function deleteCurrentStudyCardFromFront() {
 }
 
 const studyDecisionBlock = document.querySelector('#study-decision-block');
+async function persistStudyDecision(action, reasonText = '') {
+  if (!studyState.currentEvalResult || !studyState.currentEvalContext) {
+    throw new Error('No hay una evaluación activa para firmar.');
+  }
+  const reason = normalize(reasonText || '');
+  const finalGrade = resolveStudyFinalGrade(action, studyState.currentEvalResult.suggested_grade);
+  const isArchiveAction = action === 'archive-card';
+  const payload = {
+    ...studyState.currentEvalContext,
+    evaluation_id: studyState.currentEvalResult.evaluation_id,
+    evaluation_result: studyState.currentEvalResult,
+    action,
+    final_grade: finalGrade,
+    accepted_suggestion: action === 'accept',
+    correction_reason: reason || undefined
+  };
+
+  if (isArchiveAction) {
+    await archiveCurrentStudyCard(reason);
+  } else {
+    await postJson(DECISION_ENDPOINT, payload);
+  }
+  studyState.currentDecision = {
+    action,
+    finalGrade: finalGrade ? finalGrade.toLowerCase() : null
+  };
+  return { finalGrade, isArchiveAction };
+}
+
 if (studyDecisionBlock) {
   studyDecisionBlock.addEventListener('click', async (event) => {
     const action = event.target?.dataset?.studyAction;
@@ -4993,19 +5038,8 @@ if (studyDecisionBlock) {
 
     const feedbackEl = document.querySelector('#study-decision-feedback');
     const reasonEl = document.querySelector('#study-correction-reason');
-    const reason = normalize(reasonEl?.value || '');
-    const finalGrade = resolveStudyFinalGrade(action, studyState.currentEvalResult.suggested_grade);
+    const reason = reasonEl?.value || '';
     const isArchiveAction = action === 'archive-card';
-
-    const payload = {
-      ...studyState.currentEvalContext,
-      evaluation_id: studyState.currentEvalResult.evaluation_id,
-      evaluation_result: studyState.currentEvalResult,
-      action,
-      final_grade: finalGrade,
-      accepted_suggestion: action === 'accept',
-      correction_reason: reason || undefined
-    };
 
     studyDecisionBlock.querySelectorAll('button').forEach((btn) => { btn.disabled = true; });
     if (feedbackEl) {
@@ -5014,15 +5048,7 @@ if (studyDecisionBlock) {
     }
 
     try {
-      if (isArchiveAction) {
-        await archiveCurrentStudyCard(reason);
-      } else {
-        await postJson(DECISION_ENDPOINT, payload);
-      }
-      studyState.currentDecision = {
-        action,
-        finalGrade: finalGrade ? finalGrade.toLowerCase() : null
-      };
+      const { finalGrade } = await persistStudyDecision(action, reason);
       if (feedbackEl) {
         feedbackEl.textContent = isArchiveAction
           ? 'Tarjeta archivada. Ya podés continuar.'
@@ -5132,18 +5158,43 @@ document.querySelector('#study-next-btn').addEventListener('click', async () => 
   await handleStudyNextCard();
 });
 
+const studyAdvancedToggleBtn = document.querySelector('#study-advanced-toggle-btn');
+const studyAdvancedPanel = document.querySelector('#study-advanced-panel');
+if (studyAdvancedToggleBtn && studyAdvancedPanel) {
+  studyAdvancedToggleBtn.addEventListener('click', () => {
+    studyAdvancedPanel.open = !studyAdvancedPanel.open;
+    const expanded = studyAdvancedPanel.open;
+    studyAdvancedToggleBtn.textContent = expanded ? 'Ocultar explicación' : 'Ver explicación';
+    studyAdvancedToggleBtn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+  });
+  studyAdvancedPanel.addEventListener('toggle', () => {
+    const expanded = studyAdvancedPanel.open;
+    studyAdvancedToggleBtn.textContent = expanded ? 'Ocultar explicación' : 'Ver explicación';
+    studyAdvancedToggleBtn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+  });
+}
+
 async function handleStudyNextCard() {
   const item   = studyState.queue[studyState.index];
   const evalResult = studyState.currentEvalResult;
-  const decision = studyState.currentDecision;
+  let decision = studyState.currentDecision;
   if (!evalResult) { advanceStudyCard(); return; }
   if (!decision) {
     const feedbackEl = document.querySelector('#study-decision-feedback');
-    if (feedbackEl) {
-      feedbackEl.textContent = 'Firmá esta evaluación antes de pasar a la siguiente.';
-      feedbackEl.className = 'feedback error';
+    try {
+      const { finalGrade } = await persistStudyDecision('accept');
+      decision = studyState.currentDecision;
+      if (feedbackEl) {
+        feedbackEl.textContent = `Firma automática guardada (${finalGrade}).`;
+        feedbackEl.className = 'feedback success';
+      }
+    } catch (err) {
+      if (feedbackEl) {
+        feedbackEl.textContent = `No se pudo guardar la firma automática: ${err.message}`;
+        feedbackEl.className = 'feedback error';
+      }
+      return;
     }
-    return;
   }
 
   // Capture review time (time from answer revealed to Siguiente clicked)
