@@ -519,7 +519,7 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
            RETURNING *`,
           [cardId, concept, micro.question, micro.expected_answer, userId, card.subject || null]
         );
-        if (inserted.rows.length) newMicroCards.push(inserted.rows[0]);
+        if (inserted.rows.length) newMicroCards.push({ ...inserted.rows[0], parent_subject: card.subject || null, parent_prompt: card.prompt_text });
       } catch (microErr) {
         console.warn(`Failed to generate micro-card for concept "${concept}":`, microErr.message);
       }
@@ -576,7 +576,7 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
                RETURNING *`,
               [cardId, errRow.error_label, micro.question, micro.expected_answer, userId, card.subject || null]
             );
-            if (inserted.rows.length) newMicroCards.push(inserted.rows[0]);
+            if (inserted.rows.length) newMicroCards.push({ ...inserted.rows[0], parent_subject: card.subject || null, parent_prompt: card.prompt_text });
           } catch (microErr) {
             console.error(`[check micro] Failed to generate micro-card for error "${errRow.error_label}":`, microErr.message);
           }
@@ -724,7 +724,7 @@ async function reviewMicroCard(res, microCardId, grade, conceptGaps, userAnswer,
                RETURNING *`,
               [micro.parent_card_id, concept, sibling.question, sibling.expected_answer, userId, micro.subject || parent.subject || null]
             );
-            if (inserted.rows.length) newMicroCards.push(inserted.rows[0]);
+            if (inserted.rows.length) newMicroCards.push({ ...inserted.rows[0], parent_subject: micro.subject || parent.subject || null, parent_prompt: parent.prompt_text });
           } catch (err) {
             console.warn(`Failed to generate sibling micro-card for concept "${concept}":`, err.message);
           }

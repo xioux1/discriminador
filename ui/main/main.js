@@ -4205,7 +4205,7 @@ function showStudyCard() {
   const promptEl = document.querySelector('#study-card-prompt');
   const parentContextEl = document.querySelector('#study-card-parent-context');
   const parentPromptEl  = document.querySelector('#study-card-parent-prompt');
-  const subject = item.type === 'micro' ? item.data.parent_subject : item.data.subject;
+  const subject = item.type === 'micro' ? (item.data.parent_subject ?? item.data.subject) : item.data.subject;
   const subjectLabel = subject || '(sin materia)';
 
   subjectEl.textContent = `Materia: ${subjectLabel}`;
@@ -4606,7 +4606,7 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
   if (item.type === 'micro') {
     prompt_text          = getStudyPromptText(item);
     expected_answer_text = item.data.expected_answer || item.data.parent_expected;
-    subject              = item.data.parent_subject;
+    subject              = item.data.parent_subject ?? item.data.subject;
   } else {
     prompt_text          = getStudyPromptText(item);
     expected_answer_text = item.data.expected_answer_text;
@@ -5016,7 +5016,7 @@ document.querySelector('#study-doubt-btn').addEventListener('click', async () =>
   const isMicro = item?.type === 'micro';
   const cardPrompt    = isMicro ? item.data.question    : item.data.prompt_text;
   const expectedAns   = isMicro ? (item.data.expected_answer || item.data.parent_expected) : item.data.expected_answer_text;
-  const subject       = isMicro ? item.data.parent_subject  : item.data.subject;
+  const subject       = isMicro ? (item.data.parent_subject ?? item.data.subject) : item.data.subject;
   const userAnswer    = (document.querySelector('#study-answer-input').value || '').trim();
   const grade         = evalResult ? String(evalResult.suggested_grade || '').toLowerCase() : '';
 
