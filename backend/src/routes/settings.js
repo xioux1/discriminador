@@ -8,6 +8,7 @@ const DEFAULTS = {
   gratitude_enabled:          true,
   time_restriction_enabled:   true,
   planner_gate_enabled:       true,
+  realtime_break_notifications_enabled: true,
   default_retention_floor:    null,
   default_grading_strictness: null,
 };
@@ -18,7 +19,8 @@ settingsRouter.get('/settings', async (req, res) => {
   try {
     const { rows } = await dbPool.query(
       `SELECT session_planning_enabled, gratitude_enabled, time_restriction_enabled,
-              planner_gate_enabled, default_retention_floor, default_grading_strictness
+              planner_gate_enabled, realtime_break_notifications_enabled,
+              default_retention_floor, default_grading_strictness
        FROM user_settings WHERE user_id = $1`,
       [userId]
     );
@@ -37,6 +39,7 @@ settingsRouter.put('/settings', async (req, res) => {
     gratitude_enabled,
     time_restriction_enabled,
     planner_gate_enabled,
+    realtime_break_notifications_enabled,
     default_retention_floor,
     default_grading_strictness,
   } = req.body || {};
@@ -52,24 +55,28 @@ settingsRouter.put('/settings', async (req, res) => {
     const { rows } = await dbPool.query(
       `INSERT INTO user_settings
          (user_id, session_planning_enabled, gratitude_enabled, time_restriction_enabled,
-          planner_gate_enabled, default_retention_floor, default_grading_strictness, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,now())
+          planner_gate_enabled, realtime_break_notifications_enabled,
+          default_retention_floor, default_grading_strictness, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,now())
        ON CONFLICT (user_id) DO UPDATE SET
          session_planning_enabled   = EXCLUDED.session_planning_enabled,
          gratitude_enabled          = EXCLUDED.gratitude_enabled,
          time_restriction_enabled   = EXCLUDED.time_restriction_enabled,
          planner_gate_enabled       = EXCLUDED.planner_gate_enabled,
+         realtime_break_notifications_enabled = EXCLUDED.realtime_break_notifications_enabled,
          default_retention_floor    = EXCLUDED.default_retention_floor,
          default_grading_strictness = EXCLUDED.default_grading_strictness,
          updated_at                 = now()
        RETURNING session_planning_enabled, gratitude_enabled, time_restriction_enabled,
-                 planner_gate_enabled, default_retention_floor, default_grading_strictness`,
+                 planner_gate_enabled, realtime_break_notifications_enabled,
+                 default_retention_floor, default_grading_strictness`,
       [
         userId,
         toBool(session_planning_enabled,   true),
         toBool(gratitude_enabled,          true),
         toBool(time_restriction_enabled,   true),
         toBool(planner_gate_enabled,       true),
+        toBool(realtime_break_notifications_enabled, true),
         toIntNull(default_retention_floor,    50, 99),
         toIntNull(default_grading_strictness,  0, 10),
       ]
