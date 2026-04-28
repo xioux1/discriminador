@@ -5000,7 +5000,7 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
         const resultBlock = document.querySelector('#study-result-block');
         const actionsEl = resultBlock.querySelector('.study-result-actions');
         if (actionsEl) {
-          resultBlock.insertBefore(studySqlChecklist, actionsEl);
+          actionsEl.parentNode.insertBefore(studySqlChecklist, actionsEl);
         } else {
           resultBlock.appendChild(studySqlChecklist);
         }
