@@ -30,7 +30,8 @@ router.get('/api/documents', async (req, res, next) => {
            ), 0
          ) AS word_count,
          COUNT(DISTINCT c.id)::int AS concept_count,
-         COUNT(DISTINCT cl.id)::int AS cluster_count
+         COUNT(DISTINCT cl.id)::int AS cluster_count,
+         COALESCE(BOOL_OR(cl.importance_computed_at IS NOT NULL), false) AS has_ranking
        FROM documents d
        LEFT JOIN concepts c  ON c.document_id = d.id
        LEFT JOIN clusters cl ON cl.document_id = d.id

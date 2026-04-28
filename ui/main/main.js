@@ -7965,6 +7965,7 @@ function initDocumentsTab() {
 
     if (doc.concept_count > 0) updateConceptBadge(item, doc.concept_count);
     if (doc.cluster_count > 0) updateClusterBadge(item, doc.cluster_count);
+    if (doc.has_ranking)       showRankingToggle(item);
 
     wire(item, doc.id, doc.subject);
     return item;
@@ -7977,7 +7978,7 @@ function initDocumentsTab() {
     item.querySelector('.docs-clusterize-btn').addEventListener('click', () => clusterizeConcepts(docId, item));
     item.querySelector('.docs-clusters-toggle').addEventListener('click', () => toggleClustersPanel(docId, item));
     item.querySelector('.docs-rank-btn').addEventListener('click', () => rankClusters(docId, item));
-    item.querySelector('.docs-ranking-toggle').addEventListener('click', () => toggleRankingPanel(item));
+    item.querySelector('.docs-ranking-toggle').addEventListener('click', () => toggleRankingPanel(docId, item));
     item.querySelector('.docs-delete-btn').addEventListener('click', () => deleteDoc(docId, item));
     item.querySelector('.docs-view-content-btn').addEventListener('click', () => toggleContentPanel(docId, item));
     item.querySelector('.docs-load-exam-btn').addEventListener('click', () => toggleExamLoadPanel(item));
@@ -8080,6 +8081,10 @@ function initDocumentsTab() {
   }
 
   // ── Update the cluster count badge ───────────────────────────────────────────
+  function showRankingToggle(item) {
+    item.querySelector('.docs-ranking-toggle').classList.remove('hidden');
+  }
+
   function updateClusterBadge(item, count) {
     const toggle        = item.querySelector('.docs-clusters-toggle');
     const label         = item.querySelector('.docs-clusters-count');
@@ -8360,12 +8365,24 @@ function initDocumentsTab() {
     }
   }
 
-  function toggleRankingPanel(item) {
+  async function toggleRankingPanel(docId, item) {
     const panel  = item.querySelector('.docs-ranking-panel');
     const toggle = item.querySelector('.docs-ranking-toggle');
     const isOpen = panel.classList.contains('open');
+
     panel.classList.toggle('open', !isOpen);
     toggle.classList.toggle('open', !isOpen);
+
+    // Lazy-load stored ranking on first open (panel has no content yet)
+    if (!isOpen && panel.children.length === 0) {
+      panel.innerHTML = '<span style="color:var(--text-muted);font-size:var(--fs-sm)">Cargando ranking...</span>';
+      try {
+        const data = await getJson(`/api/documents/${docId}/rank-clusters`);
+        renderRankingInPanel(panel, data);
+      } catch (err) {
+        panel.innerHTML = `<span style="color:var(--fail-fg);font-size:var(--fs-sm)">Error al cargar ranking: ${escHtml(err.message)}</span>`;
+      }
+    }
   }
 
   function renderRankingInPanel(panel, data) {
