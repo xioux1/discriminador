@@ -381,7 +381,8 @@ export async function rankClustersForDocument(documentId) {
 
   // Step 1 — Fetch clusters
   const { rows: clusters } = await dbPool.query(
-    `SELECT id, name, definition, document_id
+    `SELECT id, name, definition, document_id,
+            cards_added_at, cards_added_count, cards_added_subject
      FROM clusters
      WHERE document_id = $1
      ORDER BY created_at ASC`,
@@ -643,6 +644,10 @@ export async function rankClustersForDocument(documentId) {
       relative_priority_tier: c.relative_priority_tier,
 
       importance_reasons,
+
+      cards_added_at: c.cards_added_at || null,
+      cards_added_count: c.cards_added_count || null,
+      cards_added_subject: c.cards_added_subject || null,
     });
   }
 

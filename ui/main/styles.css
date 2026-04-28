@@ -4466,6 +4466,44 @@ textarea.chinese-input {
 [data-theme="dark"] .docs-ranking-panel { background: rgba(255,255,255,0.04); }
 [data-theme="dark"] .docs-ranking-item  { background: var(--surface); }
 
+/* ── Cluster "cards added" state ─────────────────────────────────────────── */
+.docs-ranking-item--cards-added {
+  border-color: rgba(90, 160, 90, 0.45);
+  background: rgba(90, 160, 90, 0.06);
+}
+[data-theme="dark"] .docs-ranking-item--cards-added {
+  border-color: rgba(90, 160, 90, 0.35);
+  background: rgba(90, 160, 90, 0.08);
+}
+
+.docs-cluster-added-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--pass-fg);
+  background: var(--pass-bg);
+  border: 1px solid rgba(90, 143, 90, 0.30);
+  border-radius: 10px;
+  padding: 1px 7px;
+  flex-shrink: 0;
+}
+
+.docs-cluster-added-log {
+  font-size: 0.75rem;
+  color: var(--pass-fg);
+  background: var(--pass-bg);
+  border: 1px solid rgba(90, 143, 90, 0.20);
+  border-radius: 4px;
+  padding: 4px 8px;
+  margin-top: 6px;
+  margin-bottom: 2px;
+}
+[data-theme="dark"] .docs-cluster-added-log {
+  background: rgba(90, 160, 90, 0.10);
+  border-color: rgba(90, 160, 90, 0.20);
+}
+
 /* ── Generate-cards action row ───────────────────────────────────────────── */
 .docs-ranking-item-actions {
   display: flex;

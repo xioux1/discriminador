@@ -8038,6 +8038,7 @@ function initDocumentsTab() {
       const tier      = cl.relative_priority_tier || cl.priority_tier || '?';
       const relScore  = cl.relative_importance_score;
       const absScore  = cl.importance_score;
+      const wasAdded  = Boolean(cl.cards_added_at);
 
       // Progress bar driven by relative score when available, else absolute
       const barPct    = relScore != null ? Math.round(relScore * 100) : (absScore != null ? Math.round(absScore * 100) : 0);
@@ -8090,8 +8091,21 @@ function initDocumentsTab() {
 
       const relLabel = relScore != null ? `Top relativo · ${absLabel} absoluto` : absLabel;
 
+      let cardsAddedLog = '';
+      if (wasAdded) {
+        const addedDate = new Date(cl.cards_added_at);
+        const dateStr   = addedDate.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        const countStr  = cl.cards_added_count != null
+          ? `${cl.cards_added_count} tarjeta${cl.cards_added_count !== 1 ? 's' : ''}`
+          : 'tarjetas';
+        const subjectStr = cl.cards_added_subject
+          ? ` &rarr; <em>${escHtml(cl.cards_added_subject)}</em>`
+          : '';
+        cardsAddedLog = `<div class="docs-cluster-added-log">&#10003; Tarjetas agregadas el ${escHtml(dateStr)} &middot; ${countStr}${subjectStr}</div>`;
+      }
+
       return `
-        <div class="docs-ranking-item" data-cluster-id="${escHtml(cl.id)}">
+        <div class="docs-ranking-item${wasAdded ? ' docs-ranking-item--cards-added' : ''}" data-cluster-id="${escHtml(cl.id)}">
           <div class="docs-ranking-item-head">
             <span class="docs-tier-badge ${tierClass[tier] || ''}">${escHtml(tier)}</span>
             <div class="docs-ranking-score-bar-wrap">
@@ -8100,10 +8114,12 @@ function initDocumentsTab() {
             <span class="docs-ranking-score-num">${escHtml(relLabel)}</span>
             <span class="docs-ranking-name">${escHtml(cl.name)}</span>
             ${examStateBadge}
+            ${wasAdded ? '<span class="docs-cluster-added-badge">&#10003; Agregado</span>' : ''}
           </div>
           ${cl.definition ? `<div class="docs-ranking-def">${escHtml(cl.definition)}</div>` : ''}
           <div class="docs-ranking-signals">${escHtml(scoreDetails)}</div>
           ${reasons ? `<ul class="docs-ranking-reasons">${reasons}</ul>` : ''}
+          ${cardsAddedLog}
           <div class="docs-ranking-item-actions">
             <button type="button" class="btn-secondary docs-generate-card-btn" data-cluster-id="${escHtml(cl.id)}">Generar cards</button>
             <span class="docs-generate-card-status"></span>
@@ -8424,6 +8440,40 @@ function initDocumentsTab() {
       panel.querySelector('.docs-accept-subject-input').style.display = 'none';
       panel.querySelector(`[id^="docs-accept-subjects-"]`).remove();
       panel.querySelector('.docs-accept-label').style.display = 'none';
+
+      // Mark the parent cluster item as "cards added"
+      const rankingItem = panel.closest('.docs-ranking-item');
+      if (rankingItem) {
+        rankingItem.classList.add('docs-ranking-item--cards-added');
+
+        // Add badge in header if not already there
+        const head = rankingItem.querySelector('.docs-ranking-item-head');
+        if (head && !head.querySelector('.docs-cluster-added-badge')) {
+          const addedBadge = document.createElement('span');
+          addedBadge.className = 'docs-cluster-added-badge';
+          addedBadge.innerHTML = '&#10003; Agregado';
+          head.appendChild(addedBadge);
+        }
+
+        // Inject or update the log line
+        const now       = new Date();
+        const dateStr   = now.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        const count     = payload.cards_added_count ?? 1;
+        const countStr  = `${count} tarjeta${count !== 1 ? 's' : ''}`;
+        const subjectStr = finalSubject
+          ? ` → <em>${escHtml(finalSubject)}</em>`
+          : '';
+        let logEl = rankingItem.querySelector('.docs-cluster-added-log');
+        if (!logEl) {
+          logEl = document.createElement('div');
+          logEl.className = 'docs-cluster-added-log';
+          // Insert before the actions row
+          const actionsRow = rankingItem.querySelector('.docs-ranking-item-actions');
+          if (actionsRow) rankingItem.insertBefore(logEl, actionsRow);
+          else rankingItem.appendChild(logEl);
+        }
+        logEl.innerHTML = `&#10003; Tarjetas agregadas el ${escHtml(dateStr)} &middot; ${countStr}${subjectStr}`;
+      }
     } catch (err) {
       statusEl.textContent = err.message;
       statusEl.className = 'docs-accept-draft-status docs-accept-draft-status--error';
