@@ -505,7 +505,9 @@
     },
     serialize: function (ta) {
       if (!ta) return '';
-      if (ta._mathEditorEl) return extractText(ta._mathEditorEl);
+      if (ta._mathEditorEl && !ta._mathEditorEl.classList.contains('hidden')) {
+        return extractText(ta._mathEditorEl);
+      }
       return ta.value || '';
     },
     setHighlightColor: function (ta, color) {

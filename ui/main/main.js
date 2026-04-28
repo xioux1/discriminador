@@ -4643,7 +4643,7 @@ function showStudyCard() {
       MathPreview.refresh(input);
     };
 
-    modeSelect.addEventListener('change', () => applyMode(modeSelect.value));
+    modeSelect.onchange = () => applyMode(modeSelect.value);
   }
 
   // ── Flag / report button ───────────────────────────────────────────────────
