@@ -258,7 +258,7 @@ plannerRouter.put('/planner/slot', async (req, res) => {
 // "Today" is computed in America/Argentina/Buenos_Aires timezone.
 plannerRouter.get('/planner/day-status', async (req, res) => {
   const userId = req.user.id;
-  const TOTAL_SLOTS = 32; // 06:00–21:30, one slot every 30 min
+  const TOTAL_SLOTS = 34; // 05:00–21:30, one slot every 30 min
 
   try {
     const { rows } = await dbPool.query(
