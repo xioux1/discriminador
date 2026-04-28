@@ -124,7 +124,56 @@ plannerRouter.get('/planner/week', async (req, res) => {
       [userId, start]
     );
 
-    return res.json({ slots: rows, activity_slots: activityRows, daily_subject_totals: subjectRows });
+    // Manual activity sessions expanded across 30-min slots (same logic as study_sessions)
+    const { rows: manualRows } = await dbPool.query(
+      `WITH manual_spans AS (
+         SELECT
+           activity_type,
+           subject,
+           (started_at AT TIME ZONE 'America/Argentina/Buenos_Aires') AS local_start,
+           (ended_at    AT TIME ZONE 'America/Argentina/Buenos_Aires') AS local_end
+         FROM manual_activity_sessions
+         WHERE user_id = $1
+           AND ended_at IS NOT NULL
+           AND (started_at AT TIME ZONE 'America/Argentina/Buenos_Aires') >= $2::date
+           AND (started_at AT TIME ZONE 'America/Argentina/Buenos_Aires') < ($2::date + INTERVAL '7 day')
+       ),
+       manual_slots AS (
+         SELECT
+           EXTRACT(DOW FROM gs)::int                AS day_index,
+           to_char(gs, 'HH24:MI')                   AS slot_time,
+           s.activity_type,
+           s.subject,
+           ROUND(SUM(
+             GREATEST(0,
+               EXTRACT(EPOCH FROM (
+                 LEAST(s.local_end, gs + INTERVAL '30 minutes')
+                 - GREATEST(s.local_start, gs)
+               )) / 60.0
+             )
+           ))::int AS duration_minutes
+         FROM manual_spans s
+         CROSS JOIN LATERAL generate_series(
+           date_trunc('hour', s.local_start)
+             + (CASE WHEN EXTRACT(MINUTE FROM s.local_start) >= 30 THEN INTERVAL '30 minutes' ELSE INTERVAL '0' END),
+           date_trunc('hour', s.local_end)
+             + (CASE WHEN EXTRACT(MINUTE FROM s.local_end) >= 30 THEN INTERVAL '30 minutes' ELSE INTERVAL '0' END),
+           INTERVAL '30 minutes'
+         ) AS gs
+         WHERE LEAST(s.local_end, gs + INTERVAL '30 minutes') > GREATEST(s.local_start, gs)
+         GROUP BY gs, s.activity_type, s.subject
+       )
+       SELECT * FROM manual_slots WHERE duration_minutes > 0
+       ORDER BY day_index, slot_time, activity_type`,
+      [userId, start]
+    );
+
+    return res.json({
+      slots: rows,
+      activity_slots: activityRows,
+      daily_subject_totals: subjectRows,
+      manual_slots: manualRows,
+    });
   } catch (err) {
     console.error('GET /planner/week error', err.message);
     return res.status(500).json({ error: 'server_error', message: err.message });

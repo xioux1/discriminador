@@ -872,6 +872,35 @@
             <button class="planner-swatch" data-color="#d9d9d9" title="Gris (dormir/fijo)" style="background:#d9d9d9"></button>
           </div>
         </div>
+        <!-- ── Manual activity timer bar ─────────────────────────────────── -->
+        <div id="planner-activity-bar" class="planner-activity-bar">
+          <div id="pab-idle" class="pab-idle">
+            <button type="button" id="pab-open-btn" class="pab-open-btn">&#43; Registrar actividad</button>
+          </div>
+          <div id="pab-active-display" class="pab-active-display hidden">
+            <span id="pab-active-dot" class="pab-active-dot"></span>
+            <span id="pab-active-label" class="pab-active-label"></span>
+            <span id="pab-active-elapsed" class="pab-active-elapsed">0:00</span>
+            <button type="button" id="pab-stop-btn" class="btn-secondary pab-stop-btn">&#9632; Detener</button>
+          </div>
+          <div id="pab-form" class="pab-form hidden">
+            <div class="pab-type-row">
+              <button class="pab-type-btn" data-type="clase">Clase</button>
+              <button class="pab-type-btn" data-type="contenido">Contenido</button>
+              <button class="pab-type-btn" data-type="estudio_offline">Estudio off-app</button>
+              <button class="pab-type-btn" data-type="reunion">Reunión</button>
+              <button class="pab-type-btn" data-type="otro">Otro</button>
+            </div>
+            <div class="pab-details-row">
+              <input type="text" id="pab-subject-input" class="pab-subject-input" placeholder="Materia (opcional)" list="pab-subjects-list" autocomplete="off">
+              <datalist id="pab-subjects-list"></datalist>
+              <button type="button" id="pab-start-btn" class="btn-primary pab-start-btn" disabled>Iniciar &#8594;</button>
+              <button type="button" id="pab-cancel-btn" class="btn-ghost pab-cancel-btn">&#215;</button>
+            </div>
+            <span id="pab-form-error" class="pab-form-error hidden"></span>
+          </div>
+        </div>
+
         <div class="planner-wrap">
           <div id="planner-loading" class="loading-hint">Cargando...</div>
           <div id="planner-grid-wrap"></div>

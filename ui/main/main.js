@@ -5654,6 +5654,15 @@ async function getJson(url) {
 
 // ─── Weekly Planner ───────────────────────────────────────────────────────────
 
+const MANUAL_ACTIVITY_TYPES = {
+  clase:           { label: 'Clase',         color: '#3b6abf' },
+  contenido:       { label: 'Contenido',     color: '#b8600a' },
+  estudio_offline: { label: 'Estudio off',   color: '#2d8c56' },
+  reunion:         { label: 'Reunión',       color: '#6b47a8' },
+  otro:            { label: 'Otro',          color: '#8a6c10' },
+};
+const MANUAL_ACTIVITY_PERSIST_KEY = 'planner.manualActivity.v1';
+
 const PLANNER_SLOTS = (() => {
   const s = [];
   for (let h = 6; h < 22; h++) {
@@ -5669,6 +5678,7 @@ const plannerState = {
   weekStart: null,   // Date (Sunday at midnight)
   cells: {},         // key `${dayIndex}_${slot}` → {content, color, isFixed}
   activitySlots: {}, // key `${dayIndex}_${slot}` → {eventsCount, lastEventAt}
+  manualSlots: {},   // key `${dayIndex}_${slot}` → [{activity_type, subject, duration_minutes}]
   saveTimers: {},    // debounce per cell
   activeCell: null,  // currently focused td
   fillDrag: null,    // { source: { content, color, isFixed }, paintedKeys:Set<string> }
@@ -5712,7 +5722,7 @@ function plannerIsFutureSlot(weekStart, dayIndex, slot) {
   return slotDate.getTime() > Date.now();
 }
 
-function buildPlannerGrid(weekStart, cells, activitySlots = {}) {
+function buildPlannerGrid(weekStart, cells, activitySlots = {}, manualSlots = {}) {
   const wrap = document.querySelector('#planner-grid-wrap');
   wrap.innerHTML = '';
 
@@ -5772,6 +5782,26 @@ function buildPlannerGrid(weekStart, cells, activitySlots = {}) {
           td.appendChild(minsBadge);
         }
       }
+      // Manual activity badges (bottom-left, colored per type)
+      const manualData = manualSlots[key];
+      if (manualData && manualData.length > 0 && !plannerIsFutureSlot(weekStart, d, slot)) {
+        // Aggregate by type for the badge: show dominant type's color, total minutes
+        const byType = {};
+        for (const ma of manualData) {
+          byType[ma.activity_type] = (byType[ma.activity_type] || 0) + ma.duration_minutes;
+        }
+        const totalManualMins = Object.values(byType).reduce((s, m) => s + m, 0);
+        const dominantType = Object.entries(byType).reduce((a, b) => b[1] > a[1] ? b : a)[0];
+        const badge = document.createElement('span');
+        badge.className = `planner-manual-badge planner-manual-badge--${dominantType}`;
+        badge.textContent = `${totalManualMins}m`;
+        const tooltipParts = Object.entries(byType).map(([type, m]) => {
+          const info = MANUAL_ACTIVITY_TYPES[type] || { label: type };
+          return `${info.label}: ${m}m`;
+        });
+        badge.title = tooltipParts.join(' · ');
+        td.appendChild(badge);
+      }
       tbody.appendChild(tr);
       tr.appendChild(td);
     }
@@ -5794,32 +5824,13 @@ function buildPlannerGrid(weekStart, cells, activitySlots = {}) {
 }
 
 // ── Daily study totals bar (tfoot) ────────────────────────────────────────────
-function buildPlannerDailyTotals(table, activitySlots, subjectTotals) {
-  // Tear down previous close handler and tfoot
+function buildPlannerDailyTotals(table, activitySlots, subjectTotals, manualSlots = {}) {
   if (plannerState.totalsCloseHandler) {
     document.removeEventListener('click', plannerState.totalsCloseHandler);
     plannerState.totalsCloseHandler = null;
   }
   const existing = table.querySelector('tfoot.planner-tfoot-totals');
   if (existing) existing.remove();
-
-  // Sum study minutes per day from activitySlots
-  const dayTotals = new Array(7).fill(0);
-  for (const [key, slot] of Object.entries(activitySlots)) {
-    const dayIndex = parseInt(key.split('_')[0], 10);
-    if (!Number.isNaN(dayIndex) && dayIndex >= 0 && dayIndex < 7) {
-      dayTotals[dayIndex] += slot.studyMinutes || 0;
-    }
-  }
-  if (dayTotals.every(t => t === 0)) return; // nothing to show
-
-  // Build subject map: day_index → [{subject, minutes}]
-  const daySubjects = {};
-  for (const row of subjectTotals) {
-    const d = row.day_index;
-    if (!daySubjects[d]) daySubjects[d] = [];
-    daySubjects[d].push({ subject: row.subject, minutes: Number(row.study_minutes) });
-  }
 
   function fmtMins(m) {
     if (m <= 0) return '0m';
@@ -5828,10 +5839,45 @@ function buildPlannerDailyTotals(table, activitySlots, subjectTotals) {
       : `${m}m`;
   }
 
+  // Auto study minutes per day (from activitySlots)
+  const autoTotals = new Array(7).fill(0);
+  for (const [key, slot] of Object.entries(activitySlots)) {
+    const d = parseInt(key.split('_')[0], 10);
+    if (d >= 0 && d < 7) autoTotals[d] += slot.studyMinutes || 0;
+  }
+
+  // Auto study per subject per day (from backend)
+  const autoSubjects = {};
+  for (const row of subjectTotals) {
+    const d = row.day_index;
+    if (!autoSubjects[d]) autoSubjects[d] = [];
+    autoSubjects[d].push({ subject: row.subject, minutes: Number(row.study_minutes) });
+  }
+
+  // Manual activity minutes per day, aggregated by type+subject
+  const manualTotals = new Array(7).fill(0);
+  const manualBreakdown = {}; // day → { 'type|subject' → {type, subject, minutes} }
+  for (const [key, activities] of Object.entries(manualSlots)) {
+    const d = parseInt(key.split('_')[0], 10);
+    if (d < 0 || d >= 7) continue;
+    for (const ma of activities) {
+      manualTotals[d] += ma.duration_minutes || 0;
+      if (!manualBreakdown[d]) manualBreakdown[d] = {};
+      const bk = `${ma.activity_type}|${ma.subject || ''}`;
+      if (!manualBreakdown[d][bk]) {
+        manualBreakdown[d][bk] = { type: ma.activity_type, subject: ma.subject, minutes: 0 };
+      }
+      manualBreakdown[d][bk].minutes += ma.duration_minutes || 0;
+    }
+  }
+
+  const combinedTotals = autoTotals.map((a, i) => a + manualTotals[i]);
+  if (combinedTotals.every(t => t === 0)) return;
+
   const tfoot = document.createElement('tfoot');
   tfoot.className = 'planner-tfoot-totals';
-
   const tr = document.createElement('tr');
+
   const labelTd = document.createElement('td');
   labelTd.className = 'planner-time planner-total-label';
   labelTd.textContent = 'Total';
@@ -5840,30 +5886,49 @@ function buildPlannerDailyTotals(table, activitySlots, subjectTotals) {
   for (let d = 0; d < 7; d++) {
     const td = document.createElement('td');
     td.className = 'planner-daily-total-cell';
-    const mins  = dayTotals[d];
-    const subs  = daySubjects[d] || [];
+    const totalMins  = combinedTotals[d];
+    const autoSubs   = autoSubjects[d] || [];
+    const manualEntries = Object.values(manualBreakdown[d] || {})
+      .sort((a, b) => b.minutes - a.minutes);
+    const hasPanel = autoSubs.length > 0 || manualEntries.length > 0;
 
-    if (mins > 0) {
+    if (totalMins > 0) {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'planner-daily-total-btn';
       btn.dataset.day = d;
-      btn.textContent = fmtMins(mins);
-      if (subs.length > 0) {
-        btn.title = 'Ver desglose por materia';
+      btn.textContent = fmtMins(totalMins);
+      if (hasPanel) {
+        btn.title = 'Ver desglose';
         btn.setAttribute('aria-expanded', 'false');
       }
       td.appendChild(btn);
 
-      if (subs.length > 0) {
+      if (hasPanel) {
         const panel = document.createElement('div');
         panel.className = 'planner-subject-panel hidden';
-        panel.innerHTML = subs.map(s =>
+
+        // Auto study rows (blue dot)
+        const autoRows = autoSubs.map(s =>
           `<div class="planner-subject-row">` +
+          `<span class="planner-subject-dot psr-auto"></span>` +
           `<span class="planner-subject-name">${escHtml(s.subject)}</span>` +
           `<span class="planner-subject-mins">${escHtml(fmtMins(s.minutes))}</span>` +
           `</div>`
         ).join('');
+
+        // Manual activity rows (colored dot per type)
+        const manualRows = manualEntries.map(m => {
+          const info = MANUAL_ACTIVITY_TYPES[m.type] || { label: m.type, color: '#888' };
+          const label = m.subject ? `${info.label} · ${m.subject}` : info.label;
+          return `<div class="planner-subject-row">` +
+            `<span class="planner-subject-dot" style="background:${escHtml(info.color)}"></span>` +
+            `<span class="planner-subject-name">${escHtml(label)}</span>` +
+            `<span class="planner-subject-mins">${escHtml(fmtMins(m.minutes))}</span>` +
+            `</div>`;
+        }).join('');
+
+        panel.innerHTML = autoRows + manualRows;
         td.appendChild(panel);
       }
     } else {
@@ -5879,16 +5944,13 @@ function buildPlannerDailyTotals(table, activitySlots, subjectTotals) {
   tfoot.appendChild(tr);
   table.appendChild(tfoot);
 
-  // Toggle subject panel on button click
   tfoot.addEventListener('click', (e) => {
     const btn = e.target.closest('.planner-daily-total-btn');
     if (!btn) return;
     const cell  = btn.closest('.planner-daily-total-cell');
     const panel = cell?.querySelector('.planner-subject-panel');
     if (!panel) return;
-
     const opening = panel.classList.contains('hidden');
-    // Close all other open panels
     tfoot.querySelectorAll('.planner-subject-panel:not(.hidden)').forEach(p => {
       p.classList.add('hidden');
       p.closest('.planner-daily-total-cell')
@@ -5901,7 +5963,6 @@ function buildPlannerDailyTotals(table, activitySlots, subjectTotals) {
     }
   });
 
-  // Close panels when clicking outside the tfoot
   plannerState.totalsCloseHandler = (e) => {
     if (!e.target.closest('.planner-tfoot-totals')) {
       tfoot.querySelectorAll('.planner-subject-panel:not(.hidden)').forEach(p => {
@@ -6115,13 +6176,24 @@ async function loadPlannerWeek(weekStart) {
         lastEventAt: row.last_event_at || null
       };
     }
+    const manualSlots = {};
+    for (const row of (data.manual_slots || [])) {
+      const key = `${row.day_index}_${row.slot_time}`;
+      if (!manualSlots[key]) manualSlots[key] = [];
+      manualSlots[key].push({
+        activity_type:    row.activity_type,
+        subject:          row.subject || null,
+        duration_minutes: Number(row.duration_minutes || 0),
+      });
+    }
     plannerState.cells = cells;
     plannerState.activitySlots = activitySlots;
+    plannerState.manualSlots   = manualSlots;
     document.querySelector('#planner-loading').classList.add('hidden');
-    buildPlannerGrid(weekStart, cells, activitySlots);
+    buildPlannerGrid(weekStart, cells, activitySlots, manualSlots);
     plannerMarkCurrentSlot();
     const table = document.querySelector('#planner-table');
-    if (table) buildPlannerDailyTotals(table, activitySlots, data.daily_subject_totals || []);
+    if (table) buildPlannerDailyTotals(table, activitySlots, data.daily_subject_totals || [], manualSlots);
   } catch (err) {
     document.querySelector('#planner-loading').textContent = `Error: ${err.message}`;
   }
@@ -6159,7 +6231,153 @@ function initPlannerTab() {
     btn.addEventListener('click', () => plannerApplyColor(btn.dataset.color));
   });
 
+  initManualActivityWidget();
   initPlannerTodos();
+}
+
+// ─── Manual activity timer widget ─────────────────────────────────────────────
+function initManualActivityWidget() {
+  const openBtn       = document.querySelector('#pab-open-btn');
+  const activeDisplay = document.querySelector('#pab-active-display');
+  const activeLabel   = document.querySelector('#pab-active-label');
+  const activeElapsed = document.querySelector('#pab-active-elapsed');
+  const activeDot     = document.querySelector('#pab-active-dot');
+  const stopBtn       = document.querySelector('#pab-stop-btn');
+  const form          = document.querySelector('#pab-form');
+  const typeBtns      = document.querySelectorAll('.pab-type-btn');
+  const subjectInput  = document.querySelector('#pab-subject-input');
+  const startBtn      = document.querySelector('#pab-start-btn');
+  const cancelBtn     = document.querySelector('#pab-cancel-btn');
+  const formError     = document.querySelector('#pab-form-error');
+  const datalist      = document.querySelector('#pab-subjects-list');
+
+  let selectedType  = null;
+  let elapsedTimer  = null;
+  let activeId      = null;
+
+  // Populate subject autocomplete
+  getJson('/api/cards/subjects').then(res => {
+    if (res.subjects && datalist) {
+      datalist.innerHTML = res.subjects.map(s => `<option value="${escHtml(s)}">`).join('');
+    }
+  }).catch(() => {});
+
+  function fmtElapsed(ms) {
+    const s = Math.floor(ms / 1000);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    const pad = n => String(n).padStart(2, '0');
+    return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
+  }
+
+  function startElapsedTimer(startedAt) {
+    if (elapsedTimer) clearInterval(elapsedTimer);
+    const origin = new Date(startedAt).getTime();
+    const tick = () => { activeElapsed.textContent = fmtElapsed(Date.now() - origin); };
+    tick();
+    elapsedTimer = setInterval(tick, 1000);
+  }
+
+  function showActive(id, type, subject, startedAt) {
+    activeId = id;
+    const info = MANUAL_ACTIVITY_TYPES[type] || { label: type, color: '#888' };
+    activeDot.style.background = info.color;
+    activeLabel.textContent = subject ? `${info.label} · ${subject}` : info.label;
+    document.querySelector('#pab-idle').classList.add('hidden');
+    activeDisplay.classList.remove('hidden');
+    form.classList.add('hidden');
+    startElapsedTimer(startedAt);
+  }
+
+  function clearActive() {
+    if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
+    activeId = null;
+    document.querySelector('#pab-idle').classList.remove('hidden');
+    activeDisplay.classList.add('hidden');
+    localStorage.removeItem(MANUAL_ACTIVITY_PERSIST_KEY);
+  }
+
+  // Check for a running session on init
+  (async () => {
+    const headers = {};
+    if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
+    try {
+      const res = await fetch('/planner/manual-activity/active', { headers });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.session) showActive(data.session.id, data.session.activity_type, data.session.subject, data.session.started_at);
+      }
+    } catch (_) {}
+  })();
+
+  openBtn.addEventListener('click', () => {
+    form.classList.remove('hidden');
+    document.querySelector('#pab-idle').classList.add('hidden');
+    formError.classList.add('hidden');
+  });
+
+  cancelBtn.addEventListener('click', () => {
+    form.classList.add('hidden');
+    document.querySelector('#pab-idle').classList.remove('hidden');
+    selectedType = null;
+    typeBtns.forEach(b => b.classList.remove('pab-type-btn--active'));
+    startBtn.disabled = true;
+  });
+
+  typeBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      selectedType = btn.dataset.type;
+      typeBtns.forEach(b => b.classList.remove('pab-type-btn--active'));
+      btn.classList.add('pab-type-btn--active');
+      startBtn.disabled = false;
+    });
+  });
+
+  startBtn.addEventListener('click', async () => {
+    if (!selectedType) return;
+    const subject = subjectInput.value.trim() || null;
+    startBtn.disabled = true;
+    formError.classList.add('hidden');
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
+      const res = await fetch('/planner/manual-activity', {
+        method: 'POST', headers,
+        body: JSON.stringify({ activity_type: selectedType, subject }),
+      });
+      Auth.handleRefreshToken(res);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+      selectedType = null;
+      typeBtns.forEach(b => b.classList.remove('pab-type-btn--active'));
+      subjectInput.value = '';
+      showActive(data.session.id, data.session.activity_type, data.session.subject, data.session.started_at);
+    } catch (err) {
+      formError.textContent = err.message;
+      formError.classList.remove('hidden');
+      startBtn.disabled = false;
+    }
+  });
+
+  stopBtn.addEventListener('click', async () => {
+    if (!activeId) return;
+    stopBtn.disabled = true;
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
+      const res = await fetch(`/planner/manual-activity/${activeId}/stop`, { method: 'PATCH', headers });
+      Auth.handleRefreshToken(res);
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.message || `HTTP ${res.status}`);
+      }
+      clearActive();
+      if (plannerState.weekStart) loadPlannerWeek(plannerState.weekStart);
+    } catch (_) {
+      stopBtn.disabled = false;
+    }
+  });
 }
 
 // ─── Planner To-do list ────────────────────────────────────────────────────────
