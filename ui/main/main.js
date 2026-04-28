@@ -4614,10 +4614,11 @@ function showStudyCard() {
   }
   studyEvalBtn.disabled = false; // verification is always optional
 
-  // ── Mode buttons (segmented control: Texto / SQL/PL / Math) ─────────────
-  const modeBtnsContainer = document.querySelector('#study-mode-btns');
-  if (modeBtnsContainer) {
-    modeBtnsContainer.hidden = false;
+  // ── Mode selector (Texto / SQL/PL / Math) ────────────────────────────────
+  const modeSelect = document.querySelector('#study-mode-select');
+  if (modeSelect) {
+    modeSelect.hidden = false;
+    modeSelect.value = savedMode;
 
     const applyMode = (mode) => {
       saveSubjectMode(subject, mode);
@@ -4640,17 +4641,9 @@ function showStudyCard() {
         panel?.classList.add('hidden');
       }
       MathPreview.refresh(input);
-      // Update active state on buttons
-      modeBtnsContainer.querySelectorAll('.study-mode-btn').forEach((btn) => {
-        btn.classList.toggle('active', btn.dataset.mode === mode);
-      });
     };
 
-    // Set initial active state (mode already applied above)
-    modeBtnsContainer.querySelectorAll('.study-mode-btn').forEach((btn) => {
-      btn.classList.toggle('active', btn.dataset.mode === savedMode);
-      btn.onclick = () => applyMode(btn.dataset.mode);
-    });
+    modeSelect.addEventListener('change', () => applyMode(modeSelect.value));
   }
 
   // ── Flag / report button ───────────────────────────────────────────────────
