@@ -5665,7 +5665,7 @@ const MANUAL_ACTIVITY_PERSIST_KEY = 'planner.manualActivity.v1';
 
 const PLANNER_SLOTS = (() => {
   const s = [];
-  for (let h = 6; h < 22; h++) {
+  for (let h = 5; h < 22; h++) {
     s.push(`${String(h).padStart(2,'0')}:00`);
     s.push(`${String(h).padStart(2,'0')}:30`);
   }
@@ -5980,7 +5980,7 @@ function plannerCurrentSlotKey(now = new Date()) {
   const day = now.getDay();
   const hour = now.getHours();
   const minute = now.getMinutes();
-  if (hour < 6 || hour >= 22) return null;
+  if (hour < 5 || hour >= 22) return null;
   const normalizedMinute = minute < 30 ? '00' : '30';
   return `${day}_${String(hour).padStart(2, '0')}:${normalizedMinute}`;
 }
