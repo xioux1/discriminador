@@ -38,7 +38,8 @@ Reglas estrictas:
 Respondé ÚNICAMENTE en este formato exacto:
 TABLES: <esquemas de tablas separados por " | ", o "none" si no hay SQL>
 QUESTION: <variante de la pregunta>
-ANSWER: <variante de la respuesta esperada>`,
+ANSWER: <variante de la respuesta esperada, sin pinyin>
+PINYIN: <solo pinyin opcional; vacío o "none" si no aplica>`,
     messages: [{
       role: 'user',
       content: `Tarjeta original:
@@ -53,7 +54,8 @@ Generá una variante conservadora.`
   const text = response.content.find((b) => b.type === 'text')?.text ?? '';
   const tablesMatch   = text.match(/TABLES:\s*([\s\S]+?)(?=\nQUESTION:)/i);
   const questionMatch = text.match(/QUESTION:\s*([\s\S]+?)(?=\nANSWER:)/i);
-  const answerMatch   = text.match(/ANSWER:\s*([\s\S]+)/i);
+  const answerMatch   = text.match(/ANSWER:\s*([\s\S]+?)(?=\nPINYIN:|$)/i);
+  const pinyinMatch   = text.match(/PINYIN:\s*([\s\S]+)/i);
 
   if (!questionMatch || !answerMatch) {
     throw new Error('El LLM no devolvió el formato esperado');
@@ -68,7 +70,9 @@ Generá una variante conservadora.`
 
   return {
     prompt_text:          finalPrompt,
-    expected_answer_text: answerMatch[1].trim()
+    expected_answer_text: answerMatch[1].trim(),
+    expected_answer:      answerMatch[1].trim(),
+    pinyin_hint:          (pinyinMatch?.[1] || '').trim().toLowerCase() === 'none' ? '' : (pinyinMatch?.[1] || '').trim()
   };
 }
 
@@ -81,6 +85,7 @@ export function buildChineseListeningVariant({ expected_answer_text }) {
   return {
     prompt_text:          expected_answer_text,
     expected_answer_text: expected_answer_text,
+    expected_answer:      expected_answer_text,
     variant_type:         'listening'
   };
 }

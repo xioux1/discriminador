@@ -642,6 +642,20 @@ textarea:focus, input[type="text"]:focus, select:focus {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   font-size: 0.82rem;
 }
+.study-pinyin-toggle { margin-top: 8px; }
+.study-pinyin-toggle summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.study-pinyin-content {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border: 1px dashed var(--border-mid);
+  border-radius: 6px;
+  background: var(--bg-subtle);
+  white-space: pre-wrap;
+}
 .study-result-dimensions {
   display: flex;
   flex-wrap: wrap;
