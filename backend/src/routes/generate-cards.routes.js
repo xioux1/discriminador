@@ -253,18 +253,36 @@ router.patch('/api/cards/:id/accept-draft', async (req, res, next) => {
              subject = CASE WHEN $1::text IS NOT NULL AND $1::text <> '' THEN $1::text ELSE subject END,
              updated_at = NOW()
          WHERE id = $2
-         RETURNING id, status, subject`,
+         RETURNING id, status, subject, cluster_id`,
         [subject || null, cardId]
       );
 
-      await client.query(
-        `UPDATE card_variants SET status = 'active' WHERE card_id = $1 AND status = 'draft'`,
+      const { rows: activatedVariants } = await client.query(
+        `UPDATE card_variants SET status = 'active' WHERE card_id = $1 AND status = 'draft' RETURNING id`,
         [cardId]
       );
 
+      // Record the acceptance on the cluster (1 primary card + N variants)
+      const cardsAddedCount = 1 + activatedVariants.length;
+      const clusterId = updated[0]?.cluster_id;
+      if (clusterId) {
+        await client.query(
+          `UPDATE clusters
+           SET cards_added_at      = NOW(),
+               cards_added_count   = $1,
+               cards_added_subject = $2
+           WHERE id = $3`,
+          [cardsAddedCount, subject || null, clusterId]
+        );
+      }
+
       await client.query('COMMIT');
 
-      return res.json({ status: 'accepted', card: updated[0] });
+      return res.json({
+        status: 'accepted',
+        card: updated[0],
+        cards_added_count: cardsAddedCount,
+      });
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
