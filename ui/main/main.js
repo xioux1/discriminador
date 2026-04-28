@@ -5674,6 +5674,7 @@ const plannerState = {
   fillDrag: null,    // { source: { content, color, isFixed }, paintedKeys:Set<string> }
   suppressNextClick: false,
   nowMarkerTimer: null,
+  totalsCloseHandler: null, // document-level handler to close subject panels
 };
 
 function plannerWeekStart(date) {
@@ -5790,6 +5791,128 @@ function buildPlannerGrid(weekStart, cells, activitySlots = {}) {
   });
   table.addEventListener('mousedown', plannerOnGridMouseDown);
   table.addEventListener('mouseover', plannerOnGridMouseOver);
+}
+
+// ── Daily study totals bar (tfoot) ────────────────────────────────────────────
+function buildPlannerDailyTotals(table, activitySlots, subjectTotals) {
+  // Tear down previous close handler and tfoot
+  if (plannerState.totalsCloseHandler) {
+    document.removeEventListener('click', plannerState.totalsCloseHandler);
+    plannerState.totalsCloseHandler = null;
+  }
+  const existing = table.querySelector('tfoot.planner-tfoot-totals');
+  if (existing) existing.remove();
+
+  // Sum study minutes per day from activitySlots
+  const dayTotals = new Array(7).fill(0);
+  for (const [key, slot] of Object.entries(activitySlots)) {
+    const dayIndex = parseInt(key.split('_')[0], 10);
+    if (!Number.isNaN(dayIndex) && dayIndex >= 0 && dayIndex < 7) {
+      dayTotals[dayIndex] += slot.studyMinutes || 0;
+    }
+  }
+  if (dayTotals.every(t => t === 0)) return; // nothing to show
+
+  // Build subject map: day_index → [{subject, minutes}]
+  const daySubjects = {};
+  for (const row of subjectTotals) {
+    const d = row.day_index;
+    if (!daySubjects[d]) daySubjects[d] = [];
+    daySubjects[d].push({ subject: row.subject, minutes: Number(row.study_minutes) });
+  }
+
+  function fmtMins(m) {
+    if (m <= 0) return '0m';
+    return m >= 60
+      ? `${Math.floor(m / 60)}h${m % 60 > 0 ? ' ' + (m % 60) + 'm' : ''}`
+      : `${m}m`;
+  }
+
+  const tfoot = document.createElement('tfoot');
+  tfoot.className = 'planner-tfoot-totals';
+
+  const tr = document.createElement('tr');
+  const labelTd = document.createElement('td');
+  labelTd.className = 'planner-time planner-total-label';
+  labelTd.textContent = 'Total';
+  tr.appendChild(labelTd);
+
+  for (let d = 0; d < 7; d++) {
+    const td = document.createElement('td');
+    td.className = 'planner-daily-total-cell';
+    const mins  = dayTotals[d];
+    const subs  = daySubjects[d] || [];
+
+    if (mins > 0) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'planner-daily-total-btn';
+      btn.dataset.day = d;
+      btn.textContent = fmtMins(mins);
+      if (subs.length > 0) {
+        btn.title = 'Ver desglose por materia';
+        btn.setAttribute('aria-expanded', 'false');
+      }
+      td.appendChild(btn);
+
+      if (subs.length > 0) {
+        const panel = document.createElement('div');
+        panel.className = 'planner-subject-panel hidden';
+        panel.innerHTML = subs.map(s =>
+          `<div class="planner-subject-row">` +
+          `<span class="planner-subject-name">${escHtml(s.subject)}</span>` +
+          `<span class="planner-subject-mins">${escHtml(fmtMins(s.minutes))}</span>` +
+          `</div>`
+        ).join('');
+        td.appendChild(panel);
+      }
+    } else {
+      const empty = document.createElement('span');
+      empty.className = 'planner-daily-total-empty';
+      empty.textContent = '—';
+      td.appendChild(empty);
+    }
+
+    tr.appendChild(td);
+  }
+
+  tfoot.appendChild(tr);
+  table.appendChild(tfoot);
+
+  // Toggle subject panel on button click
+  tfoot.addEventListener('click', (e) => {
+    const btn = e.target.closest('.planner-daily-total-btn');
+    if (!btn) return;
+    const cell  = btn.closest('.planner-daily-total-cell');
+    const panel = cell?.querySelector('.planner-subject-panel');
+    if (!panel) return;
+
+    const opening = panel.classList.contains('hidden');
+    // Close all other open panels
+    tfoot.querySelectorAll('.planner-subject-panel:not(.hidden)').forEach(p => {
+      p.classList.add('hidden');
+      p.closest('.planner-daily-total-cell')
+        ?.querySelector('.planner-daily-total-btn')
+        ?.setAttribute('aria-expanded', 'false');
+    });
+    if (opening) {
+      panel.classList.remove('hidden');
+      btn.setAttribute('aria-expanded', 'true');
+    }
+  });
+
+  // Close panels when clicking outside the tfoot
+  plannerState.totalsCloseHandler = (e) => {
+    if (!e.target.closest('.planner-tfoot-totals')) {
+      tfoot.querySelectorAll('.planner-subject-panel:not(.hidden)').forEach(p => {
+        p.classList.add('hidden');
+        p.closest('.planner-daily-total-cell')
+          ?.querySelector('.planner-daily-total-btn')
+          ?.setAttribute('aria-expanded', 'false');
+      });
+    }
+  };
+  document.addEventListener('click', plannerState.totalsCloseHandler);
 }
 
 function plannerCurrentSlotKey(now = new Date()) {
@@ -5997,6 +6120,8 @@ async function loadPlannerWeek(weekStart) {
     document.querySelector('#planner-loading').classList.add('hidden');
     buildPlannerGrid(weekStart, cells, activitySlots);
     plannerMarkCurrentSlot();
+    const table = document.querySelector('#planner-table');
+    if (table) buildPlannerDailyTotals(table, activitySlots, data.daily_subject_totals || []);
   } catch (err) {
     document.querySelector('#planner-loading').textContent = `Error: ${err.message}`;
   }
