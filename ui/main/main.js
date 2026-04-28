@@ -8096,11 +8096,57 @@ function initDocumentsTab() {
         emptyEl.classList.remove('hidden');
         return;
       }
-      data.documents.forEach(doc => listEl.appendChild(renderDocItem(doc)));
+
+      const NO_SUBJECT = '\x00';
+      const groups = new Map();
+      for (const doc of data.documents) {
+        const key = doc.subject || NO_SUBJECT;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(doc);
+      }
+
+      const sortedKeys = [...groups.keys()].sort((a, b) => {
+        if (a === NO_SUBJECT) return 1;
+        if (b === NO_SUBJECT) return -1;
+        return a.localeCompare(b, 'es');
+      });
+
+      for (const key of sortedKeys) {
+        const subject = key === NO_SUBJECT ? null : key;
+        listEl.appendChild(renderSubjectGroup(subject, groups.get(key)));
+      }
     } catch (err) {
       loadingEl.classList.add('hidden');
       loadingEl.textContent = `Error al cargar: ${err.message}`;
     }
+  }
+
+  // ── Render a group of documents under a subject heading ───────────────────────
+  function renderSubjectGroup(subject, docs) {
+    const group = document.createElement('div');
+    group.className = 'docs-subject-group open';
+    group.dataset.subject = subject || '';
+
+    const label = subject || 'Sin materia';
+    const count = docs.length;
+
+    group.innerHTML = `
+      <div class="docs-subject-group-header">
+        <span class="docs-subject-group-arrow">▶</span>
+        <span class="docs-subject-group-name">${escHtml(label)}</span>
+        <span class="docs-subject-group-count">${count} documento${count !== 1 ? 's' : ''}</span>
+      </div>
+      <div class="docs-subject-group-body"></div>
+    `;
+
+    const header = group.querySelector('.docs-subject-group-header');
+    const body   = group.querySelector('.docs-subject-group-body');
+
+    docs.forEach(doc => body.appendChild(renderDocItem(doc)));
+
+    header.addEventListener('click', () => group.classList.toggle('open'));
+
+    return group;
   }
 
   // ── Render a single document row ─────────────────────────────────────────────
@@ -8250,9 +8296,7 @@ function initDocumentsTab() {
       const loadExamBtn = item.querySelector('.docs-load-exam-btn');
       if (loadExamBtn) loadExamBtn.classList.toggle('hidden', !saved);
 
-      form.classList.add('hidden');
-      display.classList.remove('hidden');
-      editBtn.classList.remove('hidden');
+      await loadDocuments();
     } catch (err) {
       alert(`Error al guardar materia: ${err.message}`);
     } finally {
@@ -9068,8 +9112,7 @@ function initDocumentsTab() {
       feedback.textContent = 'Documento creado.';
       feedback.className = 'feedback success';
 
-      emptyEl.classList.add('hidden');
-      listEl.insertBefore(renderDocItem(data.document), listEl.firstChild);
+      await loadDocuments();
 
       setTimeout(() => { if (feedback.textContent === 'Documento creado.') feedback.textContent = ''; }, 3000);
     } catch (err) {
