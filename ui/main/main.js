@@ -1742,6 +1742,202 @@ async function loadDashboardAgenda() {
   }
 }
 
+// --- Weekly stats rendering ---
+
+const MANUAL_TYPE_LABELS_WEEKLY = {
+  clase:           'Clase',
+  contenido:       'Contenido',
+  estudio_offline: 'Estudio offline',
+  reunion:         'Reunión',
+  otro:            'Otro',
+};
+
+function fmtMinutes(m) {
+  if (!m || m <= 0) return '0m';
+  const h = Math.floor(m / 60);
+  const min = m % 60;
+  if (h === 0) return `${min}m`;
+  if (min === 0) return `${h}h`;
+  return `${h}h ${min}m`;
+}
+
+function renderWeeklyStats(data) {
+  const pillsEl    = document.querySelector('#progress-weekly-pills');
+  const daysEl     = document.querySelector('#progress-weekly-days');
+  const chartEl    = document.querySelector('#progress-weekly-chart');
+  const subjectsEl = document.querySelector('#progress-weekly-subjects');
+  const manualEl   = document.querySelector('#progress-weekly-manual');
+  if (!pillsEl) return;
+
+  if (!data) {
+    pillsEl.innerHTML = '<span style="color:var(--text-muted);font-size:var(--fs-sm)">No hay datos disponibles.</span>';
+    daysEl.innerHTML = chartEl.innerHTML = subjectsEl.innerHTML = manualEl.innerHTML = '';
+    return;
+  }
+
+  const tw = data.this_week || {};
+
+  // ── Summary pills ──────────────────────────────────────────────────────────
+  pillsEl.innerHTML = '';
+  [
+    { val: fmtMinutes(tw.study_minutes),  label: 'Repaso',      cls: 'pw-pill--study' },
+    { val: fmtMinutes(tw.manual_minutes), label: 'Manual',      cls: 'pw-pill--manual' },
+    { val: tw.review_count ?? 0,          label: 'Revisiones',  cls: '' },
+  ].forEach(({ val, label, cls }) => {
+    const p = document.createElement('div');
+    p.className = `progress-pill pw-pill ${cls}`;
+    p.innerHTML = `<span class="progress-pill-num">${val}</span><span class="progress-pill-label">${label}</span>`;
+    pillsEl.appendChild(p);
+  });
+
+  // ── Active days chips Mon–Sun ──────────────────────────────────────────────
+  daysEl.innerHTML = '';
+  const activeDates = new Set(tw.active_dates || []);
+  const weekStartDate = new Date((tw.week_start || new Date().toISOString().slice(0, 10)) + 'T00:00:00Z');
+  const DAY_LABELS = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(weekStartDate);
+    d.setUTCDate(d.getUTCDate() + i);
+    const ds = d.toISOString().slice(0, 10);
+    const active = activeDates.has(ds);
+    const chip = document.createElement('div');
+    chip.className = `pw-day-chip${active ? ' pw-day-chip--active' : ''}`;
+    chip.title = ds;
+    chip.innerHTML = `<span>${DAY_LABELS[i]}</span>`;
+    daysEl.appendChild(chip);
+  }
+
+  // ── 8-week bar chart (SVG) ─────────────────────────────────────────────────
+  chartEl.innerHTML = '';
+  const weeks = data.last_8_weeks || [];
+  if (weeks.length > 0) {
+    const label = document.createElement('p');
+    label.className = 'pw-chart-label';
+    label.textContent = 'Últimas 8 semanas';
+    chartEl.appendChild(label);
+
+    const maxMin = Math.max(...weeks.map(w => w.total_minutes), 1);
+    const BAR_W = 28;
+    const GAP   = 6;
+    const H     = 80;
+    const svgW  = weeks.length * (BAR_W + GAP) - GAP;
+
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', `0 0 ${svgW} ${H + 24}`);
+    svg.setAttribute('width', '100%');
+    svg.style.maxWidth = `${svgW * 2}px`;
+    svg.style.display = 'block';
+
+    weeks.forEach((w, i) => {
+      const x = i * (BAR_W + GAP);
+      const studyH  = Math.round((w.study_minutes  / maxMin) * H);
+      const manualH = Math.round((w.manual_minutes / maxMin) * H);
+      const totalH  = Math.min(H, studyH + manualH);
+      const isThisWeek = i === weeks.length - 1;
+
+      // Manual portion (bottom)
+      if (manualH > 0) {
+        const r1 = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        r1.setAttribute('x', x);
+        r1.setAttribute('y', H - Math.min(manualH, H));
+        r1.setAttribute('width', BAR_W);
+        r1.setAttribute('height', Math.min(manualH, H));
+        r1.setAttribute('rx', '3');
+        r1.setAttribute('fill', isThisWeek ? 'var(--c-warn)' : 'rgba(201,132,40,0.45)');
+        svg.appendChild(r1);
+      }
+
+      // Study portion (stacked on top of manual)
+      if (studyH > 0) {
+        const studyY = H - totalH;
+        const r2 = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        r2.setAttribute('x', x);
+        r2.setAttribute('y', studyY);
+        r2.setAttribute('width', BAR_W);
+        r2.setAttribute('height', studyH);
+        r2.setAttribute('rx', '3');
+        r2.setAttribute('fill', isThisWeek ? 'var(--c-ok)' : 'rgba(78,136,160,0.55)');
+        svg.appendChild(r2);
+      }
+
+      // Week label (short date)
+      const dateLabel = w.week_start ? w.week_start.slice(5).replace('-', '/') : '';
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      t.setAttribute('x', x + BAR_W / 2);
+      t.setAttribute('y', H + 16);
+      t.setAttribute('text-anchor', 'middle');
+      t.setAttribute('font-size', '9');
+      t.setAttribute('fill', isThisWeek ? 'var(--text)' : 'var(--text-muted)');
+      t.setAttribute('font-weight', isThisWeek ? '600' : '400');
+      t.textContent = dateLabel;
+      svg.appendChild(t);
+
+      // Tooltip title on the SVG group
+      const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+      title.textContent = `${w.week_start}: ${fmtMinutes(w.study_minutes)} repaso + ${fmtMinutes(w.manual_minutes)} manual`;
+      svg.appendChild(title);
+    });
+
+    // Legend
+    const legend = document.createElement('div');
+    legend.className = 'pw-chart-legend';
+    legend.innerHTML = `
+      <span class="pw-legend-dot pw-legend-dot--study"></span><span>Repaso</span>
+      <span class="pw-legend-dot pw-legend-dot--manual"></span><span>Manual</span>
+    `;
+    chartEl.appendChild(svg);
+    chartEl.appendChild(legend);
+  }
+
+  // ── Per-subject horizontal bars ────────────────────────────────────────────
+  subjectsEl.innerHTML = '';
+  const subjects = tw.by_subject || [];
+  if (subjects.length > 0) {
+    const label2 = document.createElement('p');
+    label2.className = 'pw-chart-label';
+    label2.textContent = 'Por materia esta semana';
+    subjectsEl.appendChild(label2);
+
+    const maxSubMin = Math.max(...subjects.map(s => s.total_minutes), 1);
+    subjects.slice(0, 8).forEach(s => {
+      const pct = Math.round((s.total_minutes / maxSubMin) * 100);
+      const row = document.createElement('div');
+      row.className = 'pw-subj-row';
+      const studyPct  = Math.round((s.study_minutes  / maxSubMin) * 100);
+      const manualPct = Math.round((s.manual_minutes / maxSubMin) * 100);
+      row.innerHTML = `
+        <span class="pw-subj-name">${s.subject}</span>
+        <div class="pw-subj-track">
+          <div class="pw-subj-fill pw-subj-fill--study"  style="left:0;width:${studyPct}%"></div>
+          <div class="pw-subj-fill pw-subj-fill--manual" style="left:${studyPct}%;width:${manualPct}%"></div>
+        </div>
+        <span class="pw-subj-total">${fmtMinutes(s.total_minutes)}</span>
+      `;
+      subjectsEl.appendChild(row);
+    });
+  }
+
+  // ── Manual activity type chips ─────────────────────────────────────────────
+  manualEl.innerHTML = '';
+  const types = tw.by_manual_type || [];
+  if (types.length > 0) {
+    const label3 = document.createElement('p');
+    label3.className = 'pw-chart-label';
+    label3.textContent = 'Actividad manual';
+    manualEl.appendChild(label3);
+
+    const chips = document.createElement('div');
+    chips.className = 'pw-type-chips';
+    types.forEach(t => {
+      const chip = document.createElement('div');
+      chip.className = `pw-type-chip pw-type-chip--${t.activity_type}`;
+      chip.textContent = `${MANUAL_TYPE_LABELS_WEEKLY[t.activity_type] || t.activity_type}  ${fmtMinutes(t.minutes)}`;
+      chips.appendChild(chip);
+    });
+    manualEl.appendChild(chips);
+  }
+}
+
 // --- Progress tab ---
 
 async function loadProgress() {
@@ -1751,15 +1947,19 @@ async function loadProgress() {
   content.classList.add('hidden');
 
   try {
-    const [actData, overview, timingData, logsData] = await Promise.all([
+    const [actData, overview, timingData, logsData, weeklyData] = await Promise.all([
       getJson('/stats/activity?days=3650'),
       getJson('/stats/overview').catch(() => ({ subjects: [] })),
       getJson('/stats/timing?weeks=4').catch(() => null),
-      getJson('/session/plan-logs?limit=10').catch(() => ({ logs: [] }))
+      getJson('/session/plan-logs?limit=10').catch(() => ({ logs: [] })),
+      getJson('/stats/weekly').catch(() => null),
     ]);
 
     loading.classList.add('hidden');
     content.classList.remove('hidden');
+
+    // Weekly stats section
+    renderWeeklyStats(weeklyData);
 
     // Streak + summary pills
     const pills = document.querySelector('#progress-pills');
