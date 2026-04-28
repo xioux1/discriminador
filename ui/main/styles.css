@@ -2713,6 +2713,87 @@ textarea:focus, input[type="text"]:focus, select:focus {
   pointer-events: none;
   font-weight: 600;
 }
+/* ── Daily study totals bar ─────────────────────────────────────────────── */
+.planner-tfoot-totals td {
+  border-top: 2px solid var(--border);
+  background: rgba(245, 248, 255, 0.80);
+  vertical-align: top;
+  padding: 0;
+}
+.planner-total-label {
+  vertical-align: middle;
+  text-align: center;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: var(--text-light);
+  letter-spacing: 0.03em;
+  padding: 5px 2px;
+}
+.planner-daily-total-cell {
+  text-align: center;
+  position: relative;
+}
+.planner-daily-total-btn {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--accent-cool);
+  padding: 5px 2px;
+  font-family: var(--font);
+  transition: background 0.1s;
+}
+.planner-daily-total-btn:hover { background: rgba(78, 136, 160, 0.10); }
+.planner-daily-total-btn[aria-expanded="true"] {
+  color: var(--primary);
+  background: rgba(78, 120, 200, 0.08);
+}
+.planner-daily-total-empty {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--text-light);
+  padding: 5px 2px;
+  opacity: 0.5;
+}
+.planner-subject-panel {
+  text-align: left;
+  border-top: 1px solid rgba(175, 193, 218, 0.40);
+  padding: 4px 5px 5px;
+  background: rgba(235, 242, 255, 0.90);
+}
+.planner-subject-panel.hidden { display: none; }
+.planner-subject-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 4px;
+  padding: 2px 0;
+  font-size: 0.68rem;
+}
+.planner-subject-row + .planner-subject-row {
+  border-top: 1px solid rgba(175, 193, 218, 0.25);
+}
+.planner-subject-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+.planner-subject-mins {
+  flex-shrink: 0;
+  font-weight: 700;
+  color: var(--primary);
+  font-size: 0.68rem;
+}
+
+[data-theme="dark"] .planner-tfoot-totals td  { background: rgba(14, 20, 34, 0.85); }
+[data-theme="dark"] .planner-subject-panel     { background: rgba(18, 26, 46, 0.95); border-color: rgba(38, 55, 85, 0.50); }
+[data-theme="dark"] .planner-subject-row + .planner-subject-row { border-color: rgba(38, 55, 85, 0.40); }
+
 .planner-current-slot {
   outline: 2px solid var(--accent-cool) !important;
   outline-offset: -2px;

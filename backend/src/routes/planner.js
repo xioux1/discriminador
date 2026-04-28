@@ -107,7 +107,24 @@ plannerRouter.get('/planner/week', async (req, res) => {
       [userId, start]
     );
 
-    return res.json({ slots: rows, activity_slots: activityRows });
+    // Per-day, per-subject breakdown (activity_log only — study_sessions have no subject)
+    const { rows: subjectRows } = await dbPool.query(
+      `SELECT
+         EXTRACT(DOW FROM (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires'))::int AS day_index,
+         COALESCE(NULLIF(TRIM(subject), ''), 'Sin materia') AS subject,
+         ROUND(SUM(COALESCE(response_time_ms, 0) + COALESCE(review_time_ms, 0)) / 60000.0)::int AS study_minutes
+       FROM activity_log
+       WHERE user_id = $1
+         AND activity_type IN ('study', 'evaluate')
+         AND (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires') >= $2::date
+         AND (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires') < ($2::date + INTERVAL '7 day')
+       GROUP BY day_index, subject
+       HAVING ROUND(SUM(COALESCE(response_time_ms, 0) + COALESCE(review_time_ms, 0)) / 60000.0)::int > 0
+       ORDER BY day_index, study_minutes DESC`,
+      [userId, start]
+    );
+
+    return res.json({ slots: rows, activity_slots: activityRows, daily_subject_totals: subjectRows });
   } catch (err) {
     console.error('GET /planner/week error', err.message);
     return res.status(500).json({ error: 'server_error', message: err.message });
