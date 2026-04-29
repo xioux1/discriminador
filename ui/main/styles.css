@@ -578,6 +578,24 @@ textarea:focus, input[type="text"]:focus, select:focus {
 .cvt-loading { font-size: 0.82rem; color: var(--text-muted); padding: 6px 0; }
 .cvt-error   { font-size: 0.82rem; color: var(--fail-fg);    padding: 6px 0; }
 
+.cvt-delete-btn {
+  margin-left: auto;
+  padding: 1px 6px;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  border: 1px solid var(--fail-fg);
+  border-radius: 4px;
+  color: var(--fail-fg);
+  background: transparent;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+.cvt-node:hover .cvt-delete-btn { opacity: 1; }
+.cvt-delete-btn:hover { background: var(--fail-fg); color: #fff; }
+.cvt-delete-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
 .dimension-bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; font-size: 0.85rem; }
 .dimension-bar-label { width: 160px; flex-shrink: 0; color: var(--text-muted); }
 .dimension-bar-track { flex: 1; background: #eee; border-radius: 4px; height: 6px; }
