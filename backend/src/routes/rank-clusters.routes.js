@@ -12,15 +12,17 @@ function isChineseSubject(subject) {
 // Every word introduced in class is equally high-priority to study.
 async function rankClustersForChineseDocument(documentId) {
   const { rows: clusters } = await dbPool.query(
-    `SELECT id FROM clusters WHERE document_id = $1 ORDER BY created_at ASC`,
+    `SELECT id, name, definition FROM clusters WHERE document_id = $1 ORDER BY created_at ASC`,
     [documentId]
   );
 
   const total = clusters.length;
+  const ranked = [];
+
   for (let i = 0; i < total; i++) {
     const cluster = clusters[i];
     // Earlier in the class = slightly higher relative rank, but all are tier A
-    const relScore = total > 1 ? 1 - (i / total) * 0.2 : 1.0;
+    const relScore = total > 1 ? Math.round((1 - (i / total) * 0.2) * 1000) / 1000 : 1.0;
     await dbPool.query(
       `UPDATE clusters SET
          density_score              = 1.0,
@@ -33,15 +35,31 @@ async function rankClustersForChineseDocument(documentId) {
          importance_reasons         = $2,
          importance_computed_at     = NOW()
        WHERE id = $3`,
-      [
-        relScore,
-        JSON.stringify(['Vocabulario introducido en clase']),
-        cluster.id,
-      ]
+      [relScore, JSON.stringify(['Vocabulario introducido en clase']), cluster.id]
     );
+    ranked.push({
+      id:                       cluster.id,
+      name:                     cluster.name,
+      definition:               cluster.definition,
+      density_score:            1.0,
+      importance_score:         1.0,
+      priority_tier:            'A',
+      relative_importance_score: relScore,
+      relative_priority_tier:   'A',
+      importance_reasons:       ['Vocabulario introducido en clase'],
+      program_score:            null,
+      exam_score:               null,
+      program_match_strength:   'unavailable',
+      exam_match_strength:      'unavailable',
+      has_program_match:        false,
+      has_exam_match:           false,
+      cards_added_at:           null,
+      cards_added_count:        null,
+      cards_added_subject:      null,
+    });
   }
 
-  return { document_id: documentId, cluster_count: total };
+  return { document_id: documentId, cluster_count: total, clusters: ranked };
 }
 
 const router = Router();
