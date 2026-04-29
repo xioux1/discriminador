@@ -1096,6 +1096,57 @@ schedulerRouter.get('/scheduler/cards/:id/variants', async (req, res) => {
   }
 });
 
+// POST /scheduler/cards/:id/easy-explanation
+// Generates a plain-language explanation of the expected answer (Haiku, cached).
+schedulerRouter.post('/scheduler/cards/:id/easy-explanation', async (req, res) => {
+  const cardId = parseInt(req.params.id);
+  const userId = req.user.id;
+  if (!cardId) return res.status(422).json({ error: 'validation_error', message: 'Invalid card id.' });
+
+  try {
+    const cardRes = await dbPool.query(
+      `SELECT id, prompt_text, expected_answer_text, easy_explanation
+       FROM cards WHERE id = $1 AND user_id = $2 AND archived_at IS NULL`,
+      [cardId, userId]
+    );
+    if (!cardRes.rows.length) return res.status(404).json({ error: 'not_found', message: 'Card not found.' });
+
+    const card = cardRes.rows[0];
+    if (card.easy_explanation) return res.json({ easy_explanation: card.easy_explanation });
+
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const msg = await anthropic.messages.create({
+      model: LLM_MODEL,
+      max_tokens: 300,
+      messages: [{
+        role: 'user',
+        content: `Sos un tutor experto. Tenés una tarjeta de estudio con pregunta y respuesta esperada.
+
+Tu tarea: escribir una explicación clara y sencilla (máximo 4 oraciones en prosa fluida, sin bullets) que ayude al estudiante a ENTENDER por qué esa es la respuesta correcta. Usá lenguaje simple y analogías si clarifican. No repitas literalmente la pregunta ni la respuesta; ampliá el razonamiento detrás. Idioma: español.
+
+Pregunta: ${card.prompt_text}
+Respuesta esperada:
+${card.expected_answer_text}
+
+Devolvé solo el texto de la explicación, sin encabezados ni formato extra.`,
+      }],
+    });
+
+    const explanation = msg.content?.[0]?.text?.trim() || '';
+    if (!explanation) return res.status(502).json({ error: 'generation_error', message: 'Empty response from model.' });
+
+    await dbPool.query(
+      `UPDATE cards SET easy_explanation = $1 WHERE id = $2`,
+      [explanation, cardId]
+    );
+
+    return res.json({ easy_explanation: explanation });
+  } catch (err) {
+    console.error('POST /scheduler/cards/:id/easy-explanation', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
 // DELETE /scheduler/cards/:cardId/variants/:variantId
 schedulerRouter.delete('/scheduler/cards/:cardId/variants/:variantId', async (req, res) => {
   const cardId = parseInt(req.params.cardId);
