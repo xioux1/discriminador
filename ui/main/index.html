@@ -891,6 +891,14 @@
               <button class="pab-type-btn" data-type="reunion">Reunión</button>
               <button class="pab-type-btn" data-type="otro">Otro</button>
             </div>
+            <div id="pab-custom-types-row" class="pab-type-row pab-custom-types-row">
+              <div id="pab-add-type-inline" class="pab-add-type-inline hidden">
+                <input type="text" id="pab-new-type-input" class="pab-new-type-input" placeholder="Nombre del tipo..." maxlength="80" autocomplete="off">
+                <button type="button" id="pab-new-type-save" class="pab-new-type-save">&#10003;</button>
+                <button type="button" id="pab-new-type-cancel" class="pab-new-type-cancel">&#215;</button>
+              </div>
+              <button type="button" id="pab-add-type-btn" class="pab-add-type-btn">&#43; Tipo personalizado</button>
+            </div>
             <div class="pab-details-row">
               <input type="text" id="pab-subject-input" class="pab-subject-input" placeholder="Materia (opcional)" list="pab-subjects-list" autocomplete="off">
               <datalist id="pab-subjects-list"></datalist>

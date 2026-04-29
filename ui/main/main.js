@@ -6450,10 +6450,17 @@ function initManualActivityWidget() {
   const cancelBtn     = document.querySelector('#pab-cancel-btn');
   const formError     = document.querySelector('#pab-form-error');
   const datalist      = document.querySelector('#pab-subjects-list');
+  const customRow     = document.querySelector('#pab-custom-types-row');
+  const addTypeBtn    = document.querySelector('#pab-add-type-btn');
+  const addTypeInline = document.querySelector('#pab-add-type-inline');
+  const newTypeInput  = document.querySelector('#pab-new-type-input');
+  const newTypeSave   = document.querySelector('#pab-new-type-save');
+  const newTypeCancel = document.querySelector('#pab-new-type-cancel');
 
   let selectedType  = null;
   let elapsedTimer  = null;
   let activeId      = null;
+  let customTypes   = []; // [{ id, label, slug, color }]
 
   // Populate subject autocomplete
   getJson('/api/cards/subjects').then(res => {
@@ -6461,6 +6468,77 @@ function initManualActivityWidget() {
       datalist.innerHTML = res.subjects.map(s => `<option value="${escHtml(s)}">`).join('');
     }
   }).catch(() => {});
+
+  function authHeaders(extra = {}) {
+    const h = { ...extra };
+    if (Auth.getToken()) h['Authorization'] = 'Bearer ' + Auth.getToken();
+    return h;
+  }
+
+  function getTypeInfo(slug) {
+    if (MANUAL_ACTIVITY_TYPES[slug]) return MANUAL_ACTIVITY_TYPES[slug];
+    const ct = customTypes.find(t => t.slug === slug);
+    if (ct) return { label: ct.label, color: ct.color };
+    return { label: slug, color: '#888' };
+  }
+
+  function hexToRgba(hex, alpha) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
+
+  function selectType(slug) {
+    selectedType = slug;
+    // Deselect all built-in
+    typeBtns.forEach(b => b.classList.remove('pab-type-btn--active'));
+    // Deselect all custom
+    customRow.querySelectorAll('.pab-custom-type-btn').forEach(b => {
+      b.style.background = '';
+      b.style.borderColor = '';
+      b.style.color = '';
+    });
+    // Apply active state
+    const builtInBtn = form.querySelector(`.pab-type-btn[data-type="${CSS.escape(slug)}"]`);
+    if (builtInBtn) {
+      builtInBtn.classList.add('pab-type-btn--active');
+    } else {
+      const customBtn = customRow.querySelector(`.pab-custom-type-btn[data-slug="${CSS.escape(slug)}"]`);
+      if (customBtn) {
+        const color = customBtn.dataset.color || '#888';
+        customBtn.style.background = hexToRgba(color, 0.18);
+        customBtn.style.borderColor = color;
+        customBtn.style.color = color;
+      }
+    }
+    startBtn.disabled = false;
+  }
+
+  function renderCustomTypes() {
+    // Remove existing custom type buttons (keep addTypeInline and addTypeBtn)
+    customRow.querySelectorAll('.pab-custom-type-btn').forEach(b => b.remove());
+    // Re-insert before addTypeBtn
+    for (const ct of customTypes) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'pab-custom-type-btn';
+      btn.dataset.slug = ct.slug;
+      btn.dataset.color = ct.color;
+      btn.innerHTML = `${escHtml(ct.label)}<span class="pab-custom-type-del" data-id="${ct.id}" title="Eliminar tipo">&#215;</span>`;
+      customRow.insertBefore(btn, addTypeBtn);
+    }
+  }
+
+  async function loadCustomTypes() {
+    try {
+      const res = await fetch('/planner/manual-activity/custom-types', { headers: authHeaders() });
+      if (!res.ok) return;
+      const data = await res.json();
+      customTypes = data.types || [];
+      renderCustomTypes();
+    } catch (_) {}
+  }
 
   function fmtElapsed(ms) {
     const s = Math.floor(ms / 1000);
@@ -6481,7 +6559,7 @@ function initManualActivityWidget() {
 
   function showActive(id, type, subject, startedAt) {
     activeId = id;
-    const info = MANUAL_ACTIVITY_TYPES[type] || { label: type, color: '#888' };
+    const info = getTypeInfo(type);
     activeDot.style.background = info.color;
     activeLabel.textContent = subject ? `${info.label} · ${subject}` : info.label;
     document.querySelector('#pab-idle').classList.add('hidden');
@@ -6500,10 +6578,9 @@ function initManualActivityWidget() {
 
   // Check for a running session on init
   (async () => {
-    const headers = {};
-    if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
+    await loadCustomTypes();
     try {
-      const res = await fetch('/planner/manual-activity/active', { headers });
+      const res = await fetch('/planner/manual-activity/active', { headers: authHeaders() });
       if (res.ok) {
         const data = await res.json();
         if (data.session) showActive(data.session.id, data.session.activity_type, data.session.subject, data.session.started_at);
@@ -6522,16 +6599,95 @@ function initManualActivityWidget() {
     document.querySelector('#pab-idle').classList.remove('hidden');
     selectedType = null;
     typeBtns.forEach(b => b.classList.remove('pab-type-btn--active'));
+    customRow.querySelectorAll('.pab-custom-type-btn').forEach(b => {
+      b.style.background = '';
+      b.style.borderColor = '';
+      b.style.color = '';
+    });
     startBtn.disabled = true;
+    addTypeInline.classList.add('hidden');
+    addTypeBtn.classList.remove('hidden');
+    newTypeInput.value = '';
   });
 
+  // Built-in type selection
   typeBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      selectedType = btn.dataset.type;
-      typeBtns.forEach(b => b.classList.remove('pab-type-btn--active'));
-      btn.classList.add('pab-type-btn--active');
-      startBtn.disabled = false;
-    });
+    btn.addEventListener('click', () => selectType(btn.dataset.type));
+  });
+
+  // Custom type selection + delete (event delegation on customRow)
+  customRow.addEventListener('click', (e) => {
+    const delBtn = e.target.closest('.pab-custom-type-del');
+    if (delBtn) {
+      e.stopPropagation();
+      const typeId = parseInt(delBtn.dataset.id, 10);
+      (async () => {
+        try {
+          const res = await fetch(`/planner/manual-activity/custom-types/${typeId}`, {
+            method: 'DELETE',
+            headers: authHeaders(),
+          });
+          if (res.ok) {
+            customTypes = customTypes.filter(t => t.id !== typeId);
+            if (selectedType === delBtn.closest('.pab-custom-type-btn')?.dataset.slug) {
+              selectedType = null;
+              startBtn.disabled = true;
+            }
+            renderCustomTypes();
+          }
+        } catch (_) {}
+      })();
+      return;
+    }
+    const customBtn = e.target.closest('.pab-custom-type-btn');
+    if (customBtn) selectType(customBtn.dataset.slug);
+  });
+
+  // Show "add type" inline input
+  addTypeBtn.addEventListener('click', () => {
+    addTypeBtn.classList.add('hidden');
+    addTypeInline.classList.remove('hidden');
+    newTypeInput.focus();
+  });
+
+  newTypeCancel.addEventListener('click', () => {
+    addTypeInline.classList.add('hidden');
+    addTypeBtn.classList.remove('hidden');
+    newTypeInput.value = '';
+  });
+
+  async function saveNewCustomType() {
+    const label = newTypeInput.value.trim();
+    if (!label) return;
+    newTypeSave.disabled = true;
+    try {
+      const res = await fetch('/planner/manual-activity/custom-types', {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ label }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+      // Avoid duplicates in local list
+      customTypes = customTypes.filter(t => t.id !== data.type.id);
+      customTypes.push(data.type);
+      renderCustomTypes();
+      newTypeInput.value = '';
+      addTypeInline.classList.add('hidden');
+      addTypeBtn.classList.remove('hidden');
+      selectType(data.type.slug);
+    } catch (err) {
+      newTypeInput.style.borderColor = 'var(--fail-fg)';
+      setTimeout(() => { newTypeInput.style.borderColor = ''; }, 1500);
+    } finally {
+      newTypeSave.disabled = false;
+    }
+  }
+
+  newTypeSave.addEventListener('click', saveNewCustomType);
+  newTypeInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') saveNewCustomType();
+    if (e.key === 'Escape') newTypeCancel.click();
   });
 
   startBtn.addEventListener('click', async () => {
@@ -6540,10 +6696,9 @@ function initManualActivityWidget() {
     startBtn.disabled = true;
     formError.classList.add('hidden');
     try {
-      const headers = { 'Content-Type': 'application/json' };
-      if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
       const res = await fetch('/planner/manual-activity', {
-        method: 'POST', headers,
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ activity_type: selectedType, subject }),
       });
       Auth.handleRefreshToken(res);
@@ -6551,6 +6706,11 @@ function initManualActivityWidget() {
       if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
       selectedType = null;
       typeBtns.forEach(b => b.classList.remove('pab-type-btn--active'));
+      customRow.querySelectorAll('.pab-custom-type-btn').forEach(b => {
+        b.style.background = '';
+        b.style.borderColor = '';
+        b.style.color = '';
+      });
       subjectInput.value = '';
       showActive(data.session.id, data.session.activity_type, data.session.subject, data.session.started_at);
     } catch (err) {
@@ -6564,9 +6724,10 @@ function initManualActivityWidget() {
     if (!activeId) return;
     stopBtn.disabled = true;
     try {
-      const headers = { 'Content-Type': 'application/json' };
-      if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
-      const res = await fetch(`/planner/manual-activity/${activeId}/stop`, { method: 'PATCH', headers });
+      const res = await fetch(`/planner/manual-activity/${activeId}/stop`, {
+        method: 'PATCH',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+      });
       Auth.handleRefreshToken(res);
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));

@@ -5,6 +5,19 @@ const router = Router();
 
 const VALID_TYPES = ['clase', 'contenido', 'estudio_offline', 'reunion', 'otro'];
 
+const CUSTOM_TYPE_COLORS = [
+  '#c04040', '#c07040', '#709040', '#408090',
+  '#904080', '#606080', '#408040', '#804060',
+];
+
+function labelToSlug(label) {
+  return label.trim().toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_|_$/g, '')
+    .slice(0, 50);
+}
+
 // GET /planner/manual-activity/active
 // Returns the currently running session for the user (ended_at IS NULL), or null.
 router.get('/planner/manual-activity/active', async (req, res) => {
@@ -30,11 +43,29 @@ router.post('/planner/manual-activity', async (req, res) => {
   const userId = req.user.id;
   const { activity_type, subject, description } = req.body ?? {};
 
-  if (!VALID_TYPES.includes(activity_type)) {
+  if (!activity_type || typeof activity_type !== 'string') {
     return res.status(422).json({
       error: 'validation_error',
-      message: `activity_type must be one of: ${VALID_TYPES.join(', ')}.`,
+      message: 'activity_type is required.',
     });
+  }
+
+  const isBuiltIn = VALID_TYPES.includes(activity_type);
+  if (!isBuiltIn) {
+    try {
+      const { rows } = await dbPool.query(
+        `SELECT id FROM custom_activity_types WHERE user_id = $1 AND slug = $2`,
+        [userId, activity_type]
+      );
+      if (!rows.length) {
+        return res.status(422).json({
+          error: 'validation_error',
+          message: `activity_type must be one of: ${VALID_TYPES.join(', ')}, or a saved custom type.`,
+        });
+      }
+    } catch (err) {
+      return res.status(500).json({ error: 'server_error', message: err.message });
+    }
   }
 
   const cleanSubject     = typeof subject     === 'string' ? subject.trim().slice(0, 200)     : null;
@@ -86,6 +117,83 @@ router.patch('/planner/manual-activity/:id/stop', async (req, res) => {
     }
 
     return res.json({ session: rows[0] });
+  } catch (err) {
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+// GET /planner/manual-activity/custom-types
+router.get('/planner/manual-activity/custom-types', async (req, res) => {
+  const userId = req.user.id;
+  try {
+    const { rows } = await dbPool.query(
+      `SELECT id, label, slug, color FROM custom_activity_types WHERE user_id = $1 ORDER BY created_at ASC`,
+      [userId]
+    );
+    return res.json({ types: rows });
+  } catch (err) {
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+// POST /planner/manual-activity/custom-types
+router.post('/planner/manual-activity/custom-types', async (req, res) => {
+  const userId = req.user.id;
+  const { label, color } = req.body ?? {};
+
+  if (!label || typeof label !== 'string' || !label.trim()) {
+    return res.status(422).json({ error: 'validation_error', message: 'label is required.' });
+  }
+
+  const cleanLabel = label.trim().slice(0, 80);
+  const slug = labelToSlug(cleanLabel);
+
+  if (!slug) {
+    return res.status(422).json({ error: 'validation_error', message: 'El nombre no produce un identificador válido.' });
+  }
+
+  if (VALID_TYPES.includes(slug)) {
+    return res.status(422).json({ error: 'validation_error', message: 'Este nombre coincide con un tipo predefinido.' });
+  }
+
+  try {
+    const { rowCount } = await dbPool.query(
+      `SELECT id FROM custom_activity_types WHERE user_id = $1`,
+      [userId]
+    );
+    const existingCount = rowCount ?? 0;
+    const autoColor = typeof color === 'string' && /^#[0-9a-fA-F]{6}$/.test(color)
+      ? color
+      : CUSTOM_TYPE_COLORS[existingCount % CUSTOM_TYPE_COLORS.length];
+
+    const { rows } = await dbPool.query(
+      `INSERT INTO custom_activity_types (user_id, label, slug, color)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (user_id, slug) DO UPDATE SET label = EXCLUDED.label
+       RETURNING id, label, slug, color`,
+      [userId, cleanLabel, slug, autoColor]
+    );
+    return res.status(201).json({ type: rows[0] });
+  } catch (err) {
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+// DELETE /planner/manual-activity/custom-types/:id
+router.delete('/planner/manual-activity/custom-types/:id', async (req, res) => {
+  const userId = req.user.id;
+  const typeId = parseInt(req.params.id, 10);
+
+  if (!Number.isFinite(typeId) || typeId <= 0) {
+    return res.status(400).json({ error: 'invalid_id', message: 'Type ID must be a positive integer.' });
+  }
+
+  try {
+    await dbPool.query(
+      `DELETE FROM custom_activity_types WHERE id = $1 AND user_id = $2`,
+      [typeId, userId]
+    );
+    return res.json({ ok: true });
   } catch (err) {
     return res.status(500).json({ error: 'server_error', message: err.message });
   }
