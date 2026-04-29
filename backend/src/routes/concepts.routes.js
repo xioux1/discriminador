@@ -1,12 +1,18 @@
 import { Router } from 'express';
 import { dbPool } from '../db/client.js';
 import { extractConceptsForDocument, getDocumentConcepts } from '../services/conceptExtractor.service.js';
+import { extractConceptsForChineseDocument } from '../services/chineseClassParser.service.js';
 import { logger } from '../utils/logger.js';
 
 const router = Router();
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ASYNC_WORD_THRESHOLD = 5000;
+
+function isChineseSubject(subject) {
+  const s = (subject || '').toLowerCase().trim();
+  return s === 'chino' || s === 'chinese' || s === 'mandarín' || s === 'mandarin' || s.includes('chino');
+}
 
 // ── Document CRUD ──────────────────────────────────────────────────────────────
 
@@ -139,6 +145,21 @@ router.post('/api/documents/:id/extract-concepts', async (req, res, next) => {
   }
 
   const document = rows[0];
+
+  // Chinese subject: use specialized parser (single Haiku call, no chunking)
+  if (isChineseSubject(document.subject)) {
+    try {
+      const concepts = await extractConceptsForChineseDocument(documentId);
+      return res.status(200).json({
+        status: 'completed',
+        document_id: documentId,
+        concept_count: concepts.length,
+        concepts,
+      });
+    } catch (err) {
+      return next(err);
+    }
+  }
 
   const directText = document.text || document.content || document.transcript || '';
   const wordCount = directText.split(/\s+/).filter(Boolean).length;
