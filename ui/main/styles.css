@@ -2938,6 +2938,83 @@ textarea:focus, input[type="text"]:focus, select:focus {
 .pab-cancel-btn { font-size: 0.90rem; padding: 2px 6px; }
 .pab-form-error { font-size: 0.75rem; color: var(--fail-fg); }
 .pab-form-error.hidden { display: none; }
+.pab-custom-types-row { margin-top: 0; }
+.pab-add-type-btn {
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  padding: 3px 10px;
+  font-size: 0.76rem;
+  cursor: pointer;
+  font-family: var(--font);
+  color: var(--text-muted);
+  transition: border-color 0.12s, color 0.12s;
+}
+.pab-add-type-btn:hover { border-color: var(--primary); color: var(--primary); }
+.pab-add-type-inline {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.pab-add-type-inline.hidden { display: none; }
+.pab-new-type-input {
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 2px 7px;
+  font-size: 0.76rem;
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  width: 140px;
+}
+.pab-new-type-input:focus { outline: none; border-color: var(--primary); }
+.pab-new-type-save, .pab-new-type-cancel {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  font-size: 0.8rem;
+  line-height: 1;
+  cursor: pointer;
+  font-family: var(--font);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  flex-shrink: 0;
+}
+.pab-new-type-save:hover  { border-color: var(--pass-fg);  color: var(--pass-fg); }
+.pab-new-type-cancel:hover { border-color: var(--fail-fg); color: var(--fail-fg); }
+.pab-custom-type-btn {
+  position: relative;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 3px 26px 3px 11px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  font-family: var(--font);
+  color: var(--text-muted);
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.pab-custom-type-btn:hover { border-color: var(--primary); color: var(--primary); }
+.pab-custom-type-btn .pab-custom-type-del {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.7rem;
+  opacity: 0;
+  transition: opacity 0.12s;
+  line-height: 1;
+  color: var(--text-muted);
+}
+.pab-custom-type-btn:hover .pab-custom-type-del { opacity: 1; }
+[data-theme="dark"] .pab-new-type-input { background: var(--bg); border-color: rgba(255,255,255,0.15); }
+[data-theme="dark"] .pab-add-type-btn   { border-color: rgba(255,255,255,0.18); }
+[data-theme="dark"] .pab-custom-type-btn { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.12); }
 
 /* Cell manual activity badge */
 .planner-manual-badge {
