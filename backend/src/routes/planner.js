@@ -72,7 +72,7 @@ plannerRouter.get('/planner/week', async (req, res) => {
                  LEAST(s.local_end, gs + INTERVAL '30 minutes')
                  - GREATEST(s.local_start, gs)
                )) / 60.0
-             ) * (s.actual_minutes / s.span_minutes)
+             ) * (s.actual_minutes / NULLIF(s.span_minutes, 0))
            ))::int AS study_minutes,
            MAX(s.started_at AT TIME ZONE 'America/Argentina/Buenos_Aires') AS last_event_at
          FROM session_spans s
