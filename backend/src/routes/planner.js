@@ -38,12 +38,20 @@ plannerRouter.get('/planner/week', async (req, res) => {
     const { rows: activityRows } = await dbPool.query(
       `WITH session_spans AS (
          -- Compute local start/end for each completed session this week.
+         -- span_minutes = real wall-clock duration; active_ratio scales each slot
+         -- down to exclude pause time, since actual_minutes already omits pauses.
          SELECT
            actual_card_count,
+           actual_minutes,
            started_at,
            (started_at AT TIME ZONE 'America/Argentina/Buenos_Aires') AS local_start,
-           ((started_at + actual_minutes * INTERVAL '1 minute')
-             AT TIME ZONE 'America/Argentina/Buenos_Aires') AS local_end
+           (COALESCE(ended_at, started_at + actual_minutes * INTERVAL '1 minute')
+             AT TIME ZONE 'America/Argentina/Buenos_Aires') AS local_end,
+           GREATEST(actual_minutes,
+             EXTRACT(EPOCH FROM (
+               COALESCE(ended_at, started_at + actual_minutes * INTERVAL '1 minute') - started_at
+             )) / 60.0
+           ) AS span_minutes
          FROM study_sessions
          WHERE user_id = $1
            AND actual_minutes IS NOT NULL
@@ -52,7 +60,8 @@ plannerRouter.get('/planner/week', async (req, res) => {
        ),
        session_slots AS (
          -- Expand each session across every 30-min slot it overlaps and compute
-         -- how many minutes of that session fall within each slot.
+         -- how many active minutes of that session fall within each slot.
+         -- The overlap is scaled by (actual_minutes / span_minutes) to strip pauses.
          SELECT
            EXTRACT(DOW FROM gs)::int AS day_index,
            to_char(gs, 'HH24:MI') AS slot_time,
@@ -63,7 +72,7 @@ plannerRouter.get('/planner/week', async (req, res) => {
                  LEAST(s.local_end, gs + INTERVAL '30 minutes')
                  - GREATEST(s.local_start, gs)
                )) / 60.0
-             )
+             ) * (s.actual_minutes / s.span_minutes)
            ))::int AS study_minutes,
            MAX(s.started_at AT TIME ZONE 'America/Argentina/Buenos_Aires') AS last_event_at
          FROM session_spans s
