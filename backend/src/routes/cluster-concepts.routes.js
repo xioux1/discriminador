@@ -1,7 +1,13 @@
 import { Router } from 'express';
 import { dbPool } from '../db/client.js';
 import { clusterConceptsForDocument, getClustersForDocument } from '../services/conceptClustering.service.js';
+import { clusterConceptsForChineseDocument } from '../services/chineseClassParser.service.js';
 import { logger } from '../utils/logger.js';
+
+function isChineseSubject(subject) {
+  const s = (subject || '').toLowerCase().trim();
+  return s === 'chino' || s === 'chinese' || s === 'mandarín' || s === 'mandarin' || s.includes('chino');
+}
 
 const router = Router();
 
@@ -15,13 +21,25 @@ router.post('/api/documents/:id/cluster-concepts', async (req, res, next) => {
     return res.status(400).json({ error: 'invalid_id', message: 'Document ID must be a valid UUID.' });
   }
 
-  // Check document exists
+  // Check document exists and get subject
   const { rows: docRows } = await dbPool.query(
-    'SELECT id FROM documents WHERE id = $1',
+    'SELECT id, subject FROM documents WHERE id = $1',
     [documentId]
   );
   if (!docRows.length) {
     return res.status(404).json({ error: 'not_found', message: 'Document not found.' });
+  }
+  const doc = docRows[0];
+
+  // Chinese subject: deterministic 1:1 clustering, no minimum concept count required
+  if (isChineseSubject(doc.subject)) {
+    try {
+      const result = await clusterConceptsForChineseDocument(documentId);
+      return res.json(result);
+    } catch (err) {
+      logger.error('[clusterConcepts] Chinese pipeline failed', { documentId, error: err.message });
+      return next(err);
+    }
   }
 
   // Single query: total concepts + how many are already clustered

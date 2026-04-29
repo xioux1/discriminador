@@ -8,8 +8,22 @@ import {
   validateGeneratedCardDraft,
   safeJsonParseObject,
 } from '../services/cardGeneration.service.js';
+import { generateChineseCardDraftForCluster } from '../services/chineseCardGeneration.service.js';
 import { dbPool } from '../db/client.js';
 import { logger } from '../utils/logger.js';
+
+async function getClusterSubject(clusterId) {
+  const { rows } = await dbPool.query(
+    `SELECT d.subject FROM clusters cl JOIN documents d ON d.id = cl.document_id WHERE cl.id = $1`,
+    [clusterId]
+  );
+  return rows[0]?.subject || null;
+}
+
+function isChineseSubject(subject) {
+  const s = (subject || '').toLowerCase().trim();
+  return s === 'chino' || s === 'chinese' || s === 'mandarín' || s === 'mandarin' || s.includes('chino');
+}
 
 const router = Router();
 
@@ -26,12 +40,32 @@ router.post('/api/clusters/:id/generate-card-draft', async (req, res, next) => {
     });
   }
 
-  const { max_variants, language = 'es', card_type = 'theoretical_open' } = req.body ?? {};
+  const { max_variants, language = 'es', card_type } = req.body ?? {};
 
-  if (card_type !== 'theoretical_open') {
+  // Detect Chinese clusters and route to the specialized generator
+  const subject = await getClusterSubject(clusterId);
+  if (isChineseSubject(subject) || card_type === 'chinese_sentence') {
+    try {
+      const result = await generateChineseCardDraftForCluster(clusterId, {
+        max_variants,
+        userId: req.user?.id ?? null,
+      });
+      return res.status(201).json(result);
+    } catch (err) {
+      if (err.statusCode === 409) return res.status(409).json({ error: 'draft_exists', message: err.message, existing_card_id: err.existingCardId });
+      if (err.statusCode === 404) return res.status(404).json({ error: 'not_found', message: err.message });
+      if (err.statusCode === 400) return res.status(400).json({ error: 'validation_error', message: err.message });
+      if (err.statusCode === 422) return res.status(422).json({ error: 'generation_failed', message: err.message });
+      logger.error('[generateCardDraft] Chinese unexpected error', { clusterId, error: err.message });
+      return next(err);
+    }
+  }
+
+  const resolvedCardType = card_type ?? 'theoretical_open';
+  if (resolvedCardType !== 'theoretical_open') {
     return res.status(400).json({
       error: 'invalid_card_type',
-      message: 'Only card_type "theoretical_open" is supported in this version.',
+      message: 'Only card_type "theoretical_open" is supported for non-Chinese documents.',
     });
   }
 
