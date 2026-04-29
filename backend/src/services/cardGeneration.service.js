@@ -201,6 +201,10 @@ export async function buildClusterCardContext(clusterId) {
 export function buildCardGenerationPrompt(context, options = {}) {
   const { cluster, concepts, source_excerpts } = context;
   const maxVariants = options.maxVariants ?? 5;
+  const minCoverage = Math.max(
+    Math.min(2, concepts.length),
+    Math.min(Math.floor(concepts.length * 0.5), maxVariants * 3),
+  );
 
   const clusterJson = JSON.stringify({
     id: cluster.id,
@@ -252,7 +256,7 @@ Reglas estrictas:
 12. Cada variante debe incluir una rúbrica de corrección con 3 a 6 bullets.
 13. La rúbrica debe indicar elementos mínimos para aprobar, en frases cortas.
 14. No generes más de ${maxVariants} variantes.
-15. Cada variante debe incluir en source_concept_ids TODOS los conceptos que toca, evalúa o presupone — no sólo el concepto principal. Cubrí el mayor número posible de conceptos del cluster; la validación mide cobertura total de conceptos únicos entre todas las variantes.
+15. Cada variante debe incluir en source_concept_ids TODOS los conceptos que toca, evalúa o presupone — no sólo el concepto principal. La validación exige que entre TODAS las variantes se cubran al menos ${minCoverage} conceptos únicos del cluster (de ${concepts.length} disponibles). Distribuí los conceptos entre variantes para alcanzar esa cobertura mínima.
 16. Cada variante debe incluir source_chunk_indexes usando sólo índices reales provistos.
 17. Si no hay source_chunk_index disponible para una variante, usar [].
 18. Cada variante debe incluir tag_labels (2 a 5 etiquetas cortas, snake_case) para tagging posterior.
