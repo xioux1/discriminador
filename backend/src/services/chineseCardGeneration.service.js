@@ -71,7 +71,7 @@ export async function generateChineseCardDraftForCluster(clusterId, options = {}
 
   const hanzi    = entry.hanzi   || null;
   const pinyin   = entry.pinyin  || null;
-  const meanings = (entry.meanings || []).join(' / ');
+  const meanings = (entry.meanings || []).join(' / ') || entry.definition || concept.definition || '';
   const allExamples = entry.examples || [];
 
   // Split examples into translated (usable) and untranslated (need LLM)
@@ -139,9 +139,8 @@ Devolvé SOLO un array JSON con objetos {"hanzi":"...","es":"..."}. Sin markdown
   }
 
   // Persist card + variants as draft (transactional)
-  const title = hanzi
-    ? `${hanzi} (${pinyin || '?'}) – ${meanings}`
-    : `(${pinyin}) – ${meanings}`;
+  const title = entry.label
+    || (hanzi ? `${hanzi} (${pinyin || '?'}) – ${meanings}` : `(${pinyin}) – ${meanings}`);
 
   const [primary, ...extras] = allVariants;
 
