@@ -193,15 +193,19 @@ statsRouter.get('/stats/weekly', async (req, res) => {
   const TZ = 'America/Argentina/Buenos_Aires';
 
   try {
-    // Current ISO week start (Monday) in local time
+    // Rolling 7-day window ending today (inclusive)
     const { rows: nowRows } = await dbPool.query(
-      `SELECT (date_trunc('week', NOW() AT TIME ZONE $1))::date AS week_start`,
+      `SELECT (NOW() AT TIME ZONE $1)::date AS today`,
       [TZ]
     );
-    const thisWeekStart = nowRows[0].week_start; // YYYY-MM-DD string
-    const weDate = new Date(thisWeekStart + 'T00:00:00Z');
-    weDate.setUTCDate(weDate.getUTCDate() + 7);
-    const thisWeekEnd = weDate.toISOString().slice(0, 10);
+    const today = nowRows[0].today; // YYYY-MM-DD string
+    const todayDate = new Date(today + 'T00:00:00Z');
+    const periodStartDate = new Date(todayDate);
+    periodStartDate.setUTCDate(todayDate.getUTCDate() - 6);
+    const thisWeekStart = periodStartDate.toISOString().slice(0, 10); // today - 6 days
+    const periodEndDate = new Date(todayDate);
+    periodEndDate.setUTCDate(todayDate.getUTCDate() + 1);
+    const thisWeekEnd = periodEndDate.toISOString().slice(0, 10); // tomorrow (exclusive)
 
     // Activity log study time + review counts per subject (current week)
     const { rows: alRows } = await dbPool.query(
@@ -253,16 +257,19 @@ statsRouter.get('/stats/weekly', async (req, res) => {
       [userId, TZ, thisWeekStart, thisWeekEnd]
     );
 
-    // 8-week trend (oldest to newest)
+    // 8-week trend using rolling 7-day windows (oldest to newest)
     const { rows: trendRows } = await dbPool.query(
-      `WITH weeks AS (
+      `WITH params AS (
+         SELECT (NOW() AT TIME ZONE $2)::date AS today
+       ),
+       weeks AS (
          SELECT generate_series(7, 0, -1) AS w_offset
        ),
        week_starts AS (
          SELECT
            w_offset,
-           (date_trunc('week', NOW() AT TIME ZONE $2) - (w_offset * INTERVAL '7 days'))::date AS ws,
-           (date_trunc('week', NOW() AT TIME ZONE $2) - (w_offset * INTERVAL '7 days') + INTERVAL '7 days')::date AS we
+           ((SELECT today FROM params) - INTERVAL '1 day' * (w_offset * 7 + 6))::date AS ws,
+           ((SELECT today FROM params) - INTERVAL '1 day' * (w_offset * 7 - 1))::date AS we
          FROM weeks
        ),
        al_by_week AS (
@@ -334,7 +341,7 @@ statsRouter.get('/stats/weekly', async (req, res) => {
 
     return res.json({
       this_week: {
-        week_start:      thisWeekStart,
+        period_start:    thisWeekStart,
         study_minutes:   totalStudyMinutes,
         manual_minutes:  totalManualMinutes,
         total_minutes:   totalStudyMinutes + totalManualMinutes,

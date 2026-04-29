@@ -1790,20 +1790,20 @@ function renderWeeklyStats(data) {
     pillsEl.appendChild(p);
   });
 
-  // ── Active days chips Mon–Sun ──────────────────────────────────────────────
+  // ── Active days chips (rolling 7-day window) ──────────────────────────────
   daysEl.innerHTML = '';
   const activeDates = new Set(tw.active_dates || []);
-  const weekStartDate = new Date((tw.week_start || new Date().toISOString().slice(0, 10)) + 'T00:00:00Z');
-  const DAY_LABELS = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+  const periodStartDate = new Date((tw.period_start || new Date().toISOString().slice(0, 10)) + 'T00:00:00Z');
+  const DAY_LABELS_BY_DOW = ['D', 'L', 'M', 'X', 'J', 'V', 'S'];
   for (let i = 0; i < 7; i++) {
-    const d = new Date(weekStartDate);
+    const d = new Date(periodStartDate);
     d.setUTCDate(d.getUTCDate() + i);
     const ds = d.toISOString().slice(0, 10);
     const active = activeDates.has(ds);
     const chip = document.createElement('div');
     chip.className = `pw-day-chip${active ? ' pw-day-chip--active' : ''}`;
     chip.title = ds;
-    chip.innerHTML = `<span>${DAY_LABELS[i]}</span>`;
+    chip.innerHTML = `<span>${DAY_LABELS_BY_DOW[d.getUTCDay()]}</span>`;
     daysEl.appendChild(chip);
   }
 
@@ -1895,7 +1895,7 @@ function renderWeeklyStats(data) {
   if (subjects.length > 0) {
     const label2 = document.createElement('p');
     label2.className = 'pw-chart-label';
-    label2.textContent = 'Por materia esta semana';
+    label2.textContent = 'Por materia (últimos 7 días)';
     subjectsEl.appendChild(label2);
 
     const maxSubMin = Math.max(...subjects.map(s => s.total_minutes), 1);
