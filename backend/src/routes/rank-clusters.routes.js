@@ -3,6 +3,47 @@ import { dbPool } from '../db/client.js';
 import { rankClustersForDocument } from '../services/clusterRanking.service.js';
 import { logger } from '../utils/logger.js';
 
+function isChineseSubject(subject) {
+  const s = (subject || '').toLowerCase().trim();
+  return s === 'chino' || s === 'chinese' || s === 'mandarín' || s === 'mandarin' || s.includes('chino');
+}
+
+// Chinese documents don't use embedding-based density ranking.
+// Every word introduced in class is equally high-priority to study.
+async function rankClustersForChineseDocument(documentId) {
+  const { rows: clusters } = await dbPool.query(
+    `SELECT id FROM clusters WHERE document_id = $1 ORDER BY created_at ASC`,
+    [documentId]
+  );
+
+  const total = clusters.length;
+  for (let i = 0; i < total; i++) {
+    const cluster = clusters[i];
+    // Earlier in the class = slightly higher relative rank, but all are tier A
+    const relScore = total > 1 ? 1 - (i / total) * 0.2 : 1.0;
+    await dbPool.query(
+      `UPDATE clusters SET
+         density_score              = 1.0,
+         density_coverage_score     = 1.0,
+         density_intensity_score    = 1.0,
+         importance_score           = 1.0,
+         priority_tier              = 'A',
+         relative_importance_score  = $1,
+         relative_priority_tier     = 'A',
+         importance_reasons         = $2,
+         importance_computed_at     = NOW()
+       WHERE id = $3`,
+      [
+        relScore,
+        JSON.stringify(['Vocabulario introducido en clase']),
+        cluster.id,
+      ]
+    );
+  }
+
+  return { document_id: documentId, cluster_count: total };
+}
+
 const router = Router();
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -65,11 +106,21 @@ router.post('/api/documents/:id/rank-clusters', async (req, res, next) => {
   }
 
   const { rows: docRows } = await dbPool.query(
-    'SELECT id FROM documents WHERE id = $1',
+    'SELECT id, subject FROM documents WHERE id = $1',
     [documentId]
   );
   if (!docRows.length) {
     return res.status(404).json({ error: 'not_found', message: 'Document not found.' });
+  }
+
+  if (isChineseSubject(docRows[0].subject)) {
+    try {
+      const result = await rankClustersForChineseDocument(documentId);
+      return res.json(result);
+    } catch (err) {
+      logger.error('[rankClusters] Chinese ranking failed', { documentId, error: err.message });
+      return next(err);
+    }
   }
 
   try {
