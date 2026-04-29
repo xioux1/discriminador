@@ -4771,6 +4771,8 @@ function showStudyCard() {
     advancedToggleBtn.textContent = 'Ver explicación';
     advancedToggleBtn.setAttribute('aria-expanded', 'false');
   }
+  const easyPanel = document.querySelector('#study-easy-explanation');
+  if (easyPanel) { easyPanel.open = false; easyPanel.classList.add('hidden'); }
   // In exam mode hide secondary controls that don't belong in a simulation
   const studyFlagBtn   = document.querySelector('#study-flag-btn');
   const studyClarify   = document.querySelector('#study-clarify-prompt-btn');
@@ -5222,6 +5224,32 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       editAnswerBtn.style.cssText = 'font-size:0.8rem;margin-top:6px;padding:2px 8px';
       editAnswerBtn.addEventListener('click', () => openStudyAnswerEdit(item, expectedEl));
       expectedEl.appendChild(editAnswerBtn);
+    }
+
+    // Easy explanation — shown as a collapsible <details> below the answer comparison.
+    // Uses the parent card id (variants share the parent's explanation).
+    if (item.type !== 'micro') {
+      const easyPanel = document.querySelector('#study-easy-explanation');
+      const easyText  = document.querySelector('#study-easy-explanation-text');
+      if (easyPanel && easyText) {
+        const cardId = item.data.id;
+        easyPanel.classList.remove('hidden');
+        if (item.data.easy_explanation) {
+          easyText.textContent = item.data.easy_explanation;
+        } else {
+          easyText.textContent = 'Generando explicación…';
+          postJson(`/scheduler/cards/${cardId}/easy-explanation`, {})
+            .then((resp) => {
+              if (resp?.easy_explanation) {
+                easyText.textContent = resp.easy_explanation;
+                item.data.easy_explanation = resp.easy_explanation;
+              } else {
+                easyPanel.classList.add('hidden');
+              }
+            })
+            .catch(() => { easyPanel.classList.add('hidden'); });
+        }
+      }
     }
 
     // SQL clause checklist in study result block

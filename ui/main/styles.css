@@ -640,6 +640,39 @@ textarea:focus, input[type="text"]:focus, select:focus {
   color: var(--text);
 }
 .study-result-expected.hidden { display: none; }
+
+.study-easy-explanation {
+  margin-top: 8px;
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius-sm);
+  font-size: 0.86rem;
+}
+.study-easy-explanation.hidden { display: none; }
+.study-easy-explanation > summary {
+  padding: 6px 10px;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text-muted);
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.study-easy-explanation > summary::before {
+  content: '▸';
+  font-size: 0.7rem;
+  transition: transform 0.15s;
+}
+.study-easy-explanation[open] > summary::before { transform: rotate(90deg); }
+.study-easy-explanation-text {
+  padding: 6px 12px 10px;
+  margin: 0;
+  line-height: 1.6;
+  color: var(--text);
+  border-top: 1px solid var(--border-mid);
+}
+
 .study-answer-compare-block { margin: 8px 0; }
 .study-answer-compare-text {
   margin-top: 4px;
