@@ -4674,12 +4674,19 @@ function showStudyCard() {
     } else {
       parentContextEl.classList.add('hidden');
     }
-    if (item.data.presentation === 'listening') {
+    // Detect listening microcards: explicit presentation tag OR legacy cards where
+    // the question is pure hanzi (no presentation tag set at creation time).
+    const _microQuestion = item.data.question || '';
+    const _microExpected = item.data.expected_answer || '';
+    const isMicroListening = item.data.presentation === 'listening'
+      || (hasChinese(_microQuestion) && hasChinese(_microExpected)
+          && item.data.presentation !== 'lexical' && item.data.presentation !== 'text');
+
+    if (isMicroListening) {
       // Listening micro-card: hide question text, play audio of the Hanzi to drill.
       promptEl.innerHTML = '';
       // Guard: if question has no CJK (bad legacy data), fall back to parent context.
-      const _q = item.data.question || '';
-      _ttsListeningText = /[一-鿿㐀-䶿]/u.test(_q) ? _q : (item.data.parent_prompt || _q);
+      _ttsListeningText = /[一-鿿㐀-䶿]/u.test(_microQuestion) ? _microQuestion : (item.data.parent_prompt || _microQuestion);
       if (listeningBar) listeningBar.classList.remove('hidden');
       if (getTTSEnabled()) playChineseTTS(_ttsListeningText, '#study-listening-replay-btn');
     } else {
@@ -4694,14 +4701,22 @@ function showStudyCard() {
     badge.textContent = hasMicros ? `Advertencia: Conceptos pendientes (${item.data.active_micro_count})` : '';
     if (hasMicros) badge.classList.remove('hidden');
 
-    if (isListeningVariant) {
+    // A corrupted regular variant for a Chinese card may have hanzi in prompt_text
+    // (LLM wrote the question in Chinese instead of Spanish). Treat it the same as
+    // a listening variant so the student isn't shown raw hanzi on the front.
+    const promptForDisplay = getStudyPromptText(item);
+    const isCorruptedChinesePrompt = !isListeningVariant
+      && hasChinese(promptForDisplay)
+      && hasChinese(item.data.expected_answer_text || '');
+
+    if (isListeningVariant || isCorruptedChinesePrompt) {
       // Hide the text prompt; show the listening bar and auto-play TTS.
       promptEl.innerHTML = '';
       _ttsListeningText = item.data.prompt_text;
       if (listeningBar) listeningBar.classList.remove('hidden');
       if (getTTSEnabled()) playChineseTTS(_ttsListeningText, '#study-listening-replay-btn');
     } else {
-      renderStudyPrompt(promptEl, getStudyPromptText(item));
+      renderStudyPrompt(promptEl, promptForDisplay);
       if (listeningBar) listeningBar.classList.add('hidden');
       _ttsListeningText = null;
     }
@@ -5583,11 +5598,13 @@ async function handleStudyNextCard() {
   }
 
   if (grade && item.type === 'micro') {
-    // Two-consecutive-correct rule applies only to Chinese single-word vocabulary
-    // micro-cards (e.g. front: "película", back: "电影"). Detected by: expected
-    // answer contains CJK and has ≤4 CJK characters (word, not sentence).
+    // Two-consecutive-correct rule applies to Chinese single-word vocabulary micro-cards
+    // (e.g. front: "película", back: "电影").
+    // Primary signal: presentation === 'lexical' (set by backend at generation time for Type A cards).
+    // Legacy fallback: expected answer has 1-4 CJK characters (old cards without the tag).
     const _cjkInExpected = (item.data.expected_answer || '').match(/[一-鿿㐀-䶿]/gu) || [];
-    const isChineseVocabMicro = _cjkInExpected.length > 0 && _cjkInExpected.length <= 4;
+    const isChineseVocabMicro = item.data.presentation === 'lexical'
+      || (_cjkInExpected.length > 0 && _cjkInExpected.length <= 4);
 
     const normalizedGrade   = normalizeSuggestedGrade(grade);
     const isPass            = normalizedGrade === 'GOOD' || normalizedGrade === 'EASY';

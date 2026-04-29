@@ -156,12 +156,14 @@ Clasificá y generá la micro-tarjeta.`
   });
 
   const text = response.content.find((b) => b.type === 'text')?.text ?? '';
-  const frontMatch = text.match(/FRONT:\s*(.+)/i);
-  const backMatch  = text.match(/BACK:\s*([\s\S]+)/i);
+  const formatMatch = text.match(/FORMAT:\s*(lexical|mirror)/i);
+  const frontMatch  = text.match(/FRONT:\s*(.+)/i);
+  const backMatch   = text.match(/BACK:\s*([\s\S]+)/i);
 
   return {
     question:        frontMatch?.[1]?.trim() ?? `¿Cómo se dice "${concept}" en chino?`,
     expected_answer: backMatch?.[1]?.trim()  || expected_answer_text,
+    isLexical:       formatMatch?.[1]?.toLowerCase() === 'lexical',
   };
 }
 

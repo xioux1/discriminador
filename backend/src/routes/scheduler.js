@@ -267,7 +267,15 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
         `SELECT id, prompt_text, expected_answer_text, variant_type FROM card_variants WHERE card_id = $1 AND (user_id = $2 OR user_id IS NULL)`,
         [card.id, card.user_id]
       );
-      const variants = vRes.rows;
+      // Filter out corrupted regular variants: for Chinese cards, any regular variant
+      // where the LLM wrote the question in Chinese should be skipped at serve time.
+      const CJK_SESSION_RE = /[一-鿿㐀-䶿]/u;
+      const variants = vRes.rows.filter((v) => {
+        if (v.variant_type === 'regular' && isChineseCard(card) && CJK_SESSION_RE.test(v.prompt_text || '')) {
+          return false;
+        }
+        return true;
+      });
       if (variants.length === 0) return card;
 
       // pick = 0 → original; pick ≥ 1 → variants[pick-1]
@@ -373,8 +381,14 @@ async function autoGenerateVariant(cardId, card, userId) {
     // Discard degenerate variants where the question became identical to the expected
     // answer — this happens when the LLM accidentally writes the prompt in the target
     // language (e.g. Chinese) making the card unsolvable without copying the prompt.
+    // Also discard regular variants for Chinese cards where the LLM put CJK characters
+    // in the question (should always be Spanish for Chinese study cards).
+    const CJK_RE = /[一-鿿㐀-䶿]/u;
+    const hasHanziInPrompt = CJK_RE.test(variant.prompt_text);
     if (variant.prompt_text.trim() === variant.expected_answer_text.trim()) {
       console.warn('[auto-variant] discarded degenerate regular variant (prompt == answer)', { cardId, subject: card.subject });
+    } else if (isChineseCard(card) && hasHanziInPrompt) {
+      console.warn('[auto-variant] discarded Chinese regular variant with hanzi in prompt (LLM language error)', { cardId, subject: card.subject });
     } else {
       await dbPool.query(
         `INSERT INTO card_variants (card_id, prompt_text, expected_answer_text, user_id, variant_type)
@@ -524,7 +538,9 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
         } else {
           const _microFn = isChineseCard(card) ? generateChineseMicroCard : generateMicroCard;
           micro        = await _microFn({ prompt_text: microPromptText, expected_answer_text: microExpectedText, subject: card.subject, concept, user_answer: userAnswer });
-          presentation = 'text';
+          // Tag Chinese vocabulary (Type A / lexical) cards so the frontend can
+          // enforce the two-consecutive-correct rule without fragile heuristics.
+          presentation = (isChineseCard(card) && micro.isLexical) ? 'lexical' : 'text';
         }
 
         const inserted = await dbPool.query(
@@ -733,12 +749,13 @@ async function reviewMicroCard(res, microCardId, grade, conceptGaps, userAnswer,
               concept,
               user_answer:          userAnswer || ''
             });
+            const siblingPresentation = (isChineseCard(parent) && sibling.isLexical) ? 'lexical' : 'text';
             const inserted = await dbPool.query(
-              `INSERT INTO micro_cards (parent_card_id, concept, question, expected_answer, user_id, subject)
-               VALUES ($1, $2, $3, $4, $5, $6)
+              `INSERT INTO micro_cards (parent_card_id, concept, question, expected_answer, user_id, subject, presentation)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)
                ON CONFLICT DO NOTHING
                RETURNING *`,
-              [micro.parent_card_id, concept, sibling.question, sibling.expected_answer, userId, micro.subject || parent.subject || null]
+              [micro.parent_card_id, concept, sibling.question, sibling.expected_answer, userId, micro.subject || parent.subject || null, siblingPresentation]
             );
             if (inserted.rows.length) newMicroCards.push({ ...inserted.rows[0], parent_subject: micro.subject || parent.subject || null, parent_prompt: parent.prompt_text });
           } catch (err) {
@@ -1023,6 +1040,14 @@ schedulerRouter.post('/scheduler/cards/:id/variant', async (req, res) => {
       expected_answer_text: card.expected_answer_text,
       subject:              card.subject
     });
+
+    // Reject variants where the LLM wrote the question in Chinese for a Chinese card.
+    if (isChineseCard(card) && /[一-鿿㐀-䶿]/u.test(variant.prompt_text)) {
+      return res.status(422).json({ error: 'generation_error', message: 'La variante generada tiene hanzi en la pregunta. Intentá de nuevo.' });
+    }
+    if (variant.prompt_text.trim() === variant.expected_answer_text.trim()) {
+      return res.status(422).json({ error: 'generation_error', message: 'La variante generada es degenerada (pregunta igual a respuesta). Intentá de nuevo.' });
+    }
 
     const insertRes = await dbPool.query(
       `INSERT INTO card_variants (card_id, prompt_text, expected_answer_text, user_id, variant_type)
