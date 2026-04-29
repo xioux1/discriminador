@@ -42,7 +42,7 @@ plannerRouter.get('/planner/week', async (req, res) => {
            actual_card_count,
            started_at,
            (started_at AT TIME ZONE 'America/Argentina/Buenos_Aires') AS local_start,
-           (COALESCE(ended_at, started_at + actual_minutes * INTERVAL '1 minute')
+           ((started_at + actual_minutes * INTERVAL '1 minute')
              AT TIME ZONE 'America/Argentina/Buenos_Aires') AS local_end
          FROM study_sessions
          WHERE user_id = $1
