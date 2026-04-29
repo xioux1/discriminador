@@ -642,8 +642,28 @@ async function loadVariantsTree(cardId, variantCount) {
     const data = await getJson(`/scheduler/cards/${cardId}/variants`);
     treeEl.innerHTML = renderVariantsTreeHTML(data.card, data.variants);
     treeEl.querySelectorAll('.cvt-node').forEach((node) => {
-      node.querySelector('.cvt-node-head').addEventListener('click', () => {
+      node.querySelector('.cvt-node-head').addEventListener('click', (e) => {
+        if (e.target.closest('.cvt-delete-btn')) return;
         node.classList.toggle('cvt-node--expanded');
+      });
+    });
+    treeEl.querySelectorAll('.cvt-delete-btn').forEach((btn) => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const variantId = btn.dataset.variantId;
+        if (!confirm('¿Eliminar esta variante?')) return;
+        btn.disabled = true;
+        try {
+          await deleteJson(`/scheduler/cards/${cardId}/variants/${variantId}`);
+          // Reload the tree and update the counter
+          const countEl = document.querySelector('#cdp-variants');
+          const newCount = Math.max(0, Number(countEl?.textContent || 0) - 1);
+          if (countEl) countEl.textContent = newCount;
+          await loadVariantsTree(cardId, newCount);
+        } catch (err) {
+          alert(`Error al eliminar: ${err.message}`);
+          btn.disabled = false;
+        }
       });
     });
   } catch (_) {
@@ -654,11 +674,12 @@ async function loadVariantsTree(cardId, variantCount) {
 function renderVariantsTreeHTML(card, variants) {
   const trunc = (s, n) => s.length > n ? s.slice(0, n) + '…' : s;
 
-  const nodeHTML = (label, prompt, answer, isRoot) => `
+  const nodeHTML = (label, prompt, answer, isRoot, variantId = null) => `
     <div class="cvt-node${isRoot ? ' cvt-node--root' : ''}">
       <div class="cvt-node-head">
         <span class="cvt-node-badge">${escHtml(label)}</span>
         <span class="cvt-node-prompt">${escHtml(trunc(prompt, 72))}</span>
+        ${variantId != null ? `<button class="cvt-delete-btn" data-variant-id="${variantId}" title="Eliminar variante" aria-label="Eliminar variante">✕</button>` : ''}
         <span class="cvt-chevron" aria-hidden="true">▾</span>
       </div>
       <div class="cvt-node-body">
@@ -672,7 +693,7 @@ function renderVariantsTreeHTML(card, variants) {
 
   const childrenHTML = variants.map((v, i) => `
     <div class="cvt-branch">
-      ${nodeHTML(`#${v.id} · Variante ${i + 1}`, v.prompt_text, v.expected_answer_text, false)}
+      ${nodeHTML(`#${v.id} · Variante ${i + 1}`, v.prompt_text, v.expected_answer_text, false, v.id)}
     </div>`).join('');
 
   return `<div class="cvt-root">${rootHTML}${variants.length ? `<div class="cvt-children">${childrenHTML}</div>` : ''}</div>`;

@@ -1096,6 +1096,28 @@ schedulerRouter.get('/scheduler/cards/:id/variants', async (req, res) => {
   }
 });
 
+// DELETE /scheduler/cards/:cardId/variants/:variantId
+schedulerRouter.delete('/scheduler/cards/:cardId/variants/:variantId', async (req, res) => {
+  const cardId = parseInt(req.params.cardId);
+  const variantId = parseInt(req.params.variantId);
+  const userId = req.user.id;
+  if (!cardId || !variantId) return res.status(422).json({ error: 'validation_error', message: 'Invalid id.' });
+
+  try {
+    const result = await dbPool.query(
+      `DELETE FROM card_variants
+       WHERE id = $1 AND card_id = $2 AND (user_id = $3 OR user_id IS NULL)
+       RETURNING id`,
+      [variantId, cardId, userId]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'not_found', message: 'Variant not found.' });
+    return res.json({ deleted: result.rows[0].id });
+  } catch (err) {
+    console.error('DELETE /scheduler/cards/:cardId/variants/:variantId', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
 // GET /scheduler/daily-summary
 // Returns today's review count, minutes studied, and per-subject priority allocation.
 schedulerRouter.get('/scheduler/daily-summary', async (req, res) => {
