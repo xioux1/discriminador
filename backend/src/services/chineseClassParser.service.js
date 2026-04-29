@@ -3,69 +3,24 @@ import { dbPool } from '../db/client.js';
 import { logger } from '../utils/logger.js';
 
 let _anthropic = null;
-function getAnthropicClient() {
+function getClient() {
   if (!_anthropic) {
     _anthropic = new Anthropic({
       apiKey: process.env.ANTHROPIC_API_KEY,
-      timeout: Number(process.env.CHINESE_PARSE_TIMEOUT_MS || 60_000),
+      timeout: Number(process.env.CHINESE_PARSE_TIMEOUT_MS || 90_000),
     });
   }
   return _anthropic;
 }
 
-export const CHINESE_PARSE_MODEL = process.env.CHINESE_PARSE_MODEL || 'claude-haiku-4-5-20251001';
-
-// ==================== parseChineseNotes ====================
-// Single LLM call (Haiku) to extract structured vocab entries from class notes.
-// Returns an array of entry objects: { hanzi, pinyin, meanings, examples }
-
-export async function parseChineseNotes(text) {
-  const anthropic = getAnthropicClient();
-
-  const msg = await anthropic.messages.create({
-    model: CHINESE_PARSE_MODEL,
-    max_tokens: 4096,
-    messages: [{
-      role: 'user',
-      content: `You are analyzing Chinese language class notes. Extract ALL vocabulary entries and their associated example sentences.
-
-For EACH vocabulary entry found, return a JSON object with:
-- "hanzi": the Chinese character(s) if present (e.g. "送"), or null if not written
-- "pinyin": the pinyin romanization with tone marks (e.g. "sòng")
-- "meanings": array of Spanish meanings (e.g. ["enviar", "regalar", "acompañar para despedir"])
-- "examples": array of objects {hanzi: sentence in Chinese characters, pinyin: pinyin of sentence or null, es: Spanish translation or null}
-
-Rules:
-- Each vocabulary entry is identified by a line containing ">" with Spanish meanings on the right side
-- Example sentences BELOW a vocabulary entry belong to THAT entry
-- Ignore lesson headers like 第N课
-- Ignore homework sections (作业: and everything after it)
-- Ignore homework instruction lines (e.g. "Hacer una oración con...", "Después de unir...")
-- If a sentence has NO Spanish translation, set es: null
-- If a vocabulary entry has NO hanzi character written, set hanzi: null
-- Include ALL vocabulary entries and ALL their example sentences
-- A standalone sentence before the first vocab entry should be attached to the closest vocab entry below it
-
-Notes:
-${text}
-
-Return ONLY a valid JSON array. No markdown, no explanation.`,
-    }],
-  });
-
-  const raw = msg.content?.[0]?.text?.trim() || '';
-  const start = raw.indexOf('[');
-  const end = raw.lastIndexOf(']');
-  if (start === -1 || end === -1) throw new Error('LLM did not return a JSON array for Chinese parsing');
-
-  try {
-    return JSON.parse(raw.slice(start, end + 1));
-  } catch {
-    throw new Error('Failed to parse Chinese notes response as JSON array');
-  }
-}
+// Sonnet for extraction (needs to handle messy handwritten-style notes reliably)
+const EXTRACT_MODEL = process.env.CHINESE_EXTRACT_MODEL || 'claude-sonnet-4-20250514';
+// Haiku is enough for clustering (well-structured task over clean concept list)
+const CLUSTER_MODEL  = process.env.CHINESE_CLUSTER_MODEL  || 'claude-haiku-4-5-20251001';
 
 // ==================== extractConceptsForChineseDocument ====================
+// Uses Sonnet to parse class notes into granular concepts.
+// One concept per USAGE of a word (别 as "no imperativo" and 别 as "otro" → 2 concepts).
 
 export async function extractConceptsForChineseDocument(documentId) {
   const { rows: docRows } = await dbPool.query(
@@ -73,50 +28,71 @@ export async function extractConceptsForChineseDocument(documentId) {
     [documentId]
   );
   if (!docRows.length) throw new Error('Document not found');
-
   const text = (docRows[0].body || '').trim();
   if (!text) throw new Error('Document has no text');
 
-  logger.info('[chineseParser] Parsing Chinese notes', { documentId, chars: text.length });
+  logger.info('[chineseParser] Extracting Chinese concepts', { documentId, chars: text.length });
 
-  const entries = await parseChineseNotes(text);
-  logger.info('[chineseParser] Parsed entries', { documentId, count: entries.length });
+  const msg = await getClient().messages.create({
+    model: EXTRACT_MODEL,
+    max_tokens: 4096,
+    messages: [{
+      role: 'user',
+      content: `Analizá estos apuntes de clase de chino mandarín y extraé todos los conceptos de vocabulario y gramática.
 
-  // Clear any previous concepts for this document
+REGLAS:
+- Creá UN concepto por cada USO DISTINTO de una palabra. Si 别 significa "no imperativo" Y "otro/otra", son DOS conceptos separados.
+- Ignorá encabezados de lección (第N课) y todo lo que esté después de 作业: (tarea).
+- Si una oración de ejemplo no tiene traducción al español, dejá "es": null.
+- label: "汉字 (pīnyīn) – uso específico" — si no hay hanzi visible, usá "(pīnyīn) – uso".
+- definition: una oración en español que explique ESE uso específico de la palabra.
+- evidence: las oraciones de ejemplo que demuestran ESE uso, en formato "汉字 → español".
+- examples: array con los ejemplos que demuestran ese uso específico.
+
+Apuntes:
+${text}
+
+Devolvé SOLO un array JSON válido con objetos:
+{
+  "hanzi": "字" | null,
+  "pinyin": "pīnyīn",
+  "label": "字 (pīnyīn) – descripción del uso",
+  "definition": "Explicación en español de este uso específico.",
+  "evidence": "我送你。→ Te acompaño.",
+  "examples": [{"hanzi": "oración", "pinyin": "pīnyīn o null", "es": "traducción o null"}]
+}
+
+Sin markdown, sin texto extra.`,
+    }],
+  });
+
+  const raw = msg.content?.[0]?.text?.trim() || '';
+  const entries = parseJsonArray(raw, 'concept extraction');
+
+  logger.info('[chineseParser] Concepts parsed', { documentId, count: entries.length });
+
+  // Clear previous concepts for this document
   await dbPool.query('DELETE FROM concepts WHERE document_id = $1', [documentId]);
 
   const saved = [];
   for (let i = 0; i < entries.length; i++) {
-    const entry = entries[i];
-    if (!entry.pinyin && !entry.hanzi) continue;
-
-    const label = entry.hanzi
-      ? `${entry.hanzi} (${entry.pinyin || '?'})`
-      : `(${entry.pinyin})`;
-
-    const meanings = (entry.meanings || []).join(' / ');
-    const definition = meanings || 'Palabra en chino';
-
-    // Build evidence string from translated examples
-    const evidenceParts = (entry.examples || [])
-      .filter(ex => ex.hanzi)
-      .map(ex => {
-        const parts = [ex.hanzi];
-        if (ex.pinyin) parts.push(`(${ex.pinyin})`);
-        if (ex.es) parts.push(`→ ${ex.es}`);
-        return parts.join(' ');
-      });
-    const evidence = evidenceParts.join(' | ') || null;
-
-    // source_chunk stores full structured entry as JSON for card generation
-    const sourceChunk = JSON.stringify(entry);
+    const e = entries[i];
+    if (!e.pinyin && !e.hanzi) continue;
 
     const { rows } = await dbPool.query(
       `INSERT INTO concepts
          (document_id, label, definition, evidence, source_chunk, source_chunk_index, extraction_model)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING id, label, definition, evidence, source_chunk_index`,
-      [documentId, label, definition, evidence, sourceChunk, i, CHINESE_PARSE_MODEL]
+      [
+        documentId,
+        e.label   || (e.hanzi ? `${e.hanzi} (${e.pinyin})` : `(${e.pinyin})`),
+        e.definition || '',
+        e.evidence   || null,
+        JSON.stringify(e),   // full structured entry kept for card generation
+        i,
+        EXTRACT_MODEL,
+      ]
     );
     saved.push(rows[0]);
   }
@@ -126,46 +102,106 @@ export async function extractConceptsForChineseDocument(documentId) {
 }
 
 // ==================== clusterConceptsForChineseDocument ====================
-// Deterministic: 1 concept = 1 cluster. No embeddings, no LLM needed.
+// Uses Haiku to group concepts by base word (all usages of 别 → 1 cluster).
 
 export async function clusterConceptsForChineseDocument(documentId) {
   const { rows: concepts } = await dbPool.query(
     `SELECT id, label, definition
      FROM concepts
-     WHERE document_id = $1 AND cluster_id IS NULL
+     WHERE document_id = $1
      ORDER BY source_chunk_index ASC NULLS LAST`,
     [documentId]
   );
-
   if (!concepts.length) throw new Error('No concepts to cluster for this document');
 
-  // Remove existing clusters (in case of re-clustering)
+  logger.info('[chineseClustering] Clustering with LLM', { documentId, count: concepts.length });
+
+  const conceptList = concepts.map(c => `ID:${c.id} | ${c.label} — ${c.definition}`).join('\n');
+
+  const msg = await getClient().messages.create({
+    model: CLUSTER_MODEL,
+    max_tokens: 2048,
+    messages: [{
+      role: 'user',
+      content: `Estos son conceptos de vocabulario chino extraídos de apuntes de clase. Agrupalos en clusters donde cada cluster represente UNA palabra base (mismo hanzi) con todos sus usos y patrones gramaticales.
+
+Si un hanzi tiene múltiples usos (ej: 别 como imperativo y como adjetivo), todos deben ir en el MISMO cluster.
+Si dos palabras distintas comparten el mismo hanzi pero con significados muy diferentes (homógrafos), pueden ir en clusters separados.
+
+Conceptos:
+${conceptList}
+
+Para cada cluster devolvé:
+- "name": "汉字 (pīnyīn)" — nombre corto del cluster
+- "definition": una oración en español que resuma todos los usos agrupados
+- "concept_ids": array con los IDs de los conceptos que pertenecen a este cluster
+
+Devolvé SOLO un array JSON válido. Sin markdown.`,
+    }],
+  });
+
+  const raw = msg.content?.[0]?.text?.trim() || '';
+  const clusterDefs = parseJsonArray(raw, 'clustering');
+
+  // Remove previous clusters
   await dbPool.query('DELETE FROM clusters WHERE document_id = $1', [documentId]);
 
-  logger.info('[chineseClustering] Creating 1:1 clusters', { documentId, count: concepts.length });
+  const conceptIdSet = new Set(concepts.map(c => c.id));
+  const assigned = new Set();
+  const result = [];
 
-  const clusters = [];
-  for (const concept of concepts) {
+  for (const def of clusterDefs) {
+    if (!def.name || !Array.isArray(def.concept_ids) || def.concept_ids.length === 0) continue;
+
+    const validIds = def.concept_ids.filter(id => conceptIdSet.has(id) && !assigned.has(id));
+    if (validIds.length === 0) continue;
+
     const { rows } = await dbPool.query(
       `INSERT INTO clusters (document_id, name, definition)
        VALUES ($1, $2, $3)
-       RETURNING id, name, definition, created_at`,
-      [documentId, concept.label, concept.definition]
+       RETURNING id, name, definition`,
+      [documentId, def.name, def.definition || def.name]
     );
     const cluster = rows[0];
 
     await dbPool.query(
-      `UPDATE concepts SET cluster_id = $1 WHERE id = $2`,
-      [cluster.id, concept.id]
+      `UPDATE concepts SET cluster_id = $1 WHERE id = ANY($2::uuid[])`,
+      [cluster.id, validIds]
     );
 
-    clusters.push({ ...cluster, concepts: [{ id: concept.id, label: concept.label }] });
+    for (const id of validIds) assigned.add(id);
+    result.push({ ...cluster, concept_count: validIds.length });
   }
 
-  logger.info('[chineseClustering] Done', { documentId, clusterCount: clusters.length });
+  // Any concept the LLM missed → its own cluster
+  const missed = concepts.filter(c => !assigned.has(c.id));
+  for (const c of missed) {
+    const { rows } = await dbPool.query(
+      `INSERT INTO clusters (document_id, name, definition) VALUES ($1, $2, $3) RETURNING id`,
+      [documentId, c.label, c.definition]
+    );
+    await dbPool.query(
+      `UPDATE concepts SET cluster_id = $1 WHERE id = $2`,
+      [rows[0].id, c.id]
+    );
+    result.push({ ...rows[0], concept_count: 1 });
+  }
 
-  return {
-    cluster_count: clusters.length,
-    clusters,
-  };
+  logger.info('[chineseClustering] Done', { documentId, clusterCount: result.length });
+  return { cluster_count: result.length, clusters: result };
+}
+
+// ── helpers ───────────────────────────────────────────────────────────────────
+
+function parseJsonArray(raw, context) {
+  const start = raw.indexOf('[');
+  const end   = raw.lastIndexOf(']');
+  if (start === -1 || end === -1) {
+    throw new Error(`LLM did not return a JSON array for ${context}`);
+  }
+  try {
+    return JSON.parse(raw.slice(start, end + 1));
+  } catch (e) {
+    throw new Error(`Failed to parse JSON array for ${context}: ${e.message}`);
+  }
 }
