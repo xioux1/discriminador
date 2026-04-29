@@ -147,6 +147,7 @@ Devolvé SOLO un array JSON válido. Sin markdown.`,
   await dbPool.query('DELETE FROM clusters WHERE document_id = $1', [documentId]);
 
   const conceptIdSet = new Set(concepts.map(c => c.id));
+  const conceptMap   = new Map(concepts.map(c => [c.id, c]));
   const assigned = new Set();
   const result = [];
 
@@ -170,21 +171,28 @@ Devolvé SOLO un array JSON válido. Sin markdown.`,
     );
 
     for (const id of validIds) assigned.add(id);
-    result.push({ ...cluster, concept_count: validIds.length });
+    result.push({
+      ...cluster,
+      concepts: validIds.map(id => ({
+        id,
+        label:      conceptMap.get(id)?.label      ?? '',
+        definition: conceptMap.get(id)?.definition ?? '',
+      })),
+    });
   }
 
   // Any concept the LLM missed → its own cluster
   const missed = concepts.filter(c => !assigned.has(c.id));
   for (const c of missed) {
     const { rows } = await dbPool.query(
-      `INSERT INTO clusters (document_id, name, definition) VALUES ($1, $2, $3) RETURNING id`,
+      `INSERT INTO clusters (document_id, name, definition) VALUES ($1, $2, $3) RETURNING id, name, definition`,
       [documentId, c.label, c.definition]
     );
     await dbPool.query(
       `UPDATE concepts SET cluster_id = $1 WHERE id = $2`,
       [rows[0].id, c.id]
     );
-    result.push({ ...rows[0], concept_count: 1 });
+    result.push({ ...rows[0], concepts: [{ id: c.id, label: c.label, definition: c.definition }] });
   }
 
   logger.info('[chineseClustering] Done', { documentId, clusterCount: result.length });
