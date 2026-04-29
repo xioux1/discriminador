@@ -252,7 +252,7 @@ Reglas estrictas:
 12. Cada variante debe incluir una rúbrica de corrección con 3 a 6 bullets.
 13. La rúbrica debe indicar elementos mínimos para aprobar, en frases cortas.
 14. No generes más de ${maxVariants} variantes.
-15. Cada variante debe incluir source_concept_ids usando sólo IDs reales provistos.
+15. Cada variante debe incluir en source_concept_ids TODOS los conceptos que toca, evalúa o presupone — no sólo el concepto principal. Cubrí el mayor número posible de conceptos del cluster; la validación mide cobertura total de conceptos únicos entre todas las variantes.
 16. Cada variante debe incluir source_chunk_indexes usando sólo índices reales provistos.
 17. Si no hay source_chunk_index disponible para una variante, usar [].
 18. Cada variante debe incluir tag_labels (2 a 5 etiquetas cortas, snake_case) para tagging posterior.
@@ -351,7 +351,13 @@ export function validateGeneratedCardDraft(output, context, maxVariants) {
     ...context.concepts.map(c => c.source_chunk_index).filter(i => i != null),
     ...context.source_excerpts.map(e => e.chunk_index),
   ]);
-  const minCoverage = Math.max(1, Math.floor(context.concepts.length * 0.5));
+  // Cap by maxVariants * 3 so large clusters with few allowed variants don't
+  // demand unreachable coverage (e.g. 22 concepts, tier-B = 3 variants → cap at 9,
+  // not 11). Always require at least 2 covered unless the cluster has only 1 concept.
+  const minCoverage = Math.max(
+    Math.min(2, context.concepts.length),
+    Math.min(Math.floor(context.concepts.length * 0.5), maxVariants * 3),
+  );
 
   const seenQuestions = new Set();
   const validVariants = [];
