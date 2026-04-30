@@ -195,7 +195,7 @@ statsRouter.get('/stats/weekly', async (req, res) => {
   try {
     // Rolling 7-day window ending today (inclusive)
     const { rows: nowRows } = await dbPool.query(
-      `SELECT (NOW() AT TIME ZONE $1)::date AS today`,
+      `SELECT (NOW() AT TIME ZONE $1)::date::text AS today`,
       [TZ]
     );
     const today = nowRows[0].today; // YYYY-MM-DD string
