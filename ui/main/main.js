@@ -5272,7 +5272,8 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
     }
 
     // Show "Guardar variante" for any regular card (not micro), regardless of grade
-    const variantBtn      = document.querySelector('#study-variant-btn');
+    const variantBtn        = document.querySelector('#study-variant-btn');
+    const deleteVariantBtn  = document.querySelector('#study-delete-variant-btn');
     const variantFeedback = document.querySelector('#study-variant-feedback');
     const nextBtn         = document.querySelector('#study-next-btn');
     const decisionBlock   = document.querySelector('#study-decision-block');
@@ -5283,8 +5284,15 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       variantBtn.classList.remove('hidden');
       variantBtn.disabled = false;
       variantBtn.textContent = '+ Guardar variante';
+      if (currentItem.data.variant_id) {
+        deleteVariantBtn.classList.remove('hidden');
+        deleteVariantBtn.disabled = false;
+      } else {
+        deleteVariantBtn.classList.add('hidden');
+      }
     } else {
       variantBtn.classList.add('hidden');
+      deleteVariantBtn.classList.add('hidden');
     }
     variantFeedback.classList.add('hidden');
     variantFeedback.textContent = '';
@@ -5532,6 +5540,30 @@ document.querySelector('#study-variant-btn').addEventListener('click', async () 
     variantFb.textContent = `Error: ${err.message}`;
     variantFb.style.color = 'var(--fail-fg)';
     variantFb.classList.remove('hidden');
+  }
+});
+
+document.querySelector('#study-delete-variant-btn').addEventListener('click', async () => {
+  const item = studyState.queue[studyState.index];
+  if (!item || item.type !== 'card' || !item.data.variant_id) return;
+  if (!confirm('¿Eliminar esta variante? La tarjeta original no se borra.')) return;
+
+  const btn = document.querySelector('#study-delete-variant-btn');
+  const fb  = document.querySelector('#study-variant-feedback');
+  btn.disabled = true;
+  fb.classList.add('hidden');
+
+  try {
+    await deleteJson(`/scheduler/cards/${item.data.id}/variants/${item.data.variant_id}`);
+    btn.classList.add('hidden');
+    fb.textContent = 'Variante eliminada.';
+    fb.style.color = 'var(--pass-fg)';
+    fb.classList.remove('hidden');
+  } catch (err) {
+    btn.disabled = false;
+    fb.textContent = `Error: ${err.message}`;
+    fb.style.color = 'var(--fail-fg)';
+    fb.classList.remove('hidden');
   }
 });
 
