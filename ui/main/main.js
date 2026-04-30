@@ -6498,6 +6498,7 @@ function initPlannerTab() {
   });
 
   initManualActivityWidget();
+  initActivityHistoryModal();
   initPlannerTodos();
 }
 
@@ -6805,6 +6806,233 @@ function initManualActivityWidget() {
       stopBtn.disabled = false;
     }
   });
+}
+
+// ─── Activity History Modal ────────────────────────────────────────────────────
+function initActivityHistoryModal() {
+  const modal       = document.querySelector('#pab-history-modal');
+  const backdrop    = modal.querySelector('.pab-history-backdrop');
+  const closeBtn    = document.querySelector('#pab-history-close');
+  const historyBtn  = document.querySelector('#pab-history-btn');
+  const loadingEl   = document.querySelector('#pab-history-loading');
+  const listEl      = document.querySelector('#pab-history-list');
+  const emptyEl     = document.querySelector('#pab-history-empty');
+
+  const editModal   = document.querySelector('#pab-edit-modal');
+  const editClose   = document.querySelector('#pab-edit-close');
+  const editCancel  = document.querySelector('#pab-edit-cancel');
+  const editSave    = document.querySelector('#pab-edit-save');
+  const editStart   = document.querySelector('#pab-edit-start');
+  const editEnd     = document.querySelector('#pab-edit-end');
+  const editError   = document.querySelector('#pab-edit-error');
+  const editBackdrop = editModal.querySelector('.pab-edit-backdrop');
+
+  let editingId = null;
+
+  function authH(extra = {}) {
+    const h = { ...extra };
+    if (Auth.getToken()) h['Authorization'] = 'Bearer ' + Auth.getToken();
+    return h;
+  }
+
+  function toLocalDatetimeValue(isoStr) {
+    if (!isoStr) return '';
+    const d = new Date(isoStr);
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  function fmtDate(isoStr) {
+    if (!isoStr) return '?';
+    return new Date(isoStr).toLocaleString('es-AR', {
+      month: 'short', day: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    });
+  }
+
+  function fmtDur(mins) {
+    if (mins == null || isNaN(mins)) return '?';
+    if (mins < 60) return `${mins} min`;
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return m > 0 ? `${h}h ${m}min` : `${h}h`;
+  }
+
+  function getTypeInfo(slug) {
+    if (MANUAL_ACTIVITY_TYPES[slug]) return MANUAL_ACTIVITY_TYPES[slug];
+    return { label: slug, color: '#888' };
+  }
+
+  function renderList(sessions) {
+    listEl.innerHTML = '';
+    if (!sessions.length) {
+      emptyEl.classList.remove('hidden');
+      listEl.classList.add('hidden');
+      return;
+    }
+    emptyEl.classList.add('hidden');
+    listEl.classList.remove('hidden');
+
+    for (const s of sessions) {
+      const info = getTypeInfo(s.activity_type);
+      const li = document.createElement('li');
+      li.className = 'pab-history-item';
+      li.dataset.id = s.id;
+
+      const dot = document.createElement('span');
+      dot.className = 'pab-hi-dot';
+      dot.style.background = info.color;
+
+      const infoDiv = document.createElement('div');
+      infoDiv.className = 'pab-hi-info';
+      infoDiv.innerHTML = `
+        <div>
+          <span class="pab-hi-type">${escHtml(info.label)}</span>
+          ${s.subject ? `<span class="pab-hi-subject"> · ${escHtml(s.subject)}</span>` : ''}
+        </div>
+        <div class="pab-hi-meta">${escHtml(fmtDate(s.started_at))} &ndash; ${escHtml(fmtDate(s.ended_at))} &nbsp;|&nbsp; ${escHtml(fmtDur(s.duration_minutes))}</div>
+      `.trim();
+
+      const actions = document.createElement('div');
+      actions.className = 'pab-hi-actions';
+
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.className = 'pab-hi-edit-btn';
+      editBtn.textContent = 'Editar';
+      editBtn.addEventListener('click', () => openEditModal(s));
+
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'pab-hi-del-btn';
+      delBtn.textContent = 'Eliminar';
+      delBtn.addEventListener('click', () => deleteSession(s.id, li));
+
+      actions.append(editBtn, delBtn);
+      li.append(dot, infoDiv, actions);
+      listEl.appendChild(li);
+    }
+  }
+
+  async function loadHistory() {
+    loadingEl.classList.remove('hidden');
+    listEl.classList.add('hidden');
+    emptyEl.classList.add('hidden');
+    try {
+      const res = await fetch('/planner/manual-activity/recent?limit=30', { headers: authH() });
+      Auth.handleRefreshToken(res);
+      const data = await res.json().catch(() => ({}));
+      renderList(data.sessions || []);
+    } catch (_) {
+      loadingEl.textContent = 'Error al cargar.';
+      return;
+    }
+    loadingEl.classList.add('hidden');
+  }
+
+  function openModal() {
+    modal.classList.remove('hidden');
+    loadHistory();
+  }
+
+  function closeModal() {
+    modal.classList.add('hidden');
+  }
+
+  historyBtn.addEventListener('click', openModal);
+  closeBtn.addEventListener('click', closeModal);
+  backdrop.addEventListener('click', closeModal);
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      if (!editModal.classList.contains('hidden')) { closeEditModal(); return; }
+      if (!modal.classList.contains('hidden')) { closeModal(); }
+    }
+  });
+
+  // ── Edit modal ──
+  function openEditModal(session) {
+    editingId = session.id;
+    editStart.value = toLocalDatetimeValue(session.started_at);
+    editEnd.value   = toLocalDatetimeValue(session.ended_at);
+    editError.classList.add('hidden');
+    editSave.disabled = false;
+    editModal.classList.remove('hidden');
+    editStart.focus();
+  }
+
+  function closeEditModal() {
+    editModal.classList.add('hidden');
+    editingId = null;
+  }
+
+  editClose.addEventListener('click', closeEditModal);
+  editCancel.addEventListener('click', closeEditModal);
+  editBackdrop.addEventListener('click', closeEditModal);
+
+  editSave.addEventListener('click', async () => {
+    if (!editingId) return;
+    const startVal = editStart.value;
+    const endVal   = editEnd.value;
+    if (!startVal || !endVal) {
+      editError.textContent = 'Completá ambos campos.';
+      editError.classList.remove('hidden');
+      return;
+    }
+
+    const startDate = new Date(startVal);
+    const endDate   = new Date(endVal);
+    if (endDate <= startDate) {
+      editError.textContent = 'El fin debe ser posterior al inicio.';
+      editError.classList.remove('hidden');
+      return;
+    }
+
+    editSave.disabled = true;
+    editError.classList.add('hidden');
+    try {
+      const res = await fetch(`/planner/manual-activity/${editingId}`, {
+        method: 'PATCH',
+        headers: authH({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ started_at: startDate.toISOString(), ended_at: endDate.toISOString() }),
+      });
+      Auth.handleRefreshToken(res);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+      closeEditModal();
+      loadHistory();
+      if (plannerState.weekStart) loadPlannerWeek(plannerState.weekStart);
+    } catch (err) {
+      editError.textContent = err.message;
+      editError.classList.remove('hidden');
+      editSave.disabled = false;
+    }
+  });
+
+  // ── Delete ──
+  async function deleteSession(id, liEl) {
+    if (!confirm('¿Eliminar esta actividad?')) return;
+    try {
+      const res = await fetch(`/planner/manual-activity/${id}`, {
+        method: 'DELETE',
+        headers: authH(),
+      });
+      Auth.handleRefreshToken(res);
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        alert(d.message || `Error ${res.status}`);
+        return;
+      }
+      liEl.remove();
+      if (!listEl.children.length) {
+        listEl.classList.add('hidden');
+        emptyEl.classList.remove('hidden');
+      }
+      if (plannerState.weekStart) loadPlannerWeek(plannerState.weekStart);
+    } catch (err) {
+      alert(err.message);
+    }
+  }
 }
 
 // ─── Planner To-do list ────────────────────────────────────────────────────────

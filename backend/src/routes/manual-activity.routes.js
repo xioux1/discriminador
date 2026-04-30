@@ -18,11 +18,23 @@ function labelToSlug(label) {
     .slice(0, 50);
 }
 
+const MAX_SESSION_HOURS = 4;
+
 // GET /planner/manual-activity/active
 // Returns the currently running session for the user (ended_at IS NULL), or null.
+// Sessions older than MAX_SESSION_HOURS are auto-closed.
 router.get('/planner/manual-activity/active', async (req, res) => {
   const userId = req.user.id;
   try {
+    // Auto-close sessions that have been open longer than the max duration
+    await dbPool.query(
+      `UPDATE manual_activity_sessions
+       SET ended_at = started_at + INTERVAL '${MAX_SESSION_HOURS} hours'
+       WHERE user_id = $1 AND ended_at IS NULL
+         AND started_at < now() - INTERVAL '${MAX_SESSION_HOURS} hours'`,
+      [userId]
+    );
+
     const { rows } = await dbPool.query(
       `SELECT id, activity_type, subject, description, started_at
        FROM manual_activity_sessions
@@ -32,6 +44,105 @@ router.get('/planner/manual-activity/active', async (req, res) => {
       [userId]
     );
     return res.json({ session: rows[0] ?? null });
+  } catch (err) {
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+// GET /planner/manual-activity/recent
+// Returns the last 30 completed sessions for the user.
+router.get('/planner/manual-activity/recent', async (req, res) => {
+  const userId = req.user.id;
+  const limit  = Math.min(parseInt(req.query.limit, 10) || 30, 100);
+  try {
+    const { rows } = await dbPool.query(
+      `SELECT id, activity_type, subject, description, started_at, ended_at,
+              ROUND(EXTRACT(EPOCH FROM (ended_at - started_at)) / 60)::int AS duration_minutes
+       FROM manual_activity_sessions
+       WHERE user_id = $1 AND ended_at IS NOT NULL
+       ORDER BY started_at DESC
+       LIMIT $2`,
+      [userId, limit]
+    );
+    return res.json({ sessions: rows });
+  } catch (err) {
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+// PATCH /planner/manual-activity/:id
+// Edits started_at and/or ended_at of any completed session owned by the user.
+router.patch('/planner/manual-activity/:id', async (req, res) => {
+  const userId    = req.user.id;
+  const sessionId = parseInt(req.params.id, 10);
+
+  if (!Number.isFinite(sessionId) || sessionId <= 0) {
+    return res.status(400).json({ error: 'invalid_id', message: 'Session ID must be a positive integer.' });
+  }
+
+  const { started_at, ended_at } = req.body ?? {};
+
+  if (!started_at || !ended_at) {
+    return res.status(422).json({ error: 'validation_error', message: 'started_at and ended_at are required.' });
+  }
+
+  const start = new Date(started_at);
+  const end   = new Date(ended_at);
+
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+    return res.status(422).json({ error: 'validation_error', message: 'Invalid date format.' });
+  }
+
+  if (end <= start) {
+    return res.status(422).json({ error: 'validation_error', message: 'ended_at must be after started_at.' });
+  }
+
+  const durationHours = (end - start) / 3_600_000;
+  if (durationHours > 24) {
+    return res.status(422).json({ error: 'validation_error', message: 'La duración no puede superar 24 horas.' });
+  }
+
+  try {
+    const { rows } = await dbPool.query(
+      `UPDATE manual_activity_sessions
+       SET started_at = $1, ended_at = $2
+       WHERE id = $3 AND user_id = $4
+       RETURNING id, activity_type, subject, description, started_at, ended_at,
+                 ROUND(EXTRACT(EPOCH FROM (ended_at - started_at)) / 60)::int AS duration_minutes`,
+      [start.toISOString(), end.toISOString(), sessionId, userId]
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({ error: 'not_found', message: 'Session not found.' });
+    }
+
+    return res.json({ session: rows[0] });
+  } catch (err) {
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+// DELETE /planner/manual-activity/:id
+// Deletes a session owned by the user.
+router.delete('/planner/manual-activity/:id', async (req, res) => {
+  const userId    = req.user.id;
+  const sessionId = parseInt(req.params.id, 10);
+
+  if (!Number.isFinite(sessionId) || sessionId <= 0) {
+    return res.status(400).json({ error: 'invalid_id', message: 'Session ID must be a positive integer.' });
+  }
+
+  try {
+    const { rowCount } = await dbPool.query(
+      `DELETE FROM manual_activity_sessions WHERE id = $1 AND user_id = $2`,
+      [sessionId, userId]
+    );
+
+    if (!rowCount) {
+      return res.status(404).json({ error: 'not_found', message: 'Session not found.' });
+    }
+
+    return res.json({ ok: true });
   } catch (err) {
     return res.status(500).json({ error: 'server_error', message: err.message });
   }
