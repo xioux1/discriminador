@@ -3543,6 +3543,16 @@ textarea:focus, input[type="text"]:focus, select:focus {
 }
 .study-decision-misc-btn:hover { color: var(--text); border-color: var(--text-muted); }
 
+.study-delete-variant-btn {
+  padding: 4px 10px; font-size: 0.8rem; border-radius: var(--radius-sm);
+  background: var(--surface); border: var(--bw-divider) solid var(--border);
+  color: var(--text-muted); cursor: pointer; font-family: inherit;
+  margin-left: 4px;
+  transition: color 0.12s, border-color 0.12s;
+}
+.study-delete-variant-btn:hover { color: var(--fail-fg); border-color: var(--fail-fg); }
+.study-delete-variant-btn.hidden { display: none; }
+
 /* ─── Math Structured Editor ─────────────────────────────────────────────── */
 
 /* The contenteditable div that replaces the textarea in math mode.
