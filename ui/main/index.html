@@ -880,6 +880,7 @@
         <div id="planner-activity-bar" class="planner-activity-bar">
           <div id="pab-idle" class="pab-idle">
             <button type="button" id="pab-open-btn" class="pab-open-btn">&#43; Registrar actividad</button>
+            <button type="button" id="pab-history-btn" class="pab-history-btn" title="Ver y editar actividades registradas">Historial</button>
           </div>
           <div id="pab-active-display" class="pab-active-display hidden">
             <span id="pab-active-dot" class="pab-active-dot"></span>
@@ -1240,6 +1241,46 @@
           <button id="bot-chat-snoozes-btn" class="btn-ghost bot-chat-snoozes-toggle" type="button">Silenciados</button>
           <button id="bot-chat-status-btn" class="btn-ghost" type="button" title="Ver estado actual de tus materias">¿Cómo voy?</button>
           <button id="bot-chat-send" class="btn-primary bot-chat-send" type="button">Enviar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Activity History Modal ───────────────────────────────────────────── -->
+    <div id="pab-history-modal" class="pab-history-modal hidden" role="dialog" aria-modal="true" aria-label="Historial de actividades">
+      <div class="pab-history-backdrop"></div>
+      <div class="pab-history-box">
+        <div class="pab-history-header">
+          <span class="pab-history-title">Historial de actividades</span>
+          <button type="button" id="pab-history-close" class="pab-history-close" aria-label="Cerrar">&#215;</button>
+        </div>
+        <div class="pab-history-body">
+          <div id="pab-history-loading" class="pab-history-loading">Cargando...</div>
+          <ul id="pab-history-list" class="pab-history-list hidden"></ul>
+          <p id="pab-history-empty" class="pab-history-empty hidden">No hay actividades registradas todav&#237;a.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Edit activity dialog (reused inside the modal) -->
+    <div id="pab-edit-modal" class="pab-edit-modal hidden" role="dialog" aria-modal="true" aria-label="Editar actividad">
+      <div class="pab-history-backdrop pab-edit-backdrop"></div>
+      <div class="pab-edit-box">
+        <div class="pab-history-header">
+          <span class="pab-history-title">Editar actividad</span>
+          <button type="button" id="pab-edit-close" class="pab-history-close" aria-label="Cerrar">&#215;</button>
+        </div>
+        <div class="pab-edit-body">
+          <label class="pab-edit-label">Inicio
+            <input type="datetime-local" id="pab-edit-start" class="pab-edit-input">
+          </label>
+          <label class="pab-edit-label">Fin
+            <input type="datetime-local" id="pab-edit-end" class="pab-edit-input">
+          </label>
+          <span id="pab-edit-error" class="pab-form-error hidden"></span>
+          <div class="pab-edit-actions">
+            <button type="button" id="pab-edit-save" class="btn-primary pab-edit-save">Guardar</button>
+            <button type="button" id="pab-edit-cancel" class="btn-ghost">Cancelar</button>
+          </div>
         </div>
       </div>
     </div>
