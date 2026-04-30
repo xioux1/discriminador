@@ -3857,22 +3857,22 @@ function initStudyTab() {
 
   restorePersistedStudySession();
 
-  // Auto-pause when the user switches away from the tab; auto-resume on return.
-  document.addEventListener('visibilitychange', () => {
-    const sessionVisible = !document.querySelector('#study-session')?.classList.contains('hidden');
-    if (!sessionVisible) return;
-    if (document.hidden) {
-      if (!studyState.isPaused) {
-        studyState._autopaused = true;
-        pauseStudySession(true);
-      }
-    } else {
-      if (studyState._autopaused) {
-        studyState._autopaused = false;
-        resumeStudySession(true);
-      }
-    }
-  });
+  // Auto-pause on tab hide disabled — timer runs regardless of visibility.
+  // document.addEventListener('visibilitychange', () => {
+  //   const sessionVisible = !document.querySelector('#study-session')?.classList.contains('hidden');
+  //   if (!sessionVisible) return;
+  //   if (document.hidden) {
+  //     if (!studyState.isPaused) {
+  //       studyState._autopaused = true;
+  //       pauseStudySession(true);
+  //     }
+  //   } else {
+  //     if (studyState._autopaused) {
+  //       studyState._autopaused = false;
+  //       resumeStudySession(true);
+  //     }
+  //   }
+  // });
 }
 
 function bindStudyKeyboardShortcuts() {
