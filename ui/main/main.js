@@ -4033,6 +4033,37 @@ function initStudyTab() {
     document.querySelector('#study-briefing').classList.remove('hidden');
   });
 
+  // ── Toggle card count visibility ─────────────────────────────────────────
+  function applyStudyCountHidden(hidden) {
+    const summaryEl = document.querySelector('#study-queue-summary');
+    const progressBar = document.querySelector('#study-progress-bar');
+    const progressText = document.querySelector('#study-progress-text');
+    const overviewBtn = document.querySelector('#toggle-study-count-btn');
+    const sessionBtn = document.querySelector('#toggle-session-count-btn');
+    if (hidden) {
+      summaryEl?.classList.add('study-count-hidden');
+      progressBar?.classList.add('study-count-hidden');
+      progressText?.classList.add('study-count-hidden');
+      if (overviewBtn) overviewBtn.textContent = 'Mostrar';
+      if (sessionBtn) sessionBtn.textContent = 'Mostrar';
+    } else {
+      summaryEl?.classList.remove('study-count-hidden');
+      progressBar?.classList.remove('study-count-hidden');
+      progressText?.classList.remove('study-count-hidden');
+      if (overviewBtn) overviewBtn.textContent = 'Ocultar';
+      if (sessionBtn) sessionBtn.textContent = 'Ocultar';
+    }
+  }
+  function toggleStudyCount() {
+    const hidden = localStorage.getItem('studyCountHidden') === '1';
+    const next = !hidden;
+    localStorage.setItem('studyCountHidden', next ? '1' : '0');
+    applyStudyCountHidden(next);
+  }
+  applyStudyCountHidden(localStorage.getItem('studyCountHidden') === '1');
+  document.querySelector('#toggle-study-count-btn')?.addEventListener('click', toggleStudyCount);
+  document.querySelector('#toggle-session-count-btn')?.addEventListener('click', toggleStudyCount);
+
   restorePersistedStudySession();
 
   // Auto-pause on tab hide disabled — timer runs regardless of visibility.

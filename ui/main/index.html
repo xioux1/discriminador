@@ -279,8 +279,11 @@
         <!-- Overview -->
         <div id="study-overview" class="card hidden">
           <h2>Sesión de estudio</h2>
-          <div id="study-queue-summary" class="study-queue-summary">
-            <span style="color:var(--text-muted)">Cargando cola...</span>
+          <div class="study-queue-summary-row">
+            <div id="study-queue-summary" class="study-queue-summary">
+              <span style="color:var(--text-muted)">Cargando cola...</span>
+            </div>
+            <button type="button" id="toggle-study-count-btn" class="btn-ghost toggle-count-btn" title="Ocultar / mostrar cantidad">Ocultar</button>
           </div>
           <div id="overview-planner-gate" class="planner-gate hidden"></div>
           <div class="study-overview-actions hidden" id="study-overview-actions">
@@ -414,6 +417,7 @@
               <div id="study-progress-fill" class="study-progress-fill"></div>
             </div>
             <span id="study-progress-text" class="study-progress-label"></span>
+            <button type="button" id="toggle-session-count-btn" class="btn-ghost toggle-count-btn" title="Ocultar / mostrar progreso">Ocultar</button>
           </div>
           <p id="study-background-status" class="study-background-status hidden"></p>
 
