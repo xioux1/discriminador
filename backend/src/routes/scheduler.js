@@ -208,7 +208,9 @@ schedulerRouter.get('/scheduler/cards', async (req, res) => {
 });
 
 // ─── Today's session queue ────────────────────────────────────────────────────
-// Micro-cards are always returned first (remediation before new material).
+// Main cards are returned first; micro-cards follow.
+// If the parent card is answered correctly in-session, its pending micro-cards
+// are dropped from the queue — the concept was recalled so they stay alive.
 // Full cards with active micros are flagged with has_pending_micros = true
 // (soft block: they appear but with a warning).
 schedulerRouter.get('/scheduler/session', async (req, res) => {

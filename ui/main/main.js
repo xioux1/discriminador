@@ -4789,7 +4789,7 @@ async function _doStartStudySession() {
   const micros = (data.micro_cards ?? []).map((m) => ({ type: 'micro', data: m }));
   const cards  = (data.cards ?? []).map((c) => ({ type: 'card', data: c }));
 
-  studyState.queue              = [...micros, ...cards];
+  studyState.queue              = [...cards, ...micros];
   studyState.index              = 0;
   studyState.results            = [];
   studyState.pendingMicroGeneration = 0;
@@ -5916,6 +5916,23 @@ async function handleStudyNextCard() {
 
   const grade  = decision.finalGrade;
   const gaps   = evalResult.missing_concepts ?? [];
+
+  // If the main card passed, remove its pending micro-cards from the queue —
+  // the parent was recalled correctly so the derived concepts stay alive.
+  if (grade && item.type === 'card') {
+    const g = normalizeSuggestedGrade(grade);
+    if (g === 'GOOD' || g === 'EASY') {
+      const cardId = item.data.id;
+      const ahead = studyState.index + 1;
+      studyState.queue = [
+        ...studyState.queue.slice(0, ahead),
+        ...studyState.queue.slice(ahead).filter(
+          (q) => !(q.type === 'micro' && q.data.parent_card_id === cardId)
+        ),
+      ];
+    }
+  }
+
   // In exam mode: skip all micro-card generation (evaluation only).
   const shouldGenerateMicros = Boolean(grade && item.type === 'card' && !studyState.examMode);
   const shouldSpawnSiblings  = Boolean(grade && item.type === 'micro' && gaps.length > 0 && !studyState.examMode);
