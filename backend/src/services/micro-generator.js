@@ -41,16 +41,22 @@ CASO B — Respuesta esperada es una LISTA pero el estudiante casi no respondió
   → Pregunta directa de recall puro sin dar pistas de la lista.
   → Ejemplo: "¿Cuáles son las características de X? Asegurate de incluir [concepto] y explicar su función."
 
-CASO C — Respuesta esperada es una DEFINICIÓN, EXPLICACIÓN o CONCEPTO:
+CASO C — El concepto es un TÉRMINO o NOMBRE que el estudiante debía recordar (una frase nominal: "equilibrio de fuerzas", "polimorfismo", "regla de Cramer", etc.):
+  → La pregunta da la descripción/definición y pide el NOMBRE. NUNCA pongas el nombre del concepto en la pregunta.
+  → Extraé la descripción de la respuesta esperada o de la pregunta original.
+  → Ejemplo: concepto = "equilibrio de fuerzas" → "¿Cómo se llama la condición en que la suma de fuerzas netas sobre un cuerpo es cero?"
+  → Otro ejemplo: concepto = "polimorfismo" → "¿Qué nombre recibe la capacidad de un objeto de tomar distintas formas según el contexto?"
+
+CASO D — Respuesta esperada es una DEFINICIÓN o EXPLICACIÓN de algo que NO es un término nombrado:
   → Pregunta directa que pida la definición/explicación sin revelarla.
   → Si el estudiante dio una definición incorrecta, podés señalar que su respuesta fue incompleta sin decir la correcta.
-  → Ejemplo: "¿Qué es [concepto] y cuándo se aplica?"
+  → Ejemplo: "Explicá por qué [fenómeno] ocurre en este tipo de sistemas."
 
-CASO D — Respuesta esperada describe un PROCEDIMIENTO o ALGORITMO:
+CASO E — Respuesta esperada describe un PROCEDIMIENTO o ALGORITMO:
   → Si el estudiante mencionó algunos pasos: dáselos como pista, pedí el faltante.
   → Ejemplo: "El proceso de X incluye los pasos que ya mencionaste ([paso1], [paso2]). ¿Qué paso te faltó y en qué momento del proceso ocurre?"
 
-CASO E — GENÉRICO (no encaja en los anteriores):
+CASO F — GENÉRICO (no encaja en los anteriores):
   → Pregunta autónoma sobre el concepto que fuerce generación, no reconocimiento.
 
 ═══ REGLAS UNIVERSALES ═══
