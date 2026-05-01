@@ -145,36 +145,55 @@ test('computeImportanceScore uses only density when program and exam are null', 
   assert.ok(Math.abs(score - 0.6) < 1e-9, `expected 0.6, got ${score}`);
 });
 
-test('computeImportanceScore weights exam more than program', () => {
-  const withExam    = computeImportanceScore({ density: 0.5, program: null, exam: 0.8 });
-  const withProgram = computeImportanceScore({ density: 0.5, program: 0.8, exam: null });
-  // exam=0.8 >= 0.75, so score is max(weighted, 0.85) = 0.85
-  // program=0.8 < 0.82, so no floor override
-  assert.ok(withExam > withProgram, `exam-dominant score (${withExam}) should exceed program-only score (${withProgram})`);
+test('computeImportanceScore direct exam match always beats program-only score', () => {
+  // Direct match (>= 0.82) forces 1.0 — always beats any program-only score
+  const withDirectExam = computeImportanceScore({ density: 0.5, program: null, exam: 0.85 });
+  const withProgram    = computeImportanceScore({ density: 0.5, program: 0.9, exam: null });
+  assert.ok(withDirectExam > withProgram,
+    `direct exam match (${withDirectExam}) should exceed even a strong program-only score (${withProgram})`);
 });
 
-test('computeImportanceScore applies exam >= 0.75 floor override to 0.85', () => {
+test('computeImportanceScore ramification exam gives smaller boost than a strong program', () => {
+  // Ramification (0.72–0.81) only nudges by +0.10 — not a takeover
+  const withRamExam = computeImportanceScore({ density: 0.5, program: null, exam: 0.8 });
+  // base=0.5, nudge → 0.60
+  assert.ok(Math.abs(withRamExam - 0.60) < 1e-9,
+    `ramification exam=0.8 with density=0.5 should give 0.60, got ${withRamExam}`);
+});
+
+test('computeImportanceScore direct exam match (>= 0.82) forces score to 1.0', () => {
+  const score = computeImportanceScore({ density: 0.1, program: null, exam: 0.82 });
+  assert.equal(score, 1.0, `expected 1.0 for direct match, got ${score}`);
+});
+
+test('computeImportanceScore direct exam match overrides even low density', () => {
+  const score = computeImportanceScore({ density: 0.0, program: null, exam: 0.95 });
+  assert.equal(score, 1.0, `expected 1.0 regardless of density, got ${score}`);
+});
+
+test('computeImportanceScore ramification exam (0.72–0.81) gives small nudge over base', () => {
+  // base = density = 0.5 (no program); nudge → 0.5 + 0.10 = 0.60
+  const score = computeImportanceScore({ density: 0.5, program: null, exam: 0.76 });
+  assert.ok(Math.abs(score - 0.60) < 1e-9, `expected 0.60 (nudge), got ${score}`);
+});
+
+test('computeImportanceScore ramification exam does NOT force a large floor', () => {
+  // Even with low density, ramification only nudges by 0.10 — not a massive jump
   const score = computeImportanceScore({ density: 0.1, program: null, exam: 0.76 });
-  assert.ok(Math.abs(score - 0.85) < 1e-9, `expected 0.85 floor, got ${score}`);
-});
-
-test('computeImportanceScore applies exam >= 0.82 floor override to 0.92', () => {
-  const score = computeImportanceScore({ density: 0.1, program: null, exam: 0.90 });
-  assert.ok(Math.abs(score - 0.92) < 1e-9, `expected 0.92 floor, got ${score}`);
+  assert.ok(score < 0.85, `ramification should not jump to 0.85+, got ${score}`);
+  assert.ok(Math.abs(score - 0.20) < 1e-9, `expected 0.10 + 0.10 = 0.20, got ${score}`);
 });
 
 test('computeImportanceScore applies program >= 0.82 floor override to 0.75', () => {
-  // density=0, program=0.85, exam=null → weighted = 0*0.55 + 0.85*0.45 = 0.3825
-  // floor applied: max(0.3825, 0.75) = 0.75
+  // base = density*0.55 + program*0.45 = 0*0.55 + 0.85*0.45 = 0.3825 → floored to 0.75
   const score = computeImportanceScore({ density: 0.0, program: 0.85, exam: null });
   assert.ok(Math.abs(score - 0.75) < 1e-9, `expected 0.75 floor, got ${score}`);
 });
 
-test('computeImportanceScore combines all three signals correctly', () => {
-  const d = 0.6, p = 0.7, e = 0.7;
-  const expected = d * 0.30 + p * 0.25 + e * 0.45;
-  const score = computeImportanceScore({ density: d, program: p, exam: e });
-  // e=0.7 < 0.75, no floor override
+test('computeImportanceScore without exam uses density+program blend', () => {
+  const d = 0.6, p = 0.7;
+  const expected = d * 0.55 + p * 0.45;
+  const score = computeImportanceScore({ density: d, program: p, exam: null });
   assert.ok(Math.abs(score - expected) < 1e-9, `expected ${expected}, got ${score}`);
 });
 
@@ -245,14 +264,14 @@ test('buildImportanceReasons includes moderate program match', () => {
   assert.ok(reasons.some(r => r.includes('moderada con el programa')), `expected program reason, got: ${JSON.stringify(reasons)}`);
 });
 
-test('buildImportanceReasons includes strong exam match', () => {
+test('buildImportanceReasons includes direct exam match message', () => {
   const reasons = buildImportanceReasons({ density: 0.6, coverage: 0.3, intensity: 0.5, program: null, exam: 0.88 });
-  assert.ok(reasons.some(r => r.includes('fuertemente con material de examen')), `expected exam reason, got: ${JSON.stringify(reasons)}`);
+  assert.ok(reasons.some(r => r.includes('Coincidencia directa con el examen')), `expected direct exam reason, got: ${JSON.stringify(reasons)}`);
 });
 
-test('buildImportanceReasons includes moderate exam match', () => {
+test('buildImportanceReasons includes ramification exam match message', () => {
   const reasons = buildImportanceReasons({ density: 0.6, coverage: 0.3, intensity: 0.5, program: null, exam: 0.74 });
-  assert.ok(reasons.some(r => r.includes('moderada con material de examen')), `expected exam reason, got: ${JSON.stringify(reasons)}`);
+  assert.ok(reasons.some(r => r.includes('ramificaci')), `expected ramification exam reason, got: ${JSON.stringify(reasons)}`);
 });
 
 test('buildImportanceReasons returns non-empty array for any input', () => {
@@ -466,7 +485,7 @@ test('promoteTier keeps same tier when equal', () => {
 
 // ---- applyExternalSignalTierOverrides ----
 
-test('applyExternalSignalTierOverrides promotes to A when exam_score >= 0.75', () => {
+test('applyExternalSignalTierOverrides promotes ramification (0.72–0.81) to at least B', () => {
   const result = applyExternalSignalTierOverrides({
     id: '1', name: 'X',
     importance_score: 0.4,
@@ -474,11 +493,11 @@ test('applyExternalSignalTierOverrides promotes to A when exam_score >= 0.75', (
     exam_score: 0.76,
     program_score: null,
   });
-  assert.equal(result.relative_priority_tier, 'A',
-    `exam >= 0.75 should force tier A, got ${result.relative_priority_tier}`);
+  assert.equal(result.relative_priority_tier, 'B',
+    `exam 0.72–0.81 should promote to at least B, got ${result.relative_priority_tier}`);
 });
 
-test('applyExternalSignalTierOverrides promotes to A when exam_score >= 0.82', () => {
+test('applyExternalSignalTierOverrides forces A for direct exam match (>= 0.82)', () => {
   const result = applyExternalSignalTierOverrides({
     id: '1', name: 'X',
     importance_score: 0.3,
@@ -486,7 +505,20 @@ test('applyExternalSignalTierOverrides promotes to A when exam_score >= 0.82', (
     exam_score: 0.85,
     program_score: null,
   });
-  assert.equal(result.relative_priority_tier, 'A');
+  assert.equal(result.relative_priority_tier, 'A',
+    `direct exam match should always be tier A, got ${result.relative_priority_tier}`);
+});
+
+test('applyExternalSignalTierOverrides ramification does not force A', () => {
+  const result = applyExternalSignalTierOverrides({
+    id: '1', name: 'X',
+    importance_score: 0.3,
+    relative_priority_tier: 'D',
+    exam_score: 0.76,
+    program_score: null,
+  });
+  assert.notEqual(result.relative_priority_tier, 'A',
+    `ramification (< 0.82) should NOT force tier A, got ${result.relative_priority_tier}`);
 });
 
 test('applyExternalSignalTierOverrides promotes minimum to B when program_score >= 0.75', () => {
@@ -537,16 +569,16 @@ test('getMatchStrength returns weak for score < 0.72', () => {
   assert.equal(getMatchStrength(0.719), 'weak');
 });
 
-test('getMatchStrength returns moderate for score in [0.72, 0.82)', () => {
-  assert.equal(getMatchStrength(0.72), 'moderate');
-  assert.equal(getMatchStrength(0.75), 'moderate');
-  assert.equal(getMatchStrength(0.819), 'moderate');
+test('getMatchStrength returns related for score in [0.72, 0.82)', () => {
+  assert.equal(getMatchStrength(0.72), 'related');
+  assert.equal(getMatchStrength(0.75), 'related');
+  assert.equal(getMatchStrength(0.819), 'related');
 });
 
-test('getMatchStrength returns strong for score >= 0.82', () => {
-  assert.equal(getMatchStrength(0.82), 'strong');
-  assert.equal(getMatchStrength(0.90), 'strong');
-  assert.equal(getMatchStrength(1.0), 'strong');
+test('getMatchStrength returns direct for score >= 0.82', () => {
+  assert.equal(getMatchStrength(0.82), 'direct');
+  assert.equal(getMatchStrength(0.90), 'direct');
+  assert.equal(getMatchStrength(1.0), 'direct');
 });
 
 // ---- averageTopK ----
