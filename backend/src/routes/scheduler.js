@@ -208,7 +208,9 @@ schedulerRouter.get('/scheduler/cards', async (req, res) => {
 });
 
 // ─── Today's session queue ────────────────────────────────────────────────────
-// Micro-cards are always returned first (remediation before new material).
+// Main cards are returned first; micro-cards follow.
+// If the parent card is answered correctly in-session, its pending micro-cards
+// are dropped from the queue — the concept was recalled so they stay alive.
 // Full cards with active micros are flagged with has_pending_micros = true
 // (soft block: they appear but with a warning).
 schedulerRouter.get('/scheduler/session', async (req, res) => {
@@ -517,8 +519,8 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
     // Archive all active micro-cards — the student demonstrated full understanding.
     await dbPool.query(
       `UPDATE micro_cards SET status = 'archived', updated_at = now()
-       WHERE parent_card_id = $1 AND status = 'active'`,
-      [cardId]
+       WHERE parent_card_id = $1 AND user_id = $2 AND status = 'active'`,
+      [cardId, userId]
     );
   }
 
