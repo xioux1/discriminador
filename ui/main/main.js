@@ -8799,7 +8799,7 @@ function initDocumentsTab() {
   // ── Render a group of documents under a subject heading ───────────────────────
   function renderSubjectGroup(subject, docs) {
     const group = document.createElement('div');
-    group.className = 'docs-subject-group open';
+    group.className = 'docs-subject-group';
     group.dataset.subject = subject || '';
 
     const label = subject || 'Sin materia';
