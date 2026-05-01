@@ -4789,7 +4789,7 @@ async function _doStartStudySession() {
   const micros = (data.micro_cards ?? []).map((m) => ({ type: 'micro', data: m }));
   const cards  = (data.cards ?? []).map((c) => ({ type: 'card', data: c }));
 
-  studyState.queue              = [...micros, ...cards];
+  studyState.queue              = [...cards, ...micros];
   studyState.index              = 0;
   studyState.results            = [];
   studyState.pendingMicroGeneration = 0;

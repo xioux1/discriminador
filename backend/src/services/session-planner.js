@@ -149,8 +149,8 @@ REGLAS DE PRIORIDAD:
 1. Tarjetas "forced=true" (retención estimada bajo el piso configurado) van SIEMPRE primero — el usuario no puede permitirse olvidarlas.
 2. Entre tarjetas forced: priorizá por retención más baja primero (más urgente de recuperar).
 3. Entre tarjetas no-forced: priorizá por urgencia del examen (días_hasta_examen × peso_materia).
-4. Micro-tarjetas creadas hoy (created_today=true) van antes que sus tarjetas padre.
-5. Si la tarjeta padre también está en cola (parent_also_due=true), poné la general primero — si se responde bien, las micros se archivan.
+4. Las tarjetas principales van SIEMPRE antes que sus micro-tarjetas dependientes — si se responde bien, las micros se archivan automáticamente.
+5. Entre tarjetas principales: si una tiene micros dependientes (parent_also_due=true en las micros), priorizala dentro del grupo de tarjetas principales para que sus micros se archiven cuanto antes.
 6. Con energy_level='tired': preferí tarjetas con más pass_count (más familiares).
 7. Con energy_level='focused': podés poner tarjetas más difíciles primero.
 8. REPROGRAMACIÓN: Para tarjetas no-forced con max_defer_days>0 que no entren en el presupuesto, podés incluir "defer_days": N (1 a max_defer_days) para posponer explícitamente su próxima revisión. Usá defer_days bajos (1-3) si el examen está cerca (<30 días). Podés usar valores mayores si el examen está lejos (>60 días) y la retención es alta. Para tarjetas que querés ver mañana igual, usá defer_days: 0.
@@ -217,11 +217,11 @@ function buildFallbackOrder({ cards, microCards }) {
   const remainingCards = cards.filter((c) => !parentIds.has(c.id));
 
   return [
-    ...remedialMicros.map((m)   => ({ type: 'micro', id: m.id, reason: 'remedial-hoy',    forced: m.retention_forced || false })),
     ...parentsFirst.map((c)     => ({ type: 'card',  id: c.id, reason: 'general-primero', forced: c.retention_forced || false })),
+    ...remainingCards.map((c)   => ({ type: 'card',  id: c.id, reason: 'vencida',         forced: c.retention_forced || false })),
+    ...remedialMicros.map((m)   => ({ type: 'micro', id: m.id, reason: 'remedial-hoy',    forced: m.retention_forced || false })),
     ...dependentMicros.map((m)  => ({ type: 'micro', id: m.id, reason: 'dependiente',     forced: m.retention_forced || false })),
     ...standaloneMicros.map((m) => ({ type: 'micro', id: m.id, reason: 'vencida',         forced: m.retention_forced || false })),
-    ...remainingCards.map((c)   => ({ type: 'card',  id: c.id, reason: 'vencida',         forced: c.retention_forced || false })),
   ];
 }
 
