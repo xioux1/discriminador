@@ -44,17 +44,23 @@ plannerRouter.get('/planner/week', async (req, res) => {
            actual_card_count,
            COALESCE(
              actual_minutes,
-             EXTRACT(EPOCH FROM (ended_at - started_at)) / 60.0
+             LEAST(EXTRACT(EPOCH FROM (ended_at - started_at)) / 60.0, 180)
            ) AS actual_minutes,
            started_at,
            (started_at AT TIME ZONE 'America/Argentina/Buenos_Aires') AS local_start,
-           (COALESCE(ended_at, started_at + actual_minutes * INTERVAL '1 minute')
-             AT TIME ZONE 'America/Argentina/Buenos_Aires') AS local_end,
+           -- For orphaned sessions (actual_minutes IS NULL), cap local_end at 3 hours past start
+           (LEAST(
+             COALESCE(ended_at, started_at + actual_minutes * INTERVAL '1 minute'),
+             started_at + INTERVAL '3 hours'
+           ) AT TIME ZONE 'America/Argentina/Buenos_Aires') AS local_end,
            GREATEST(
              COALESCE(actual_minutes, 0),
-             EXTRACT(EPOCH FROM (
-               COALESCE(ended_at, started_at + actual_minutes * INTERVAL '1 minute') - started_at
-             )) / 60.0
+             LEAST(
+               EXTRACT(EPOCH FROM (
+                 COALESCE(ended_at, started_at + actual_minutes * INTERVAL '1 minute') - started_at
+               )) / 60.0,
+               180
+             )
            ) AS span_minutes
          FROM study_sessions
          WHERE user_id = $1
