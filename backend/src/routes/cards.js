@@ -611,4 +611,124 @@ cardsRouter.post('/cards/import-reviewed', async (req, res) => {
   return res.json({ inserted: insertedIds.length, ids: insertedIds, validation_errors: validationErrors });
 });
 
+// POST /cards/reformat-prompt — rewrite prompt_text(s) in LaTeX using Claude
+// Body: { card_ids: number[], save?: boolean }
+// Returns: { results: [{id, original, reformatted, score, comment}] }
+// If save=true, also persists the reformatted text and backs up original in notes.
+cardsRouter.post('/cards/reformat-prompt', llmRateLimit, async (req, res) => {
+  const userId = req.user.id;
+  const cardIds = Array.isArray(req.body?.card_ids)
+    ? req.body.card_ids.map(Number).filter(n => Number.isFinite(n) && n > 0)
+    : [];
+  const save = req.body?.save === true;
+
+  if (!cardIds.length) {
+    return res.status(422).json({ error: 'validation_error', message: 'card_ids es obligatorio y debe ser un arreglo no vacío.' });
+  }
+  if (cardIds.length > 30) {
+    return res.status(422).json({ error: 'validation_error', message: 'Máximo 30 tarjetas por llamada.' });
+  }
+
+  const placeholders = cardIds.map((_, i) => `$${i + 2}`).join(', ');
+  const { rows: cards } = await dbPool.query(
+    `SELECT id, subject, prompt_text, notes FROM cards WHERE id IN (${placeholders}) AND user_id = $1 AND archived_at IS NULL`,
+    [userId, ...cardIds]
+  );
+
+  if (!cards.length) {
+    return res.status(404).json({ error: 'not_found', message: 'No se encontraron tarjetas.' });
+  }
+
+  const cardsText = cards.map((c, i) =>
+    `--- Tarjeta ${i + 1} (id=${c.id}) [${c.subject || 'sin materia'}] ---\n${c.prompt_text}`
+  ).join('\n\n');
+
+  const client = new Anthropic();
+  let rawResponse;
+  try {
+    const msg = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 4096,
+      temperature: 0,
+      system: `Sos un experto en notación matemática y física para tarjetas de estudio universitario.
+Tu tarea: reescribir consignas de tarjetas usando LaTeX estándar con delimitadores $ y $$.
+
+REGLAS ESTRICTAS:
+- Usá $...$ para matemática inline (variables, expresiones cortas dentro de texto)
+- Usá $$...$$ para ecuaciones en bloque (fórmulas importantes, definiciones, igualdades largas)
+- Conservá exactamente el significado y la redacción del texto, solo cambiá la notación matemática
+- No traduzcas, no reformules, no agregues ni quites conceptos
+- Si la consigna no tiene notación matemática que mejorar, devolvé el texto original tal cual
+- El texto fuera de delimitadores LaTeX debe permanecer en español sin cambios
+
+FORMATO DE RESPUESTA — respondé SOLO con JSON válido, sin texto antes ni después:
+{
+  "results": [
+    {
+      "id": <número>,
+      "reformatted": "<texto con LaTeX>",
+      "score": <número 1-10 de claridad/estética>,
+      "comment": "<una línea explicando qué cambiaste o por qué está bien>"
+    }
+  ]
+}`,
+      messages: [{
+        role: 'user',
+        content: cardsText,
+      }],
+    });
+    rawResponse = msg.content.find(b => b.type === 'text')?.text?.trim() ?? '';
+  } catch (err) {
+    console.error('POST /cards/reformat-prompt (LLM)', err.message);
+    return res.status(500).json({ error: 'llm_error', message: err.message });
+  }
+
+  let parsed;
+  try {
+    const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
+    parsed = JSON.parse(jsonMatch ? jsonMatch[0] : rawResponse);
+  } catch (_) {
+    return res.status(500).json({ error: 'parse_error', message: 'La IA devolvió una respuesta inválida.', raw: rawResponse.slice(0, 500) });
+  }
+
+  const results = Array.isArray(parsed?.results) ? parsed.results : [];
+
+  // Enrich with original text
+  const cardMap = Object.fromEntries(cards.map(c => [c.id, c]));
+  const enriched = results.map(r => ({
+    id: r.id,
+    original: cardMap[r.id]?.prompt_text ?? '',
+    reformatted: typeof r.reformatted === 'string' ? r.reformatted : '',
+    score: typeof r.score === 'number' ? r.score : null,
+    comment: typeof r.comment === 'string' ? r.comment : '',
+  })).filter(r => cardMap[r.id]);
+
+  if (save && enriched.length) {
+    const client2 = await dbPool.connect();
+    try {
+      await client2.query('BEGIN');
+      for (const r of enriched) {
+        if (!r.reformatted || r.reformatted === r.original) continue;
+        const card = cardMap[r.id];
+        const backupNote = card.notes
+          ? `${card.notes}\n[original prompt] ${card.prompt_text}`
+          : `[original prompt] ${card.prompt_text}`;
+        await client2.query(
+          `UPDATE cards SET prompt_text = $1, notes = $2, updated_at = now() WHERE id = $3 AND user_id = $4`,
+          [r.reformatted, backupNote.slice(0, 2000), r.id, userId]
+        );
+      }
+      await client2.query('COMMIT');
+    } catch (err) {
+      await client2.query('ROLLBACK');
+      console.error('POST /cards/reformat-prompt (save)', err.message);
+      return res.status(500).json({ error: 'server_error', message: err.message });
+    } finally {
+      client2.release();
+    }
+  }
+
+  return res.json({ results: enriched, saved: save });
+});
+
 export default cardsRouter;

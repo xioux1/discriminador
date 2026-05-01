@@ -798,6 +798,7 @@ function initBrowserTab() {
   document.querySelector('#browser-reactivate-btn')?.addEventListener('click', () => runBrowserBatchAction('reactivate'));
   document.querySelector('#browser-edit-btn')?.addEventListener('click', () => runBrowserBatchAction('edit'));
   document.querySelector('#browser-detect-redundant-btn')?.addEventListener('click', openDetectRedundantModal);
+  document.querySelector('#browser-reformat-latex-btn')?.addEventListener('click', openReformatLatexModal);
 
   loadBrowserCards().catch((err) => {
     feedback.textContent = `Error al cargar navegador: ${err.message}`;
@@ -1177,6 +1178,119 @@ async function handleMergeCluster(btn, feedback) {
     statusEl.textContent = `Error: ${err.message}`;
     statusEl.className = 'redundant-merge-status error';
   }
+}
+
+// --- Reformat LaTeX modal ---
+
+function closeReformatModal() {
+  document.querySelector('#reformat-modal-overlay')?.classList.add('hidden');
+}
+
+document.querySelector('#reformat-modal-close')?.addEventListener('click', closeReformatModal);
+document.querySelector('#reformat-modal-cancel')?.addEventListener('click', closeReformatModal);
+document.querySelector('#reformat-modal-overlay')?.addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) closeReformatModal();
+});
+
+async function openReformatLatexModal() {
+  const selectedIds = getSelectedCardIds();
+  if (!selectedIds.length) {
+    const feedback = document.querySelector('#browser-feedback');
+    if (feedback) { feedback.textContent = 'Seleccioná al menos una tarjeta para reformatear.'; feedback.className = 'feedback error'; }
+    return;
+  }
+  if (selectedIds.length > 30) {
+    const feedback = document.querySelector('#browser-feedback');
+    if (feedback) { feedback.textContent = 'Máximo 30 tarjetas por vez.'; feedback.className = 'feedback error'; }
+    return;
+  }
+
+  const overlay    = document.querySelector('#reformat-modal-overlay');
+  const resultList = document.querySelector('#reformat-results-list');
+  const feedback   = document.querySelector('#reformat-modal-feedback');
+  const saveBtn    = document.querySelector('#reformat-save-btn');
+  const reformatBtn = document.querySelector('#browser-reformat-latex-btn');
+
+  overlay.classList.remove('hidden');
+  resultList.innerHTML = '<div style="color:var(--text-muted);padding:12px 0;font-size:0.88rem">Analizando con IA… esto puede tardar unos segundos.</div>';
+  feedback.textContent = '';
+  feedback.className = 'feedback';
+  saveBtn.classList.add('hidden');
+  reformatBtn.disabled = true;
+
+  let results = [];
+
+  try {
+    const data = await postJson('/cards/reformat-prompt', { card_ids: selectedIds, save: false });
+    results = data?.results || [];
+
+    if (!results.length) {
+      resultList.innerHTML = '<div style="color:var(--text-muted)">No se obtuvieron resultados.</div>';
+      return;
+    }
+
+    resultList.innerHTML = results.map(r => {
+      const changed = r.reformatted && r.reformatted !== r.original;
+      const scoreHtml = r.score != null
+        ? `<span style="font-size:0.78rem;color:var(--text-muted);margin-left:8px">Claridad: ${r.score}/10</span>`
+        : '';
+      const commentHtml = r.comment
+        ? `<div style="font-size:0.78rem;color:var(--text-muted);margin-top:4px;font-style:italic">${escHtml(r.comment)}</div>`
+        : '';
+      const changeTag = changed
+        ? '<span style="font-size:0.75rem;background:var(--hl-green-bg,#d4edda);color:#155724;padding:1px 6px;border-radius:3px;margin-left:6px">modificada</span>'
+        : '<span style="font-size:0.75rem;background:var(--bg-subtle);color:var(--text-muted);padding:1px 6px;border-radius:3px;margin-left:6px">sin cambios</span>';
+
+      return `<div class="reformat-result-item" data-id="${r.id}" style="margin-bottom:16px;border:1px solid var(--border-mid);border-radius:6px;padding:12px">
+        <div style="font-weight:600;font-size:0.84rem;margin-bottom:8px">Tarjeta #${r.id}${changeTag}${scoreHtml}</div>
+        ${commentHtml}
+        ${changed ? `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
+          <div>
+            <div style="font-size:0.75rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px;letter-spacing:.04em">Original</div>
+            <div style="font-size:0.84rem;background:var(--bg-subtle);padding:8px;border-radius:4px;white-space:pre-wrap">${escHtml(r.original)}</div>
+          </div>
+          <div>
+            <div style="font-size:0.75rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px;letter-spacing:.04em">Reformateado</div>
+            <div class="reformat-preview-rendered" style="font-size:0.84rem;background:var(--bg-subtle);padding:8px;border-radius:4px">${formatPromptForDisplay(r.reformatted)}</div>
+          </div>
+        </div>` : `
+        <div style="font-size:0.84rem;color:var(--text-muted);margin-top:4px">${escHtml(r.original)}</div>`}
+      </div>`;
+    }).join('');
+
+    const hasChanges = results.some(r => r.reformatted && r.reformatted !== r.original);
+    if (hasChanges) saveBtn.classList.remove('hidden');
+
+  } catch (err) {
+    resultList.innerHTML = '';
+    feedback.textContent = `Error: ${err.message}`;
+    feedback.className = 'feedback error';
+  } finally {
+    reformatBtn.disabled = false;
+  }
+
+  saveBtn.onclick = async () => {
+    saveBtn.disabled = true;
+    feedback.textContent = 'Guardando…';
+    feedback.className = 'feedback';
+    try {
+      const idsToSave = results.filter(r => r.reformatted && r.reformatted !== r.original).map(r => r.id);
+      await postJson('/cards/reformat-prompt', { card_ids: idsToSave, save: true });
+      feedback.textContent = `✓ ${idsToSave.length} tarjeta(s) actualizadas. El texto original quedó guardado en las notas.`;
+      feedback.className = 'feedback success';
+      saveBtn.classList.add('hidden');
+      loadBrowserCards().catch(() => {});
+    } catch (err) {
+      feedback.textContent = `Error al guardar: ${err.message}`;
+      feedback.className = 'feedback error';
+      saveBtn.disabled = false;
+    }
+  };
+}
+
+function getSelectedCardIds() {
+  return [...browserState.selected].filter(n => Number.isFinite(n) && n > 0);
 }
 
 // --- Dashboard ---
@@ -2834,6 +2948,29 @@ function escapePreserve(text) {
 }
 
 const MATH_LINE_RE = /[=²³⁰¹⁴⁵⁶⁷⁸⁹₀₁₂₃₄₅₆₇₈₉αβγδεζηθλμνξπρστφψωΔΩ∑∫∂∞±√∝∈∉∩∪⊂⊃≤≥≠≈]|[a-zA-Z][₀₁₂₃]|[a-zA-Z]\d*[²³]|\b(cos|sin|tan|log|ln|lim|sup|inf|max|min|det|div|rot|grad)\b/;
+const LATEX_DELIM_RE = /\$\$[\s\S]+?\$\$|\$[^$\n]+?\$/;
+
+// Renders a single line of text replacing $...$ (inline) and $$...$$ (display) with KaTeX HTML.
+function renderKaTeXInline(line) {
+  if (typeof window.katex === 'undefined') return escHtml(line);
+  const result = [];
+  let lastIndex = 0;
+  const re = /\$\$([\s\S]+?)\$\$|\$([^$\n]+?)\$/g;
+  let match;
+  while ((match = re.exec(line)) !== null) {
+    if (match.index > lastIndex) result.push(escHtml(line.slice(lastIndex, match.index)));
+    const isDisplay = match[1] !== undefined;
+    const mathContent = isDisplay ? match[1] : match[2];
+    try {
+      result.push(window.katex.renderToString(mathContent, { displayMode: isDisplay, throwOnError: false, output: 'html' }));
+    } catch (_) {
+      result.push(escHtml(match[0]));
+    }
+    lastIndex = re.lastIndex;
+  }
+  if (lastIndex < line.length) result.push(escHtml(line.slice(lastIndex)));
+  return result.join('');
+}
 
 // Renders fenced ``` blocks and inline `code` in arbitrary text → safe HTML.
 function renderCodeMarkdown(text) {
@@ -2868,6 +3005,14 @@ function formatPromptForDisplay(text) {
   // If text has code blocks/inline code, delegate to the markdown renderer.
   if (/```|`[^`]/.test(normalized)) {
     return renderCodeMarkdown(normalized);
+  }
+
+  // If text has LaTeX delimiters ($...$  or  $$...$$), render with KaTeX.
+  if (LATEX_DELIM_RE.test(normalized) && typeof window.katex !== 'undefined') {
+    return normalized.split('\n').map(line => {
+      if (!line.trim()) return '<br>';
+      return renderKaTeXInline(line) + '<br>';
+    }).join('');
   }
 
   // Detect if text contains math — if so, wrap equation-heavy lines visually
