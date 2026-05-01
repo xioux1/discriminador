@@ -10,14 +10,16 @@ let _anthropic = null;
 function getAnthropicClient() {
   if (!_anthropic) _anthropic = new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY,
-    timeout: Number(process.env.CONCEPT_CLUSTERING_LLM_TIMEOUT_MS || 120_000),
+    timeout: Number(process.env.CONCEPT_CLUSTERING_LLM_TIMEOUT_MS || 240_000),
   });
   return _anthropic;
 }
 
 // Max orphans before switching to multi-phase LLM (phase1 groups, phase2 orphan batches)
-const MAX_ORPHANS_SINGLE_PASS = Number(process.env.CONCEPT_CLUSTER_MAX_ORPHANS_SINGLE_PASS || 40);
-const ORPHAN_BATCH_SIZE       = Number(process.env.CONCEPT_CLUSTER_ORPHAN_BATCH_SIZE       || 30);
+const MAX_ORPHANS_SINGLE_PASS  = Number(process.env.CONCEPT_CLUSTER_MAX_ORPHANS_SINGLE_PASS  || 40);
+const ORPHAN_BATCH_SIZE        = Number(process.env.CONCEPT_CLUSTER_ORPHAN_BATCH_SIZE        || 30);
+// Max concepts (across all groups) to include in Phase 1; overflow groups are demoted to Phase 2 orphans
+const MAX_GROUP_CONCEPTS_PHASE1 = Number(process.env.CONCEPT_CLUSTER_MAX_GROUP_CONCEPTS_PHASE1 || 120);
 
 // ==================== Geometry ====================
 
@@ -246,25 +248,47 @@ async function callAnthropicOrphanAssignment(namedClusters, orphanBatch) {
 // Phase 1: LLM names/merges pre-grouped items.
 // Phase 2: LLM assigns remaining orphans in batches to the named clusters.
 async function clusterInPhases(groups, orphans, conceptMap) {
-  // Phase 1 — if no groups, bootstrap with first batch of orphans
+  // Phase 1 — cap how many group concepts we send at once.
+  // Overflow groups are demoted to Phase 2 orphans so the LLM payload stays bounded.
+  const phase1Groups = [];
+  const overflowGroupOrphans = [];
+  let groupConceptCount = 0;
+
+  for (const group of groups) {
+    if (groupConceptCount + group.concept_ids.length <= MAX_GROUP_CONCEPTS_PHASE1) {
+      phase1Groups.push(group);
+      groupConceptCount += group.concept_ids.length;
+    } else {
+      overflowGroupOrphans.push(...group.concept_ids);
+    }
+  }
+
+  logger.info('[clusterInPhases] Phase 1 group split', {
+    phase1Groups: phase1Groups.length,
+    overflowGroupOrphans: overflowGroupOrphans.length,
+  });
+
+  // If no groups made it to Phase 1, bootstrap with first orphan batch so the LLM has something to name.
   let phase1Orphans   = [];
   let remainingOrphans = orphans;
 
-  if (groups.length === 0) {
+  if (phase1Groups.length === 0) {
     phase1Orphans    = orphans.slice(0, ORPHAN_BATCH_SIZE);
     remainingOrphans = orphans.slice(ORPHAN_BATCH_SIZE);
   }
 
-  const phase1Input = buildLLMInput(groups, phase1Orphans, conceptMap);
+  const phase1Input = buildLLMInput(phase1Groups, phase1Orphans, conceptMap);
   const phase1Raw   = await callAnthropicClustering(phase1Input);
   const namedClusters = safeJsonParseArray(phase1Raw);
   if (!namedClusters.length) {
     throw new Error('Phase 1 LLM returned invalid or empty JSON for clustering.');
   }
 
-  // Phase 2 — assign remaining orphans in batches
-  for (let i = 0; i < remainingOrphans.length; i += ORPHAN_BATCH_SIZE) {
-    const batchIds      = remainingOrphans.slice(i, i + ORPHAN_BATCH_SIZE);
+  // Phase 2 — assign overflow group concepts and remaining orphans in batches
+  const allPhase2Ids = [...overflowGroupOrphans, ...remainingOrphans];
+
+  for (let i = 0; i < allPhase2Ids.length; i += ORPHAN_BATCH_SIZE) {
+    const batchIds      = allPhase2Ids.slice(i, i + ORPHAN_BATCH_SIZE);
     const batchConcepts = batchIds.map(id => conceptMap.get(id));
 
     const assignRaw   = await callAnthropicOrphanAssignment(namedClusters, batchConcepts);
@@ -573,10 +597,14 @@ export async function clusterConceptsForDocument(documentId) {
   // Steps 3-5: LLM clustering (single pass or multi-phase)
   const conceptMap = new Map(concepts.map(c => [c.id, c]));
 
+  const totalGroupConcepts = groups.reduce((sum, g) => sum + g.concept_ids.length, 0);
+  const useMultiPhase = orphans.length > MAX_ORPHANS_SINGLE_PASS
+    || totalGroupConcepts > MAX_GROUP_CONCEPTS_PHASE1;
+
   let parsed;
-  if (orphans.length > MAX_ORPHANS_SINGLE_PASS) {
+  if (useMultiPhase) {
     logger.info('[conceptClustering] Large document: using multi-phase LLM', {
-      documentId, groups: groups.length, orphans: orphans.length,
+      documentId, groups: groups.length, orphans: orphans.length, totalGroupConcepts,
     });
     parsed = await clusterInPhases(groups, orphans, conceptMap);
   } else {
