@@ -278,6 +278,13 @@ evaluateRouter.post('/evaluate', llmRateLimit, async (req, res) => {
     });
   }
 
+  if ('grading_rubric' in req.body && req.body.grading_rubric !== undefined && !Array.isArray(req.body.grading_rubric)) {
+    typeErrors.push({
+      field: 'grading_rubric',
+      issue: 'Must be an array of strings.'
+    });
+  }
+
   if (typeErrors.length > 0) {
     return badRequest(res, typeErrors);
   }
@@ -347,6 +354,10 @@ evaluateRouter.post('/evaluate', llmRateLimit, async (req, res) => {
 
   // const heuristicResult = scoreEvaluation({ ... }); // disabled — LLM is sole evaluator
 
+  const gradingRubric = Array.isArray(req.body.grading_rubric)
+    ? req.body.grading_rubric.filter((r) => typeof r === 'string' && r.trim().length > 0).slice(0, 8)
+    : [];
+
   let llmJudge = null;
   let llmFallback = false;
   try {
@@ -355,7 +366,8 @@ evaluateRouter.post('/evaluate', llmRateLimit, async (req, res) => {
       user_answer_text: normalizedFields.user_answer_text,
       expected_answer_text: normalizedFields.expected_answer_text,
       subject: normalizedSubject,
-      strictness: gradingStrictness
+      strictness: gradingStrictness,
+      grading_rubric: gradingRubric
     });
   } catch (llmError) {
     llmFallback = true;

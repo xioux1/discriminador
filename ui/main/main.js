@@ -5279,16 +5279,20 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
   evalBtn.textContent = 'Evaluando...';
   setStudyPromptFeedback('');
 
-  let prompt_text, expected_answer_text, subject;
+  let prompt_text, expected_answer_text, subject, grading_rubric;
 
   if (item.type === 'micro') {
     prompt_text          = getStudyPromptText(item);
     expected_answer_text = item.data.expected_answer || item.data.parent_expected;
     subject              = item.data.parent_subject ?? item.data.subject;
+    grading_rubric       = undefined;
   } else {
     prompt_text          = getStudyPromptText(item);
     expected_answer_text = item.data.expected_answer_text;
     subject              = item.data.subject;
+    grading_rubric       = Array.isArray(item.data.grading_rubric) && item.data.grading_rubric.length > 0
+      ? item.data.grading_rubric
+      : undefined;
   }
 
   const normalizedPrompt = normalize(prompt_text || '');
@@ -5317,7 +5321,8 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       prompt_text: normalizedPrompt,
       user_answer_text: answer,
       expected_answer_text: normalizedExpected,
-      ...(subject && subject.trim() ? { subject: subject.trim() } : {})
+      ...(subject && subject.trim() ? { subject: subject.trim() } : {}),
+      ...(grading_rubric ? { grading_rubric } : {})
     };
 
     const result = await postJson(EVALUATE_ENDPOINT, evaluationPayload);
