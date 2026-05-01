@@ -673,6 +673,40 @@ textarea:focus, input[type="text"]:focus, select:focus {
   border-top: 1px solid var(--border-mid);
 }
 
+/* Pinyin collapsible — sits below "Respuesta esperada", intentionally subtle */
+.study-pinyin-details {
+  margin-top: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  display: inline-block;
+}
+.study-pinyin-details > summary {
+  padding: 2px 8px;
+  cursor: pointer;
+  color: var(--text-muted);
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  letter-spacing: .02em;
+}
+.study-pinyin-details > summary::before {
+  content: '▸';
+  font-size: 0.65rem;
+  transition: transform 0.12s;
+}
+.study-pinyin-details[open] > summary::before { transform: rotate(90deg); }
+.study-pinyin-text {
+  padding: 4px 10px 6px;
+  margin: 0;
+  color: var(--text);
+  border-top: 1px solid var(--border);
+  letter-spacing: .03em;
+  line-height: 1.6;
+}
+
 .study-answer-compare-block { margin: 8px 0; }
 .study-answer-compare-text {
   margin-top: 4px;

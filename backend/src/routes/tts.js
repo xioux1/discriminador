@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { createHash } from 'crypto';
 import OpenAI from 'openai';
+import { pinyin } from 'pinyin-pro';
 import { dbPool } from '../db/client.js';
 import { llmRateLimit } from '../middleware/llm-rate-limit.js';
 
@@ -12,9 +13,20 @@ function getClient() {
   return _client;
 }
 
+/** Convert hanzi to toned pinyin string, e.g. "你好" → "nǐ hǎo" */
+function hanziToPinyin(text) {
+  try {
+    return pinyin(text, { toneType: 'symbol', separator: ' ', nonZh: 'consecutive' }).trim();
+  } catch {
+    return '';
+  }
+}
+
 // POST /tts — convert Chinese text to speech (MP3, base64-encoded)
 // Results are cached permanently in the tts_cache table so the OpenAI API
 // is only called once per unique text string.
+// Response includes { audio, pinyin, cached } so the frontend can display
+// romanisation without a separate API call.
 ttsRouter.post('/tts', llmRateLimit, async (req, res) => {
   if (!process.env.OPENAI_API_KEY) {
     return res.status(503).json({ error: 'service_unavailable', message: 'OPENAI_API_KEY not configured.' });
@@ -31,11 +43,18 @@ ttsRouter.post('/tts', llmRateLimit, async (req, res) => {
   // 1. Check persistent cache
   try {
     const { rows } = await dbPool.query(
-      'SELECT audio_b64 FROM tts_cache WHERE text_hash = $1',
+      'SELECT audio_b64, pinyin_text FROM tts_cache WHERE text_hash = $1',
       [hash],
     );
     if (rows.length > 0) {
-      return res.json({ audio: rows[0].audio_b64, cached: true });
+      const row = rows[0];
+      // Back-fill pinyin if an old cache row lacks it (migration added column later)
+      const pinyinText = row.pinyin_text ?? hanziToPinyin(input);
+      if (!row.pinyin_text) {
+        dbPool.query('UPDATE tts_cache SET pinyin_text = $1 WHERE text_hash = $2', [pinyinText, hash])
+          .catch(() => {});
+      }
+      return res.json({ audio: row.audio_b64, pinyin: pinyinText, cached: true });
     }
   } catch (err) {
     console.error('TTS cache read error:', err.message);
@@ -61,17 +80,20 @@ ttsRouter.post('/tts', llmRateLimit, async (req, res) => {
     return res.status(500).json({ error: 'server_error', message: err.message });
   }
 
-  // 3. Persist to cache (best-effort)
+  // 3. Generate pinyin with the local library (fast, deterministic, no extra API call)
+  const pinyinText = hanziToPinyin(input);
+
+  // 4. Persist to cache (best-effort)
   try {
     await dbPool.query(
-      'INSERT INTO tts_cache (text_hash, audio_b64) VALUES ($1, $2) ON CONFLICT (text_hash) DO NOTHING',
-      [hash, audioB64],
+      'INSERT INTO tts_cache (text_hash, audio_b64, pinyin_text) VALUES ($1, $2, $3) ON CONFLICT (text_hash) DO UPDATE SET pinyin_text = EXCLUDED.pinyin_text',
+      [hash, audioB64, pinyinText],
     );
   } catch (err) {
     console.error('TTS cache write error:', err.message);
   }
 
-  return res.json({ audio: audioB64, cached: false });
+  return res.json({ audio: audioB64, pinyin: pinyinText, cached: false });
 });
 
 export default ttsRouter;

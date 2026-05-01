@@ -2930,7 +2930,8 @@ function hasChinese(text) {
 let _ttsAudio = null;                    // keep reference to stop previous playback
 let _ttsCurrentText = null;             // Hanzi text for the post-eval TTS bar
 let _ttsListeningText = null;           // Hanzi text for the listening variant prompt bar
-const _ttsCache = new Map();             // text → base64 audio string (session cache)
+const _ttsCache   = new Map();           // text → base64 audio string (session cache)
+const _pinyinCache = new Map();          // text → pinyin string (session cache)
 
 /**
  * Plays the TTS audio for the given Hanzi text.
@@ -2960,6 +2961,7 @@ async function playChineseTTS(text, btnSelector = '#study-tts-btn') {
       if (!data?.audio) throw new Error('Sin audio en la respuesta');
       audioB64 = data.audio;
       _ttsCache.set(text, audioB64);
+      if (data.pinyin) _pinyinCache.set(text, data.pinyin);
     }
 
     const byteChars = atob(audioB64);
@@ -2987,6 +2989,25 @@ async function playChineseTTS(text, btnSelector = '#study-tts-btn') {
   } catch (err) {
     console.error('TTS error:', err.message);
     if (btn) { btn.disabled = false; btn.textContent = '🔊 Escuchar'; }
+  }
+}
+
+/**
+ * Returns the pinyin for a Hanzi string, fetching from /tts if not cached.
+ * Reuses the same session cache as playChineseTTS so there is at most one
+ * network call per unique text regardless of call order.
+ */
+async function fetchPinyin(text) {
+  if (!text || !hasChinese(text)) return '';
+  if (_pinyinCache.has(text)) return _pinyinCache.get(text);
+  try {
+    const data = await postJson('/tts', { text });
+    if (data?.audio) _ttsCache.set(text, data.audio);
+    const py = data?.pinyin || '';
+    _pinyinCache.set(text, py);
+    return py;
+  } catch {
+    return '';
   }
 }
 
@@ -5209,12 +5230,22 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       : '';
 
     // Always show answer comparison.
+    const _hasChinese = hasChinese(expected_answer_text);
     expectedEl.innerHTML = `
       ${groupedTags}
       ${formatAnswerBlock('Tu respuesta', answer)}
       ${formatAnswerBlock('Respuesta esperada', expected_answer_text)}
+      ${_hasChinese ? '<details class="study-pinyin-details"><summary>Pinyin</summary><p class="study-pinyin-text">…</p></details>' : ''}
     `;
     expectedEl.classList.remove('hidden');
+
+    // Async: fill in pinyin (fetches /tts which also warms the audio cache)
+    if (_hasChinese) {
+      fetchPinyin(expected_answer_text).then((py) => {
+        const pEl = expectedEl.querySelector('.study-pinyin-text');
+        if (pEl) pEl.textContent = py || '—';
+      }).catch(() => {});
+    }
 
     if (item.type !== 'micro') {
       const editAnswerBtn = document.createElement('button');
