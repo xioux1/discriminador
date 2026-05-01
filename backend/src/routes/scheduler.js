@@ -455,6 +455,34 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
     };
   }
 
+  // Intra-session contamination penalty: if the student failed any micro-card
+  // for this parent earlier in the same session, the "good" on the parent is
+  // scaffolded recall — not independent recall. The penalty uses a 6-hour
+  // window as a proxy for "current session".
+  // Only applied on pass grades; fail grades are already penalized by FSRS.
+  if (isPassGrade(grade)) {
+    const { rows: sessionFailRows } = await dbPool.query(
+      `SELECT COUNT(*) AS cnt FROM micro_card_session_log
+       WHERE parent_card_id = $1
+         AND user_id = $2
+         AND grade IN ('again', 'hard', 'fail')
+         AND reviewed_at > now() - INTERVAL '6 hours'`,
+      [cardId, userId]
+    );
+    const sessionMicroFailCount = parseInt(sessionFailRows[0].cnt);
+    if (sessionMicroFailCount > 0) {
+      // +0.3 per fail, capped at +0.8 — stronger than the Verificar penalty
+      // because a micro-card fail is a direct demonstration of not knowing.
+      const contaminationPenalty = Math.min(0.8, sessionMicroFailCount * 0.3);
+      const penalizedDifficulty = Math.min(10, schedule.difficulty + contaminationPenalty);
+      schedule = {
+        ...schedule,
+        difficulty:  penalizedDifficulty,
+        ease_factor: Math.max(1.3, (10 - penalizedDifficulty) / 9 * 1.7 + 1.3)
+      };
+    }
+  }
+
   const updated = await dbPool.query(
     `UPDATE cards
      SET interval_days = $1, ease_factor = $2, next_review_at = $3,
@@ -695,6 +723,13 @@ async function reviewMicroCard(res, microCardId, grade, conceptGaps, userAnswer,
      VALUES ('study', $1, $2, $3, $4, $5, (NOW() AT TIME ZONE 'America/Argentina/Buenos_Aires')::DATE)`,
     [effectiveSubject, grade, responseTimeMs, reviewTimeMs, userId]
   ).catch((e) => console.warn('[activity log]', e.message));
+
+  // Record in session log so reviewCard() can detect intra-session contamination.
+  dbPool.query(
+    `INSERT INTO micro_card_session_log (micro_card_id, parent_card_id, user_id, grade)
+     VALUES ($1, $2, $3, $4)`,
+    [microCardId, micro.parent_card_id, userId, grade]
+  ).catch((e) => console.warn('[session log]', e.message));
 
   // ── Sibling micro-card generation ─────────────────────────────────────────
   // When the subject has micro_cards_spawn_siblings enabled and the student
