@@ -508,8 +508,8 @@ export async function persistGeneratedCardDraft(context, validatedOutput, userId
     const cardInsert = await client.query(
       `INSERT INTO cards
          (user_id, subject, prompt_text, expected_answer_text,
-          cluster_id, document_id, card_type, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'draft')
+          cluster_id, document_id, card_type, status, grading_rubric)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'draft', $8)
        RETURNING id`,
       [
         userId ?? null,
@@ -519,6 +519,7 @@ export async function persistGeneratedCardDraft(context, validatedOutput, userId
         cluster.id,
         document.id,
         'theoretical_open',
+        JSON.stringify(primaryVariant.grading_rubric ?? []),
       ]
     );
     const cardId = cardInsert.rows[0].id;

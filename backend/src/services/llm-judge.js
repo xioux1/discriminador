@@ -121,7 +121,7 @@ El docente configuró exigencia máxima. La regla es BINARIA: o la tarjeta está
 • Estándar de referencia: ¿la respuesta es técnicamente perfecta tal como está? Si tenés cualquier duda → AGAIN.`;
 }
 
-function buildSystemPrompt(examples, strictness = 5) {
+function buildSystemPrompt(examples, strictness = 5, gradingRubric = []) {
   let system = `Sos un evaluador académico calibrado. Tu tarea es clasificar la respuesta del estudiante en uno de 4 niveles.
 
 Respondé ÚNICAMENTE con este formato exacto (tres líneas, sin texto adicional):
@@ -165,7 +165,28 @@ MISSING: <concepto1>, <concepto2> | NONE
   • La respuesta fue notablemente más precisa o completa que la esperada
   Regla de desempate: si dudás entre GOOD y EASY, elegí GOOD. EASY es solo para respuestas claramente superiores.
 
-Para MISSING: listá los conceptos o ideas específicas que faltan o están incorrectos. Usá NONE si no falta nada relevante. Máximo 3 conceptos, sin oraciones largas.`;
+Para MISSING: listá los conceptos o ideas específicas que faltan o están incorrectos. Usá NONE si no falta nada relevante. Máximo 3 conceptos, sin oraciones largas.
+
+━━━ RESPUESTAS ESPERADAS EN FORMATO BULLET ━━━
+Cuando la respuesta esperada está en formato de lista (bullets con "-" o "•"):
+• Cada bullet representa un CONCEPTO o característica, NO una formulación literal obligatoria.
+• El estudiante PUEDE expresar cada concepto con sus propias palabras, sinónimos o paráfrasis — esto cuenta como correcto si la idea es equivalente.
+• NO penalices diferencias de vocabulario cuando la idea subyacente es la misma.
+  Ejemplos de equivalencias válidas:
+  "persiste los cambios en disco" ≡ "guarda permanentemente los datos"
+  "libera los bloqueos" ≡ "libera los locks de la transacción"
+  "previene accesos concurrentes" ≡ "bloquea el acceso simultáneo de otros procesos"
+• Para GOOD: el estudiante debe cubrir los conceptos principales. Si hay 4-5 bullets breves en la respuesta esperada, cubrir 3-4 de los conceptos con buena precisión conceptual alcanza para GOOD; no es necesario mencionar cada detalle secundario.
+• Para AGAIN/HARD: solo cuando falten conceptos verdaderamente centrales, no cuando el estudiante usó palabras distintas para el mismo concepto.`;
+
+  if (gradingRubric.length > 0) {
+    system += `
+
+━━━ RÚBRICA DE CORRECCIÓN (elementos mínimos para aprobar) ━━━
+Esta rúbrica define exactamente qué debe estar presente para GOOD. Usala como criterio principal; la respuesta esperada es contexto adicional.
+${gradingRubric.map((r) => `• ${r}`).join('\n')}
+Para GOOD: la respuesta del estudiante debe cubrir los puntos de la rúbrica (puede usar sinónimos o paráfrasis). Los detalles de la respuesta esperada que NO aparecen en la rúbrica son opcionales.`;
+  }
 
   system += buildStrictnessSection(strictness);
 
@@ -235,14 +256,14 @@ function parseResponse(text) {
  * @param {object} payload - { prompt_text, user_answer_text, expected_answer_text, subject, strictness }
  * @returns {{ suggested_grade, justification, few_shot_count, model }}
  */
-export async function judgeWithLLM(pool, { prompt_text, user_answer_text, expected_answer_text, subject, strictness = 5 }) {
+export async function judgeWithLLM(pool, { prompt_text, user_answer_text, expected_answer_text, subject, strictness = 5, grading_rubric = [] }) {
   const examples = await fetchFewShotExamples(pool, subject);
 
   const response = await getClient().messages.create({
     model: LLM_MODEL,
     max_tokens: LLM_MAX_TOKENS,
     temperature: 0,
-    system: buildSystemPrompt(examples, strictness),
+    system: buildSystemPrompt(examples, strictness, grading_rubric),
     messages: [{
       role: 'user',
       content: `Pregunta: ${prompt_text}
