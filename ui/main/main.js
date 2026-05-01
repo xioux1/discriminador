@@ -3610,9 +3610,21 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = 
 
         const { text } = await response.json();
         if (text) {
-          const current = textarea.value;
-          const separator = current && !current.endsWith(' ') ? ' ' : '';
-          textarea.value = current + separator + text;
+          const mathEditor = textarea._mathEditorEl;
+          const isMathActive = mathEditor && !mathEditor.classList.contains('hidden');
+          if (isMathActive) {
+            // In math mode the textarea is hidden — insert into the contenteditable.
+            // execCommand fires the editor's input→sync chain automatically.
+            mathEditor.focus();
+            const needsSpace = mathEditor.textContent.length > 0 && !mathEditor.textContent.endsWith(' ');
+            document.execCommand('insertText', false, (needsSpace ? ' ' : '') + text);
+          } else {
+            const current = textarea.value;
+            const separator = current && !current.endsWith(' ') ? ' ' : '';
+            textarea.value = current + separator + text;
+            // Dispatch input so SqlEditor gutter and any other listeners update.
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+          }
         }
       } catch (err) {
         setFeedback(`Error de transcripción: ${err.message}`, 'error');
