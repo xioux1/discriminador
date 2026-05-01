@@ -56,26 +56,27 @@ export function computeDensityScore(clusterCentroid, chunkEmbeddings, threshold 
 }
 
 export function computeImportanceScore({ density, program, exam }) {
-  let score;
-
-  if (program == null && exam == null) {
-    score = density;
-  } else if (program != null && exam == null) {
-    score = density * 0.55 + program * 0.45;
-  } else if (program == null && exam != null) {
-    score = density * 0.45 + exam * 0.55;
+  // Base score from density + optional program signal (exam handled separately below).
+  let base;
+  if (program == null) {
+    base = density;
   } else {
-    score = density * 0.30 + program * 0.25 + exam * 0.45;
+    base = density * 0.55 + program * 0.45;
   }
 
-  // Exam is the dominant signal
-  if (exam != null && exam >= 0.75) score = Math.max(score, 0.85);
-  if (exam != null && exam >= 0.82) score = Math.max(score, 0.92);
+  // Strong program match prevents a low base ranking.
+  if (program != null && program >= 0.82) base = Math.max(base, 0.75);
 
-  // Strong program match prevents low ranking
-  if (program != null && program >= 0.82) score = Math.max(score, 0.75);
+  // Exam signal is the dominant override — intentionally extreme:
+  //   Direct match  (≥ 0.82): the cluster IS on the exam → force 100%.
+  //   Ramification  (≥ 0.72): related topic → small nudge, not a takeover.
+  //   Below 0.72: no meaningful exam boost.
+  if (exam != null) {
+    if (exam >= 0.82) return 1.0;
+    if (exam >= 0.72) return clamp01(base + 0.10);
+  }
 
-  return clamp01(score);
+  return clamp01(base);
 }
 
 export function computePriorityTier(score) {
@@ -149,8 +150,12 @@ export function promoteTier(currentTier, minimumTier) {
 export function applyExternalSignalTierOverrides(cluster) {
   let tier = cluster.relative_priority_tier;
 
-  if (cluster.exam_score != null && cluster.exam_score >= 0.75) {
-    tier = promoteTier(tier, 'A');
+  // Direct exam match → always tier A, no exceptions.
+  if (cluster.exam_score != null && cluster.exam_score >= 0.82) {
+    tier = 'A';
+  // Ramification → promote to at least B.
+  } else if (cluster.exam_score != null && cluster.exam_score >= 0.72) {
+    tier = promoteTier(tier, 'B');
   }
 
   if (cluster.program_score != null && cluster.program_score >= 0.75) {
@@ -162,8 +167,8 @@ export function applyExternalSignalTierOverrides(cluster) {
 
 export function getMatchStrength(score) {
   if (score == null) return 'unavailable';
-  if (score >= 0.82) return 'strong';
-  if (score >= 0.72) return 'moderate';
+  if (score >= 0.82) return 'direct';
+  if (score >= 0.72) return 'related';
   return 'weak';
 }
 
@@ -220,12 +225,12 @@ export function buildImportanceReasons({
     }
   }
 
-  // Exam reason — only if score reaches moderate threshold
+  // Exam reason — only if score reaches minimum threshold
   if (exam != null) {
     if (exam >= 0.82) {
-      reasons.push('Coincide fuertemente con material de examen.');
+      reasons.push('Coincidencia directa con el examen cargado — prioridad máxima.');
     } else if (exam >= 0.72) {
-      reasons.push('Tiene coincidencia moderada con material de examen.');
+      reasons.push('Tema relacionado con el examen (ramificación) — leve aumento de prioridad.');
     }
   }
 
@@ -636,6 +641,7 @@ export async function rankClustersForDocument(documentId) {
       exam_score: c.exam_score,
       exam_match_strength: getMatchStrength(c.exam_score),
       has_exam_match: c.exam_score != null && c.exam_score >= 0.72,
+      is_direct_exam_match: c.exam_score != null && c.exam_score >= 0.82,
 
       importance_score: c.importance_score,
       priority_tier: c.priority_tier,
