@@ -1238,9 +1238,13 @@ textarea:focus, input[type="text"]:focus, select:focus {
 .study-grade-inline.easy                             { background: var(--easy-bg);   color: var(--easy-fg); }
 .study-grade-inline.review                           { background: var(--review-bg); color: var(--review-fg); }
 
-.study-queue-summary { font-size: 1rem; margin-bottom: 12px; }
+.study-queue-summary-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.study-queue-summary { font-size: 1rem; }
 .study-queue-count   { font-size: 2rem; font-weight: 800; color: var(--primary); margin-right: 4px; }
 .study-queue-detail  { font-size: 0.85rem; color: var(--text-muted); margin-left: 6px; }
+.toggle-count-btn    { font-size: 0.75rem; padding: 2px 8px; opacity: 0.6; flex-shrink: 0; }
+.toggle-count-btn:hover { opacity: 1; }
+.study-count-hidden  { opacity: 0; pointer-events: none; user-select: none; }
 
 .study-overview-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
 
