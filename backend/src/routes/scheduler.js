@@ -315,7 +315,7 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
 // check_fail_ids: IDs from binary_check_log for negative in-session checks.
 //   When non-empty and final grade is negative, an extra ease penalty applies.
 schedulerRouter.post('/scheduler/review', async (req, res) => {
-  const { card_id, micro_card_id, grade, concept_gaps = [], response_time_ms, review_time_ms, user_answer = '', check_fail_ids = [], variant_prompt_text, variant_expected_answer_text, variant_type, skip_archive } = req.body || {};
+  const { card_id, micro_card_id, grade, concept_gaps = [], response_time_ms, review_time_ms, user_answer = '', check_fail_ids = [], variant_prompt_text, variant_expected_answer_text, variant_type, variant_id, skip_archive } = req.body || {};
   const userId = req.user.id;
 
   const VALID_GRADES = new Set(['pass', 'fail', 'review', 'again', 'hard', 'good', 'easy']);
@@ -338,7 +338,8 @@ schedulerRouter.post('/scheduler/review', async (req, res) => {
       return await reviewMicroCard(res, Number(micro_card_id), effectiveGrade, concept_gaps, user_answer, rtMs, rvtMs, userId, Boolean(skip_archive));
     } else if (card_id) {
       const checkFailIds = Array.isArray(check_fail_ids) ? check_fail_ids.map(Number).filter(Boolean) : [];
-      return await reviewCard(res, Number(card_id), effectiveGrade, concept_gaps, rtMs, rvtMs, userId, user_answer, checkFailIds, variant_prompt_text, variant_expected_answer_text, variant_type);
+      const parsedVariantId = Number(variant_id) || null;
+      return await reviewCard(res, Number(card_id), effectiveGrade, concept_gaps, rtMs, rvtMs, userId, user_answer, checkFailIds, variant_prompt_text, variant_expected_answer_text, variant_type, parsedVariantId);
     }
     return res.status(422).json({
       error: 'validation_error',
@@ -415,7 +416,7 @@ async function autoGenerateVariant(cardId, card, userId) {
 }
 
 // ─── Internal: review a full card ────────────────────────────────────────────
-async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, reviewTimeMs, userId, userAnswer = '', checkFailIds = [], variantPromptText, variantExpectedAnswerText, variantType) {
+async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, reviewTimeMs, userId, userAnswer = '', checkFailIds = [], variantPromptText, variantExpectedAnswerText, variantType, variantId = null) {
   const checkFailCount = checkFailIds.length;
   const { rows } = await dbPool.query(
     'SELECT * FROM cards WHERE id = $1 AND user_id = $2 AND archived_at IS NULL AND suspended_at IS NULL',
@@ -512,6 +513,17 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
      VALUES ('study', $1, $2, $3, $4, $5, (NOW() AT TIME ZONE 'America/Argentina/Buenos_Aires')::DATE)`,
     [updated.rows[0]?.subject || null, grade, responseTimeMs, reviewTimeMs, userId]
   ).catch((e) => console.warn('[activity log]', e.message));
+
+  // Track per-variant usage so the tree view can show how often each variant is served.
+  if (variantId) {
+    dbPool.query(
+      `UPDATE card_variants
+       SET review_count = review_count + 1,
+           pass_count   = pass_count + $1
+       WHERE id = $2 AND card_id = $3`,
+      [isPassGrade(grade) ? 1 : 0, variantId, cardId]
+    ).catch((e) => console.warn('[variant review count]', e.message));
+  }
 
   let newMicroCards = [];
 
@@ -1104,30 +1116,46 @@ schedulerRouter.post('/scheduler/cards/:id/variant', async (req, res) => {
 });
 
 // GET /scheduler/cards/:id/variants
-// Returns the parent card + all its variants for tree visualisation.
+// Returns the parent card + all its variants + all micro-cards for tree visualisation.
 schedulerRouter.get('/scheduler/cards/:id/variants', async (req, res) => {
   const cardId = parseInt(req.params.id);
   const userId = req.user.id;
   if (!cardId) return res.status(422).json({ error: 'validation_error', message: 'Invalid card id.' });
 
   try {
-    const cardRes = await dbPool.query(
-      `SELECT id, subject, prompt_text, expected_answer_text, created_at
-       FROM cards
-       WHERE id = $1 AND user_id = $2 AND archived_at IS NULL`,
-      [cardId, userId]
-    );
+    const [cardRes, variantsRes, microsRes] = await Promise.all([
+      dbPool.query(
+        `SELECT id, subject, prompt_text, expected_answer_text, created_at,
+                review_count, pass_count
+         FROM cards
+         WHERE id = $1 AND user_id = $2 AND archived_at IS NULL`,
+        [cardId, userId]
+      ),
+      dbPool.query(
+        `SELECT id, prompt_text, expected_answer_text, created_at,
+                variant_type, review_count, pass_count
+         FROM card_variants
+         WHERE card_id = $1 AND (user_id = $2 OR user_id IS NULL)
+         ORDER BY created_at ASC`,
+        [cardId, userId]
+      ),
+      dbPool.query(
+        `SELECT id, concept, question, expected_answer, status,
+                review_count, next_review_at, created_at
+         FROM micro_cards
+         WHERE parent_card_id = $1 AND user_id = $2
+         ORDER BY status ASC, created_at ASC`,
+        [cardId, userId]
+      ),
+    ]);
+
     if (!cardRes.rows.length) return res.status(404).json({ error: 'not_found', message: 'Card not found.' });
 
-    const variantsRes = await dbPool.query(
-      `SELECT id, prompt_text, expected_answer_text, created_at
-       FROM card_variants
-       WHERE card_id = $1 AND (user_id = $2 OR user_id IS NULL)
-       ORDER BY created_at ASC`,
-      [cardId, userId]
-    );
-
-    return res.json({ card: cardRes.rows[0], variants: variantsRes.rows });
+    return res.json({
+      card:     cardRes.rows[0],
+      variants: variantsRes.rows,
+      micros:   microsRes.rows,
+    });
   } catch (err) {
     console.error('GET /scheduler/cards/:id/variants', err.message);
     return res.status(500).json({ error: 'server_error', message: err.message });
