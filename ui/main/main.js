@@ -614,7 +614,7 @@ function showCardDetail(card) {
     notesEl.classList.add('hidden');
   }
 
-  loadVariantsTree(card.id, Number(card.variant_count || 0));
+  loadVariantsTree(card.id, Number(card.variant_count || 0) + Number(card.active_micro_count || 0));
 
   overlay.classList.remove('hidden');
   document.querySelector('#card-detail-close').focus();
@@ -629,24 +629,29 @@ async function loadVariantsTree(cardId, variantCount) {
   const treeEl  = document.querySelector('#cdp-variants-tree');
   if (!section || !treeEl) return;
 
-  if (variantCount === 0) {
-    section.classList.add('hidden');
-    treeEl.innerHTML = '';
-    return;
-  }
-
   section.classList.remove('hidden');
   treeEl.innerHTML = '<div class="cvt-loading">Cargando…</div>';
 
   try {
     const data = await getJson(`/scheduler/cards/${cardId}/variants`);
-    treeEl.innerHTML = renderVariantsTreeHTML(data.card, data.variants);
+    const hasVariants = data.variants?.length > 0;
+    const hasMicros   = data.micros?.length > 0;
+
+    if (!hasVariants && !hasMicros) {
+      section.classList.add('hidden');
+      treeEl.innerHTML = '';
+      return;
+    }
+
+    treeEl.innerHTML = renderCardTreeHTML(data.card, data.variants ?? [], data.micros ?? []);
+
     treeEl.querySelectorAll('.cvt-node').forEach((node) => {
       node.querySelector('.cvt-node-head').addEventListener('click', (e) => {
         if (e.target.closest('.cvt-delete-btn')) return;
         node.classList.toggle('cvt-node--expanded');
       });
     });
+
     treeEl.querySelectorAll('.cvt-delete-btn').forEach((btn) => {
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -655,7 +660,6 @@ async function loadVariantsTree(cardId, variantCount) {
         btn.disabled = true;
         try {
           await deleteJson(`/scheduler/cards/${cardId}/variants/${variantId}`);
-          // Reload the tree and update the counter
           const countEl = document.querySelector('#cdp-variants');
           const newCount = Math.max(0, Number(countEl?.textContent || 0) - 1);
           if (countEl) countEl.textContent = newCount;
@@ -671,14 +675,28 @@ async function loadVariantsTree(cardId, variantCount) {
   }
 }
 
-function renderVariantsTreeHTML(card, variants) {
-  const trunc = (s, n) => s.length > n ? s.slice(0, n) + '…' : s;
+function renderCardTreeHTML(card, variants, micros) {
+  const trunc = (s, n) => s && s.length > n ? s.slice(0, n) + '…' : (s || '');
 
-  const nodeHTML = (label, prompt, answer, isRoot, variantId = null) => `
+  const reviewPill = (reviewCount, passCount) => {
+    if (!reviewCount) return '<span class="cvt-review-pill cvt-review-pill--zero">sin repasos</span>';
+    const pct = Math.round((passCount / reviewCount) * 100);
+    const cls = pct >= 70 ? 'good' : pct >= 40 ? 'mid' : 'low';
+    return `<span class="cvt-review-pill cvt-review-pill--${cls}">${reviewCount}× · ${pct}%</span>`;
+  };
+
+  const variantTypePill = (type) => {
+    if (type === 'listening') return '<span class="cvt-type-pill cvt-type-listening">🎧 listening</span>';
+    return '<span class="cvt-type-pill cvt-type-regular">🔀 regular</span>';
+  };
+
+  const nodeHTML = (label, prompt, answer, isRoot, variantId = null, reviewCount = 0, passCount = 0, variantType = null) => `
     <div class="cvt-node${isRoot ? ' cvt-node--root' : ''}">
       <div class="cvt-node-head">
         <span class="cvt-node-badge">${escHtml(label)}</span>
-        <span class="cvt-node-prompt">${escHtml(trunc(prompt, 72))}</span>
+        ${variantType ? variantTypePill(variantType) : ''}
+        <span class="cvt-node-prompt">${escHtml(trunc(prompt, 60))}</span>
+        ${reviewPill(reviewCount, passCount)}
         ${variantId != null ? `<button class="cvt-delete-btn" data-variant-id="${variantId}" title="Eliminar variante" aria-label="Eliminar variante">✕</button>` : ''}
         <span class="cvt-chevron" aria-hidden="true">▾</span>
       </div>
@@ -689,14 +707,48 @@ function renderVariantsTreeHTML(card, variants) {
       </div>
     </div>`;
 
-  const rootHTML = nodeHTML(`#${card.id} · Original`, card.prompt_text, card.expected_answer_text, true);
+  const rootHTML = nodeHTML(
+    `#${card.id} · Original`,
+    card.prompt_text, card.expected_answer_text,
+    true, null,
+    Number(card.review_count || 0), Number(card.pass_count || 0)
+  );
 
   const childrenHTML = variants.map((v, i) => `
     <div class="cvt-branch">
-      ${nodeHTML(`#${v.id} · Variante ${i + 1}`, v.prompt_text, v.expected_answer_text, false, v.id)}
+      ${nodeHTML(
+        `Variante ${i + 1}`,
+        v.prompt_text, v.expected_answer_text,
+        false, v.id,
+        Number(v.review_count || 0), Number(v.pass_count || 0), v.variant_type
+      )}
     </div>`).join('');
 
-  return `<div class="cvt-root">${rootHTML}${variants.length ? `<div class="cvt-children">${childrenHTML}</div>` : ''}</div>`;
+  const microsHTML = micros.length ? `
+    <div class="cvt-micro-section">
+      <div class="cvt-micro-header">
+        <span class="cvt-micro-title">Micro-tarjetas</span>
+        <span class="cvt-micro-counts">
+          ${micros.filter(m => m.status === 'active').length} activa${micros.filter(m => m.status === 'active').length !== 1 ? 's' : ''}
+          · ${micros.filter(m => m.status === 'archived').length} archivada${micros.filter(m => m.status === 'archived').length !== 1 ? 's' : ''}
+        </span>
+      </div>
+      <div class="cvt-micro-list">
+        ${micros.map(m => `
+          <div class="cvt-micro-item cvt-micro-item--${m.status}">
+            <span class="cvt-micro-status-dot" title="${m.status === 'active' ? 'Activa' : 'Archivada'}"></span>
+            <span class="cvt-micro-concept">${escHtml(m.concept)}</span>
+            <span class="cvt-micro-question" title="${escHtml(m.question)}">${escHtml(trunc(m.question, 55))}</span>
+            <span class="cvt-micro-reviews">${Number(m.review_count || 0)}×</span>
+          </div>`).join('')}
+      </div>
+    </div>` : '';
+
+  return `<div class="cvt-root">
+    ${rootHTML}
+    ${variants.length ? `<div class="cvt-children">${childrenHTML}</div>` : ''}
+    ${microsHTML}
+  </div>`;
 }
 
 document.querySelector('#card-detail-close')?.addEventListener('click', hideCardDetail);
@@ -6005,6 +6057,7 @@ async function handleStudyNextCard() {
       response_time_ms:             studyState.responseTimeMs || undefined,
       review_time_ms:               studyState.reviewTimeMs   || undefined,
       user_answer:                  studyState.currentEvalContext?.user_answer_text || '',
+      variant_id:                   item.data.variant_id || undefined,
       variant_prompt_text:          item.data.variant_id ? item.data.prompt_text          : undefined,
       variant_expected_answer_text: item.data.variant_id ? item.data.expected_answer_text : undefined,
       variant_type:                 item.data.variant_id ? item.data.variant_type          : undefined

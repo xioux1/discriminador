@@ -596,6 +596,71 @@ textarea:focus, input[type="text"]:focus, select:focus {
 .cvt-delete-btn:hover { background: var(--fail-fg); color: #fff; }
 .cvt-delete-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
+/* review count pill */
+.cvt-review-pill {
+  font-size: 0.63rem; font-weight: 600; white-space: nowrap; flex-shrink: 0;
+  padding: 1px 7px; border-radius: 20px;
+}
+.cvt-review-pill--zero  { background: var(--surface-alt); color: var(--text-muted); }
+.cvt-review-pill--good  { background: #d4edda; color: #276a38; }
+.cvt-review-pill--mid   { background: #fff3cd; color: #856404; }
+.cvt-review-pill--low   { background: #fde8e8; color: #a33; }
+
+/* variant type pills */
+.cvt-type-pill {
+  font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+  padding: 1px 5px; border-radius: 3px; flex-shrink: 0;
+}
+.cvt-type-regular   { background: #e8f0fe; color: #1967d2; }
+.cvt-type-listening { background: #fce8e6; color: #c5221f; }
+
+/* micro-cards tree section */
+.cvt-micro-section {
+  margin-top: 12px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.cvt-micro-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 10px;
+  background: var(--surface-alt);
+  border-bottom: 1px solid var(--border);
+}
+.cvt-micro-title {
+  font-size: 0.69rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--text-muted);
+}
+.cvt-micro-counts { font-size: 0.69rem; color: var(--text-muted); }
+.cvt-micro-list { display: flex; flex-direction: column; }
+.cvt-micro-item {
+  display: flex; align-items: center; gap: 7px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.78rem;
+}
+.cvt-micro-item:last-child { border-bottom: none; }
+.cvt-micro-item--archived { opacity: 0.5; }
+
+.cvt-micro-status-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+}
+.cvt-micro-item--active   .cvt-micro-status-dot { background: var(--pass-fg, #27ae60); }
+.cvt-micro-item--archived .cvt-micro-status-dot { background: var(--text-muted); }
+
+.cvt-micro-concept {
+  font-weight: 600; color: var(--text); flex-shrink: 0; max-width: 130px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cvt-micro-question {
+  flex: 1; color: var(--text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cvt-micro-reviews {
+  font-size: 0.68rem; font-weight: 600; color: var(--text-muted);
+  flex-shrink: 0; white-space: nowrap;
+}
+
 .dimension-bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; font-size: 0.85rem; }
 .dimension-bar-label { width: 160px; flex-shrink: 0; color: var(--text-muted); }
 .dimension-bar-track { flex: 1; background: #eee; border-radius: 4px; height: 6px; }
