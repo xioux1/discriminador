@@ -42,19 +42,23 @@ plannerRouter.get('/planner/week', async (req, res) => {
          -- down to exclude pause time, since actual_minutes already omits pauses.
          SELECT
            actual_card_count,
-           actual_minutes,
+           COALESCE(
+             actual_minutes,
+             EXTRACT(EPOCH FROM (ended_at - started_at)) / 60.0
+           ) AS actual_minutes,
            started_at,
            (started_at AT TIME ZONE 'America/Argentina/Buenos_Aires') AS local_start,
            (COALESCE(ended_at, started_at + actual_minutes * INTERVAL '1 minute')
              AT TIME ZONE 'America/Argentina/Buenos_Aires') AS local_end,
-           GREATEST(actual_minutes,
+           GREATEST(
+             COALESCE(actual_minutes, 0),
              EXTRACT(EPOCH FROM (
                COALESCE(ended_at, started_at + actual_minutes * INTERVAL '1 minute') - started_at
              )) / 60.0
            ) AS span_minutes
          FROM study_sessions
          WHERE user_id = $1
-           AND actual_minutes IS NOT NULL
+           AND (actual_minutes IS NOT NULL OR ended_at IS NOT NULL)
            AND (started_at AT TIME ZONE 'America/Argentina/Buenos_Aires') >= $2::date
            AND (started_at AT TIME ZONE 'America/Argentina/Buenos_Aires') < ($2::date + INTERVAL '7 day')
        ),
@@ -111,7 +115,7 @@ plannerRouter.get('/planner/week', async (req, res) => {
          COALESCE(s.study_minutes, a.study_minutes) AS study_minutes,
          COALESCE(s.last_event_at, a.last_event_at) AS last_event_at
        FROM activity_slots a
-       LEFT JOIN session_slots s USING (day_index, slot_time)
+       FULL OUTER JOIN session_slots s USING (day_index, slot_time)
        ORDER BY day_index, slot_time`,
       [userId, start]
     );

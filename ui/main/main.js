@@ -4307,6 +4307,7 @@ function _doStartPlannedSession() {
   studyState.results               = [];
   studyState.pendingMicroGeneration = 0;
   studyState.sessionId             = null;
+  studyState.pendingCompletion     = null;
   studyState.sessionStartTime      = Date.now();
   studyState.sessionLimitMs        = briefingState.selectedTime * 60 * 1000;
   studyState.sessionEnergyLevel    = briefingState.selectedEnergy;
@@ -4320,7 +4321,19 @@ function _doStartPlannedSession() {
     planned_minutes:    briefingState.selectedTime,
     planned_card_count: queue.length,
     energy_level:       briefingState.selectedEnergy
-  }).then(d => { studyState.sessionId = d?.session_id ?? null; }).catch(() => {});
+  }).then(d => {
+    studyState.sessionId = d?.session_id ?? null;
+    if (studyState.pendingCompletion && studyState.sessionId) {
+      const { actualMinutes, cardCount } = studyState.pendingCompletion;
+      studyState.pendingCompletion = null;
+      const sid = studyState.sessionId;
+      studyState.sessionId = null;
+      postJson(`/study/sessions/${sid}`, {
+        actual_minutes:    actualMinutes,
+        actual_card_count: cardCount,
+      }, 'PATCH').catch(() => {});
+    }
+  }).catch(() => {});
 
   document.querySelector('#study-briefing').classList.add('hidden');
   document.querySelector('#study-overview').classList.add('hidden');
@@ -4344,19 +4357,29 @@ async function startPlannedSession() {
 }
 
 function recordSessionCompletion(cardCount) {
-  if (!studyState.sessionId || !studyState.sessionStartTime) return;
+  if (!studyState.sessionStartTime) return;
   // Flush any active pause before measuring
   if (studyState.isPaused) {
     studyState.sessionPausedMs += Date.now() - studyState.pausedAt;
     studyState.isPaused = false;
     studyState.pausedAt = 0;
   }
-  const actualMinutes = (Date.now() - studyState.sessionStartTime - studyState.sessionPausedMs) / 60000;
+  const actualMinutes = Math.round(
+    (Date.now() - studyState.sessionStartTime - studyState.sessionPausedMs) / 60000 * 100
+  ) / 100;
+  const resolvedCardCount = cardCount ?? studyState.results.length;
+
+  if (!studyState.sessionId) {
+    // POST hasn't resolved yet — defer PATCH until sessionId arrives
+    studyState.pendingCompletion = { actualMinutes, cardCount: resolvedCardCount };
+    return;
+  }
+
   const sessionId = studyState.sessionId;
   studyState.sessionId = null;
   return postJson(`/study/sessions/${sessionId}`, {
-    actual_minutes:    Math.round(actualMinutes * 100) / 100,
-    actual_card_count: cardCount ?? studyState.results.length
+    actual_minutes:    actualMinutes,
+    actual_card_count: resolvedCardCount,
   }, 'PATCH').catch(() => {});
 }
 

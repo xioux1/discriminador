@@ -13,6 +13,17 @@ studySessionsRouter.post('/study/sessions', async (req, res) => {
   }
 
   try {
+    // Close any orphaned sessions from this user (started in the last 24h, never completed)
+    await dbPool.query(
+      `UPDATE study_sessions
+       SET ended_at = now(),
+           actual_minutes = GREATEST(0, EXTRACT(EPOCH FROM (now() - started_at)) / 60.0)
+       WHERE user_id = $1
+         AND actual_minutes IS NULL
+         AND ended_at IS NULL
+         AND started_at >= now() - INTERVAL '24 hours'`,
+      [userId]
+    );
     const { rows } = await dbPool.query(
       `INSERT INTO study_sessions (user_id, planned_minutes, planned_card_count, energy_level)
        VALUES ($1, $2, $3, $4) RETURNING id`,
