@@ -519,8 +519,8 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
     // Archive all active micro-cards — the student demonstrated full understanding.
     await dbPool.query(
       `UPDATE micro_cards SET status = 'archived', updated_at = now()
-       WHERE parent_card_id = $1 AND status = 'active'`,
-      [cardId]
+       WHERE parent_card_id = $1 AND user_id = $2 AND status = 'active'`,
+      [cardId, userId]
     );
   }
 

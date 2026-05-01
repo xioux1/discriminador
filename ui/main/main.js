@@ -5917,8 +5917,8 @@ async function handleStudyNextCard() {
   const grade  = decision.finalGrade;
   const gaps   = evalResult.missing_concepts ?? [];
 
-  // If the main card passed, remove its pending micro-cards from the queue —
-  // the parent was recalled correctly so the derived concepts stay alive.
+  // If the main card passed, pull its micro-cards out of the session queue.
+  // The backend (POST /scheduler/review) archives them in the DB when isPassGrade.
   if (grade && item.type === 'card') {
     const g = normalizeSuggestedGrade(grade);
     if (g === 'GOOD' || g === 'EASY') {
