@@ -1,6 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk';
 
 const LLM_MODEL = 'claude-haiku-4-5-20251001';
+const VERIFIER_MODEL = 'claude-sonnet-4-6';
+
+const MATH_PATTERN = /ecuaci[oó]n\s+diferencial|factor\s+integrante|integrating\s+factor|d[xy]\s*\/\s*d[xy]|∂|dy\s*=|dx\s*=|\bODE\b/i;
 
 let _client = null;
 function getClient() {
@@ -66,9 +69,64 @@ Generá una variante conservadora.`
     ? `${tables}\n\n${question}`
     : question;
 
+  const variantAnswer = answerMatch[1].trim();
+
+  if (MATH_PATTERN.test(prompt_text + expected_answer_text)) {
+    const { valid, problem } = await verifyMathVariant({
+      originalPrompt:  prompt_text,
+      originalAnswer:  expected_answer_text,
+      variantPrompt:   finalPrompt,
+      variantAnswer
+    });
+
+    if (!valid) {
+      throw new Error(`Variante matemáticamente inconsistente: ${problem}`);
+    }
+  }
+
   return {
     prompt_text:          finalPrompt,
-    expected_answer_text: answerMatch[1].trim()
+    expected_answer_text: variantAnswer
+  };
+}
+
+/**
+ * Verify that a math variant's answer is consistent with its question.
+ * Used when the original card involves differential equations or integrating factors,
+ * since changing numbers may invalidate derived objects (e.g. the factor itself).
+ * Returns { valid, problem } where problem describes the inconsistency if any.
+ */
+async function verifyMathVariant({ originalPrompt, originalAnswer, variantPrompt, variantAnswer }) {
+  const response = await getClient().messages.create({
+    model: VERIFIER_MODEL,
+    max_tokens: 300,
+    temperature: 0,
+    system: `Sos un verificador matemático estricto. Tu única tarea es determinar si la respuesta de una variante es matemáticamente correcta para la pregunta de esa variante.`,
+    messages: [{
+      role: 'user',
+      content: `Tarjeta original:
+Pregunta: ${originalPrompt}
+Respuesta: ${originalAnswer}
+
+Variante generada:
+Pregunta: ${variantPrompt}
+Respuesta: ${variantAnswer}
+
+Verificá si la respuesta de la variante es matemáticamente correcta para la pregunta de la variante. Prestá especial atención a que cualquier objeto matemático mencionado en la respuesta (factor integrante, solución, derivada, etc.) sea efectivamente correcto para la ecuación concreta de la variante — no simplemente copiado de la tarjeta original.
+
+Respondé ÚNICAMENTE en este formato:
+VÁLIDO: <sí o no>
+PROBLEMA: <descripción breve del problema si no es válido, o "ninguno">`
+    }]
+  });
+
+  const text = response.content.find((b) => b.type === 'text')?.text ?? '';
+  const validMatch   = text.match(/VÁLIDO:\s*(s[ií]|no)/i);
+  const problemMatch = text.match(/PROBLEMA:\s*([\s\S]+)/i);
+
+  return {
+    valid:   !validMatch || validMatch[1].toLowerCase().startsWith('s'),
+    problem: problemMatch?.[1]?.trim() ?? ''
   };
 }
 
