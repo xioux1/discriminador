@@ -252,7 +252,7 @@ Reglas estrictas:
 8. Cada bullet de expected_answer debe tener entre 4 y 18 palabras.
 9. Cada expected_answer completo debe tener aproximadamente 20–110 palabras.
 10. No generes variantes duplicadas.
-11. Si varios conceptos se solapan, combinalos en una variante más fuerte.
+11. Cada variante debe evaluar UN SOLO concepto o mecanismo atómico. Si una pregunta requeriría listar 4 o más pasos independientes para contestarse, NO es una variante válida: dividila en varias. Combiná conceptos solo cuando son definitoriamente inseparables (ej: un término y su definición), NO cuando son pasos secuenciales de un procedimiento.
 12. Cada variante debe incluir una rúbrica de corrección con 3 a 6 bullets.
 13. La rúbrica debe indicar elementos mínimos para aprobar, en frases cortas.
 14. No generes más de ${maxVariants} variantes.
@@ -307,7 +307,9 @@ Recordá:
 - Es mejor generar 2 buenas variantes que 5 mediocres.
 - Priorizá claridad y escaneabilidad para revisión rápida y etiquetado.
 - No conviertas cada label automáticamente en una pregunta si hay solapamiento.
-- Priorizá fidelidad al material fuente por encima de completitud aparente.`;
+- Priorizá fidelidad al material fuente por encima de completitud aparente.
+- Señal de error: si una variante tiene 5+ tags distintos en source_concept_ids, casi siempre es una card que debería haberse dividido. Revisá y dividila.
+- Una pregunta tipo "¿cómo se implementa X completo?" que requiere transformación inversa + Jacobiano + integrando + región + integral es 5 cards, no 1.`;
 }
 
 // ==================== validateGeneratedCardDraft ====================
