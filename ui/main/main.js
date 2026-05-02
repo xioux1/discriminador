@@ -6125,7 +6125,9 @@ function finishStudySession() {
   `;
 
   // Record actual session time for calibration (exclude paused time).
-  if (studyState.sessionId && studyState.sessionStartTime) {
+  // Do NOT gate on sessionId: if the POST hasn't resolved yet, recordSessionCompletion
+  // stores the data in pendingCompletion and fires the PATCH once the POST resolves.
+  if (studyState.sessionStartTime) {
     const elapsedMs  = Date.now() - studyState.sessionStartTime - studyState.sessionPausedMs;
     const actualMin  = Math.round(elapsedMs / 60000);
     recordSessionCompletion(results.length)?.then(() => {
