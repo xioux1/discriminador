@@ -118,7 +118,7 @@ plannerRouter.get('/planner/week', async (req, res) => {
          COALESCE(s.day_index,     a.day_index)     AS day_index,
          COALESCE(s.slot_time,     a.slot_time)     AS slot_time,
          COALESCE(s.events_count,  a.events_count)  AS events_count,
-         COALESCE(s.study_minutes, a.study_minutes, 0) AS study_minutes,
+         GREATEST(COALESCE(s.study_minutes, 0), LEAST(COALESCE(a.study_minutes, 0), 30)) AS study_minutes,
          COALESCE(s.last_event_at, a.last_event_at) AS last_event_at
        FROM activity_slots a
        FULL OUTER JOIN session_slots s USING (day_index, slot_time)
