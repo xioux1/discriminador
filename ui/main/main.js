@@ -4956,7 +4956,7 @@ function showStudyCard() {
   const pct = Math.round(((current - 1) / total) * 100);
   document.querySelector('#study-progress-fill').style.width = `${pct}%`;
 
-  const badge = document.querySelector('#study-card-badge');
+  const badgesEl = document.querySelector('#study-card-badges');
   const subjectEl = document.querySelector('#study-card-subject');
   const promptEl = document.querySelector('#study-card-prompt');
   const parentContextEl = document.querySelector('#study-card-parent-context');
@@ -4969,9 +4969,21 @@ function showStudyCard() {
   const listeningBar = document.querySelector('#study-listening-bar');
   const isListeningVariant = item.type === 'card' && item.data.variant_type === 'listening';
 
+  // Build status badges for the top of the card
+  const cardBadges = [];
   if (item.type === 'micro') {
-    badge.textContent = 'Micro-concepto';
-    badge.classList.remove('hidden');
+    cardBadges.push('<span class="study-card-badge study-card-badge--micro">Micro-concepto</span>');
+  } else {
+    if (Number(item.data.review_count) === 0) {
+      cardBadges.push('<span class="study-card-badge study-card-badge--cluster-new">Cluster nuevo</span>');
+    }
+    if (item.data.variant_id != null && Number(item.data.variant_review_count ?? 0) === 0) {
+      cardBadges.push('<span class="study-card-badge study-card-badge--variant-new">Variante nueva</span>');
+    }
+  }
+  badgesEl.innerHTML = cardBadges.join('');
+
+  if (item.type === 'micro') {
     // Show parent card as context so student knows what topic this stems from
     if (item.data.parent_prompt) {
       parentPromptEl.textContent = item.data.parent_prompt;
@@ -5000,11 +5012,7 @@ function showStudyCard() {
       _ttsListeningText = null;
     }
   } else {
-    badge.classList.add('hidden');
     parentContextEl.classList.add('hidden');
-    const hasMicros = parseInt(item.data.active_micro_count) > 0;
-    badge.textContent = hasMicros ? `Advertencia: Conceptos pendientes (${item.data.active_micro_count})` : '';
-    if (hasMicros) badge.classList.remove('hidden');
 
     // A corrupted regular variant for a Chinese card may have hanzi in prompt_text
     // (LLM wrote the question in Chinese instead of Spanish). Treat it the same as

@@ -1114,16 +1114,43 @@ textarea:focus, input[type="text"]:focus, select:focus {
   margin-bottom: 10px;
 }
 
+.study-card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+  min-height: 0;
+}
+.study-card-badges:empty { margin-bottom: 0; }
+
 .study-card-badge {
   display: inline-block;
-  background: var(--review-bg);
-  color: var(--review-fg);
-  border: 1px solid #f0c840;
   border-radius: var(--radius-sm);
   padding: 2px 10px;
   font-size: 0.82rem;
   font-weight: 600;
-  margin-bottom: 12px;
+  border: 1px solid transparent;
+}
+
+/* Micro-concepto — amber */
+.study-card-badge--micro {
+  background: var(--review-bg);
+  color: var(--review-fg);
+  border-color: #f0c840;
+}
+
+/* Cluster nuevo — blue (card visto por primera vez) */
+.study-card-badge--cluster-new {
+  background: var(--easy-bg);
+  color: var(--easy-fg);
+  border-color: rgba(55, 120, 200, 0.35);
+}
+
+/* Variante nueva — teal/green */
+.study-card-badge--variant-new {
+  background: var(--pass-bg);
+  color: var(--pass-fg);
+  border-color: rgba(100, 155, 125, 0.45);
 }
 
 .study-card-parent-context {
@@ -4438,8 +4465,10 @@ textarea.chinese-input {
 [data-theme="dark"] .study-dimension-chip.ok       { border-color: rgba(80, 160,110,0.45); background: rgba(28, 82,50,0.28); color: #60b880; }
 
 /* ── Dark: concept tags / study badges ────────────────────────────────── */
-[data-theme="dark"] .concept-tag,
-[data-theme="dark"] .study-card-badge { border-color: rgba(185, 140, 0, 0.40); }
+[data-theme="dark"] .concept-tag { border-color: rgba(185, 140, 0, 0.40); }
+[data-theme="dark"] .study-card-badge--micro        { border-color: rgba(185, 140, 0, 0.40); }
+[data-theme="dark"] .study-card-badge--cluster-new  { border-color: rgba(55, 120, 200, 0.45); }
+[data-theme="dark"] .study-card-badge--variant-new  { border-color: rgba(100, 155, 125, 0.50); }
 [data-theme="dark"] .socratic-section { border-color: rgba(65, 95, 175, 0.35); }
 [data-theme="dark"] .cdp-notes        { background: rgba(80, 58, 0, 0.25); border-left-color: #b88828; }
 

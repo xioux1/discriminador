@@ -266,7 +266,7 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
       if (parseInt(card.variant_count) === 0) return card;
 
       const vRes = await dbPool.query(
-        `SELECT id, prompt_text, expected_answer_text, variant_type, grading_rubric FROM card_variants WHERE card_id = $1 AND (user_id = $2 OR user_id IS NULL)`,
+        `SELECT id, prompt_text, expected_answer_text, variant_type, grading_rubric, review_count FROM card_variants WHERE card_id = $1 AND (user_id = $2 OR user_id IS NULL)`,
         [card.id, card.user_id]
       );
       // Filter out corrupted regular variants: for Chinese cards, any regular variant
@@ -290,8 +290,9 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
         prompt_text:          v.prompt_text,
         expected_answer_text: v.expected_answer_text,
         grading_rubric:       v.grading_rubric ?? card.grading_rubric ?? [],
-        variant_id:           v.id,
-        variant_type:         v.variant_type
+        variant_id:            v.id,
+        variant_type:          v.variant_type,
+        variant_review_count:  Number(v.review_count ?? 0)
       };
     }));
 
