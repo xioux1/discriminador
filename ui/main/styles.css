@@ -6225,3 +6225,16 @@ textarea.chinese-input {
 }
 
 .ts-chat-input { flex: 1; resize: none; }
+
+.ts-ingest-btn {
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.ts-ingest-status {
+  font-size: 0.75rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
