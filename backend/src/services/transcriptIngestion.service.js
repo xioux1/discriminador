@@ -1,18 +1,29 @@
 import { dbPool } from '../db/client.js';
 import { createEmbedding } from './conceptExtractor.service.js';
 
-const TURN_PATTERN = /^(\d{2}:\d{2}:\d{2})\s+[^:]+:\s+(.+)/;
+const TURN_WITH_TS_PATTERN = /^(\d{2}:\d{2}:\d{2})\s+[^:]+:\s+(.+)/;
+const TURN_NO_TS_PATTERN   = /^[^:]+:\s+(.+)/;
 const CHUNK_MAX_CHARS = 1200;
 
 function parseTranscriptLines(rawText) {
-  return rawText
-    .split('\n')
-    .map(line => {
-      const match = line.match(TURN_PATTERN);
-      if (!match) return null;
-      return { timestamp: match[1], text: match[2].trim() };
-    })
-    .filter(Boolean);
+  const turns = [];
+  let lastTimestamp = null;
+
+  for (const line of rawText.split('\n')) {
+    const withTs = line.match(TURN_WITH_TS_PATTERN);
+    if (withTs) {
+      lastTimestamp = withTs[1];
+      turns.push({ timestamp: lastTimestamp, text: withTs[2].trim() });
+      continue;
+    }
+
+    const withoutTs = line.match(TURN_NO_TS_PATTERN);
+    if (withoutTs) {
+      turns.push({ timestamp: lastTimestamp, text: withoutTs[1].trim() });
+    }
+  }
+
+  return turns;
 }
 
 function buildChunks(turns) {
