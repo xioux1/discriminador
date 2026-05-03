@@ -29,9 +29,11 @@ import conceptsRouter from './concepts.routes.js';
 import clusterConceptsRouter from './cluster-concepts.routes.js';
 import rankClustersRouter from './rank-clusters.routes.js';
 import generateCardsRouter from './generate-cards.routes.js';
+import transcriptsRouter from './transcripts.routes.js';
 
 const router = Router();
 
+router.use(transcriptsRouter);
 router.use(conceptsRouter);
 router.use(clusterConceptsRouter);
 router.use(rankClustersRouter);
