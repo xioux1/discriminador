@@ -665,7 +665,7 @@ async function loadVariantsTree(cardId, variantCount) {
           if (countEl) countEl.textContent = newCount;
           await loadVariantsTree(cardId, newCount);
         } catch (err) {
-          alert(`Error al eliminar: ${err.message}`);
+          showToast(`Error al eliminar variante: ${err.message}`, 'error');
           btn.disabled = false;
         }
       });
@@ -767,11 +767,9 @@ async function loadBrowserCards() {
 }
 
 async function runBrowserBatchAction(action) {
-  const feedback = document.querySelector('#browser-feedback');
   const ids = [...browserState.selected];
   if (!ids.length) {
-    feedback.textContent = 'Seleccioná al menos una tarjeta.';
-    feedback.className = 'feedback error';
+    showToast('Seleccioná al menos una tarjeta.', 'error');
     return;
   }
 
@@ -784,8 +782,7 @@ async function runBrowserBatchAction(action) {
     const subject = window.prompt(`Reasignar ${ids.length} tarjeta(s) a la materia:`, '');
     if (subject === null) return;
     if (!subject.trim()) {
-      feedback.textContent = 'Ingresá el nombre de la materia destino.';
-      feedback.className = 'feedback error';
+      showToast('Ingresá el nombre de la materia destino.', 'error');
       return;
     }
     payload.subject = subject.trim();
@@ -799,12 +796,10 @@ async function runBrowserBatchAction(action) {
 
   try {
     const result = await postJson('/cards/batch', payload);
-    feedback.textContent = `Acción aplicada en ${result.updated ?? 0} tarjeta(s).`;
-    feedback.className = 'feedback success';
+    showToast(`Acción aplicada en ${result.updated ?? 0} tarjeta(s).`, 'success');
     await loadBrowserCards();
   } catch (err) {
-    feedback.textContent = `Error: ${err.message}`;
-    feedback.className = 'feedback error';
+    showToast(`Error: ${err.message}`, 'error');
   }
 }
 
@@ -813,8 +808,6 @@ function initBrowserTab() {
   const subjectEl = document.querySelector('#browser-filter-subject');
   const statusEl = document.querySelector('#browser-filter-status');
   const selectAllEl = document.querySelector('#browser-select-all');
-  const feedback = document.querySelector('#browser-feedback');
-  feedback.textContent = '';
 
   [textEl, subjectEl, statusEl].forEach((el) => {
     el?.addEventListener('input', renderBrowserTable);
@@ -853,8 +846,7 @@ function initBrowserTab() {
   document.querySelector('#browser-reformat-latex-btn')?.addEventListener('click', openReformatLatexModal);
 
   loadBrowserCards().catch((err) => {
-    feedback.textContent = `Error al cargar navegador: ${err.message}`;
-    feedback.className = 'feedback error';
+    showToast(`Error al cargar navegador: ${err.message}`, 'error');
   });
 
   initAiExtraction();
@@ -1071,16 +1063,13 @@ function initAiExtraction() {
   saveBtn?.addEventListener('click', async () => {
     const toSave = candidates.filter(c => c._selected && c.status !== 'rejected');
     if (!toSave.length) {
-      saveFeedback.textContent = 'No hay tarjetas seleccionadas para guardar.';
-      saveFeedback.className = 'feedback error';
+      showToast('No hay tarjetas seleccionadas para guardar.', 'error');
       return;
     }
 
     const subject = document.querySelector('#ai-extract-subject')?.value?.trim() || null;
 
     saveBtn.disabled = true;
-    saveFeedback.textContent = 'Guardando…';
-    saveFeedback.className = 'feedback';
 
     try {
       const payload = {
@@ -1095,8 +1084,7 @@ function initAiExtraction() {
       };
 
       const result = await postJson('/cards/import-reviewed', payload);
-      saveFeedback.textContent = `${result.inserted} tarjeta(s) guardada(s) correctamente.`;
-      saveFeedback.className = 'feedback success';
+      showToast(`${result.inserted} tarjeta(s) guardada(s) correctamente.`, 'success');
 
       // Remove saved cards from the list
       const savedQuestions = new Set(toSave.map(c => c.question));
@@ -1106,13 +1094,8 @@ function initAiExtraction() {
 
       loadBrowserCards().catch(() => {});
       loadStudyOverview().catch(() => {});
-
-      setTimeout(() => {
-        if (saveFeedback.textContent.includes('guardada')) saveFeedback.textContent = '';
-      }, 3000);
     } catch (err) {
-      saveFeedback.textContent = `Error: ${err.message}`;
-      saveFeedback.className = 'feedback error';
+      showToast(`Error: ${err.message}`, 'error');
     } finally {
       saveBtn.disabled = false;
     }
@@ -1165,8 +1148,7 @@ async function openDetectRedundantModal() {
   } catch (err) {
     intro.textContent = '';
     list.innerHTML = '';
-    feedback.textContent = `Error al detectar redundantes: ${err.message}`;
-    feedback.className = 'feedback error';
+    showToast(`Error al detectar redundantes: ${err.message}`, 'error');
   } finally {
     btn.disabled = false;
   }
@@ -1221,14 +1203,16 @@ async function handleMergeCluster(btn, feedback) {
       primary_card_id: primaryId,
       secondary_card_ids: secondaryIds
     });
-    statusEl.textContent = `✓ ${result.merged} tarjeta(s) mergeadas como variante`;
+    statusEl.textContent = `✓ ${result.merged} mergeada(s)`;
     statusEl.className = 'redundant-merge-status success';
     cluster.classList.add('redundant-cluster--done');
+    showToast(`${result.merged} tarjeta(s) mergeadas como variante.`, 'success');
     loadBrowserCards().catch(() => {});
   } catch (err) {
     btn.disabled = false;
-    statusEl.textContent = `Error: ${err.message}`;
+    statusEl.textContent = `Error`;
     statusEl.className = 'redundant-merge-status error';
+    showToast(`Error al mergear: ${err.message}`, 'error');
   }
 }
 
@@ -1247,13 +1231,11 @@ document.querySelector('#reformat-modal-overlay')?.addEventListener('click', (e)
 async function openReformatLatexModal() {
   const selectedIds = getSelectedCardIds();
   if (!selectedIds.length) {
-    const feedback = document.querySelector('#browser-feedback');
-    if (feedback) { feedback.textContent = 'Seleccioná al menos una tarjeta para reformatear.'; feedback.className = 'feedback error'; }
+    showToast('Seleccioná al menos una tarjeta para reformatear.', 'error');
     return;
   }
   if (selectedIds.length > 30) {
-    const feedback = document.querySelector('#browser-feedback');
-    if (feedback) { feedback.textContent = 'Máximo 30 tarjetas por vez.'; feedback.className = 'feedback error'; }
+    showToast('Máximo 30 tarjetas por vez.', 'error');
     return;
   }
 
@@ -1265,8 +1247,7 @@ async function openReformatLatexModal() {
 
   overlay.classList.remove('hidden');
   resultList.innerHTML = '<div style="color:var(--text-muted);padding:12px 0;font-size:0.88rem">Analizando con IA… esto puede tardar unos segundos.</div>';
-  feedback.textContent = '';
-  feedback.className = 'feedback';
+  if (feedback) { feedback.textContent = ''; feedback.className = 'feedback'; }
   saveBtn.classList.add('hidden');
   reformatBtn.disabled = true;
 
@@ -1316,26 +1297,21 @@ async function openReformatLatexModal() {
 
   } catch (err) {
     resultList.innerHTML = '';
-    feedback.textContent = `Error: ${err.message}`;
-    feedback.className = 'feedback error';
+    showToast(`Error al reformatear: ${err.message}`, 'error');
   } finally {
     reformatBtn.disabled = false;
   }
 
   saveBtn.onclick = async () => {
     saveBtn.disabled = true;
-    feedback.textContent = 'Guardando…';
-    feedback.className = 'feedback';
     try {
       const idsToSave = results.filter(r => r.reformatted && r.reformatted !== r.original).map(r => r.id);
       await postJson('/cards/reformat-prompt', { card_ids: idsToSave, save: true });
-      feedback.textContent = `✓ ${idsToSave.length} tarjeta(s) actualizadas. El texto original quedó guardado en las notas.`;
-      feedback.className = 'feedback success';
+      showToast(`${idsToSave.length} tarjeta(s) actualizadas. El texto original quedó en las notas.`, 'success');
       saveBtn.classList.add('hidden');
       loadBrowserCards().catch(() => {});
     } catch (err) {
-      feedback.textContent = `Error al guardar: ${err.message}`;
-      feedback.className = 'feedback error';
+      showToast(`Error al guardar: ${err.message}`, 'error');
       saveBtn.disabled = false;
     }
   };
@@ -1771,9 +1747,9 @@ async function loadDashboard() {
             const result = await postJson('/cards/rename-subject', { old_subject: oldSubject, new_subject: newSubject.trim() });
             const n = result.updated ?? 0;
             if (n > 0) loadDashboard();
-            else alert('No se encontraron tarjetas para renombrar.');
+            else showToast('No se encontraron tarjetas para renombrar.', 'error');
           } catch (err) {
-            alert(`Error: ${err.message}`);
+            showToast(`Error al renombrar: ${err.message}`, 'error');
           }
         }
       });
@@ -2829,11 +2805,35 @@ function setDecisionButtonsDisabled(disabled) {
   });
 }
 
+function showToast(message, type = 'info', duration) {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+  const icons = { success: '✓', error: '✕', info: 'ℹ' };
+  const ms = duration ?? (type === 'error' ? 5000 : 3200);
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.innerHTML =
+    `<i class="toast-icon">${icons[type] ?? icons.info}</i>` +
+    `<span class="toast-msg">${message}</span>` +
+    `<button class="toast-close" aria-label="Cerrar">×</button>`;
+  const dismiss = () => {
+    if (!toast.isConnected) return;
+    toast.classList.add('toast-exit');
+    toast.addEventListener('animationend', () => toast.remove(), { once: true });
+  };
+  toast.querySelector('.toast-close').addEventListener('click', dismiss);
+  container.appendChild(toast);
+  const timer = setTimeout(dismiss, ms);
+  toast.addEventListener('mouseenter', () => clearTimeout(timer));
+  toast.addEventListener('mouseleave', () => setTimeout(dismiss, 1200));
+}
+
 function setFeedback(message, type = '') {
-  feedbackEl.textContent = message;
-  feedbackEl.className = 'feedback';
-  if (type) {
-    feedbackEl.classList.add(type);
+  if (!message) return;
+  if (type === 'success' || type === 'error') {
+    showToast(message, type);
+  } else {
+    showToast(message, 'info');
   }
 }
 
@@ -3750,17 +3750,15 @@ resultContent.addEventListener('click', async (event) => {
 
   uiState.savingDecision = true;
   setDecisionButtonsDisabled(true);
-  setFeedback('Guardando decisión final...');
 
   try {
     await postJson(DECISION_ENDPOINT, decisionPayload);
     removeManualCase(uiState.lastResult?.evaluation_id);
     loadSubjects();
     resetForm();
-    formFeedbackEl.textContent = 'Decisión guardada. Podés continuar con la siguiente.';
-    formFeedbackEl.className = 'feedback success';
+    showToast('Decisión guardada. Podés continuar con la siguiente.', 'success');
   } catch (error) {
-    setFeedback(`Error al guardar la decisión: ${error.message}`, 'error');
+    showToast(`Error al guardar la decisión: ${error.message}`, 'error');
   } finally {
     uiState.savingDecision = false;
     setDecisionButtonsDisabled(false);
@@ -4543,38 +4541,32 @@ async function saveNewCard() {
   const subject  = document.querySelector('#card-subject').value.trim();
   const prompt   = document.querySelector('#card-prompt').value.trim();
   const expected = document.querySelector('#card-expected').value.trim();
-  const feedback = document.querySelector('#card-save-feedback');
   const saveBtn = document.querySelector('#card-save-btn');
 
   if (!prompt || !expected) {
-    feedback.textContent = 'La pregunta y la respuesta esperada son obligatorias.';
-    feedback.style.color = '#c00';
+    showToast('La pregunta y la respuesta esperada son obligatorias.', 'error');
     return;
   }
 
   try {
     saveNewCard.isSaving = true;
     if (saveBtn) saveBtn.disabled = true;
-    feedback.textContent = 'Guardando tarjeta...';
-    feedback.style.color = '#666';
     const createdCard = await postJson('/scheduler/cards', { subject, prompt_text: prompt, expected_answer_text: expected });
     const nextReview = createdCard?.next_review_at ? new Date(createdCard.next_review_at) : null;
     const now = new Date();
     const releaseDay = nextReview ? nextReview.toDateString() : now.toDateString();
-    feedback.textContent = releaseDay !== now.toDateString()
+    const msg = releaseDay !== now.toDateString()
       ? `Tarjeta guardada. Se libera el ${nextReview.toLocaleDateString('es-AR')}.`
       : 'Tarjeta guardada.';
-    feedback.style.color = '#4a7';
-    document.querySelector('#card-subject').value = subject; // keep subject for next card
+    showToast(msg, 'success');
+    document.querySelector('#card-subject').value = subject;
     document.querySelector('#card-prompt').value = '';
     document.querySelector('#card-expected').value = '';
     document.querySelector('#card-prompt').focus();
     loadBrowserCards().catch(() => {});
     loadStudyOverview().catch(() => {});
-    setTimeout(() => { feedback.textContent = ''; }, 2500);
   } catch (err) {
-    feedback.textContent = `Error: ${err.message}`;
-    feedback.style.color = '#c00';
+    showToast(`Error: ${err.message}`, 'error');
   } finally {
     saveNewCard.isSaving = false;
     if (saveBtn) saveBtn.disabled = false;
@@ -4792,11 +4784,9 @@ function showGratitudeModal(onConfirm) {
   async function handleSubmit() {
     const text = input.value.trim();
     if (text.length < 3) {
-      errorEl.textContent = 'Escribí al menos unas palabras por las que estés agradecido.';
-      errorEl.classList.remove('hidden');
+      showToast('Escribí al menos unas palabras por las que estés agradecido.', 'error');
       return;
     }
-    errorEl.classList.add('hidden');
     submitBtn.disabled = true;
     submitBtn.textContent = 'Enviando...';
 
@@ -4809,8 +4799,7 @@ function showGratitudeModal(onConfirm) {
       submitBtn.classList.add('hidden');
       startBtn.classList.remove('hidden');
     } catch (err) {
-      errorEl.textContent = `Error al guardar: ${err.message}`;
-      errorEl.classList.remove('hidden');
+      showToast(`Error al guardar: ${err.message}`, 'error');
       submitBtn.disabled = false;
       submitBtn.textContent = 'Continuar';
     }
@@ -5414,19 +5403,19 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
   if (normalizedPrompt.length < minRules.prompt_text) {
     evalBtn.disabled = false;
     evalBtn.textContent = 'Evaluar';
-    alert('No se puede evaluar: la consigna de esta tarjeta es demasiado corta o está vacía.');
+    showToast('No se puede evaluar: la consigna de esta tarjeta es demasiado corta o está vacía.', 'error');
     return;
   }
   if (answer.length < minRules.user_answer_text) {
     evalBtn.disabled = false;
     evalBtn.textContent = 'Evaluar';
-    alert('Escribí tu respuesta antes de evaluar.');
+    showToast('Escribí tu respuesta antes de evaluar.', 'error');
     return;
   }
   if (normalizedExpected.length < minRules.expected_answer_text) {
     evalBtn.disabled = false;
     evalBtn.textContent = 'Evaluar';
-    alert('No se puede evaluar esta tarjeta porque no tiene respuesta esperada cargada.');
+    showToast('No se puede evaluar esta tarjeta porque no tiene respuesta esperada cargada.', 'error');
     return;
   }
 
@@ -5714,7 +5703,7 @@ async function deleteCurrentStudyCardFromFront() {
   const reason = (window.prompt('Motivo para eliminar la tarjeta (mínimo 5 caracteres):', 'Eliminada desde el frente de la tarjeta') || '').trim();
   if (!reason) return;
   if (reason.length < 5) {
-    alert('Ingresá un motivo de al menos 5 caracteres.');
+    showToast('Ingresá un motivo de al menos 5 caracteres.', 'error');
     return;
   }
 
@@ -5733,7 +5722,7 @@ async function deleteCurrentStudyCardFromFront() {
     persistStudySession();
     showStudyCard();
   } catch (err) {
-    alert(`No se pudo eliminar la tarjeta: ${err.message}`);
+    showToast(`No se pudo eliminar la tarjeta: ${err.message}`, 'error');
   } finally {
     if (deleteBtn) {
       deleteBtn.disabled = false;
@@ -5777,40 +5766,29 @@ if (studyDecisionBlock) {
     const action = event.target?.dataset?.studyAction;
     if (!action || !studyState.currentEvalResult || !studyState.currentEvalContext) return;
 
-    const feedbackEl = document.querySelector('#study-decision-feedback');
     const reasonEl = document.querySelector('#study-correction-reason');
     const reason = reasonEl?.value || '';
     const isArchiveAction = action === 'archive-card';
 
     studyDecisionBlock.querySelectorAll('button').forEach((btn) => { btn.disabled = true; });
-    if (feedbackEl) {
-      feedbackEl.textContent = isArchiveAction ? 'Archivando tarjeta...' : 'Guardando firma...';
-      feedbackEl.className = 'feedback';
-    }
 
     try {
       const { finalGrade } = await persistStudyDecision(action, reason);
-      if (feedbackEl) {
-        feedbackEl.textContent = isArchiveAction
-          ? 'Tarjeta archivada. Ya podés continuar.'
-          : (finalGrade
-            ? `Firma guardada (${finalGrade}). Ya podés continuar.`
-            : 'Firma guardada como duda. Ya podés continuar.');
-        feedbackEl.className = 'feedback success';
-      }
       const nextBtn = document.querySelector('#study-next-btn');
       if (nextBtn) nextBtn.disabled = false;
       if (!isArchiveAction && action === 'accept') {
-        if (feedbackEl) feedbackEl.textContent = 'Firma guardada. Pasando a la siguiente tarjeta...';
         await handleStudyNextCard();
+      } else {
+        const msg = isArchiveAction
+          ? 'Tarjeta archivada.'
+          : (finalGrade ? `Firma guardada (${finalGrade}).` : 'Firma guardada como duda.');
+        showToast(msg, 'success');
       }
     } catch (err) {
-      if (feedbackEl) {
-        feedbackEl.textContent = isArchiveAction
-          ? `No se pudo archivar la tarjeta: ${err.message}`
-          : `No se pudo guardar la firma: ${err.message}`;
-        feedbackEl.className = 'feedback error';
-      }
+      const msg = isArchiveAction
+        ? `No se pudo archivar la tarjeta: ${err.message}`
+        : `No se pudo guardar la firma: ${err.message}`;
+      showToast(msg, 'error');
       studyDecisionBlock.querySelectorAll('button').forEach((btn) => { btn.disabled = false; });
     }
   });
@@ -5819,12 +5797,10 @@ if (studyDecisionBlock) {
 document.querySelector('#study-variant-btn').addEventListener('click', async () => {
   const item = studyState.queue[studyState.index];
   const variantBtn  = document.querySelector('#study-variant-btn');
-  const variantFb   = document.querySelector('#study-variant-feedback');
   if (!item || item.type !== 'card') return;
 
   variantBtn.disabled = true;
   variantBtn.textContent = 'Generando...';
-  variantFb.classList.add('hidden');
 
   const variantPreview = document.querySelector('#study-variant-preview');
   const variantPreviewQ = document.querySelector('#study-variant-preview-q');
@@ -5833,9 +5809,7 @@ document.querySelector('#study-variant-btn').addEventListener('click', async () 
   try {
     const resp = await postJson(`/scheduler/cards/${item.data.id}/variant`, {});
     variantBtn.classList.add('hidden');
-    variantFb.textContent = 'Variante guardada.';
-    variantFb.style.color = 'var(--pass-fg)';
-    variantFb.classList.remove('hidden');
+    showToast('Variante guardada.', 'success');
     if (resp?.variant) {
       variantPreviewQ.textContent = resp.variant.prompt_text || '';
       variantPreviewA.textContent = resp.variant.expected_answer_text || '';
@@ -5844,9 +5818,7 @@ document.querySelector('#study-variant-btn').addEventListener('click', async () 
   } catch (err) {
     variantBtn.disabled = false;
     variantBtn.textContent = '+ Guardar variante';
-    variantFb.textContent = `Error: ${err.message}`;
-    variantFb.style.color = 'var(--fail-fg)';
-    variantFb.classList.remove('hidden');
+    showToast(`Error al guardar variante: ${err.message}`, 'error');
   }
 });
 
@@ -5856,21 +5828,15 @@ document.querySelector('#study-delete-variant-btn').addEventListener('click', as
   if (!confirm('¿Eliminar esta variante? La tarjeta original no se borra.')) return;
 
   const btn = document.querySelector('#study-delete-variant-btn');
-  const fb  = document.querySelector('#study-variant-feedback');
   btn.disabled = true;
-  fb.classList.add('hidden');
 
   try {
     await deleteJson(`/scheduler/cards/${item.data.id}/variants/${item.data.variant_id}`);
     btn.classList.add('hidden');
-    fb.textContent = 'Variante eliminada.';
-    fb.style.color = 'var(--pass-fg)';
-    fb.classList.remove('hidden');
+    showToast('Variante eliminada.', 'success');
   } catch (err) {
     btn.disabled = false;
-    fb.textContent = `Error: ${err.message}`;
-    fb.style.color = 'var(--fail-fg)';
-    fb.classList.remove('hidden');
+    showToast(`Error al eliminar variante: ${err.message}`, 'error');
   }
 });
 
@@ -5945,19 +5911,12 @@ async function handleStudyNextCard() {
   let decision = studyState.currentDecision;
   if (!evalResult) { advanceStudyCard(); return; }
   if (!decision) {
-    const feedbackEl = document.querySelector('#study-decision-feedback');
     try {
       const { finalGrade } = await persistStudyDecision('accept');
       decision = studyState.currentDecision;
-      if (feedbackEl) {
-        feedbackEl.textContent = `Firma automática guardada (${finalGrade}).`;
-        feedbackEl.className = 'feedback success';
-      }
+      showToast(`Firma automática guardada (${finalGrade}).`, 'success');
     } catch (err) {
-      if (feedbackEl) {
-        feedbackEl.textContent = `No se pudo guardar la firma automática: ${err.message}`;
-        feedbackEl.className = 'feedback error';
-      }
+      showToast(`No se pudo guardar la firma automática: ${err.message}`, 'error');
       return;
     }
   }
@@ -7379,7 +7338,7 @@ function initActivityHistoryModal() {
       Auth.handleRefreshToken(res);
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
-        alert(d.message || `Error ${res.status}`);
+        showToast(d.message || `Error ${res.status}`, 'error');
         return;
       }
       liEl.remove();
@@ -7389,7 +7348,7 @@ function initActivityHistoryModal() {
       }
       if (plannerState.weekStart) loadPlannerWeek(plannerState.weekStart);
     } catch (err) {
-      alert(err.message);
+      showToast(err.message, 'error');
     }
   }
 }
@@ -7562,7 +7521,7 @@ async function loadAgenda() {
             const reason = (window.prompt('Motivo para eliminar la tarjeta (mínimo 5 caracteres):', 'Eliminada desde sección estudio') || '').trim();
             if (!reason) return;
             if (reason.length < 5) {
-              alert('Ingresá un motivo de al menos 5 caracteres.');
+              showToast('Ingresá un motivo de al menos 5 caracteres.', 'error');
               return;
             }
 
@@ -7572,7 +7531,7 @@ async function loadAgenda() {
               await postJson(`/cards/${card.id}/archive`, { reason }, 'PATCH');
               await loadAgenda();
             } catch (err) {
-              alert(`No se pudo eliminar la tarjeta: ${err.message}`);
+              showToast(`No se pudo eliminar la tarjeta: ${err.message}`, 'error');
               deleteBtn.disabled = false;
               deleteBtn.textContent = 'Eliminar';
             }
@@ -7656,9 +7615,6 @@ document.querySelector('#curriculum-auto-variants-enabled')?.addEventListener('c
 async function openCurriculumModal(subject) {
   document.querySelector('#curriculum-modal-title').textContent = `Configurar: ${subject}`;
   document.querySelector('#curriculum-modal').classList.remove('hidden');
-  document.querySelector('#curriculum-save-feedback').textContent = '';
-  document.querySelector('#exam-add-feedback').textContent = '';
-  document.querySelector('#exam-date-feedback').textContent = '';
 
   // Load existing config + class notes + sql standard
   try {
@@ -7721,13 +7677,11 @@ document.querySelector('.curriculum-modal-backdrop').addEventListener('click', (
 
 document.querySelector('#curriculum-save-btn').addEventListener('click', async () => {
   const subject = document.querySelector('#curriculum-modal').dataset.subject;
-  const fb = document.querySelector('#curriculum-save-feedback');
   const rawDailyLimit = document.querySelector('#curriculum-daily-new-limit').value.trim();
   const parsedDailyLimit = rawDailyLimit === '' ? null : parseInt(rawDailyLimit, 10);
 
   if (rawDailyLimit !== '' && (!Number.isFinite(parsedDailyLimit) || parsedDailyLimit < 0)) {
-    fb.textContent = 'El límite diario debe ser un entero mayor o igual a 0.';
-    fb.style.color = 'var(--fail-fg)';
+    showToast('El límite diario debe ser un entero mayor o igual a 0.', 'error');
     return;
   }
 
@@ -7735,8 +7689,7 @@ document.querySelector('#curriculum-save-btn').addEventListener('click', async (
   const parsedMicroLimit = rawMicroLimit === '' ? null : parseInt(rawMicroLimit, 10);
 
   if (rawMicroLimit !== '' && (!Number.isFinite(parsedMicroLimit) || parsedMicroLimit < 0)) {
-    fb.textContent = 'El límite de micro-tarjetas debe ser un entero mayor o igual a 0.';
-    fb.style.color = 'var(--fail-fg)';
+    showToast('El límite de micro-tarjetas debe ser un entero mayor o igual a 0.', 'error');
     return;
   }
 
@@ -7748,8 +7701,7 @@ document.querySelector('#curriculum-save-btn').addEventListener('click', async (
     const rawMaxVariants   = document.querySelector('#curriculum-max-variants-per-card').value.trim();
     const parsedMaxVariants = rawMaxVariants === '' ? null : parseInt(rawMaxVariants, 10);
     if (rawMaxVariants !== '' && (!Number.isFinite(parsedMaxVariants) || parsedMaxVariants < 1)) {
-      fb.textContent = 'El máximo de variantes debe ser un entero mayor o igual a 1.';
-      fb.style.color = 'var(--fail-fg)';
+      showToast('El máximo de variantes debe ser un entero mayor o igual a 1.', 'error');
       return;
     }
     const retFloorRaw = parseInt(document.querySelector('#curriculum-retention-floor').value, 10);
@@ -7765,11 +7717,9 @@ document.querySelector('#curriculum-save-btn').addEventListener('click', async (
       max_variants_per_card:        parsedMaxVariants,
       retention_floor:              retFloorVal
     }, 'PUT');
-    fb.textContent = 'Guardado.';
-    fb.style.color = 'var(--pass-fg)';
+    showToast('Configuración guardada.', 'success');
   } catch (err) {
-    fb.textContent = `Error: ${err.message}`;
-    fb.style.color = 'var(--fail-fg)';
+    showToast(`Error: ${err.message}`, 'error');
   }
 });
 
@@ -7778,29 +7728,23 @@ document.querySelector('#curriculum-save-btn').addEventListener('click', async (
 document.querySelector('#github-import-btn').addEventListener('click', async () => {
   const subject = document.querySelector('#curriculum-modal').dataset.subject;
   const url     = (document.querySelector('#github-repo-url').value || '').trim();
-  const fb      = document.querySelector('#github-import-feedback');
   const btn     = document.querySelector('#github-import-btn');
 
   if (!url) {
-    fb.textContent = 'Pegá una URL de GitHub.';
-    fb.style.color = 'var(--fail-fg)';
+    showToast('Pegá una URL de GitHub.', 'error');
     return;
   }
 
   btn.disabled = true;
   btn.textContent = 'Importando...';
-  fb.textContent = 'Leyendo repositorio y generando tarjetas (puede tardar 15-20s)...';
-  fb.style.color = 'var(--text-muted)';
 
   try {
     const data = await postJson('/import/github', { repo_url: url, subject });
     const n = data.cards_created;
-    fb.textContent = `${n} tarjeta${n !== 1 ? 's' : ''} creada${n !== 1 ? 's' : ''}. Aparecerán en tu cola de estudio.`;
-    fb.style.color = 'var(--pass-fg)';
+    showToast(`${n} tarjeta${n !== 1 ? 's' : ''} creada${n !== 1 ? 's' : ''}. Aparecerán en tu cola de estudio.`, 'success');
     document.querySelector('#github-repo-url').value = '';
   } catch (err) {
-    fb.textContent = `Error: ${err.message}`;
-    fb.style.color = 'var(--fail-fg)';
+    showToast(`Error al importar: ${err.message}`, 'error');
   } finally {
     btn.disabled = false;
     btn.textContent = 'Importar';
@@ -7811,29 +7755,26 @@ document.querySelector('#github-import-btn').addEventListener('click', async () 
 
 document.querySelector('#exam-date-add-btn').addEventListener('click', async () => {
   const subject = document.querySelector('#curriculum-modal').dataset.subject;
-  const fb    = document.querySelector('#exam-date-feedback');
   const label = document.querySelector('#new-exam-label').value.trim();
   const date  = document.querySelector('#new-exam-date').value;
   const type  = document.querySelector('#new-exam-type').value;
   const scope = parseInt(document.querySelector('#new-exam-scope').value, 10);
 
-  if (!label) { fb.textContent = 'El nombre del examen es obligatorio.'; fb.style.color = 'var(--fail-fg)'; return; }
-  if (!date)  { fb.textContent = 'La fecha es obligatoria.'; fb.style.color = 'var(--fail-fg)'; return; }
-  if (!scope || scope < 1 || scope > 100) { fb.textContent = 'El % debe ser entre 1 y 100.'; fb.style.color = 'var(--fail-fg)'; return; }
+  if (!label) { showToast('El nombre del examen es obligatorio.', 'error'); return; }
+  if (!date)  { showToast('La fecha es obligatoria.', 'error'); return; }
+  if (!scope || scope < 1 || scope > 100) { showToast('El % debe ser entre 1 y 100.', 'error'); return; }
 
   try {
     const data = await postJson(`/curriculum/${encodeURIComponent(subject)}/exam-dates`, {
       label, exam_date: date, exam_type: type, scope_pct: scope
     });
-    fb.textContent = 'Fecha agregada.';
-    fb.style.color = 'var(--pass-fg)';
+    showToast('Fecha de examen agregada.', 'success');
     document.querySelector('#new-exam-label').value = '';
     document.querySelector('#new-exam-date').value  = '';
     document.querySelector('#new-exam-scope').value = '50';
     renderExamDatesList(data.exam_dates, subject);
   } catch (err) {
-    fb.textContent = `Error: ${err.message}`;
-    fb.style.color = 'var(--fail-fg)';
+    showToast(`Error: ${err.message}`, 'error');
   }
 });
 
@@ -7878,9 +7819,8 @@ function renderExamDatesList(examDates, subject) {
 
 document.querySelector('#exam-add-btn').addEventListener('click', async () => {
   const subject = document.querySelector('#curriculum-modal').dataset.subject;
-  const fb = document.querySelector('#exam-add-feedback');
   const content = document.querySelector('#exam-content').value.trim();
-  if (!content) { fb.textContent = 'El contenido es obligatorio.'; fb.style.color = 'var(--fail-fg)'; return; }
+  if (!content) { showToast('El contenido es obligatorio.', 'error'); return; }
   try {
     const data = await postJson(`/curriculum/${encodeURIComponent(subject)}/exams`, {
       year: parseInt(document.querySelector('#exam-year').value) || null,
@@ -7888,15 +7828,13 @@ document.querySelector('#exam-add-btn').addEventListener('click', async () => {
       exam_type: document.querySelector('#exam-type-select').value,
       content_text: content
     });
-    fb.textContent = 'Examen agregado.';
-    fb.style.color = 'var(--pass-fg)';
+    showToast('Examen de referencia agregado.', 'success');
     document.querySelector('#exam-content').value = '';
     document.querySelector('#exam-year').value = '';
     document.querySelector('#exam-label').value = '';
     renderExamsList(data.exams, subject);
   } catch (err) {
-    fb.textContent = `Error: ${err.message}`;
-    fb.style.color = 'var(--fail-fg)';
+    showToast(`Error: ${err.message}`, 'error');
   }
 });
 
@@ -8110,28 +8048,26 @@ async function loadSqlStandard(subject) {
 
   rewire('sql-standard-extract-btn', async () => {
     const input = document.querySelector('#sql-standard-input')?.value?.trim();
-    if (!input) { if (fb) { fb.textContent = 'Pegá material del profesor antes de extraer.'; fb.style.color = 'var(--fail-fg)'; } return; }
-    if (fb) { fb.textContent = 'Extrayendo estándar...'; fb.style.color = 'var(--text-muted)'; }
+    if (!input) { showToast('Pegá material del profesor antes de extraer.', 'error'); return; }
     try {
       const data = await postJson(`/sql-standard/${encodeURIComponent(subject)}/extract`, { transcript_text: input });
-      if (fb) { fb.textContent = `Estándar extraído: ${data.standard.rules.length} reglas.${data.summary ? ' ' + data.summary : ''}`; fb.style.color = 'var(--pass-fg)'; }
+      showToast(`Estándar extraído: ${data.standard.rules.length} reglas.${data.summary ? ' ' + data.summary : ''}`, 'success');
       statusEl.textContent = `Estándar activo: ${data.standard.rules.length} regla${data.standard.rules.length !== 1 ? 's' : ''}`;
       statusEl.style.color = 'var(--pass-fg)';
       renderSqlRules(data.standard.rules);
     } catch (err) {
-      if (fb) { fb.textContent = 'Error al extraer estándar.'; fb.style.color = 'var(--fail-fg)'; }
+      showToast('Error al extraer estándar.', 'error');
     }
   });
 
   rewire('sql-standard-validate-btn', async () => {
-    if (fb) { fb.textContent = 'Validando tarjetas SQL...'; fb.style.color = 'var(--text-muted)'; }
     try {
       const data = await postJson(`/sql-standard/${encodeURIComponent(subject)}/validate-batch`, {});
-      if (fb) { fb.textContent = `Validadas: ${data.validated} · Omitidas (sin SQL): ${data.skipped} · Errores: ${data.errors}`; fb.style.color = 'var(--pass-fg)'; }
+      showToast(`Validadas: ${data.validated} · Omitidas: ${data.skipped} · Errores: ${data.errors}`, 'success');
       const resultsData = await getJson(`/sql-standard/${encodeURIComponent(subject)}/results`);
       renderSqlValidationResults(resultsData.results || []);
     } catch (err) {
-      if (fb) { fb.textContent = err.message?.includes('estándar') ? 'Primero extraé un estándar.' : 'Error al validar tarjetas.'; fb.style.color = 'var(--fail-fg)'; }
+      showToast(err.message?.includes('estándar') ? 'Primero extraé un estándar.' : 'Error al validar tarjetas.', 'error');
     }
   });
 
@@ -8143,9 +8079,9 @@ async function loadSqlStandard(subject) {
       statusEl.style.color = 'var(--text-muted)';
       renderSqlRules([]);
       document.querySelector('#sql-standard-results').innerHTML = '';
-      if (fb) { fb.textContent = ''; }
+      showToast('Estándar eliminado.', 'success');
     } catch (_e) {
-      if (fb) { fb.textContent = 'Error al eliminar estándar.'; fb.style.color = 'var(--fail-fg)'; }
+      showToast('Error al eliminar estándar.', 'error');
     }
   });
 }
@@ -9112,7 +9048,7 @@ function initDocumentsTab() {
 
       await loadDocuments();
     } catch (err) {
-      alert(`Error al guardar materia: ${err.message}`);
+      showToast(`Error al guardar materia: ${err.message}`, 'error');
     } finally {
       saveBtn.disabled = false;
     }
@@ -9380,7 +9316,7 @@ function initDocumentsTab() {
       item.remove();
       if (!listEl.querySelector('.docs-document-item')) emptyEl.classList.remove('hidden');
     } catch (err) {
-      alert(`Error al eliminar: ${err.message}`);
+      showToast(`Error al eliminar: ${err.message}`, 'error');
     }
   }
 
@@ -9904,17 +9840,14 @@ function initDocumentsTab() {
   createBtn.addEventListener('click', async () => {
     const text = textInput.value.trim();
     if (!text) {
-      feedback.textContent = 'El texto no puede estar vacío.';
-      feedback.className = 'feedback error';
+      showToast('El texto no puede estar vacío.', 'error');
       return;
     }
 
     createBtn.disabled = true;
-    feedback.textContent = '';
-    feedback.className = 'feedback';
 
     try {
-      const data = await postJson('/api/documents', {
+      await postJson('/api/documents', {
         text,
         original_filename: nameInput.value.trim() || null,
         subject: subjectInput.value.trim() || null,
@@ -9923,15 +9856,11 @@ function initDocumentsTab() {
       textInput.value = '';
       nameInput.value = '';
       subjectInput.value = '';
-      feedback.textContent = 'Documento creado.';
-      feedback.className = 'feedback success';
+      showToast('Documento creado.', 'success');
 
       await loadDocuments();
-
-      setTimeout(() => { if (feedback.textContent === 'Documento creado.') feedback.textContent = ''; }, 3000);
     } catch (err) {
-      feedback.textContent = err.message;
-      feedback.className = 'feedback error';
+      showToast(err.message, 'error');
     } finally {
       createBtn.disabled = false;
     }
