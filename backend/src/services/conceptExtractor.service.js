@@ -290,7 +290,7 @@ async function callAnthropicConceptExtraction(chunkText) {
     .trim();
 }
 
-async function createEmbedding(text) {
+export async function createEmbedding(text) {
   const model = process.env.CONCEPT_EMBEDDING_MODEL || 'text-embedding-3-small';
   const response = await getOpenAIClient().embeddings.create({ model, input: text });
   return response.data[0].embedding;
