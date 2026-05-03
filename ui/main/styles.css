@@ -6050,3 +6050,178 @@ textarea.chinese-input {
   border-color: rgba(255,255,255,0.12);
   color: #d0d8e8;
 }
+
+/* ── Transcript semantic search tab ─────────────────────────────────────── */
+
+.ts-docs-card { margin-bottom: 16px; }
+
+.ts-docs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ts-doc-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm, 8px);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  user-select: none;
+}
+.ts-doc-item:hover { border-color: var(--primary); background: var(--surface); }
+.ts-doc-item--active {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+.ts-doc-name {
+  font-size: var(--fs-sm, 0.875rem);
+  font-weight: 500;
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ts-doc-subject {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.ts-doc-active-badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  padding: 2px 7px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+.ts-chat-wrap { display: flex; flex-direction: column; gap: 12px; }
+
+.ts-chat-header {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  font-size: var(--fs-sm, 0.875rem);
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 10px;
+}
+
+.ts-chat-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 120px;
+  max-height: 480px;
+  overflow-y: auto;
+}
+
+.ts-bubble {
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  max-width: 80%;
+  word-break: break-word;
+}
+
+.ts-bubble--user {
+  background: var(--primary);
+  color: #fff;
+  align-self: flex-end;
+  border-bottom-right-radius: 3px;
+}
+
+.ts-bubble--thinking {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  align-self: flex-start;
+  font-style: italic;
+  opacity: 0.7;
+  border-bottom-left-radius: 3px;
+}
+
+.ts-bubble--empty,
+.ts-bubble--error {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  align-self: flex-start;
+  font-style: italic;
+  border-bottom-left-radius: 3px;
+}
+.ts-bubble--error { border-color: var(--fail-fg, #e53e3e); color: var(--fail-fg, #e53e3e); }
+
+.ts-results-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-self: stretch;
+}
+
+.ts-result-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 8px);
+  padding: 10px 14px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.ts-result-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.ts-result-ts {
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary);
+  padding: 2px 8px;
+  border-radius: 20px;
+}
+
+.ts-result-sim {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.ts-result-content {
+  margin: 0 0 8px;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.ts-result-bar {
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    var(--primary) var(--pct),
+    var(--border) var(--pct)
+  );
+}
+
+.ts-chat-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.ts-chat-input { flex: 1; resize: none; }

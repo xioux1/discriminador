@@ -144,9 +144,10 @@ getJson('/settings').then((s) => { Object.assign(userSettings, s); }).catch((err
     planner:   document.querySelector('#tab-planner'),
     progress:  document.querySelector('#tab-progress'),
     settings:  document.querySelector('#tab-settings'),
-    documents: document.querySelector('#tab-documents'),
+    documents:   document.querySelector('#tab-documents'),
+    transcripts: document.querySelector('#tab-transcripts'),
   };
-  let loaded = { dashboard: false, study: false, explore: false, browser: false, planner: false, progress: false, settings: false, documents: false };
+  let loaded = { dashboard: false, study: false, explore: false, browser: false, planner: false, progress: false, settings: false, documents: false, transcripts: false };
 
   function showTab(tab) {
     Object.values(tabSections).forEach((s) => s.classList.add('hidden'));
@@ -193,6 +194,8 @@ getJson('/settings').then((s) => { Object.assign(userSettings, s); }).catch((err
         loaded.settings = true; initSettingsTab();
       } else if (tab === 'documents' && !loaded.documents) {
         loaded.documents = true; initDocumentsTab();
+      } else if (tab === 'transcripts' && !loaded.transcripts) {
+        loaded.transcripts = true; initTranscriptsTab();
       }
 
       // Dashboard "Estudiar" subject button → skip briefing, go straight to the
@@ -9867,4 +9870,162 @@ function initDocumentsTab() {
   });
 
   loadDocuments();
+}
+
+// ── Transcript semantic search tab ────────────────────────────────────────────
+
+function initTranscriptsTab() {
+  let selectedDocId   = null;
+
+  const docsLoading = document.querySelector('#ts-docs-loading');
+  const docsEmpty   = document.querySelector('#ts-docs-empty');
+  const docsList    = document.querySelector('#ts-docs-list');
+  const chatWrap    = document.querySelector('#ts-chat-wrap');
+  const selectedLbl = document.querySelector('#ts-selected-doc-name');
+  const messagesEl  = document.querySelector('#ts-chat-messages');
+  const inputEl     = document.querySelector('#ts-chat-input');
+  const sendBtn     = document.querySelector('#ts-chat-send');
+  const topKEl      = document.querySelector('#ts-top-k');
+
+  // ── Load document list ──────────────────────────────────────────────────────
+  async function loadDocs() {
+    try {
+      const data = await getJson('/api/documents');
+      docsLoading.classList.add('hidden');
+      const docs = Array.isArray(data) ? data : (data.documents || []);
+      if (!docs.length) { docsEmpty.classList.remove('hidden'); return; }
+
+      docs.forEach(doc => {
+        const el = document.createElement('div');
+        el.className = 'ts-doc-item';
+        el.dataset.docId = doc.id;
+        el.innerHTML = `
+          <span class="ts-doc-name">${escHtml(doc.original_filename || doc.name || 'Sin nombre')}</span>
+          ${doc.subject ? `<span class="ts-doc-subject">${escHtml(doc.subject)}</span>` : ''}
+          <span class="ts-doc-active-badge hidden">Activo</span>
+        `;
+        el.addEventListener('click', () => selectDoc(doc.id, doc.original_filename || doc.name || 'Sin nombre', el));
+        docsList.appendChild(el);
+      });
+    } catch {
+      docsLoading.textContent = 'Error al cargar documentos.';
+    }
+  }
+
+  // ── Select a document ───────────────────────────────────────────────────────
+  function selectDoc(id, name, el) {
+    docsList.querySelectorAll('.ts-doc-item').forEach(item => {
+      item.classList.remove('ts-doc-item--active');
+      item.querySelector('.ts-doc-active-badge').classList.add('hidden');
+    });
+    el.classList.add('ts-doc-item--active');
+    el.querySelector('.ts-doc-active-badge').classList.remove('hidden');
+
+    selectedDocId = id;
+    selectedLbl.textContent = name;
+    messagesEl.innerHTML = '';
+    chatWrap.classList.remove('hidden');
+    inputEl.focus();
+  }
+
+  // ── Render helpers ──────────────────────────────────────────────────────────
+  function appendUserBubble(text) {
+    const el = document.createElement('div');
+    el.className = 'ts-bubble ts-bubble--user';
+    el.textContent = text;
+    messagesEl.appendChild(el);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function appendThinking() {
+    const el = document.createElement('div');
+    el.className = 'ts-bubble ts-bubble--thinking';
+    el.textContent = 'Buscando…';
+    messagesEl.appendChild(el);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    return el;
+  }
+
+  function appendResults(results) {
+    if (!results.length) {
+      const el = document.createElement('div');
+      el.className = 'ts-bubble ts-bubble--empty';
+      el.textContent = 'No se encontraron fragmentos relevantes.';
+      messagesEl.appendChild(el);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      return;
+    }
+
+    const wrap = document.createElement('div');
+    wrap.className = 'ts-results-wrap';
+
+    results.forEach(r => {
+      const pct = Math.round((r.similarity || 0) * 100);
+      const tsLabel = r.timestamp_start
+        ? (r.timestamp_end && r.timestamp_end !== r.timestamp_start
+            ? `${r.timestamp_start} → ${r.timestamp_end}`
+            : r.timestamp_start)
+        : 'Sin timestamp';
+
+      const card = document.createElement('div');
+      card.className = 'ts-result-card';
+      card.innerHTML = `
+        <div class="ts-result-meta">
+          <span class="ts-result-ts">${escHtml(tsLabel)}</span>
+          <span class="ts-result-sim">${pct}% similitud</span>
+        </div>
+        <p class="ts-result-content">${escHtml(r.content)}</p>
+        <div class="ts-result-bar" style="--pct:${pct}%"></div>
+      `;
+      wrap.appendChild(card);
+    });
+
+    messagesEl.appendChild(wrap);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function appendError(msg) {
+    const el = document.createElement('div');
+    el.className = 'ts-bubble ts-bubble--error';
+    el.textContent = msg;
+    messagesEl.appendChild(el);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  // ── Search ──────────────────────────────────────────────────────────────────
+  async function doSearch() {
+    const query = inputEl.value.trim();
+    if (!query || !selectedDocId) return;
+
+    inputEl.value = '';
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+
+    appendUserBubble(query);
+    const thinking = appendThinking();
+
+    try {
+      const results = await postJson('/api/transcripts/search', {
+        query,
+        document_id: selectedDocId,
+        top_k: Number(topKEl.value),
+      });
+      thinking.remove();
+      appendResults(Array.isArray(results) ? results : []);
+    } catch (err) {
+      thinking.remove();
+      appendError(`Error al buscar: ${err.message}`);
+    } finally {
+      sendBtn.disabled = false;
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  sendBtn.addEventListener('click', doSearch);
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSearch(); }
+  });
+
+  loadDocs();
 }
