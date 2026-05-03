@@ -9896,19 +9896,52 @@ function initTranscriptsTab() {
       if (!docs.length) { docsEmpty.classList.remove('hidden'); return; }
 
       docs.forEach(doc => {
+        const docName = doc.original_filename || doc.name || 'Sin nombre';
         const el = document.createElement('div');
         el.className = 'ts-doc-item';
         el.dataset.docId = doc.id;
         el.innerHTML = `
-          <span class="ts-doc-name">${escHtml(doc.original_filename || doc.name || 'Sin nombre')}</span>
+          <span class="ts-doc-name">${escHtml(docName)}</span>
           ${doc.subject ? `<span class="ts-doc-subject">${escHtml(doc.subject)}</span>` : ''}
           <span class="ts-doc-active-badge hidden">Activo</span>
+          <button class="ts-ingest-btn btn-ghost" title="Indexar transcript para búsqueda semántica">Indexar</button>
+          <span class="ts-ingest-status"></span>
         `;
-        el.addEventListener('click', () => selectDoc(doc.id, doc.original_filename || doc.name || 'Sin nombre', el));
+        el.querySelector('.ts-ingest-btn').addEventListener('click', e => {
+          e.stopPropagation();
+          ingestDoc(doc.id, el);
+        });
+        el.addEventListener('click', () => selectDoc(doc.id, docName, el));
         docsList.appendChild(el);
       });
     } catch {
       docsLoading.textContent = 'Error al cargar documentos.';
+    }
+  }
+
+  // ── Ingest a document's transcript ─────────────────────────────────────────
+  async function ingestDoc(id, rowEl) {
+    const btn    = rowEl.querySelector('.ts-ingest-btn');
+    const status = rowEl.querySelector('.ts-ingest-status');
+    btn.disabled = true;
+    status.textContent = 'Indexando…';
+    status.style.color = 'var(--text-muted)';
+    try {
+      const content = await getJson(`/api/documents/${id}/content`);
+      const raw = content.text || content.document_text || '';
+      if (!raw.trim()) {
+        status.textContent = 'Sin texto para indexar.';
+        status.style.color = 'var(--fail-fg, #e53e3e)';
+        btn.disabled = false;
+        return;
+      }
+      const result = await postJson('/api/transcripts/ingest', { document_id: id, raw_text: raw });
+      status.textContent = `✓ ${result.chunks_created} chunks`;
+      status.style.color = 'var(--pass-fg, #38a169)';
+    } catch (err) {
+      status.textContent = `Error: ${err.message}`;
+      status.style.color = 'var(--fail-fg, #e53e3e)';
+      btn.disabled = false;
     }
   }
 
