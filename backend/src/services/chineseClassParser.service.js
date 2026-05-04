@@ -35,7 +35,7 @@ export async function extractConceptsForChineseDocument(documentId) {
 
   const msg = await getClient().messages.create({
     model: EXTRACT_MODEL,
-    max_tokens: 4096,
+    max_tokens: 16000,
     messages: [{
       role: 'user',
       content: `Analizá estos apuntes de clase de chino mandarín y extraé todos los conceptos de vocabulario y gramática.
@@ -120,7 +120,7 @@ export async function clusterConceptsForChineseDocument(documentId) {
 
   const msg = await getClient().messages.create({
     model: CLUSTER_MODEL,
-    max_tokens: 2048,
+    max_tokens: 8192,
     messages: [{
       role: 'user',
       content: `Estos son conceptos de vocabulario chino extraídos de apuntes de clase. Agrupalos en clusters donde cada cluster represente UNA palabra base (mismo hanzi) con todos sus usos y patrones gramaticales.
