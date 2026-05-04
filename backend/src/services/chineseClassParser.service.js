@@ -65,42 +65,39 @@ Devolvé un objeto JSON con una clave "concepts" cuyo valor es un array de objet
     output_config: {
       format: {
         type: 'json_schema',
-        json_schema: {
-          name: 'concept_extraction',
-          schema: {
-            type: 'object',
-            properties: {
-              concepts: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    hanzi:      { anyOf: [{ type: 'string' }, { type: 'null' }] },
-                    pinyin:     { type: 'string' },
-                    label:      { type: 'string' },
-                    definition: { type: 'string' },
-                    evidence:   { anyOf: [{ type: 'string' }, { type: 'null' }] },
-                    examples: {
-                      type: 'array',
-                      items: {
-                        type: 'object',
-                        properties: {
-                          hanzi:   { type: 'string' },
-                          pinyin:  { anyOf: [{ type: 'string' }, { type: 'null' }] },
-                          es:      { anyOf: [{ type: 'string' }, { type: 'null' }] },
-                        },
-                        additionalProperties: false,
+        schema: {
+          type: 'object',
+          properties: {
+            concepts: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  hanzi:      { anyOf: [{ type: 'string' }, { type: 'null' }] },
+                  pinyin:     { type: 'string' },
+                  label:      { type: 'string' },
+                  definition: { type: 'string' },
+                  evidence:   { anyOf: [{ type: 'string' }, { type: 'null' }] },
+                  examples: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        hanzi:   { type: 'string' },
+                        pinyin:  { anyOf: [{ type: 'string' }, { type: 'null' }] },
+                        es:      { anyOf: [{ type: 'string' }, { type: 'null' }] },
                       },
+                      additionalProperties: false,
                     },
                   },
-                  additionalProperties: false,
-                  required: ['pinyin', 'label', 'definition'],
                 },
+                additionalProperties: false,
+                required: ['pinyin', 'label', 'definition'],
               },
             },
-            additionalProperties: false,
-            required: ['concepts'],
           },
+          additionalProperties: false,
+          required: ['concepts'],
         },
       },
     },
@@ -179,28 +176,25 @@ Devolvé un objeto JSON con una clave "clusters" cuyo valor es un array de objet
     output_config: {
       format: {
         type: 'json_schema',
-        json_schema: {
-          name: 'concept_clustering',
-          schema: {
-            type: 'object',
-            properties: {
-              clusters: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    name:        { type: 'string' },
-                    definition:  { type: 'string' },
-                    concept_ids: { type: 'array', items: { type: 'string' } },
-                  },
-                  additionalProperties: false,
-                  required: ['name', 'definition', 'concept_ids'],
+        schema: {
+          type: 'object',
+          properties: {
+            clusters: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  name:        { type: 'string' },
+                  definition:  { type: 'string' },
+                  concept_ids: { type: 'array', items: { type: 'string' } },
                 },
+                additionalProperties: false,
+                required: ['name', 'definition', 'concept_ids'],
               },
             },
-            additionalProperties: false,
-            required: ['clusters'],
           },
+          additionalProperties: false,
+          required: ['clusters'],
         },
       },
     },
