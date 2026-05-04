@@ -4833,7 +4833,22 @@ async function _doStartStudySession() {
   const micros = (data.micro_cards ?? []).map((m) => ({ type: 'micro', data: m }));
   const cards  = (data.cards ?? []).map((c) => ({ type: 'card', data: c }));
 
-  studyState.queue              = [...cards, ...micros];
+  const scoreItem = (item) => {
+    const d = item.data;
+    const isNew = (d.review_count ?? 0) === 0;
+    const passRate = d.review_count ? (d.pass_count ?? 0) / d.review_count : null;
+    return { isNew, passRate };
+  };
+  const combined = [...cards, ...micros];
+  combined.sort((a, b) => {
+    const sa = scoreItem(a), sb = scoreItem(b);
+    if (sa.isNew !== sb.isNew) return sa.isNew ? -1 : 1;
+    if (sa.passRate === null && sb.passRate === null) return 0;
+    if (sa.passRate === null) return -1;
+    if (sb.passRate === null) return 1;
+    return sa.passRate - sb.passRate;
+  });
+  studyState.queue              = combined;
   studyState.index              = 0;
   studyState.results            = [];
   studyState.pendingMicroGeneration = 0;
