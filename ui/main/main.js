@@ -3131,6 +3131,7 @@ let _ttsAudio = null;                    // keep reference to stop previous play
 let _ttsCurrentText = null;             // Hanzi text for the post-eval TTS bar
 let _ttsListeningText = null;           // Hanzi text for the listening variant prompt bar
 const _ttsCache   = new Map();           // text → base64 audio string (session cache)
+let _voiceFrontAudio = null;
 const _pinyinCache = new Map();          // text → pinyin string (session cache)
 
 /**
@@ -4611,7 +4612,8 @@ const studyState = {
   checkErrorLabels: [], // conceptual error labels to show in result block
   voiceMode: false,
   voicePhase: 'idle',
-  audioPlaying: false
+  audioPlaying: false,
+  isAdvancingCard: false
 };
 
 function maybeSendBreakNudge() {
@@ -4954,6 +4956,12 @@ function summarizeJustificationLine(result = {}) {
 }
 
 function showStudyCard() {
+  if (_voiceFrontAudio) {
+    try { _voiceFrontAudio.pause(); } catch (_) {}
+    _voiceFrontAudio = null;
+  }
+  studyState.audioPlaying = false;
+  studyState.voicePhase = 'idle';
   const item = studyState.queue[studyState.index];
   if (!item) { finishStudySession(); return; }
 
@@ -5708,12 +5716,14 @@ async function playStudyVoiceFront(text) {
     if (!audioB64) return;
     const url = `data:audio/mpeg;base64,${audioB64}`;
     const audio = new Audio(url);
+    _voiceFrontAudio = audio;
     await new Promise((resolve) => {
       audio.onended = resolve;
       audio.onerror = resolve;
       audio.play().catch(resolve);
     });
   } finally {
+    _voiceFrontAudio = null;
     studyState.audioPlaying = false;
     studyState.voicePhase = 'idle';
   }
@@ -5957,7 +5967,10 @@ if (studyAdvancedToggleBtn && studyAdvancedPanel) {
 }
 
 async function handleStudyNextCard() {
+  if (studyState.isAdvancingCard) return;
   if (studyState.voiceMode && studyState.audioPlaying) return;
+  studyState.isAdvancingCard = true;
+  try {
   const item   = studyState.queue[studyState.index];
   const evalResult = studyState.currentEvalResult;
   let decision = studyState.currentDecision;
@@ -6099,6 +6112,9 @@ async function handleStudyNextCard() {
   }
 
   advanceStudyCard();
+  } finally {
+    studyState.isAdvancingCard = false;
+  }
 }
 
 document.querySelector('#study-back-btn')?.addEventListener('click', () => {
