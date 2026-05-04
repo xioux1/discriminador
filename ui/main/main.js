@@ -4886,6 +4886,16 @@ async function _doStartStudySession() {
     return;
   }
 
+  // Pre-fetch TTS for the first two items so the first card plays without delay.
+  if (studyState.voiceMode) {
+    [studyState.queue[0], studyState.queue[1]].forEach((it) => {
+      if (!it) return;
+      prefetchVoiceFront(getStudyPromptText(it));
+      const exp = getStudyExpectedText(it);
+      if (exp) prefetchVoiceFront(exp);
+    });
+  }
+
   postJson('/study/sessions', {
     planned_minutes:    0,
     planned_card_count: studyState.queue.length,
@@ -5717,6 +5727,14 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       document.querySelector('#study-doubt-input').value = '';
     }
     if (studyState.voiceMode) {
+      // Stop any prompt audio still playing so the audioPlaying guard in
+      // handleStudyNextCard doesn't silently abort the auto-advance.
+      if (_voiceFrontAudio) {
+        try { _voiceFrontAudio.pause(); } catch (_) {}
+        _voiceFrontAudio = null;
+      }
+      studyState.audioPlaying = false;
+      studyState.voicePhase = 'idle';
       if (!['GOOD', 'EASY'].includes(grade)) {
         // Read the expected answer aloud so the student hears the correction before advancing.
         await playStudyVoiceFront(expected_answer_text).catch(() => {});
