@@ -86,6 +86,28 @@ export async function generateChineseCardDraftForCluster(clusterId, options = {}
     expected_answer: ex.hanzi,
   }));
 
+  // Fetch all vocabulary (hanzi words) already present in this document so generated
+  // sentences are constrained to known words, avoiding forcing the user to process
+  // vocabulary they haven't learned yet.
+  let documentVocabList = [];
+  try {
+    const { rows: docConcepts } = await dbPool.query(
+      `SELECT c.source_chunk
+       FROM concepts c
+       JOIN clusters cl ON cl.id = c.cluster_id
+       WHERE cl.document_id = $1 AND c.source_chunk IS NOT NULL`,
+      [cluster.document_id]
+    );
+    for (const row of docConcepts) {
+      try {
+        const parsed = JSON.parse(row.source_chunk || '{}');
+        if (parsed.hanzi) documentVocabList.push(parsed.hanzi);
+      } catch { /* skip malformed */ }
+    }
+  } catch (err) {
+    logger.warn('[chineseCardGen] Could not fetch document vocab list', { clusterId, error: err.message });
+  }
+
   // Ask Haiku to: (a) translate untranslated examples, (b) generate extra variants if needed
   let llmVariants = [];
   const wordLabel = hanzi ? `${hanzi} (${pinyin})` : pinyin;
@@ -97,8 +119,12 @@ export async function generateChineseCardDraftForCluster(clusterId, options = {}
       ? `\nOraciones del material SIN traducción (traducí estas al español):\n${untranslated.map(u => `- ${u.hanzi}`).join('\n')}`
       : '';
 
+    const vocabConstraint = documentVocabList.length > 0
+      ? `\nVOCABULARIO PERMITIDO: podés usar ÚNICAMENTE estas palabras del material (más partículas y verbos básicos como 是,的,我,你,他,在,有,不,吗,了,也,都,很,和): ${documentVocabList.join('、')}.\nNO uses ningún otro sustantivo, verbo o adjetivo fuera de esta lista.`
+      : `\nUsá vocabulario extremadamente básico (pronombres, ser/estar, tener, números). Sin sustantivos desconocidos.`;
+
     const extraBlock = needExtra > 0
-      ? `\nAdemás, generá ${needExtra} oraciones NUEVAS en chino (con traducción al español) usando esta misma palabra. Vocabulario simple, máximo 8 caracteres por oración.`
+      ? `\nAdemás, generá ${needExtra} oraciones NUEVAS en chino (con traducción al español) usando esta misma palabra. Máximo 8 caracteres por oración.${vocabConstraint}`
       : '';
 
     if (untranslatedBlock || extraBlock) {
