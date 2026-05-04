@@ -32,13 +32,20 @@ ttsRouter.post('/tts', llmRateLimit, async (req, res) => {
     return res.status(503).json({ error: 'service_unavailable', message: 'OPENAI_API_KEY not configured.' });
   }
 
-  const { text } = req.body || {};
+  const { text, lang, mode } = req.body || {};
   if (!text || typeof text !== 'string' || text.trim().length === 0) {
     return res.status(422).json({ error: 'validation_error', message: 'text es obligatorio.' });
   }
 
   const input = text.trim();
-  const hash  = createHash('sha256').update(input).digest('hex');
+  const normalizedLang = typeof lang === 'string' ? lang.trim().toLowerCase() : '';
+  const normalizedMode = typeof mode === 'string' ? mode.trim().toLowerCase() : '';
+  const useChineseVoice = normalizedMode === 'chinese'
+    || normalizedLang === 'zh'
+    || normalizedLang === 'zh-cn'
+    || normalizedLang === 'zh-hans';
+  const voiceProfile = useChineseVoice ? 'zh' : 'es';
+  const hash  = createHash('sha256').update(`${voiceProfile}::${input}`).digest('hex');
 
   // 1. Check persistent cache
   try {
@@ -61,15 +68,18 @@ ttsRouter.post('/tts', llmRateLimit, async (req, res) => {
     // Non-fatal: fall through to generation
   }
 
-  // 2. Generate via OpenAI — gpt-4o-mini-tts supports `instructions` to
-  //    explicitly request standard Mandarin (普通话) pronunciation.
+  const ttsInstructions = useChineseVoice
+    ? '以标准普通话朗读以下中文文本，发音清晰准确。Read the following Chinese text in standard Mandarin (普通话) with clear and accurate pronunciation.'
+    : 'Leé el siguiente texto en español neutro latinoamericano, con pronunciación clara y natural.';
+
+  // 2. Generate via OpenAI.
   let audioB64;
   try {
     const response = await getClient().audio.speech.create({
       model: 'gpt-4o-mini-tts',
       voice: 'nova',
       input,
-      instructions: '以标准普通话朗读以下中文文本，发音清晰准确。Read the following Chinese text in standard Mandarin (普通话) with clear and accurate pronunciation.',
+      instructions: ttsInstructions,
       response_format: 'mp3',
     });
 
