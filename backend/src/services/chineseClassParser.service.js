@@ -35,7 +35,7 @@ export async function extractConceptsForChineseDocument(documentId) {
 
   const msg = await getClient().messages.create({
     model: EXTRACT_MODEL,
-    max_tokens: 4096,
+    max_tokens: 16000,
     messages: [{
       role: 'user',
       content: `Analizá estos apuntes de clase de chino mandarín y extraé todos los conceptos de vocabulario y gramática.
@@ -52,22 +52,62 @@ REGLAS:
 Apuntes:
 ${text}
 
-Devolvé SOLO un array JSON válido con objetos:
+Devolvé un objeto JSON con una clave "concepts" cuyo valor es un array de objetos con esta estructura:
 {
-  "hanzi": "字" | null,
+  "hanzi": "字" o null,
   "pinyin": "pīnyīn",
   "label": "字 (pīnyīn) – descripción del uso",
   "definition": "Explicación en español de este uso específico.",
-  "evidence": "我送你。→ Te acompaño.",
+  "evidence": "我送你。→ Te acompaño." o null,
   "examples": [{"hanzi": "oración", "pinyin": "pīnyīn o null", "es": "traducción o null"}]
-}
-
-Sin markdown, sin texto extra.`,
+}`,
     }],
+    output_config: {
+      format: {
+        type: 'json_schema',
+        json_schema: {
+          name: 'concept_extraction',
+          schema: {
+            type: 'object',
+            properties: {
+              concepts: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    hanzi:      { anyOf: [{ type: 'string' }, { type: 'null' }] },
+                    pinyin:     { type: 'string' },
+                    label:      { type: 'string' },
+                    definition: { type: 'string' },
+                    evidence:   { anyOf: [{ type: 'string' }, { type: 'null' }] },
+                    examples: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          hanzi:   { type: 'string' },
+                          pinyin:  { anyOf: [{ type: 'string' }, { type: 'null' }] },
+                          es:      { anyOf: [{ type: 'string' }, { type: 'null' }] },
+                        },
+                        additionalProperties: false,
+                      },
+                    },
+                  },
+                  additionalProperties: false,
+                  required: ['pinyin', 'label', 'definition'],
+                },
+              },
+            },
+            additionalProperties: false,
+            required: ['concepts'],
+          },
+        },
+      },
+    },
   });
 
   const raw = msg.content?.[0]?.text?.trim() || '';
-  const entries = parseJsonArray(raw, 'concept extraction');
+  const entries = JSON.parse(raw).concepts || [];
 
   logger.info('[chineseParser] Concepts parsed', { documentId, count: entries.length });
 
@@ -120,7 +160,7 @@ export async function clusterConceptsForChineseDocument(documentId) {
 
   const msg = await getClient().messages.create({
     model: CLUSTER_MODEL,
-    max_tokens: 2048,
+    max_tokens: 8192,
     messages: [{
       role: 'user',
       content: `Estos son conceptos de vocabulario chino extraídos de apuntes de clase. Agrupalos en clusters donde cada cluster represente UNA palabra base (mismo hanzi) con todos sus usos y patrones gramaticales.
@@ -131,17 +171,43 @@ Si dos palabras distintas comparten el mismo hanzi pero con significados muy dif
 Conceptos:
 ${conceptList}
 
-Para cada cluster devolvé:
+Devolvé un objeto JSON con una clave "clusters" cuyo valor es un array de objetos con esta estructura:
 - "name": "汉字 (pīnyīn)" — nombre corto del cluster
 - "definition": una oración en español que resuma todos los usos agrupados
-- "concept_ids": array con los IDs de los conceptos que pertenecen a este cluster
-
-Devolvé SOLO un array JSON válido. Sin markdown.`,
+- "concept_ids": array con los IDs de los conceptos que pertenecen a este cluster`,
     }],
+    output_config: {
+      format: {
+        type: 'json_schema',
+        json_schema: {
+          name: 'concept_clustering',
+          schema: {
+            type: 'object',
+            properties: {
+              clusters: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    name:        { type: 'string' },
+                    definition:  { type: 'string' },
+                    concept_ids: { type: 'array', items: { type: 'string' } },
+                  },
+                  additionalProperties: false,
+                  required: ['name', 'definition', 'concept_ids'],
+                },
+              },
+            },
+            additionalProperties: false,
+            required: ['clusters'],
+          },
+        },
+      },
+    },
   });
 
   const raw = msg.content?.[0]?.text?.trim() || '';
-  const clusterDefs = parseJsonArray(raw, 'clustering');
+  const clusterDefs = JSON.parse(raw).clusters || [];
 
   // Remove previous clusters
   await dbPool.query('DELETE FROM clusters WHERE document_id = $1', [documentId]);
