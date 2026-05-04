@@ -5011,9 +5011,14 @@ function showStudyCard() {
         if (dictBtn && !dictBtn.disabled && dictBtn.offsetParent !== null) dictBtn.click();
       })
       .catch(() => {});
-    // Pre-fetch TTS for the next card in the background while the student answers this one.
+    // Pre-fetch TTS for the next card (prompt + expected answer) while the student answers this one.
     const nextItem = studyState.queue[studyState.index + 1];
-    if (nextItem?.type === 'card') prefetchVoiceFront(getStudyPromptText(nextItem));
+    if (nextItem?.type === 'card') {
+      prefetchVoiceFront(getStudyPromptText(nextItem));
+      if (nextItem.data.expected_answer_text) prefetchVoiceFront(nextItem.data.expected_answer_text);
+    }
+    // Also pre-fetch the expected answer of the current card in case of AGAIN/HARD.
+    if (item.data.expected_answer_text) prefetchVoiceFront(item.data.expected_answer_text);
   }
   badgesEl.innerHTML = cardBadges.join('');
 
