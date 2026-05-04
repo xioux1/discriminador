@@ -214,11 +214,14 @@ schedulerRouter.get('/scheduler/cards', async (req, res) => {
 // Full cards with active micros are flagged with has_pending_micros = true
 // (soft block: they appear but with a warning).
 schedulerRouter.get('/scheduler/session', async (req, res) => {
-  const { subject } = req.query;
+  const { subject, mode, theoretical_only } = req.query;
   const userId = req.user.id;
   const params = [userId];
   if (subject) params.push(subject);
   const subjectFilter = subject ? `AND c.subject = $${params.length}` : '';
+  const isVoiceMode = String(mode || '').toLowerCase() === 'voice'
+    || String(theoretical_only || '').toLowerCase() === 'true';
+  const theoreticalFilter = isVoiceMode ? `AND c.card_type = 'theoretical_open'` : '';
 
   try {
     const microResult = await dbPool.query(
@@ -253,6 +256,7 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
          AND c.archived_at IS NULL
          AND c.suspended_at IS NULL
          AND c.user_id = $1
+         ${theoreticalFilter}
          ${subjectFilter}
        GROUP BY c.id
        ORDER BY
