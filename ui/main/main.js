@@ -3132,6 +3132,7 @@ let _ttsCurrentText = null;             // Hanzi text for the post-eval TTS bar
 let _ttsListeningText = null;           // Hanzi text for the listening variant prompt bar
 const _ttsCache   = new Map();           // text → base64 audio string (session cache)
 let _voiceFrontAudio = null;
+let _voiceEpoch = 0;                     // incremented each showStudyCard() call to cancel stale playback
 const _pinyinCache = new Map();          // text → pinyin string (session cache)
 
 /**
@@ -4979,6 +4980,7 @@ function summarizeJustificationLine(result = {}) {
 }
 
 function showStudyCard() {
+  _voiceEpoch++;                          // invalidate any in-flight playStudyVoiceFront call
   if (_voiceFrontAudio) {
     try { _voiceFrontAudio.pause(); } catch (_) {}
     _voiceFrontAudio = null;
@@ -5758,6 +5760,7 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
 async function playStudyVoiceFront(text) {
   const input = (text || '').trim();
   if (!input) return;
+  const myEpoch = _voiceEpoch;
   studyState.voicePhase = 'speaking-front';
   studyState.audioPlaying = true;
   try {
@@ -5767,19 +5770,27 @@ async function playStudyVoiceFront(text) {
       audioB64 = data?.audio;
       if (audioB64) _ttsCache.set(`es::${input}`, audioB64);
     }
-    if (!audioB64) return;
+    // Abort if showStudyCard() advanced to a new card while we were fetching.
+    if (!audioB64 || myEpoch !== _voiceEpoch) return;
     const url = `data:audio/mpeg;base64,${audioB64}`;
     const audio = new Audio(url);
     _voiceFrontAudio = audio;
     await new Promise((resolve) => {
       audio.onended = resolve;
       audio.onerror = resolve;
+      // onpause fires when showStudyCard() calls audio.pause() to switch cards,
+      // which would otherwise leave this promise hanging forever.
+      audio.onpause = resolve;
       audio.play().catch(resolve);
     });
   } finally {
-    _voiceFrontAudio = null;
-    studyState.audioPlaying = false;
-    studyState.voicePhase = 'idle';
+    // Only reset shared state if this call is still the current one.
+    // A newer epoch means showStudyCard() already reset state for the next card.
+    if (myEpoch === _voiceEpoch) {
+      _voiceFrontAudio = null;
+      studyState.audioPlaying = false;
+      studyState.voicePhase = 'idle';
+    }
   }
 }
 
