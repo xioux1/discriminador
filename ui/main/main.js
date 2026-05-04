@@ -3614,7 +3614,7 @@ function blobToBase64(blob) {
  * textarea: the target textarea element
  * labelIdle: button text when idle
  */
-function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = null) {
+function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = null, onTranscribed = null) {
   if (!window.MediaRecorder || !navigator.mediaDevices) return;
 
   btn.hidden = false;
@@ -3681,6 +3681,7 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = 
             // Dispatch input so SqlEditor gutter and any other listeners update.
             textarea.dispatchEvent(new Event('input', { bubbles: true }));
           }
+          if (text && typeof onTranscribed === 'function') onTranscribed();
         }
       } catch (err) {
         setFeedback(`Error de transcripción: ${err.message}`, 'error');
@@ -3993,7 +3994,12 @@ function initStudyTab() {
     studyDictBtn,
     document.querySelector('#study-answer-input'),
     'Dictar',
-    () => studyDictBtn.dataset.subject || ''
+    () => studyDictBtn.dataset.subject || '',
+    () => {
+      if (!studyState.voiceMode) return;
+      const evalBtn = document.querySelector('#study-eval-btn');
+      if (evalBtn && !evalBtn.disabled && evalBtn.offsetParent !== null) evalBtn.click();
+    }
   );
   attachMathTabInsertion(
     document.querySelector('#study-answer-input'),
@@ -5688,7 +5694,11 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       document.querySelector('#study-doubt-answer').classList.add('hidden');
       document.querySelector('#study-doubt-input').value = '';
     }
-    if (studyState.voiceMode && ['GOOD', 'EASY'].includes(grade)) {
+    if (studyState.voiceMode) {
+      // On a negative grade, pause briefly so the student can read the feedback before auto-advancing.
+      if (!['GOOD', 'EASY'].includes(grade)) {
+        await new Promise((r) => setTimeout(r, 2000));
+      }
       await handleStudyNextCard();
       return;
     }
