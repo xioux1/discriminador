@@ -4608,7 +4608,10 @@ const studyState = {
   examItemResults: [],  // {grade, prompt_text, expected_answer_text, passed}
   // Binary check tool
   checkFails: [],       // IDs from binary_check_log for negative checks this card
-  checkErrorLabels: []  // conceptual error labels to show in result block
+  checkErrorLabels: [], // conceptual error labels to show in result block
+  voiceMode: false,
+  voicePhase: 'idle',
+  audioPlaying: false
 };
 
 function maybeSendBreakNudge() {
@@ -4826,10 +4829,13 @@ function showGratitudeModal(onConfirm) {
 }
 
 async function _doStartStudySession() {
+  studyState.voiceMode = Boolean(document.querySelector('#study-voice-mode-toggle')?.checked);
   const subjectQuery = briefingState.selectedSubject
     ? `?subject=${encodeURIComponent(briefingState.selectedSubject)}`
     : '';
-  const data = await getJson(`/scheduler/session${subjectQuery}`);
+  const separator = subjectQuery ? '&' : '?';
+  const voiceQuery = studyState.voiceMode ? `${separator}mode=voice` : '';
+  const data = await getJson(`/scheduler/session${subjectQuery}${voiceQuery}`);
   const micros = (data.micro_cards ?? []).map((m) => ({ type: 'micro', data: m }));
   const cards  = (data.cards ?? []).map((c) => ({ type: 'card', data: c }));
 
@@ -4982,6 +4988,9 @@ function showStudyCard() {
     if (item.data.variant_id != null && Number(item.data.variant_review_count ?? 0) === 0) {
       cardBadges.push('<span class="study-card-badge study-card-badge--variant-new">Variante nueva</span>');
     }
+  }
+  if (studyState.voiceMode && item.type === 'card') {
+    playStudyVoiceFront(getStudyPromptText(item)).catch(() => {});
   }
   badgesEl.innerHTML = cardBadges.join('');
 
@@ -5462,6 +5471,9 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
     gradeEl.textContent = getSuggestedGradeLabel(result.suggested_grade);
     gradeEl.className   = `study-grade-inline ${grade.toLowerCase()}`;
     justEl.textContent = summarizeJustificationLine(result);
+    if (studyState.voiceMode) {
+      justEl.textContent = ['GOOD', 'EASY'].includes(grade) ? 'Bien.' : (justEl.textContent || 'Revisá esta respuesta.');
+    }
     justEl.classList.remove('hidden');
 
     const timeEl = document.querySelector('#study-result-time');
@@ -5668,6 +5680,10 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       document.querySelector('#study-doubt-answer').classList.add('hidden');
       document.querySelector('#study-doubt-input').value = '';
     }
+    if (studyState.voiceMode && ['GOOD', 'EASY'].includes(grade)) {
+      await handleStudyNextCard();
+      return;
+    }
   } catch (err) {
     evalBtn.disabled = false;
     evalBtn.textContent = 'Evaluar';
@@ -5680,6 +5696,28 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
     setStudyPromptFeedback(userMsg, 'error');
   }
 });
+
+async function playStudyVoiceFront(text) {
+  const input = (text || '').trim();
+  if (!input) return;
+  studyState.voicePhase = 'speaking-front';
+  studyState.audioPlaying = true;
+  try {
+    const data = await postJson('/tts', { text: input, lang: 'es' });
+    const audioB64 = data?.audio;
+    if (!audioB64) return;
+    const url = `data:audio/mpeg;base64,${audioB64}`;
+    const audio = new Audio(url);
+    await new Promise((resolve) => {
+      audio.onended = resolve;
+      audio.onerror = resolve;
+      audio.play().catch(resolve);
+    });
+  } finally {
+    studyState.audioPlaying = false;
+    studyState.voicePhase = 'idle';
+  }
+}
 
 function resolveStudyFinalGrade(action, suggestedGrade) {
   const normalizedSuggested = normalizeSuggestedGrade(suggestedGrade);
@@ -5919,6 +5957,7 @@ if (studyAdvancedToggleBtn && studyAdvancedPanel) {
 }
 
 async function handleStudyNextCard() {
+  if (studyState.voiceMode && studyState.audioPlaying) return;
   const item   = studyState.queue[studyState.index];
   const evalResult = studyState.currentEvalResult;
   let decision = studyState.currentDecision;
