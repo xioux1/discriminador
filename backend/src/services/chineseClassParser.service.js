@@ -14,7 +14,7 @@ function getClient() {
 }
 
 // Sonnet for extraction (needs to handle messy handwritten-style notes reliably)
-const EXTRACT_MODEL = process.env.CHINESE_EXTRACT_MODEL || 'claude-sonnet-4-20250514';
+const EXTRACT_MODEL = process.env.CHINESE_EXTRACT_MODEL || 'claude-sonnet-4-6';
 // Haiku is enough for clustering (well-structured task over clean concept list)
 const CLUSTER_MODEL  = process.env.CHINESE_CLUSTER_MODEL  || 'claude-haiku-4-5-20251001';
 
