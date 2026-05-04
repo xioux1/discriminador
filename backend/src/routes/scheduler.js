@@ -236,7 +236,7 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
          ${subjectFilter}
        ORDER BY
          CASE WHEN mc.review_count = 0 THEN 0 ELSE 1 END ASC,
-         CAST(mc.pass_count AS float) / NULLIF(mc.review_count, 0) ASC NULLS FIRST,
+         mc.ease_factor ASC,
          mc.next_review_at ASC
        LIMIT 30`,
       params
