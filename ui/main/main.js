@@ -5023,9 +5023,13 @@ function showStudyCard() {
     }
   }
   if (studyState.voiceMode) {
+    const epochAtCardStart = _voiceEpoch;
     playStudyVoiceFront(getStudyPromptText(item))
       .then(() => {
-        if (!studyState.voiceMode) return;
+        // Only auto-start dictation if we're still on the same card that launched this audio.
+        // onpause resolves the Promise when the audio is interrupted; without this check
+        // the callback would fire during the *next* card's expected-answer playback.
+        if (!studyState.voiceMode || _voiceEpoch !== epochAtCardStart) return;
         const dictBtn = document.querySelector('#study-dictation-btn');
         if (dictBtn && !dictBtn.disabled && dictBtn.offsetParent !== null) dictBtn.click();
       })
