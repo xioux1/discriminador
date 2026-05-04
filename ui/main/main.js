@@ -4697,6 +4697,13 @@ function getStudyPromptText(item) {
   return item.data.session_prompt_text || item.data.prompt_text;
 }
 
+function getStudyExpectedText(item) {
+  if (!item) return '';
+  return item.type === 'micro'
+    ? (item.data.expected_answer || '')
+    : (item.data.expected_answer_text || '');
+}
+
 function setStudyPromptFeedback(message, type = 'info') {
   const feedbackEl = document.querySelector('#study-prompt-feedback');
   if (!feedbackEl) return;
@@ -5003,7 +5010,7 @@ function showStudyCard() {
       cardBadges.push('<span class="study-card-badge study-card-badge--variant-new">Variante nueva</span>');
     }
   }
-  if (studyState.voiceMode && item.type === 'card') {
+  if (studyState.voiceMode) {
     playStudyVoiceFront(getStudyPromptText(item))
       .then(() => {
         if (!studyState.voiceMode) return;
@@ -5011,14 +5018,15 @@ function showStudyCard() {
         if (dictBtn && !dictBtn.disabled && dictBtn.offsetParent !== null) dictBtn.click();
       })
       .catch(() => {});
-    // Pre-fetch TTS for the next card (prompt + expected answer) while the student answers this one.
+    // Pre-fetch TTS for the current item's expected answer and next item's prompt + expected answer.
+    const currentExpected = getStudyExpectedText(item);
+    if (currentExpected) prefetchVoiceFront(currentExpected);
     const nextItem = studyState.queue[studyState.index + 1];
-    if (nextItem?.type === 'card') {
+    if (nextItem) {
       prefetchVoiceFront(getStudyPromptText(nextItem));
-      if (nextItem.data.expected_answer_text) prefetchVoiceFront(nextItem.data.expected_answer_text);
+      const nextExpected = getStudyExpectedText(nextItem);
+      if (nextExpected) prefetchVoiceFront(nextExpected);
     }
-    // Also pre-fetch the expected answer of the current card in case of AGAIN/HARD.
-    if (item.data.expected_answer_text) prefetchVoiceFront(item.data.expected_answer_text);
   }
   badgesEl.innerHTML = cardBadges.join('');
 
