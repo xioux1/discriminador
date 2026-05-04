@@ -4836,17 +4836,17 @@ async function _doStartStudySession() {
   const scoreItem = (item) => {
     const d = item.data;
     const isNew = (d.review_count ?? 0) === 0;
-    const passRate = d.review_count ? (d.pass_count ?? 0) / d.review_count : null;
-    return { isNew, passRate };
+    // cards have pass_count; micro_cards use ease_factor (lower = more errors)
+    const score = d.pass_count != null && d.review_count
+      ? (d.pass_count / d.review_count)
+      : (d.ease_factor ?? 2.5);
+    return { isNew, score };
   };
   const combined = [...cards, ...micros];
   combined.sort((a, b) => {
     const sa = scoreItem(a), sb = scoreItem(b);
     if (sa.isNew !== sb.isNew) return sa.isNew ? -1 : 1;
-    if (sa.passRate === null && sb.passRate === null) return 0;
-    if (sa.passRate === null) return -1;
-    if (sb.passRate === null) return 1;
-    return sa.passRate - sb.passRate;
+    return sa.score - sb.score;
   });
   studyState.queue              = combined;
   studyState.index              = 0;
