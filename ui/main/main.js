@@ -5011,6 +5011,9 @@ function showStudyCard() {
         if (dictBtn && !dictBtn.disabled && dictBtn.offsetParent !== null) dictBtn.click();
       })
       .catch(() => {});
+    // Pre-fetch TTS for the next card in the background while the student answers this one.
+    const nextItem = studyState.queue[studyState.index + 1];
+    if (nextItem?.type === 'card') prefetchVoiceFront(getStudyPromptText(nextItem));
   }
   badgesEl.innerHTML = cardBadges.join('');
 
@@ -5727,8 +5730,12 @@ async function playStudyVoiceFront(text) {
   studyState.voicePhase = 'speaking-front';
   studyState.audioPlaying = true;
   try {
-    const data = await postJson('/tts', { text: input, lang: 'es' });
-    const audioB64 = data?.audio;
+    let audioB64 = _ttsCache.get(`es::${input}`);
+    if (!audioB64) {
+      const data = await postJson('/tts', { text: input, lang: 'es' });
+      audioB64 = data?.audio;
+      if (audioB64) _ttsCache.set(`es::${input}`, audioB64);
+    }
     if (!audioB64) return;
     const url = `data:audio/mpeg;base64,${audioB64}`;
     const audio = new Audio(url);
@@ -5743,6 +5750,14 @@ async function playStudyVoiceFront(text) {
     studyState.audioPlaying = false;
     studyState.voicePhase = 'idle';
   }
+}
+
+function prefetchVoiceFront(text) {
+  const input = (text || '').trim();
+  if (!input || _ttsCache.has(`es::${input}`)) return;
+  postJson('/tts', { text: input, lang: 'es' })
+    .then((data) => { if (data?.audio) _ttsCache.set(`es::${input}`, data.audio); })
+    .catch(() => {});
 }
 
 function resolveStudyFinalGrade(action, suggestedGrade) {
