@@ -5701,9 +5701,9 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       document.querySelector('#study-doubt-input').value = '';
     }
     if (studyState.voiceMode) {
-      // On a negative grade, pause briefly so the student can read the feedback before auto-advancing.
       if (!['GOOD', 'EASY'].includes(grade)) {
-        await new Promise((r) => setTimeout(r, 2000));
+        // Read the expected answer aloud so the student hears the correction before advancing.
+        await playStudyVoiceFront(expected_answer_text).catch(() => {});
       }
       await handleStudyNextCard();
       return;
