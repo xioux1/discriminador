@@ -5004,7 +5004,13 @@ function showStudyCard() {
     }
   }
   if (studyState.voiceMode && item.type === 'card') {
-    playStudyVoiceFront(getStudyPromptText(item)).catch(() => {});
+    playStudyVoiceFront(getStudyPromptText(item))
+      .then(() => {
+        if (!studyState.voiceMode) return;
+        const dictBtn = document.querySelector('#study-dictation-btn');
+        if (dictBtn && !dictBtn.disabled && dictBtn.offsetParent !== null) dictBtn.click();
+      })
+      .catch(() => {});
   }
   badgesEl.innerHTML = cardBadges.join('');
 
