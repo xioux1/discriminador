@@ -234,7 +234,10 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
          AND mc.next_review_at <= now()
          AND mc.user_id = $1
          ${subjectFilter}
-       ORDER BY mc.next_review_at ASC
+       ORDER BY
+         CASE WHEN mc.review_count = 0 THEN 0 ELSE 1 END ASC,
+         CAST(mc.pass_count AS float) / NULLIF(mc.review_count, 0) ASC NULLS FIRST,
+         mc.next_review_at ASC
        LIMIT 30`,
       params
     );
@@ -253,7 +256,8 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
          ${subjectFilter}
        GROUP BY c.id
        ORDER BY
-         COUNT(mc.id) FILTER (WHERE mc.status = 'active') ASC,
+         CASE WHEN c.review_count = 0 THEN 0 ELSE 1 END ASC,
+         CAST(c.pass_count AS float) / NULLIF(c.review_count, 0) ASC NULLS FIRST,
          c.next_review_at ASC
        LIMIT 30`,
       params
