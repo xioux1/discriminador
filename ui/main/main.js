@@ -4833,22 +4833,17 @@ async function _doStartStudySession() {
   const micros = (data.micro_cards ?? []).map((m) => ({ type: 'micro', data: m }));
   const cards  = (data.cards ?? []).map((c) => ({ type: 'card', data: c }));
 
-  const scoreItem = (item) => {
-    const d = item.data;
-    const isNew = (d.review_count ?? 0) === 0;
-    // cards have pass_count; micro_cards use ease_factor (lower = more errors)
-    const score = d.pass_count != null && d.review_count
-      ? (d.pass_count / d.review_count)
+  const sortByPerformance = (items) => items.slice().sort((a, b) => {
+    const da = a.data, db = b.data;
+    const aNew = (da.review_count ?? 0) === 0;
+    const bNew = (db.review_count ?? 0) === 0;
+    if (aNew !== bNew) return aNew ? -1 : 1;
+    const scoreOf = (d) => d.pass_count != null && d.review_count
+      ? d.pass_count / d.review_count
       : (d.ease_factor ?? 2.5);
-    return { isNew, score };
-  };
-  const combined = [...cards, ...micros];
-  combined.sort((a, b) => {
-    const sa = scoreItem(a), sb = scoreItem(b);
-    if (sa.isNew !== sb.isNew) return sa.isNew ? -1 : 1;
-    return sa.score - sb.score;
+    return scoreOf(da) - scoreOf(db);
   });
-  studyState.queue              = combined;
+  studyState.queue              = [...sortByPerformance(cards), ...sortByPerformance(micros)];
   studyState.index              = 0;
   studyState.results            = [];
   studyState.pendingMicroGeneration = 0;
