@@ -267,14 +267,20 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
       params
     );
 
-    // For each card that has variants, pick uniformly at random from the full
-    // pool: [original, variant_1, variant_2, ...].  Every member of the pool
-    // has exactly 1/(N+1) probability — the original card gets no special weight.
+    // Difficulty order for variants generated from cluster card generation.
+    const VARIANT_DIFFICULTY_ORDER = { easy: 1, medium: 2, hard: 3 };
+
+    // For each card that has variants, pick a variant using difficulty-ordered
+    // progression: while any variant with a difficulty designation has never been
+    // reviewed (review_count = 0), show the easiest unseen one first.  Once all
+    // difficulty-designated variants have been seen at least once, fall back to
+    // the original uniform-random pool [original, variant_1, ...].
     const cards = await Promise.all(cardsResult.rows.map(async (card) => {
       if (parseInt(card.variant_count) === 0) return card;
 
       const vRes = await dbPool.query(
-        `SELECT id, prompt_text, expected_answer_text, variant_type, grading_rubric, review_count FROM card_variants WHERE card_id = $1 AND (user_id = $2 OR user_id IS NULL)`,
+        `SELECT id, prompt_text, expected_answer_text, variant_type, grading_rubric, review_count, difficulty
+         FROM card_variants WHERE card_id = $1 AND (user_id = $2 OR user_id IS NULL)`,
         [card.id, card.user_id]
       );
       // Filter out corrupted regular variants: for Chinese cards, any regular variant
@@ -288,6 +294,27 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
       });
       if (variants.length === 0) return card;
 
+      // Ordered phase: pick the easiest variant that hasn't been seen yet.
+      const unseenWithDifficulty = variants.filter(
+        v => Number(v.review_count ?? 0) === 0 && VARIANT_DIFFICULTY_ORDER[v.difficulty] != null
+      );
+      if (unseenWithDifficulty.length > 0) {
+        unseenWithDifficulty.sort(
+          (a, b) => VARIANT_DIFFICULTY_ORDER[a.difficulty] - VARIANT_DIFFICULTY_ORDER[b.difficulty]
+        );
+        const v = unseenWithDifficulty[0];
+        return {
+          ...card,
+          prompt_text:          v.prompt_text,
+          expected_answer_text: v.expected_answer_text,
+          grading_rubric:       v.grading_rubric ?? card.grading_rubric ?? [],
+          variant_id:            v.id,
+          variant_type:          v.variant_type,
+          variant_review_count:  0
+        };
+      }
+
+      // Random phase: all difficulty-designated variants seen at least once.
       // pick = 0 → original; pick ≥ 1 → variants[pick-1]
       const pick = Math.floor(Math.random() * (variants.length + 1));
       if (pick === 0) return card;
