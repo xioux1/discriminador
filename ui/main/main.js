@@ -906,12 +906,18 @@ function initAiExtraction() {
 
       const statusClass = `ai-status-${card.status}`;
 
+      const total = candidates.length;
+      const diffScoreHTML = card.difficulty_score != null
+        ? `<span class="ai-difficulty-score" title="Dificultad relativa al lote">🎯 ${card.difficulty_score}/${total}</span>`
+        : '';
+
       div.innerHTML = `
         <div class="ai-candidate-header">
           <label class="ai-candidate-check">
             <input type="checkbox" class="ai-card-checkbox" data-idx="${idx}" ${checked ? 'checked' : ''}>
             <span class="ai-status-badge ${statusClass}">${escHtml(statusBadge(card.status))}</span>
             <span class="ai-confidence">Confianza: ${confidencePct(card.confidence)}</span>
+            ${diffScoreHTML}
           </label>
           <button type="button" class="btn-ghost ai-discard-btn" data-idx="${idx}" style="font-size:0.8rem;padding:2px 8px">Descartar</button>
         </div>
