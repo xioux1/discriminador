@@ -5722,6 +5722,15 @@ textarea.chinese-input {
 
 .ai-confidence { color: var(--text-muted); font-size: 0.78rem; }
 
+.ai-difficulty-score {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  background: var(--bg-subtle, #f0f0f0);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
 .ai-source-excerpt {
   margin-top: 6px;
 }
