@@ -9606,7 +9606,7 @@ function initDocumentsTab() {
         const subjectStr = cl.cards_added_subject
           ? ` &rarr; <em>${escHtml(cl.cards_added_subject)}</em>`
           : '';
-        cardsAddedLog = `<div class="docs-cluster-added-log">&#10003; Tarjetas agregadas el ${escHtml(dateStr)} &middot; ${countStr}${subjectStr}</div>`;
+        cardsAddedLog = `<div class="docs-cluster-added-log">&#10003; Tarjetas agregadas el ${escHtml(dateStr)} &middot; ${countStr}${subjectStr} <button type="button" class="btn-ghost docs-delete-cluster-cards-btn" data-cluster-id="${escHtml(cl.id)}">Eliminar tarjetas</button></div>`;
       }
 
       return `
@@ -9650,6 +9650,11 @@ function initDocumentsTab() {
         const rankingItem = btn.closest('.docs-ranking-item');
         generateCardDraftUI(btn.dataset.clusterId, rankingItem);
       });
+    });
+
+    // Wire delete-cluster-cards buttons (already-added clusters loaded from DB)
+    panel.querySelectorAll('.docs-delete-cluster-cards-btn').forEach(btn => {
+      btn.addEventListener('click', () => wireDeleteClusterBtn(btn));
     });
   }
 
@@ -9720,6 +9725,7 @@ function initDocumentsTab() {
     const difficultyClass = { easy: 'diff-easy', medium: 'diff-medium', hard: 'diff-hard' };
     const cardId = data.card_group?.id;
     const subjectDefault = data.document?.subject_name || data.card_group?.subject || '';
+    if (data.cluster_id) panel.dataset.clusterId = data.cluster_id;
 
     const variantsHTML = (data.variants || []).map((v, i) => {
       const rubricItems = (v.grading_rubric || []).map(r => `<li>${escHtml(r)}</li>`).join('');
@@ -9909,6 +9915,55 @@ function initDocumentsTab() {
     }
   }
 
+  // ── Shared handler: delete all cards from a cluster ───────────────────────────
+  function wireDeleteClusterBtn(btn) {
+    btn.addEventListener('click', () => {
+      const clusterId = btn.dataset.clusterId;
+      if (!clusterId) return;
+      const confirmed = window.confirm(
+        '¿Eliminar las tarjetas agregadas de este cluster?\nEsta acción no se puede deshacer.'
+      );
+      if (!confirmed) return;
+      btn.disabled = true;
+      btn.textContent = 'Eliminando...';
+
+      deleteJson(`/api/clusters/${clusterId}/cards`)
+        .then(() => {
+          const ri = btn.closest('.docs-ranking-item');
+          if (ri) {
+            ri.classList.remove('docs-ranking-item--cards-added');
+            ri.querySelector('.docs-cluster-added-badge')?.remove();
+            ri.querySelector('.docs-cluster-added-log')?.remove();
+
+            // If there's an open draft panel, revert it to pre-accept state
+            const draftPanel = ri.querySelector('.docs-card-draft-panel');
+            if (draftPanel) {
+              const acceptBtn = draftPanel.querySelector('.docs-accept-draft-btn');
+              if (acceptBtn) {
+                acceptBtn.disabled = false;
+                acceptBtn.textContent = 'Agregar a materia';
+                acceptBtn.classList.remove('docs-accept-draft-btn--done');
+              }
+              const badge = draftPanel.querySelector('.docs-card-draft-badge');
+              if (badge) { badge.textContent = 'draft'; badge.classList.remove('docs-card-draft-badge--active'); }
+              draftPanel.querySelector('.docs-accept-subject-input') &&
+                (draftPanel.querySelector('.docs-accept-subject-input').style.display = '');
+              draftPanel.querySelector('.docs-accept-label') &&
+                (draftPanel.querySelector('.docs-accept-label').style.display = '');
+              draftPanel.querySelector('.docs-accept-draft-status') &&
+                (draftPanel.querySelector('.docs-accept-draft-status').textContent = '');
+            }
+          }
+          btn.remove();
+        })
+        .catch(err => {
+          btn.disabled = false;
+          btn.textContent = 'Eliminar tarjetas';
+          showToast(`No se pudo eliminar: ${err.message}`, 'error');
+        });
+    });
+  }
+
   // ── Accept card draft → activate + assign subject ─────────────────────────────
   async function acceptCardDraftUI(cardId, subject, panel) {
     const btn      = panel.querySelector('.docs-accept-draft-btn');
@@ -9981,54 +10036,16 @@ function initDocumentsTab() {
       }
 
       // Inject delete button next to the accept confirmation
+      const clusterId = panel.dataset.clusterId;
       const acceptRow = panel.querySelector('.docs-card-draft-accept');
-      if (acceptRow && !acceptRow.querySelector('.docs-delete-card-btn')) {
+      if (acceptRow && clusterId && !acceptRow.querySelector('.docs-delete-cluster-cards-btn')) {
         const deleteBtn = document.createElement('button');
         deleteBtn.type = 'button';
-        deleteBtn.className = 'btn-ghost docs-delete-card-btn';
+        deleteBtn.className = 'btn-ghost docs-delete-cluster-cards-btn';
+        deleteBtn.dataset.clusterId = clusterId;
         deleteBtn.textContent = 'Eliminar tarjetas';
         acceptRow.appendChild(deleteBtn);
-
-        deleteBtn.addEventListener('click', () => {
-          const confirmed = window.confirm(
-            `¿Eliminar las tarjetas agregadas de este cluster?\nEsta acción no se puede deshacer.`
-          );
-          if (!confirmed) return;
-          deleteBtn.disabled = true;
-          deleteBtn.textContent = 'Eliminando...';
-
-          deleteJson(`/api/cards/${cardId}`)
-            .then(() => {
-              // Revert panel to pre-accept state
-              const badge = panel.querySelector('.docs-card-draft-badge');
-              if (badge) { badge.textContent = 'draft'; badge.classList.remove('docs-card-draft-badge--active'); }
-
-              btn.disabled = false;
-              btn.textContent = 'Agregar a materia';
-              btn.classList.remove('docs-accept-draft-btn--done');
-
-              const subjectInput = panel.querySelector('.docs-accept-subject-input');
-              if (subjectInput) subjectInput.style.display = '';
-              const acceptLabel = panel.querySelector('.docs-accept-label');
-              if (acceptLabel) acceptLabel.style.display = '';
-
-              deleteBtn.remove();
-              statusEl.textContent = '';
-
-              // Remove cluster "added" indicators
-              const ri = panel.closest('.docs-ranking-item');
-              if (ri) {
-                ri.classList.remove('docs-ranking-item--cards-added');
-                ri.querySelector('.docs-cluster-added-badge')?.remove();
-                ri.querySelector('.docs-cluster-added-log')?.remove();
-              }
-            })
-            .catch(err => {
-              deleteBtn.disabled = false;
-              deleteBtn.textContent = 'Eliminar tarjetas';
-              showToast(`No se pudo eliminar: ${err.message}`, 'error');
-            });
-        });
+        wireDeleteClusterBtn(deleteBtn);
       }
     } catch (err) {
       statusEl.textContent = err.message;
