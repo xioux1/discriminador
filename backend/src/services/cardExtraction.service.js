@@ -41,6 +41,10 @@ Reglas de extracción:
 9. Si el texto fuente presenta la información como bullets o ítems numerados,
    convertílos a lenguaje continuo en el campo "answer". El evaluador comparará
    respuestas orales contra este campo, por lo que el registro debe coincidir.
+10. Asigná a cada tarjeta un campo "difficulty_score": entero único desde 1 (más fácil)
+    hasta N (más difícil), relativo al conjunto de tarjetas que generaste. Sin empates.
+    Criterios: 1 = definición directa o dato aislado; N = requiere integrar múltiples
+    conceptos, aplicar procedimientos o razonar sobre relaciones causales.
 
 Formato de salida (JSON exacto):
 {
@@ -50,13 +54,15 @@ Formato de salida (JSON exacto):
       "answer": "respuesta concisa extraída del texto",
       "source_excerpt": "fragmento textual exacto del texto fuente",
       "confidence": 0.95,
-      "status": "ready"
+      "status": "ready",
+      "difficulty_score": 1
     }
   ],
   "warnings": []
 }
 
 confidence: número entre 0.0 y 1.0 que refleja qué tan claramente el texto respalda la tarjeta.
+difficulty_score: entero positivo único que indica dificultad relativa dentro del lote (1 = más fácil).
 El campo "notes" es opcional: usalo solo si la tarjeta necesita aclaración para el revisor.`;
 
 function buildUserPrompt(text, subject) {
@@ -130,7 +136,12 @@ function normalizeCard(c, warnings) {
   const status = VALID_STATUSES.has(c.status) ? c.status : 'needs_edit';
   const notes  = typeof c.notes === 'string' ? c.notes.trim() : undefined;
 
-  const card = { question, answer, source_excerpt: sourceExcerpt, confidence, status };
+  const difficultyScore =
+    typeof c.difficulty_score === 'number' && Number.isInteger(c.difficulty_score) && c.difficulty_score >= 1
+      ? c.difficulty_score
+      : null;
+
+  const card = { question, answer, source_excerpt: sourceExcerpt, confidence, status, difficulty_score: difficultyScore };
   if (notes) card.notes = notes;
   return card;
 }
@@ -235,6 +246,13 @@ export async function extractCandidateCardsFromText({ text, subject, document_id
 
   const { cards, warnings } = parseAndValidateLLMResponse(rawContent);
   const deduped = deduplicateCandidates(cards);
+  // Sort easiest → hardest; cards missing difficulty_score go to the end.
+  deduped.sort((a, b) => {
+    if (a.difficulty_score === null && b.difficulty_score === null) return 0;
+    if (a.difficulty_score === null) return 1;
+    if (b.difficulty_score === null) return -1;
+    return a.difficulty_score - b.difficulty_score;
+  });
   const allWarnings = [...extraWarnings, ...warnings];
 
   logger.info('[cardExtraction] Done', { cardCount: deduped.length, warnings: allWarnings });
