@@ -48,11 +48,11 @@ export function safeJsonParseObject(raw) {
 
 export function getDefaultMaxVariantsForCluster(cluster) {
   const tier = cluster?.relative_priority_tier ?? cluster?.priority_tier ?? null;
-  if (tier === 'A') return 5;
-  if (tier === 'B') return 3;
-  if (tier === 'C') return 2;
-  if (tier === 'D') return 1;
-  return 5;
+  if (tier === 'A') return 9;
+  if (tier === 'B') return 7;
+  if (tier === 'C') return 5;
+  if (tier === 'D') return 3;
+  return 9;
 }
 
 // ==================== buildClusterCardContext ====================
@@ -226,16 +226,25 @@ export function buildCardGenerationPrompt(context, options = {}) {
 
   const sourceExcerptsJson = JSON.stringify(source_excerpts, null, 2);
 
+  const targetVariants = Math.max(6, Math.min(7, maxVariants));
+
   return `Sos un asistente experto en diseño de tarjetas de estudio.
 
 Vas a recibir un cluster de conceptos extraídos de un documento de estudio.
-Tu tarea es generar UNA familia de tarjeta y varias variantes de pregunta/respuesta para estudiar ese cluster.
+Tu tarea es generar UNA familia de tarjeta y VARIAS variantes de pregunta/respuesta para que un alumno entienda completamente ese cluster.
 
-Objetivo:
-- La familia de tarjeta representa el cluster.
-- Cada variante evalúa un concepto importante o una relación importante entre conceptos del cluster.
-- Las respuestas deben basarse únicamente en el material provisto.
-- Redacción breve, operativa y fácil de etiquetar.
+Objetivo principal:
+El alumno tiene que poder estudiar el cluster respondiendo estas preguntas. Para eso necesitás SUFICIENTES preguntas atómicas, no pocas preguntas amplias. Apuntá a generar entre ${targetVariants} y ${maxVariants} variantes si el material lo permite. Más preguntas atómicas bien específicas son siempre mejor que menos preguntas vagas que abarcan demasiado.
+
+Tiempo de respuesta objetivo:
+Cada pregunta debe poder responderse en 30 a 40 segundos si el alumno sabe la respuesta. Si una respuesta tarda más, la pregunta es demasiado amplia: dividila.
+
+Especificidad obligatoria de las preguntas:
+Cada pregunta DEBE ser autocontenida: tiene que mencionar explícitamente el tema, método, tipo o contexto específico que está evaluando, sin asumir que el alumno sabe de qué cluster viene la pregunta. Si la misma pregunta podría aparecer en otro tema sin cambiar nada, es demasiado genérica.
+- MAL: "¿Cómo resolver una ecuación con factor integrante?"
+- BIEN: "¿Cómo resolver una ecuación diferencial exacta usando factor integrante?"
+- MAL: "¿Qué es la transformada inversa?"
+- BIEN: "¿Qué es la transformada inversa de Laplace y para qué se usa?"
 
 Reglas estrictas:
 1. Usá sólo el material provisto. No inventes datos externos.
@@ -252,7 +261,7 @@ Reglas estrictas:
 8. Cada bullet de expected_answer debe tener entre 4 y 18 palabras.
 9. Cada expected_answer completo debe tener aproximadamente 20–110 palabras.
 10. No generes variantes duplicadas.
-11. Cada variante debe evaluar UN SOLO concepto o mecanismo atómico. Si una pregunta requeriría listar 4 o más pasos independientes para contestarse, NO es una variante válida: dividila en varias. Combiná conceptos solo cuando son definitoriamente inseparables (ej: un término y su definición), NO cuando son pasos secuenciales de un procedimiento.
+11. Cada variante debe evaluar UN SOLO concepto o mecanismo atómico. Si una pregunta requeriría listar 4 o más elementos independientes para contestarse, NO es una variante válida: dividila en varias preguntas separadas. No combines conceptos salvo que sean definitoriamente inseparables (ej: un término y su única definición posible).
 12. Cada variante debe incluir una rúbrica de corrección con 3 a 6 bullets.
 13. La rúbrica debe indicar elementos mínimos para aprobar, en frases cortas.
 14. No generes más de ${maxVariants} variantes.
@@ -277,7 +286,7 @@ Formato exacto de salida:
   },
   "variants": [
     {
-      "question": "pregunta abierta",
+      "question": "pregunta abierta autocontenida con tema específico",
       "expected_answer": "- item 1\n- item 2\n- item 3",
       "grading_rubric": [
         "criterio 1",
@@ -288,7 +297,7 @@ Formato exacto de salida:
       "source_chunk_indexes": [1],
       "tag_labels": ["etiqueta_1", "etiqueta_2"],
       "difficulty": "easy|medium|hard",
-      "answer_time_seconds": 50
+      "answer_time_seconds": 35
     }
   ]
 }
@@ -303,13 +312,13 @@ Fragmentos fuente:
 ${sourceExcerptsJson}
 
 Recordá:
-- Si el material no alcanza para una variante, no la generes.
-- Es mejor generar 2 buenas variantes que 5 mediocres.
+- El objetivo es cubrir bien el cluster con SUFICIENTES preguntas atómicas. Apuntá a ${targetVariants}–${maxVariants} variantes.
+- Si una pregunta se puede dividir en dos preguntas más específicas, dividila siempre.
 - Priorizá claridad y escaneabilidad para revisión rápida y etiquetado.
-- No conviertas cada label automáticamente en una pregunta si hay solapamiento.
-- Priorizá fidelidad al material fuente por encima de completitud aparente.
-- Señal de error: si una variante tiene 5+ tags distintos en source_concept_ids, casi siempre es una card que debería haberse dividido. Revisá y dividila.
-- Una pregunta tipo "¿cómo se implementa X completo?" que requiere transformación inversa + Jacobiano + integrando + región + integral es 5 cards, no 1.`;
+- No conviertas un concepto amplio en una sola pregunta que lo abarca todo: hacé una pregunta por cada aspecto importante.
+- Señal de error: si una variante tiene 5+ conceptos distintos en source_concept_ids, casi siempre es una card que debería haberse dividido. Revisá y dividila.
+- Una pregunta tipo "¿cómo se implementa X completo?" que requiere transformación inversa + Jacobiano + integrando + región + integral es 5 cards, no 1.
+- Cada pregunta debe nombrarse con el contexto suficiente para que el alumno sepa exactamente de qué tema es, sin ver el cluster.`;
 }
 
 // ==================== validateGeneratedCardDraft ====================
