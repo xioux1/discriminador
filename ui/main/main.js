@@ -9979,6 +9979,57 @@ function initDocumentsTab() {
         }
         logEl.innerHTML = `&#10003; Tarjetas agregadas el ${escHtml(dateStr)} &middot; ${countStr}${subjectStr}`;
       }
+
+      // Inject delete button next to the accept confirmation
+      const acceptRow = panel.querySelector('.docs-card-draft-accept');
+      if (acceptRow && !acceptRow.querySelector('.docs-delete-card-btn')) {
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.className = 'btn-ghost docs-delete-card-btn';
+        deleteBtn.textContent = 'Eliminar tarjetas';
+        acceptRow.appendChild(deleteBtn);
+
+        deleteBtn.addEventListener('click', () => {
+          const confirmed = window.confirm(
+            `¿Eliminar las tarjetas agregadas de este cluster?\nEsta acción no se puede deshacer.`
+          );
+          if (!confirmed) return;
+          deleteBtn.disabled = true;
+          deleteBtn.textContent = 'Eliminando...';
+
+          deleteJson(`/api/cards/${cardId}`)
+            .then(() => {
+              // Revert panel to pre-accept state
+              const badge = panel.querySelector('.docs-card-draft-badge');
+              if (badge) { badge.textContent = 'draft'; badge.classList.remove('docs-card-draft-badge--active'); }
+
+              btn.disabled = false;
+              btn.textContent = 'Agregar a materia';
+              btn.classList.remove('docs-accept-draft-btn--done');
+
+              const subjectInput = panel.querySelector('.docs-accept-subject-input');
+              if (subjectInput) subjectInput.style.display = '';
+              const acceptLabel = panel.querySelector('.docs-accept-label');
+              if (acceptLabel) acceptLabel.style.display = '';
+
+              deleteBtn.remove();
+              statusEl.textContent = '';
+
+              // Remove cluster "added" indicators
+              const ri = panel.closest('.docs-ranking-item');
+              if (ri) {
+                ri.classList.remove('docs-ranking-item--cards-added');
+                ri.querySelector('.docs-cluster-added-badge')?.remove();
+                ri.querySelector('.docs-cluster-added-log')?.remove();
+              }
+            })
+            .catch(err => {
+              deleteBtn.disabled = false;
+              deleteBtn.textContent = 'Eliminar tarjetas';
+              showToast(`No se pudo eliminar: ${err.message}`, 'error');
+            });
+        });
+      }
     } catch (err) {
       statusEl.textContent = err.message;
       statusEl.className = 'docs-accept-draft-status docs-accept-draft-status--error';
