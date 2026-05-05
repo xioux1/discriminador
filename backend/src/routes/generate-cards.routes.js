@@ -329,4 +329,55 @@ router.patch('/api/cards/:id/accept-draft', async (req, res, next) => {
   }
 });
 
+// DELETE /api/cards/:id — hard-delete a card and reset its cluster tracking
+router.delete('/api/cards/:id', async (req, res, next) => {
+  const cardId = parseInt(req.params.id, 10);
+  if (!Number.isFinite(cardId) || cardId <= 0) {
+    return res.status(400).json({ error: 'invalid_id', message: 'Card ID must be a positive integer.' });
+  }
+
+  const userId = req.user?.id;
+
+  try {
+    const { rows } = await dbPool.query(
+      `SELECT id, cluster_id FROM cards WHERE id = $1 AND user_id = $2`,
+      [cardId, userId]
+    );
+    if (!rows.length) {
+      return res.status(404).json({ error: 'not_found', message: 'Card not found.' });
+    }
+    const clusterId = rows[0].cluster_id;
+
+    const client = await dbPool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // card_variants, micro_cards, etc. cascade on DELETE
+      await client.query('DELETE FROM cards WHERE id = $1 AND user_id = $2', [cardId, userId]);
+
+      if (clusterId) {
+        await client.query(
+          `UPDATE clusters
+           SET cards_added_at      = NULL,
+               cards_added_count   = NULL,
+               cards_added_subject = NULL
+           WHERE id = $1`,
+          [clusterId]
+        );
+      }
+
+      await client.query('COMMIT');
+      return res.json({ deleted: true, card_id: cardId, cluster_id: clusterId });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    logger.error('[deleteCard] Error', { cardId, error: err.message });
+    return next(err);
+  }
+});
+
 export default router;
