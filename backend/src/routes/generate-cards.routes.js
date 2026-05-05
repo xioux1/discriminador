@@ -380,4 +380,49 @@ router.delete('/api/cards/:id', async (req, res, next) => {
   }
 });
 
+// DELETE /api/clusters/:clusterId/cards — delete all cards from a cluster and reset tracking
+const UUID_RE_DEL = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+router.delete('/api/clusters/:clusterId/cards', async (req, res, next) => {
+  const { clusterId } = req.params;
+  if (!UUID_RE_DEL.test(clusterId)) {
+    return res.status(400).json({ error: 'invalid_id', message: 'Invalid cluster ID.' });
+  }
+
+  const userId = req.user?.id;
+
+  try {
+    const client = await dbPool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Delete all cards for this cluster that belong to the user (variants cascade)
+      const { rowCount } = await client.query(
+        `DELETE FROM cards WHERE cluster_id = $1 AND user_id = $2`,
+        [clusterId, userId]
+      );
+
+      // Reset cluster tracking fields
+      await client.query(
+        `UPDATE clusters
+         SET cards_added_at      = NULL,
+             cards_added_count   = NULL,
+             cards_added_subject = NULL
+         WHERE id = $1`,
+        [clusterId]
+      );
+
+      await client.query('COMMIT');
+      return res.json({ deleted: true, cluster_id: clusterId, cards_deleted: rowCount });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    logger.error('[deleteClusterCards] Error', { clusterId, error: err.message });
+    return next(err);
+  }
+});
+
 export default router;

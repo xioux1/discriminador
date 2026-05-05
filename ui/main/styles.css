@@ -5523,7 +5523,7 @@ textarea.chinese-input {
   cursor: default;
 }
 .docs-accept-draft-btn--done:hover { background: var(--pass-bg); }
-.docs-delete-card-btn {
+.docs-delete-cluster-cards-btn {
   font-size: 0.78rem;
   padding: 4px 10px;
   color: var(--fail-fg, #c0392b);
@@ -5531,7 +5531,7 @@ textarea.chinese-input {
   opacity: 0.75;
   margin-left: 6px;
 }
-.docs-delete-card-btn:hover { opacity: 1; }
+.docs-delete-cluster-cards-btn:hover { opacity: 1; }
 .docs-accept-draft-status {
   font-size: 0.78rem;
   color: var(--text-muted);
