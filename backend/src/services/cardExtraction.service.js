@@ -29,13 +29,18 @@ Tipos de texto que debés procesar:
 
 Reglas de extracción:
 1. NO inventes información ni uses conocimiento externo.
-2. La respuesta debe estar textualmente en el texto fuente; copiala con mínima paráfrasis.
+2. La respuesta debe capturar los conceptos clave del texto fuente, pero redactada
+   en prosa fluida como si un estudiante la explicara oralmente. Nunca uses listas
+   con guiones ni numeración. Máximo 3-4 oraciones continuas.
 3. Si el texto contiene una pregunta con su respuesta explícita, siempre extraela como tarjeta "ready".
 4. Si la información es útil pero incompleta, usá "needs_edit". Si es ambigua, usá "ambiguous".
 5. Reservá "rejected" solo para texto que genuinamente no contiene información educativa.
 6. Siempre incluí source_excerpt: el fragmento exacto del texto que respalda la tarjeta.
 7. Evitá duplicados: si dos preguntas evalúan lo mismo, generá solo una.
 8. Respondé ÚNICAMENTE con JSON válido. Sin markdown, sin backticks, sin texto antes o después.
+9. Si el texto fuente presenta la información como bullets o ítems numerados,
+   convertílos a lenguaje continuo en el campo "answer". El evaluador comparará
+   respuestas orales contra este campo, por lo que el registro debe coincidir.
 
 Formato de salida (JSON exacto):
 {
