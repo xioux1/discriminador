@@ -397,17 +397,23 @@ export function validateGeneratedCardDraft(output, context, maxVariants) {
     if (!v.expected_answer || typeof v.expected_answer !== 'string' || v.expected_answer.trim().length === 0) {
       vErrs.push('expected_answer is empty');
     } else {
+      let bullets = v.expected_answer
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => /^[-*•]\s+/.test(line));
+
+      if (bullets.length > 5) {
+        logger.warn(`[cardGen] variant ${i}: trimming expected_answer from ${bullets.length} to 5 bullets`);
+        bullets = bullets.slice(0, 5);
+        v.expected_answer = bullets.join('\n');
+      }
+
       const wordCount = v.expected_answer.trim().split(/\s+/).length;
       if (wordCount < 20 || wordCount > 110) {
         vErrs.push(`expected_answer has ${wordCount} words (expected 20–110)`);
       }
 
-      const bullets = v.expected_answer
-        .split('\n')
-        .map(line => line.trim())
-        .filter(line => /^[-*•]\s+/.test(line));
-
-      if (bullets.length < 3 || bullets.length > 5) {
+      if (bullets.length < 3) {
         vErrs.push(`expected_answer must contain 3–5 bullets, got ${bullets.length}`);
       } else {
         for (const bullet of bullets) {
