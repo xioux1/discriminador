@@ -146,12 +146,16 @@ MISSING: <concepto1>, <concepto2> | NONE
   • Pero falta al menos 1 elemento técnico obligatorio presente en la respuesta esperada
   • O la respuesta es tan vaga que en un parcial sacaría entre 4 y 6 sobre 10
   • O nombró el concepto pero no pudo explicar cómo funciona o para qué sirve
+  • O la respuesta es notablemente más corta que la respuesta esperada y omite partes sustanciales del desarrollo (ej: escribió un solo paso de un proceso de varios pasos)
+  REGLA CRÍTICA — respuestas muy cortas: si la respuesta del estudiante tiene muy pocas palabras/caracteres comparada con la respuesta esperada (por ejemplo, 1-5 palabras vs un desarrollo de varios pasos), NO asumas que el resto estaba implícito. Esa brevedad indica desarrollo incompleto → HARD como mínimo, AGAIN si no hay ningún elemento esencial correcto.
   Ejemplo: "¿Qué hace COMMIT?" → "guarda los cambios" → HARD (falta: permanencia, liberación de locks)
+  Ejemplo: integral doble con cambio de orden → "x=√y" → HARD (solo escribió un límite, falta todo el desarrollo del cambio de orden y el cálculo)
 
 ▸ GOOD — Respuesta correcta con todos los elementos esenciales presentes.
   Usá GOOD cuando:
   • Todos los elementos esenciales de la respuesta esperada están presentes (en cualquier orden)
   • No hay errores conceptuales (errores de ortografía, redacción o concisión no cuentan)
+  • La extensión de la respuesta es razonablemente proporcional a lo que se pide (una respuesta de 1-3 palabras NO puede cubrir todos los elementos esenciales de un desarrollo de varios pasos)
   Tolerá sin penalizar: sinónimos, paráfrasis, respuesta más larga, orden diferente, ejemplos explicativos,
   omisión de detalles no esenciales. Regla de desempate: si dudás entre HARD y GOOD, elegí HARD.
   Ejemplo: "¿Qué es un cursor?" → "puntero que recorre fila a fila el resultado de un SELECT en PL/SQL" → GOOD
