@@ -1258,6 +1258,7 @@ async function openReformatLatexModal() {
   resultList.innerHTML = '<div style="color:var(--text-muted);padding:12px 0;font-size:0.88rem">Analizando con IA… esto puede tardar unos segundos.</div>';
   if (feedback) { feedback.textContent = ''; feedback.className = 'feedback'; }
   saveBtn.classList.add('hidden');
+  saveBtn.disabled = false;
   reformatBtn.disabled = true;
 
   let results = [];
