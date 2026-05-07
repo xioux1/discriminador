@@ -3985,6 +3985,7 @@ function initStudyTab() {
   document.querySelector('#study-exit-btn').addEventListener('click', exitStudySession);
   document.querySelector('#study-pause-btn').addEventListener('click', toggleStudyPause);
   document.querySelector('#study-resume-btn').addEventListener('click', toggleStudyPause);
+  document.querySelector('#study-voice-pause-btn').addEventListener('click', toggleVoiceReviewPause);
   document.querySelector('#study-edit-prompt-btn').addEventListener('click', toggleStudyPromptEdit);
   document.querySelector('#study-clarify-prompt-btn').addEventListener('click', clarifyStudyPrompt);
   document.querySelector('#study-delete-btn').addEventListener('click', deleteCurrentStudyCardFromFront);
@@ -4462,6 +4463,13 @@ function exitStudySession() {
     studyState.timerInterval = null;
   }
   stopStudyRealtimeScheduler();
+  studyState.voiceReviewPaused = false;
+  const vPauseBtn = document.querySelector('#study-voice-pause-btn');
+  if (vPauseBtn) {
+    vPauseBtn.classList.add('hidden');
+    vPauseBtn.textContent = '⏸ Revisar';
+    vPauseBtn.classList.remove('study-voice-pause-btn--active');
+  }
   document.querySelector('#study-session').classList.add('hidden');
   document.querySelector('#study-overview').classList.remove('hidden');
   recordSessionCompletion(studyState.results.length);
@@ -4474,6 +4482,22 @@ function toggleStudyPause() {
     resumeStudySession();
   } else {
     pauseStudySession();
+  }
+}
+
+function toggleVoiceReviewPause() {
+  studyState.voiceReviewPaused = !studyState.voiceReviewPaused;
+  const btn = document.querySelector('#study-voice-pause-btn');
+  if (!btn) return;
+  if (studyState.voiceReviewPaused) {
+    btn.textContent = '▶ Continuar auto';
+    btn.classList.add('study-voice-pause-btn--active');
+  } else {
+    btn.textContent = '⏸ Revisar';
+    btn.classList.remove('study-voice-pause-btn--active');
+    // If result is visible and auto-advance was waiting, advance now.
+    const resultVisible = !document.querySelector('#study-result-block')?.classList.contains('hidden');
+    if (resultVisible) handleStudyNextCard();
   }
 }
 
@@ -4627,6 +4651,7 @@ const studyState = {
   voiceMode: false,
   voicePhase: 'idle',
   audioPlaying: false,
+  voiceReviewPaused: false,
   isAdvancingCard: false
 };
 
@@ -4914,6 +4939,18 @@ async function _doStartStudySession() {
   document.querySelector('#study-add-form').classList.add('hidden');
   document.querySelector('#study-complete').classList.add('hidden');
   document.querySelector('#study-session').classList.remove('hidden');
+
+  const vPauseBtn = document.querySelector('#study-voice-pause-btn');
+  if (vPauseBtn) {
+    if (studyState.voiceMode) {
+      vPauseBtn.classList.remove('hidden');
+    } else {
+      vPauseBtn.classList.add('hidden');
+    }
+    vPauseBtn.textContent = '⏸ Revisar';
+    vPauseBtn.classList.remove('study-voice-pause-btn--active');
+  }
+  studyState.voiceReviewPaused = false;
 
   startStudyRealtimeScheduler();
   persistStudySession();
@@ -5751,7 +5788,12 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       if (!['GOOD', 'EASY'].includes(grade)) {
         // Read the expected answer aloud so the student hears the correction before advancing.
         await playStudyVoiceFront(expected_answer_text).catch(() => {});
+      } else {
+        // Brief pause so the user can see the grade and click "pause review" if needed.
+        await new Promise(r => setTimeout(r, 1500));
       }
+      // If the user paused oral review, stop here — they'll click "Siguiente" manually.
+      if (studyState.voiceReviewPaused) return;
       await handleStudyNextCard();
       return;
     }
@@ -6053,6 +6095,15 @@ if (studyAdvancedToggleBtn && studyAdvancedPanel) {
 async function handleStudyNextCard() {
   if (studyState.isAdvancingCard) return;
   if (studyState.voiceMode && studyState.audioPlaying) return;
+  // Advancing manually resets the per-card review pause so next card auto-advances.
+  if (studyState.voiceReviewPaused) {
+    studyState.voiceReviewPaused = false;
+    const vPauseBtn = document.querySelector('#study-voice-pause-btn');
+    if (vPauseBtn) {
+      vPauseBtn.textContent = '⏸ Revisar';
+      vPauseBtn.classList.remove('study-voice-pause-btn--active');
+    }
+  }
   studyState.isAdvancingCard = true;
   try {
   const item   = studyState.queue[studyState.index];
