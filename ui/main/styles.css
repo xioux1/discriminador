@@ -1066,6 +1066,10 @@ textarea:focus, input[type="text"]:focus, select:focus {
   color: var(--primary) !important;
   font-weight: 600;
 }
+.study-voice-pause-btn--active {
+  color: var(--primary) !important;
+  font-weight: 600;
+}
 
 /* Pause overlay on top of the card content */
 .study-pause-overlay {
