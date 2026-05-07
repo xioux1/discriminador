@@ -10,6 +10,19 @@ function getClient() {
   return _client;
 }
 
+// Strip leaked reasoning (CASO labels, separators) and return only the question.
+function extractQuestion(text) {
+  const lines = text.split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0)
+    .filter((l) => !/^CASO\s+[A-Z]/i.test(l))   // drop "CASO A — ..."
+    .filter((l) => !/^[-=]{2,}$/.test(l));        // drop "---", "==="
+
+  // Prefer the last line that contains a question mark; fall back to last line.
+  const question = [...lines].reverse().find((l) => l.includes('?')) ?? lines.at(-1) ?? '';
+  return question.replace(/^["']|["']$/g, '').trim();
+}
+
 /**
  * Given a concept the student failed to demonstrate understanding of,
  * generate a Socratic micro-question that leads them to the concept
@@ -56,9 +69,11 @@ CASO C — El estudiante respondió parcialmente con error conceptual:
   → Tomá lo que dijo y preguntá si se sostiene bajo un caso concreto simple.
   → Ejemplo: si dijo algo impreciso sobre continuidad, preguntá: "¿Puede una función tener derivadas parciales en un punto sin ser continua ahí?"
 
-FORMATO DE SALIDA:
-Solo la pregunta. Sin prefijos, sin explicación, sin "Micro-pregunta:", sin comillas externas.
-La pregunta debe poder leerse sola, sin contexto adicional.`,
+FORMATO DE SALIDA (exactamente dos líneas, sin nada más):
+PREGUNTA: <la pregunta socrática>
+RESPUESTA: <lo que el estudiante debería responder, conciso, 1-2 oraciones>
+
+PROHIBIDO: escribir el caso identificado, separadores, razonamiento previo, o cualquier línea adicional.`,
     messages: [{
       role: 'user',
       content: `Tarjeta original:
@@ -74,12 +89,18 @@ Identificá el caso correspondiente y generá la micro-pregunta socrática.`
     }]
   });
 
-  const text = response.content.find((b) => b.type === 'text')?.text ?? '';
+  const raw = response.content.find((b) => b.type === 'text')?.text ?? '';
 
-  return {
-    question:        text.trim() || `¿Qué es "${concept}" y por qué es importante?`,
-    expected_answer: expected_answer_text,
-  };
+  const questionMatch = raw.match(/^PREGUNTA:\s*(.+)/im);
+  const answerMatch   = raw.match(/^RESPUESTA:\s*([\s\S]+)/im);
+
+  const question = questionMatch?.[1]?.trim()
+    ? questionMatch[1].trim()
+    : extractQuestion(raw) || `¿Qué es "${concept}" y por qué es importante?`;
+
+  const expected_answer = answerMatch?.[1]?.trim() || expected_answer_text;
+
+  return { question, expected_answer };
 }
 
 /**
