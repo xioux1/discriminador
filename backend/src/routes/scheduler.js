@@ -611,7 +611,7 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
 
     const isListeningReview = variantType === 'listening';
 
-    for (const concept of targetConcepts) {
+    for (const [slotIndex, concept] of targetConcepts.entries()) {
       try {
         let micro, presentation;
         if (isListeningReview) {
@@ -619,7 +619,7 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
           presentation = 'listening';
         } else {
           const _microFn = isChineseCard(card) ? generateChineseMicroCard : generateMicroCard;
-          micro        = await _microFn({ prompt_text: microPromptText, expected_answer_text: microExpectedText, subject: card.subject, concept, user_answer: userAnswer });
+          micro        = await _microFn({ prompt_text: microPromptText, expected_answer_text: microExpectedText, subject: card.subject, concept, user_answer: userAnswer, slotIndex });
           // Tag Chinese vocabulary (Type A / lexical) cards so the frontend can
           // enforce the two-consecutive-correct rule without fragile heuristics.
           presentation = (isChineseCard(card) && micro.isLexical) ? 'lexical' : 'text';
@@ -828,7 +828,7 @@ async function reviewMicroCard(res, microCardId, grade, conceptGaps, userAnswer,
         });
         const targetConcepts = rankedSiblingGaps.slice(0, slotsAvailable);
 
-        for (const concept of targetConcepts) {
+        for (const [slotIndex, concept] of targetConcepts.entries()) {
           try {
             const _siblingFn = isChineseCard(parent) ? generateChineseMicroCard : generateMicroCard;
             const sibling = await _siblingFn({
@@ -836,7 +836,8 @@ async function reviewMicroCard(res, microCardId, grade, conceptGaps, userAnswer,
               expected_answer_text: parent.expected_answer_text,
               subject:              micro.subject || parent.subject,
               concept,
-              user_answer:          userAnswer || ''
+              user_answer:          userAnswer || '',
+              slotIndex,
             });
             const siblingPresentation = (isChineseCard(parent) && sibling.isLexical) ? 'lexical' : 'text';
             const inserted = await dbPool.query(

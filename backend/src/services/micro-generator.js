@@ -23,12 +23,34 @@ function extractQuestion(text) {
   return question.replace(/^["']|["']$/g, '').trim();
 }
 
+// Each slot forces a distinct cognitive angle so multiple microcards for the
+// same concept don't converge on the same question style.
+// Slot 0 uses the base Socratic prompt unchanged (it's already gold).
+const ANGLE_PROMPTS = [
+  null, // slot 0 — base prompt, no override
+  `ÁNGULO FORZADO — PROPÓSITO:
+Ignorá los CASOS anteriores. Tu único eje es: ¿para qué existe este concepto? ¿Qué problema concreto quedaría sin resolver si no existiera?
+Preguntá desde la necesidad que lo originó, no desde sus características.`,
+  `ÁNGULO FORZADO — APLICACIÓN CONCRETA:
+Ignorá los CASOS anteriores. Tu único eje es: planteá un escenario mínimo y concreto donde el estudiante tenga que usar este concepto para resolver algo.
+No describas el concepto. Describí la situación y pedí qué haría.`,
+  `ÁNGULO FORZADO — CONTRASTE:
+Ignorá los CASOS anteriores. Tu único eje es: ¿en qué se diferencia este concepto de la alternativa más cercana? ¿Cuándo uno y cuándo el otro?
+Preguntá desde la confusión más probable, no desde la definición correcta.`,
+];
+
 /**
  * Given a concept the student failed to demonstrate understanding of,
  * generate a Socratic micro-question that leads them to the concept
  * through its underlying need — not by naming it directly.
+ *
+ * @param {number} [slotIndex=0] Position within the current generation batch.
+ *   Slot 0 uses the base prompt. Slots 1–3 force a distinct cognitive angle
+ *   so multiple microcards for the same concept don't overlap.
  */
-export async function generateMicroCard({ prompt_text, expected_answer_text, subject, concept, user_answer = '' }) {
+export async function generateMicroCard({ prompt_text, expected_answer_text, subject, concept, user_answer = '', slotIndex = 0 }) {
+  const angleBlock = ANGLE_PROMPTS[slotIndex] ?? ANGLE_PROMPTS[ANGLE_PROMPTS.length - 1];
+  const angleSection = angleBlock ? `\n${angleBlock}\n` : '';
   const response = await getClient().messages.create({
     model: LLM_MODEL,
     max_tokens: 300,
@@ -73,7 +95,7 @@ FORMATO DE SALIDA (exactamente dos líneas, sin nada más):
 PREGUNTA: <la pregunta socrática>
 RESPUESTA: <lo que el estudiante debería responder, conciso, 1-2 oraciones>
 
-PROHIBIDO: escribir el caso identificado, separadores, razonamiento previo, o cualquier línea adicional.`,
+PROHIBIDO: escribir el caso identificado, separadores, razonamiento previo, o cualquier línea adicional.${angleSection}`,
     messages: [{
       role: 'user',
       content: `Tarjeta original:
