@@ -11,12 +11,9 @@ function getClient() {
 }
 
 /**
- * Given a concept the student missed, generate a focused micro-question
- * that forces active recall — not recognition.
- *
- * Uses a decision tree to pick the best format depending on:
- * - whether the expected answer is a list, definition, procedure, or other
- * - what the student actually wrote (partial cues can scaffold recall)
+ * Given a concept the student failed to demonstrate understanding of,
+ * generate a Socratic micro-question that leads them to the concept
+ * through its underlying need — not by naming it directly.
  */
 export async function generateMicroCard({ prompt_text, expected_answer_text, subject, concept, user_answer = '' }) {
   const response = await getClient().messages.create({
@@ -71,9 +68,9 @@ Materia: ${subject || 'no especificada'}
 
 Respuesta que dio el estudiante: "${user_answer || '(sin respuesta registrada)'}"
 
-Concepto que el estudiante no demostró recordar: "${concept}"
+Concepto que el estudiante no demostró comprender: "${concept}"
 
-Aplicá el árbol de decisión y generá la micro-pregunta.`
+Identificá el caso correspondiente y generá la micro-pregunta socrática.`
     }]
   });
 
