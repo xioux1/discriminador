@@ -224,27 +224,6 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
   const theoreticalFilter = isVoiceMode ? `AND c.card_type = 'theoretical_open'` : '';
 
   try {
-    const microResult = await dbPool.query(
-      `SELECT mc.*,
-         c.subject           AS parent_subject,
-         c.prompt_text       AS parent_prompt,
-         c.expected_answer_text AS parent_expected
-       FROM micro_cards mc
-       JOIN cards c ON mc.parent_card_id = c.id
-       WHERE mc.status = 'active'
-         AND c.archived_at IS NULL
-         AND c.suspended_at IS NULL
-         AND mc.next_review_at <= now()
-         AND mc.user_id = $1
-         ${subjectFilter}
-       ORDER BY
-         CASE WHEN mc.review_count = 0 THEN 0 ELSE 1 END ASC,
-         mc.ease_factor ASC,
-         mc.next_review_at ASC
-       LIMIT 30`,
-      params
-    );
-
     const cardsResult = await dbPool.query(
       `SELECT c.*,
          COUNT(mc.id) FILTER (WHERE mc.status = 'active') AS active_micro_count,
@@ -331,11 +310,35 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
       };
     }));
 
-    const totalDue = microResult.rows.length + cards.length;
+    // Fetch active micro-cards for the due main cards — no time filter;
+    // micros always follow their parent card regardless of their own schedule.
+    const dueCardIds = cards.map((c) => c.id);
+    let microRows = [];
+    if (dueCardIds.length > 0) {
+      const microResult = await dbPool.query(
+        `SELECT mc.*,
+           c.subject              AS parent_subject,
+           c.prompt_text          AS parent_prompt,
+           c.expected_answer_text AS parent_expected
+         FROM micro_cards mc
+         JOIN cards c ON mc.parent_card_id = c.id
+         WHERE mc.status = 'active'
+           AND mc.parent_card_id = ANY($1)
+           AND mc.user_id = $2
+         ORDER BY
+           CASE WHEN mc.review_count = 0 THEN 0 ELSE 1 END ASC,
+           mc.ease_factor ASC,
+           mc.next_review_at ASC`,
+        [dueCardIds, userId]
+      );
+      microRows = microResult.rows;
+    }
+
+    const totalDue = microRows.length + cards.length;
 
     return res.status(200).json({
       total_due: totalDue,
-      micro_cards: microResult.rows,
+      micro_cards: microRows,
       cards
     });
   } catch (err) {

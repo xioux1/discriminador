@@ -4360,12 +4360,25 @@ function _doStartPlannedSession() {
   const cardById = {};
   briefingState.fullCards.forEach((c) => { cardById[c.id] = c; });
 
+  // Build micro lookup by parent card id for interleaving.
+  const microsByParent = {};
+  for (const m of briefingState.fullMicroCards) {
+    (microsByParent[m.parent_card_id] ??= []).push(m);
+  }
+
   const queue = [];
   for (const item of plan.planned) {
-    if (item.type === 'micro' && microById[item.id]) {
-      queue.push({ type: 'micro', data: microById[item.id] });
-    } else if (item.type === 'card' && cardById[item.id]) {
+    if (item.type === 'card' && cardById[item.id]) {
       queue.push({ type: 'card', data: cardById[item.id] });
+      for (const m of (microsByParent[item.id] ?? [])) {
+        queue.push({ type: 'micro', data: m });
+      }
+    } else if (item.type === 'micro' && microById[item.id]) {
+      // Only add orphan micros (parent not in plan) to avoid duplicates.
+      const parentInPlan = plan.planned.some(
+        (p) => p.type === 'card' && p.id === microById[item.id].parent_card_id
+      );
+      if (!parentInPlan) queue.push({ type: 'micro', data: microById[item.id] });
     }
   }
 
@@ -4897,7 +4910,19 @@ async function _doStartStudySession() {
       : (d.ease_factor ?? 2.5);
     return scoreOf(da) - scoreOf(db);
   });
-  studyState.queue              = [...sortByPerformance(cards), ...sortByPerformance(micros)];
+  // Group micros by parent card so each card is immediately followed by its micros.
+  const microsByParent = {};
+  for (const m of micros) {
+    const pid = m.data.parent_card_id;
+    (microsByParent[pid] ??= []).push(m);
+  }
+  const interleavedQueue = [];
+  for (const card of sortByPerformance(cards)) {
+    interleavedQueue.push(card);
+    const cardMicros = microsByParent[card.data.id] ?? [];
+    interleavedQueue.push(...sortByPerformance(cardMicros));
+  }
+  studyState.queue              = interleavedQueue;
   studyState.index              = 0;
   studyState.results            = [];
   studyState.pendingMicroGeneration = 0;
