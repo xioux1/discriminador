@@ -69,10 +69,11 @@ CASO C — El estudiante respondió parcialmente con error conceptual:
   → Tomá lo que dijo y preguntá si se sostiene bajo un caso concreto simple.
   → Ejemplo: si dijo algo impreciso sobre continuidad, preguntá: "¿Puede una función tener derivadas parciales en un punto sin ser continua ahí?"
 
-FORMATO DE SALIDA:
-Tu respuesta es ÚNICAMENTE la pregunta. Una sola oración interrogativa.
-PROHIBIDO escribir: el caso identificado, separadores (---, ===), razonamiento previo, prefijos como "Micro-pregunta:" o "Pregunta:".
-Si escribís algo además de la pregunta, la respuesta es incorrecta.`,
+FORMATO DE SALIDA (exactamente dos líneas, sin nada más):
+PREGUNTA: <la pregunta socrática>
+RESPUESTA: <lo que el estudiante debería responder, conciso, 1-2 oraciones>
+
+PROHIBIDO: escribir el caso identificado, separadores, razonamiento previo, o cualquier línea adicional.`,
     messages: [{
       role: 'user',
       content: `Tarjeta original:
@@ -90,11 +91,16 @@ Identificá el caso correspondiente y generá la micro-pregunta socrática.`
 
   const raw = response.content.find((b) => b.type === 'text')?.text ?? '';
 
-  // Strip any reasoning lines the LLM leaked (CASO headers, separators, blank preamble).
-  // Keep only the last non-empty paragraph that contains a question mark.
-  const question = extractQuestion(raw) || `¿Qué es "${concept}" y por qué es importante?`;
+  const questionMatch = raw.match(/^PREGUNTA:\s*(.+)/im);
+  const answerMatch   = raw.match(/^RESPUESTA:\s*([\s\S]+)/im);
 
-  return { question, expected_answer: expected_answer_text };
+  const question = questionMatch?.[1]?.trim()
+    ? questionMatch[1].trim()
+    : extractQuestion(raw) || `¿Qué es "${concept}" y por qué es importante?`;
+
+  const expected_answer = answerMatch?.[1]?.trim() || expected_answer_text;
+
+  return { question, expected_answer };
 }
 
 /**
