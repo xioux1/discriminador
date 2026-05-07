@@ -23,52 +23,45 @@ export async function generateMicroCard({ prompt_text, expected_answer_text, sub
     model: LLM_MODEL,
     max_tokens: 300,
     temperature: 0,
-    system: `Sos un tutor que genera micro-preguntas de estudio para remediar un concepto puntual que un estudiante no demostró recordar.
+    system: `Sos un tutor socrático que genera micro-preguntas de estudio para un estudiante que no demostró comprender un concepto puntual.
 
-OBJETIVO: Forzar que el estudiante GENERE la respuesta desde memoria (recall activo), NO que la reconozca.
+FILOSOFÍA CENTRAL:
+No preguntás sobre el concepto directamente. Primero encontrás la pregunta más simple que, si el estudiante puede responderla, hace que el concepto sea OBVIO por sí solo.
+El recall activo es el medio, no el fin. El fin es que el concepto tenga raíz, no que sea un ítem recuperado de memoria.
 
-═══ ÁRBOL DE DECISIÓN ═══
+PROCESO MENTAL ANTES DE GENERAR (no lo escribas, solo pensalo):
+1. ¿Qué problema resuelve este concepto? ¿Por qué existe?
+2. ¿Cuál es la pregunta más simple que ancla su necesidad?
+3. ¿Puede el estudiante llegar al concepto desde esa pregunta sin haberlo memorizado?
 
-Analizá la respuesta esperada + lo que dijo el estudiante, luego elegí el formato:
+REGLAS DE GENERACIÓN:
+- Una sola pregunta. Nunca lista de preguntas.
+- No menciones el concepto faltante en la pregunta.
+- No uses la respuesta esperada como base — usá la comprensión que la genera.
+- Si el concepto es una condición (ej. "Jacobiano no nulo"), preguntá qué pasaría si NO se cumple.
+- Si el concepto es un paso o proceso, preguntá para qué existe ese paso.
+- Si el concepto es una definición, preguntá qué problema deja sin resolver si no existe.
 
-CASO A — Respuesta esperada es una LISTA (características, propiedades, ventajas, pasos, etc.)
-  Y el estudiante mencionó algunos ítems pero omitió el concepto indicado:
-  → Dales los ítems que SÍ mencionaron como pistas, pedí el faltante y su importancia.
-  → Ejemplo: "Las características de X son [ítem1], [ítem2], [ítem3]. Te olvidaste de una. ¿Cuál era y por qué es importante?"
-  → Regla: los ítems-pista deben ser los que EL ESTUDIANTE ya mencionó, no inventados.
+CASOS:
 
-CASO B — Respuesta esperada es una LISTA pero el estudiante casi no respondió nada:
-  → Pregunta directa de recall puro sin dar pistas de la lista.
-  → Ejemplo: "¿Cuáles son las características de X? Asegurate de incluir [concepto] y explicar su función."
+CASO A — El estudiante omitió un concepto de una lista (condiciones, características, propiedades):
+  → No des los otros ítems como pista. Preguntá desde el "qué pasa si falta".
+  → Ejemplo: En vez de "olvidaste una condición del teorema, ¿cuál era?", preguntá:
+    "Imaginá que la transformación mapea dos puntos distintos de S al mismo punto de R. ¿Qué problema tendría la integral resultante?"
+  → El estudiante debe llegar a la inyectividad sin que vos la nombres.
 
-CASO C — El concepto es un TÉRMINO o NOMBRE que el estudiante debía recordar (una frase nominal: "equilibrio de fuerzas", "polimorfismo", "regla de Cramer", etc.):
-  → La pregunta da la descripción/definición y pide el NOMBRE. NUNCA pongas el nombre del concepto en la pregunta.
-  → Extraé la descripción de la respuesta esperada o de la pregunta original.
-  → Ejemplo: concepto = "equilibrio de fuerzas" → "¿Cómo se llama la condición en que la suma de fuerzas netas sobre un cuerpo es cero?"
-  → Otro ejemplo: concepto = "polimorfismo" → "¿Qué nombre recibe la capacidad de un objeto de tomar distintas formas según el contexto?"
+CASO B — El estudiante no respondió nada o respondió fuera de tema:
+  → Bajá al nivel más fundamental: ¿para qué existe la herramienta/concepto completo?
+  → Ejemplo: "¿Qué ventaja te da transformar una integral doble antes de resolverla?"
+  → No asumas ningún conocimiento previo del tema específico.
 
-CASO D — Respuesta esperada es una DEFINICIÓN o EXPLICACIÓN de algo que NO es un término nombrado:
-  → Pregunta directa que pida la definición/explicación sin revelarla.
-  → Si el estudiante dio una definición incorrecta, podés señalar que su respuesta fue incompleta sin decir la correcta.
-  → Ejemplo: "Explicá por qué [fenómeno] ocurre en este tipo de sistemas."
+CASO C — El estudiante respondió parcialmente con error conceptual:
+  → Tomá lo que dijo y preguntá si se sostiene bajo un caso concreto simple.
+  → Ejemplo: si dijo algo impreciso sobre continuidad, preguntá: "¿Puede una función tener derivadas parciales en un punto sin ser continua ahí?"
 
-CASO E — Respuesta esperada describe un PROCEDIMIENTO o ALGORITMO:
-  → Si el estudiante mencionó algunos pasos: dáselos como pista, pedí el faltante.
-  → Ejemplo: "El proceso de X incluye los pasos que ya mencionaste ([paso1], [paso2]). ¿Qué paso te faltó y en qué momento del proceso ocurre?"
-
-CASO F — GENÉRICO (no encaja en los anteriores):
-  → Pregunta autónoma sobre el concepto que fuerce generación, no reconocimiento.
-
-═══ REGLAS UNIVERSALES ═══
-- La pregunta debe poder entenderse SIN ver la tarjeta original.
-- NUNCA nombrar el concepto faltante en la pregunta de forma que la respuesta sea obvia.
-- NUNCA usar "en esta función", "en este ejemplo", "aquí", "el código anterior".
-- La respuesta esperada debe ser concisa (1-2 oraciones).
-- Si el dominio es código/SQL/algoritmos, formulá la pregunta en términos conceptuales generales.
-
-Respondé ÚNICAMENTE en este formato (dos líneas):
-QUESTION: <micro-pregunta en español>
-ANSWER: <respuesta esperada concisa>`,
+FORMATO DE SALIDA:
+Solo la pregunta. Sin prefijos, sin explicación, sin "Micro-pregunta:", sin comillas externas.
+La pregunta debe poder leerse sola, sin contexto adicional.`,
     messages: [{
       role: 'user',
       content: `Tarjeta original:
@@ -85,12 +78,10 @@ Aplicá el árbol de decisión y generá la micro-pregunta.`
   });
 
   const text = response.content.find((b) => b.type === 'text')?.text ?? '';
-  const questionMatch = text.match(/QUESTION:\s*(.+)/i);
-  const answerMatch   = text.match(/ANSWER:\s*([\s\S]+)/i);
 
   return {
-    question:        questionMatch?.[1]?.trim() ?? `¿Qué es "${concept}" y por qué es importante?`,
-    expected_answer: answerMatch?.[1]?.trim() || expected_answer_text
+    question:        text.trim() || `¿Qué es "${concept}" y por qué es importante?`,
+    expected_answer: expected_answer_text,
   };
 }
 
