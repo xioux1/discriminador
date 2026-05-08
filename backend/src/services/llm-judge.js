@@ -209,7 +209,15 @@ Cuando la pregunta pide calcular, resolver o evaluar (integral, derivada, límit
   Ejemplo: respuesta esperada 2ln(2) - ln(3) ≈ 0.2986 → estudiante escribe 0.29 o 0.30 → GOOD si el proceso fue correcto.
   Ejemplo: respuesta esperada π/4 ≈ 0.785 → estudiante escribe 0.79 → no penalices por redondeo.
 • HARD (no GOOD) solo si la forma alternativa oculta errores conceptuales o el valor numérico difiere significativamente.
-• Si la consigna no especifica la forma del resultado, el estudiante puede elegir cualquier representación válida.`;
+• Si la consigna no especifica la forma del resultado, el estudiante puede elegir cualquier representación válida.
+
+━━━ PASOS INTERMEDIOS IMPLÍCITOS EN DESARROLLOS ALGEBRAICOS ━━━
+Cuando la respuesta esperada narra explícitamente cada paso de una derivación (ej: "De x = √t se obtiene t = x²"), pero la respuesta del estudiante muestra el resultado de ese paso sin narrarlo:
+• Si el resultado del paso aparece en la respuesta del estudiante (ej: escribió "t = x²"), el paso se considera PRESENTE aunque el estudiante no haya explicado cómo lo obtuvo.
+• La narración de un paso obvio de un solo movimiento algebraico (despejar, sustituir, elevar al cuadrado, pasar un término) NO es un elemento esencial por sí misma — lo esencial es el resultado.
+• Solo penalizá la ausencia del paso si el resultado del mismo también está ausente de la respuesta.
+  Ejemplo: respuesta esperada "De x = √t se obtiene t = x²; se sustituye en y = 2 - t → y = 2 - x²" → estudiante escribe "t = x², y = 2 - x²" → GOOD (ambos resultados están presentes).
+  Contraejemplo: respuesta esperada incluye t = x² → estudiante escribe directamente y = 2 - x² sin mostrar t = x² → ese resultado sí está ausente → puede justificar HARD.`;
 
   if (gradingRubric.length > 0) {
     system += `
