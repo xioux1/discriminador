@@ -6339,7 +6339,12 @@ async function handleStudyNextCard() {
   studyState.results.push({
     grade: grade || 'uncertain',
     type: item.type,
-    concept: item.type === 'micro' ? item.data.concept : null
+    concept: item.type === 'micro' ? item.data.concept : null,
+    prompt_text: item.data.prompt_text || item.data.question || '',
+    expected_answer_text: item.data.expected_answer_text || item.data.expected_answer || '',
+    subject: item.data.subject || '',
+    user_answer: studyState.currentEvalContext?.user_answer_text || '',
+    concept_gaps: gaps || [],
   });
   persistStudySession();
 
@@ -6446,7 +6451,73 @@ function finishStudySession() {
   // guard and doesn't re-persist a completed session.
   studyState.sessionStartTime = null;
 
+  generateAndShowSessionAnalysis([...results]);
   loadStudyOverview();
+}
+
+async function generateAndShowSessionAnalysis(results) {
+  const container = document.querySelector('#study-analysis-container');
+  if (!container) return;
+
+  const reviews = results
+    .filter(r => r.prompt_text)
+    .map(r => ({
+      type: r.type,
+      grade: r.grade,
+      prompt_text: r.prompt_text,
+      expected_answer_text: r.expected_answer_text,
+      subject: r.subject,
+      user_answer: r.user_answer,
+      concept_gaps: r.concept_gaps,
+      concept: r.concept,
+    }));
+
+  if (reviews.length === 0) return;
+
+  container.classList.remove('hidden');
+  container.innerHTML = '<p style="color:var(--text-muted);font-size:0.9rem;margin-top:12px">Generando análisis de sesión…</p>';
+
+  try {
+    const data = await postJson('/study/sessions/analysis', { reviews });
+    const text = data?.analysis || '';
+    if (!text) { container.innerHTML = ''; return; }
+
+    const pre = document.createElement('pre');
+    pre.style.cssText = 'white-space:pre-wrap;font-family:inherit;font-size:0.83rem;color:var(--text-secondary);margin:8px 0 10px';
+    pre.textContent = text;
+
+    const downloadBtn = document.createElement('button');
+    downloadBtn.type = 'button';
+    downloadBtn.className = 'btn-ghost';
+    downloadBtn.style.cssText = 'font-size:0.85rem';
+    downloadBtn.textContent = 'Descargar TXT';
+    downloadBtn.addEventListener('click', () => {
+      const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `analisis-sesion-${new Date().toISOString().slice(0, 10)}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
+
+    const details = document.createElement('details');
+    details.style.marginTop = '16px';
+    const summary = document.createElement('summary');
+    summary.style.cssText = 'cursor:pointer;font-weight:600;color:var(--text-primary);font-size:0.95rem';
+    summary.textContent = 'Análisis de sesión · prompt para podcast';
+    details.appendChild(summary);
+    details.appendChild(pre);
+    details.appendChild(downloadBtn);
+
+    container.innerHTML = '';
+    container.appendChild(details);
+  } catch (err) {
+    console.warn('Session analysis failed:', err.message);
+    container.innerHTML = '';
+  }
 }
 
 function finishExamSession() {
