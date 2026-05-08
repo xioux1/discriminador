@@ -90,7 +90,7 @@ studySessionsRouter.get('/study/sessions/calibration', async (req, res) => {
   }
 });
 
-// POST /study/sessions/analysis — LLM analysis of a session's results for podcast prompt generation.
+// POST /study/sessions/analysis — study guide generated from session results.
 // Receives all card reviews from the frontend (no DB read needed — data already in memory).
 studySessionsRouter.post('/study/sessions/analysis', async (req, res) => {
   const { reviews } = req.body || {};
@@ -106,57 +106,40 @@ studySessionsRouter.post('/study/sessions/analysis', async (req, res) => {
   }
 
   const microReviews = reviews.filter(r => r.type === 'micro' && r.grade !== 'uncertain' && r.prompt_text);
-  const passed = mainReviews.filter(r => isPass(r.grade));
-  const failed = mainReviews.filter(r => !isPass(r.grade));
 
-  const formatCard = (r, idx) => {
-    let text = `[${idx + 1}] Tema: ${r.subject || 'sin tema'}\nPregunta: ${r.prompt_text}\nRespuesta esperada: ${r.expected_answer_text}`;
-    if (r.user_answer) text += `\nRespuesta del alumno: ${r.user_answer}`;
-    if (r.concept_gaps?.length) text += `\nConceptos con fallas detectadas: ${r.concept_gaps.join(', ')}`;
+  // Failed cards first (need more study), then passed
+  const failed = mainReviews.filter(r => !isPass(r.grade));
+  const passed = mainReviews.filter(r => isPass(r.grade));
+  const ordered = [...failed, ...passed];
+
+  const formatCard = (r) => {
+    let text = `Pregunta: ${r.prompt_text}\nRespuesta: ${r.expected_answer_text}`;
+    if (r.user_answer) text += `\nRespuesta dada: ${r.user_answer}`;
+    if (r.concept_gaps?.length) text += `\nConceptos con fallas: ${r.concept_gaps.join(', ')}`;
+    text += `\nResultado: ${isPass(r.grade) ? 'correcto' : 'incorrecto'}`;
     return text;
   };
 
-  const passedSection = passed.length > 0
-    ? `TARJETAS RESPONDIDAS CORRECTAMENTE (${passed.length}):\n\n${passed.map(formatCard).join('\n\n')}`
-    : 'No hubo tarjetas respondidas correctamente.';
-
-  const failedSection = failed.length > 0
-    ? `TARJETAS FALLADAS (${failed.length}):\n\n${failed.map(formatCard).join('\n\n')}`
-    : 'No hubo tarjetas falladas.';
+  const cardsSection = ordered.map(formatCard).join('\n\n---\n\n');
 
   const microSection = microReviews.length > 0
-    ? `\nMICRO-CONCEPTOS EVALUADOS EN SESIÓN:\n${microReviews.map(r => `  [${isPass(r.grade) ? '✓' : '✗'}] ${r.concept || r.prompt_text}: ${r.expected_answer_text}`).join('\n')}`
+    ? `\nMICRO-CONCEPTOS:\n${microReviews.map(r => `[${isPass(r.grade) ? '✓' : '✗'}] ${r.concept || r.prompt_text}`).join('\n')}`
     : '';
 
-  const cardCount = mainReviews.length;
-  const conciseness = cardCount <= 5
-    ? 'Podés ser detallado: hay pocas tarjetas.'
-    : cardCount <= 12
-    ? 'Sé conciso: 2-3 oraciones por brecha o patrón. Priorizá las más importantes.'
-    : 'Sé muy conciso: 1-2 oraciones por ítem. Incluí solo las brechas más críticas (máx 5) y los patrones más claros (máx 3).';
-
-  const prompt = `Sos un tutor experto analizando los resultados de una sesión de estudio. Tu tarea es producir un informe concreto que se usará como instrucción para generar un episodio de podcast educativo.
+  const prompt = `Sos un tutor experto. A partir de los resultados de una sesión de estudio, generá un informe de repaso: una lista de los temas vistos, cada uno con una explicación clara debajo.
 
 REGLAS:
-- ${conciseness}
-- Sé específico: en vez de "no entiende X", escribí "entiende la definición de X, pero cuando se le pide aplicarlo a [situación concreta], no logra relacionar [A] con [B]".
-- Basate en las respuestas reales del alumno y en los conceptos con fallas detectadas.
-- Priorizá lo más urgente.
-
-ESTRUCTURA (en este orden exacto):
-1. **PROMPT PARA PODCAST** — primero y obligatorio: un párrafo listo para usar como instrucción a un generador de podcast, describiendo qué temas explicar, a qué profundidad, qué ejemplos incluir y qué errores aclarar.
-2. **Lo que el alumno entiende bien** — lista breve de lo que domina.
-3. **Brechas principales** — para cada brecha: qué falla exactamente y en qué contexto.
-4. **Patrones detectados** — tipo de errores recurrentes.
-
-Idioma: español. Sin generalidades.
+- Para cada tema/pregunta, escribí el enunciado tal como está y luego una explicación que desarrolle el concepto en profundidad.
+- Ordená de mayor a menor importancia: los temas con resultado incorrecto o con fallas de conceptos van primero y reciben explicaciones más extensas y detalladas.
+- Los temas con resultado correcto van al final con explicaciones más breves.
+- No menciones al alumno ni uses frases como "el alumno no entiende". El informe es el material de estudio en sí.
+- Explicá cada concepto como si fuera un apunte de clase: concreto, con ejemplos si clarifican, sin relleno.
+- Idioma: español.
 
 ---
-DATOS DE LA SESIÓN:
+TARJETAS DE LA SESIÓN (ordenadas por prioridad de repaso):
 
-${passedSection}
-
-${failedSection}
+${cardsSection}
 ${microSection}`;
 
   try {
