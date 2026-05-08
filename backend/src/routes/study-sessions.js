@@ -93,7 +93,8 @@ studySessionsRouter.get('/study/sessions/calibration', async (req, res) => {
 // POST /study/sessions/analysis — study guide generated from session results.
 // Receives all card reviews from the frontend (no DB read needed — data already in memory).
 studySessionsRouter.post('/study/sessions/analysis', async (req, res) => {
-  const { reviews } = req.body || {};
+  const userId = req.user.id;
+  const { reviews, session_id } = req.body || {};
   if (!Array.isArray(reviews) || reviews.length === 0) {
     return res.status(422).json({ error: 'validation_error', message: 'reviews es obligatorio.' });
   }
@@ -153,9 +154,35 @@ ${microSection}`;
     const analysis = msg.content?.[0]?.text?.trim() || '';
     if (!analysis) return res.status(502).json({ error: 'generation_error', message: 'Empty response from model.' });
 
+    if (session_id) {
+      await dbPool.query(
+        `UPDATE study_sessions SET analysis = $1 WHERE id = $2 AND user_id = $3`,
+        [analysis, session_id, userId]
+      ).catch(() => {}); // non-fatal
+    }
+
     return res.json({ analysis });
   } catch (err) {
     console.error('POST /study/sessions/analysis error', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+// GET /study/sessions/history — last 30 sessions that have a saved analysis
+studySessionsRouter.get('/study/sessions/history', async (req, res) => {
+  const userId = req.user.id;
+  try {
+    const { rows } = await dbPool.query(
+      `SELECT id, started_at, ended_at, actual_minutes, actual_card_count, analysis
+       FROM study_sessions
+       WHERE user_id = $1 AND analysis IS NOT NULL
+       ORDER BY started_at DESC
+       LIMIT 30`,
+      [userId]
+    );
+    return res.json({ sessions: rows });
+  } catch (err) {
+    console.error('GET /study/sessions/history error', err.message);
     return res.status(500).json({ error: 'server_error', message: err.message });
   }
 });
