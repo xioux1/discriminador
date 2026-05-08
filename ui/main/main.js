@@ -4521,6 +4521,8 @@ function _doStartPlannedSession() {
   document.querySelector('#study-briefing').classList.add('hidden');
   document.querySelector('#study-overview').classList.add('hidden');
   document.querySelector('#study-complete').classList.add('hidden');
+  const _analysisEl = document.querySelector('#study-analysis-container');
+  if (_analysisEl) { _analysisEl.innerHTML = ''; _analysisEl.classList.add('hidden'); }
   document.querySelector('#study-session').classList.remove('hidden');
 
   startStudyRealtimeScheduler();
@@ -4588,6 +4590,22 @@ function exitStudySession() {
   document.querySelector('#study-overview').classList.remove('hidden');
   recordSessionCompletion(studyState.results.length);
   studyState.sessionStartTime = null;
+
+  const exitResults = [...studyState.results];
+  document.querySelector('#study-complete').classList.remove('hidden');
+  const passes = exitResults.filter(r => r.grade === 'pass').length;
+  const fails   = exitResults.filter(r => r.grade === 'fail').length;
+  document.querySelector('#study-complete-summary').innerHTML = `
+    <p><strong>${passes}</strong> correctas &nbsp;·&nbsp; <strong>${fails}</strong> incorrectas</p>
+    <p style="font-size:0.85rem;color:var(--text-muted)">(sesión cerrada antes de terminar)</p>
+  `;
+  const analysisContainer = document.querySelector('#study-analysis-container');
+  if (analysisContainer) {
+    analysisContainer.innerHTML = '';
+    analysisContainer.classList.add('hidden');
+  }
+  generateAndShowSessionAnalysis(exitResults);
+
   persistStudySession();
 }
 
