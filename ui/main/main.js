@@ -4592,6 +4592,25 @@ function exitStudySession() {
   studyState.sessionStartTime = null;
 
   const exitResults = [...studyState.results];
+
+  // Also capture the card currently on screen if it has an eval result but the
+  // user hasn't clicked "Siguiente" yet (those cards never reach results.push).
+  const currentItem = studyState.queue[studyState.index];
+  const currentDecision = studyState.currentDecision;
+  const currentEval = studyState.currentEvalResult;
+  if (currentItem && (currentDecision || currentEval)) {
+    exitResults.push({
+      grade: currentDecision?.finalGrade || 'uncertain',
+      type: currentItem.type,
+      concept: currentItem.type === 'micro' ? currentItem.data.concept : null,
+      prompt_text: currentItem.data.prompt_text || currentItem.data.question || '',
+      expected_answer_text: currentItem.data.expected_answer_text || currentItem.data.expected_answer || '',
+      subject: currentItem.data.subject || '',
+      user_answer: studyState.currentEvalContext?.user_answer_text || '',
+      concept_gaps: currentEval?.missing_concepts || [],
+    });
+  }
+
   document.querySelector('#study-complete').classList.remove('hidden');
   const passes = exitResults.filter(r => r.grade === 'pass').length;
   const fails   = exitResults.filter(r => r.grade === 'fail').length;
@@ -6490,9 +6509,11 @@ async function generateAndShowSessionAnalysis(results) {
       concept: r.concept,
     }));
 
-  if (reviews.length === 0) return;
-
   container.classList.remove('hidden');
+  if (reviews.length === 0) {
+    container.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;margin-top:10px">No hay tarjetas evaluadas para analizar.</p>';
+    return;
+  }
   container.innerHTML = '<p style="color:var(--text-muted);font-size:0.9rem;margin-top:12px">Generando análisis de sesión…</p>';
 
   try {
