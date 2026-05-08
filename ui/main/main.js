@@ -4612,8 +4612,8 @@ function exitStudySession() {
   }
 
   document.querySelector('#study-complete').classList.remove('hidden');
-  const passes = exitResults.filter(r => r.grade === 'pass').length;
-  const fails   = exitResults.filter(r => r.grade === 'fail').length;
+  const passes = exitResults.filter(r => r.grade === 'good' || r.grade === 'easy').length;
+  const fails   = exitResults.filter(r => r.grade === 'again' || r.grade === 'hard').length;
   document.querySelector('#study-complete-summary').innerHTML = `
     <p><strong>${passes}</strong> correctas &nbsp;·&nbsp; <strong>${fails}</strong> incorrectas</p>
     <p style="font-size:0.85rem;color:var(--text-muted)">(sesión cerrada antes de terminar)</p>
@@ -6457,9 +6457,9 @@ function finishStudySession() {
   document.querySelector('#study-complete').classList.remove('hidden');
 
   const results = studyState.results;
-  const passes  = results.filter((r) => r.grade === 'pass').length;
-  const fails   = results.filter((r) => r.grade === 'fail').length;
-  const microsPassed = results.filter((r) => r.type === 'micro' && r.grade === 'pass').length;
+  const passes  = results.filter((r) => r.grade === 'good' || r.grade === 'easy').length;
+  const fails   = results.filter((r) => r.grade === 'again' || r.grade === 'hard').length;
+  const microsPassed = results.filter((r) => r.type === 'micro' && (r.grade === 'good' || r.grade === 'easy')).length;
 
   document.querySelector('#study-complete-summary').innerHTML = `
     <p><strong>${passes}</strong> correctas &nbsp;·&nbsp; <strong>${fails}</strong> incorrectas</p>
