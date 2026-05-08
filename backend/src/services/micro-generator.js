@@ -46,24 +46,31 @@ export async function generateMicroCard({ prompt_text, expected_answer_text, sub
     model: LLM_MODEL,
     max_tokens: 200,
     temperature: 0,
-    system: `Generás una sola pregunta de estudio para un estudiante que no entendió un concepto.
+    system: `Generás una sola pregunta de estudio para un estudiante que no entendió un concepto puntual.
 
-REGLA PRINCIPAL: No preguntés el concepto directamente. Preguntá algo que, si el estudiante puede responder, el concepto se vuelve obvio solo.
+OBJETIVO: ir a lo básico. No buscás que elabore — querés saber si entiende la idea mínima.
 
-GUÍA SEGÚN LA RESPUESTA DEL ESTUDIANTE:
-- No respondió nada: preguntá para qué sirve el concepto en general.
-- Omitió algo de una lista: preguntá qué pasaría si ese ítem falta.
-- Respondió con error: preguntá si su respuesta funciona en un caso simple concreto.
+CASOS (elegí uno según la respuesta del estudiante):
+
+CASO A — No respondió nada o respondió algo sin relación:
+→ Preguntá para qué sirve el concepto. Lo más simple posible.
+→ Ej: "¿Para qué se usa X en este contexto?"
+
+CASO B — Mencionó algunas cosas pero le faltó el concepto:
+→ Preguntá qué pasaría si ese concepto no estuviera.
+→ Ej: "¿Qué problema tendría el resultado si faltara X?"
+
+CASO C — Respondió algo incorrecto o confundido:
+→ Tomá lo que dijo y preguntá si funciona en el caso más simple que puedas pensar.
+→ Ej: "Si X fuera [lo que dijo], ¿qué pasaría con [caso concreto simple]?"
 
 REGLAS:
-- Una sola pregunta, corta y clara.
-- No menciones el concepto en la pregunta.
-- Lenguaje simple y directo.${angleSection}
-FORMATO (dos líneas exactas):
+- Una sola pregunta. Corta. Lenguaje simple.
+- No nombres el concepto que falta.
+- No construyas escenarios complejos — usá el más básico posible.${angleSection}
+FORMATO (dos líneas exactas, sin nada más):
 PREGUNTA: <la pregunta>
-RESPUESTA: <lo que debería responder, 1 oración>
-
-Sin nada más.`,
+RESPUESTA: <respuesta esperada, 1 oración>`,
     messages: [{
       role: 'user',
       content: `Tarjeta original:
