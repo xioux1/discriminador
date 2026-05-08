@@ -731,4 +731,94 @@ FORMATO DE RESPUESTA — respondé SOLO con JSON válido, sin texto antes ni des
   return res.json({ results: enriched, saved: save });
 });
 
+// POST /cards/reformat-variant — rewrite a single variant's prompt_text in LaTeX using Claude
+// Body: { card_id: number, variant_id: number, save?: boolean }
+// Returns: { result: { id, original, reformatted, score, comment }, saved }
+cardsRouter.post('/cards/reformat-variant', llmRateLimit, async (req, res) => {
+  const userId    = req.user.id;
+  const cardId    = Number(req.body?.card_id);
+  const variantId = Number(req.body?.variant_id);
+  const save      = req.body?.save === true;
+
+  if (!Number.isFinite(cardId) || cardId <= 0 || !Number.isFinite(variantId) || variantId <= 0) {
+    return res.status(422).json({ error: 'validation_error', message: 'card_id y variant_id son obligatorios.' });
+  }
+
+  const { rows } = await dbPool.query(
+    `SELECT cv.id, cv.prompt_text, c.subject
+     FROM card_variants cv
+     JOIN cards c ON c.id = cv.card_id
+     WHERE cv.id = $1 AND cv.card_id = $2 AND c.user_id = $3`,
+    [variantId, cardId, userId]
+  );
+  if (!rows.length) {
+    return res.status(404).json({ error: 'not_found', message: 'Variante no encontrada.' });
+  }
+
+  const variant = rows[0];
+
+  const client = new Anthropic();
+  let rawResponse;
+  try {
+    const msg = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1024,
+      temperature: 0,
+      system: `Sos un experto en notación matemática y física para tarjetas de estudio universitario.
+Tu tarea: reescribir consignas de tarjetas usando LaTeX estándar con delimitadores $ y $$.
+
+REGLAS ESTRICTAS:
+- Usá $...$ para matemática inline (variables, expresiones cortas dentro de texto)
+- Usá $$...$$ para ecuaciones en bloque (fórmulas importantes, definiciones, igualdades largas)
+- Conservá exactamente el significado y la redacción del texto, solo cambiá la notación matemática
+- No traduzcas, no reformules, no agregues ni quites conceptos
+- Si la consigna no tiene notación matemática que mejorar, devolvé el texto original tal cual
+- El texto fuera de delimitadores LaTeX debe permanecer en español sin cambios
+
+FORMATO DE RESPUESTA — respondé SOLO con JSON válido, sin texto antes ni después:
+{
+  "reformatted": "<texto con LaTeX>",
+  "score": <número 1-10 de claridad/estética>,
+  "comment": "<una línea explicando qué cambiaste o por qué está bien>"
+}`,
+      messages: [{ role: 'user', content: variant.prompt_text }],
+    });
+    rawResponse = msg.content.find(b => b.type === 'text')?.text?.trim() ?? '';
+  } catch (err) {
+    console.error('POST /cards/reformat-variant (LLM)', err.message);
+    return res.status(500).json({ error: 'llm_error', message: err.message });
+  }
+
+  let parsed;
+  try {
+    const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
+    parsed = JSON.parse(jsonMatch ? jsonMatch[0] : rawResponse);
+  } catch (_) {
+    return res.status(500).json({ error: 'parse_error', message: 'La IA devolvió una respuesta inválida.', raw: rawResponse.slice(0, 500) });
+  }
+
+  const reformatted = typeof parsed?.reformatted === 'string' ? parsed.reformatted : variant.prompt_text;
+  const result = {
+    id:          variantId,
+    original:    variant.prompt_text,
+    reformatted,
+    score:       typeof parsed?.score === 'number' ? parsed.score : null,
+    comment:     typeof parsed?.comment === 'string' ? parsed.comment : '',
+  };
+
+  if (save && reformatted && reformatted !== variant.prompt_text) {
+    try {
+      await dbPool.query(
+        `UPDATE card_variants SET prompt_text = $1 WHERE id = $2 AND card_id = $3`,
+        [reformatted, variantId, cardId]
+      );
+    } catch (err) {
+      console.error('POST /cards/reformat-variant (save)', err.message);
+      return res.status(500).json({ error: 'server_error', message: err.message });
+    }
+  }
+
+  return res.json({ result, saved: save });
+});
+
 export default cardsRouter;
