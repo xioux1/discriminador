@@ -4624,6 +4624,8 @@ function exitStudySession() {
     analysisContainer.classList.add('hidden');
   }
   generateAndShowSessionAnalysis(exitResults);
+  document.querySelector('#study-complete').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  loadStudyOverview();
 
   persistStudySession();
 }
@@ -6519,7 +6521,7 @@ async function generateAndShowSessionAnalysis(results) {
   try {
     const data = await postJson('/study/sessions/analysis', { reviews });
     const text = data?.analysis || '';
-    if (!text) { container.innerHTML = ''; return; }
+    if (!text) { container.innerHTML = '<p style="color:#c00;font-size:0.85rem;margin-top:10px">El modelo no devolvió análisis.</p>'; return; }
 
     const pre = document.createElement('pre');
     pre.style.cssText = 'white-space:pre-wrap;font-family:inherit;font-size:0.83rem;color:var(--text-secondary);margin:8px 0 10px';
@@ -6555,7 +6557,7 @@ async function generateAndShowSessionAnalysis(results) {
     container.appendChild(details);
   } catch (err) {
     console.warn('Session analysis failed:', err.message);
-    container.innerHTML = '';
+    container.innerHTML = `<p style="color:#c00;font-size:0.85rem;margin-top:10px">Error al generar análisis: ${err.message}</p>`;
   }
 }
 
