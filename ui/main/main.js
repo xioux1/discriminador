@@ -4002,6 +4002,16 @@ function initStudyTab() {
     document.querySelector('#study-briefing').classList.remove('hidden');
   });
 
+  document.querySelector('#study-history-btn').addEventListener('click', () => {
+    document.querySelector('#study-history').classList.remove('hidden');
+    document.querySelector('#study-history').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    loadSessionHistory();
+  });
+
+  document.querySelector('#study-history-close-btn').addEventListener('click', () => {
+    document.querySelector('#study-history').classList.add('hidden');
+  });
+
   // ── Exam simulation modal ────────────────────────────────────────────────
   let _examSelectedCount = 10;
 
@@ -4521,6 +4531,7 @@ function _doStartPlannedSession() {
   document.querySelector('#study-briefing').classList.add('hidden');
   document.querySelector('#study-overview').classList.add('hidden');
   document.querySelector('#study-complete').classList.add('hidden');
+  document.querySelector('#study-history').classList.add('hidden');
   const _analysisEl = document.querySelector('#study-analysis-container');
   if (_analysisEl) { _analysisEl.innerHTML = ''; _analysisEl.classList.add('hidden'); }
   document.querySelector('#study-session').classList.remove('hidden');
@@ -4588,6 +4599,7 @@ function exitStudySession() {
   }
   document.querySelector('#study-session').classList.add('hidden');
   document.querySelector('#study-overview').classList.remove('hidden');
+  const exitSessionId = studyState.sessionId ?? null;
   recordSessionCompletion(studyState.results.length);
   studyState.sessionStartTime = null;
 
@@ -4623,7 +4635,7 @@ function exitStudySession() {
     analysisContainer.innerHTML = '';
     analysisContainer.classList.add('hidden');
   }
-  generateAndShowSessionAnalysis(exitResults);
+  generateAndShowSessionAnalysis(exitResults, exitSessionId);
   document.querySelector('#study-complete').scrollIntoView({ behavior: 'smooth', block: 'start' });
   loadStudyOverview();
 
@@ -4728,6 +4740,65 @@ async function loadStudyOverview() {
     actions.classList.remove('hidden');
   } catch (err) {
     summary.innerHTML = `<span style="color:#c00">Error al cargar la cola: ${err.message}</span>`;
+  }
+}
+
+async function loadSessionHistory() {
+  const list = document.querySelector('#study-history-list');
+  if (!list) return;
+  list.innerHTML = '<p style="color:var(--text-muted);font-size:0.9rem">Cargando...</p>';
+  try {
+    const data = await getJson('/study/sessions/history');
+    const sessions = data?.sessions ?? [];
+    if (sessions.length === 0) {
+      list.innerHTML = '<p style="color:var(--text-muted);font-size:0.9rem">No hay sesiones con análisis guardado.</p>';
+      return;
+    }
+    list.innerHTML = '';
+    for (const s of sessions) {
+      const date = new Date(s.started_at);
+      const dateStr = date.toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' });
+      const timeStr = date.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+      const mins = s.actual_minutes != null ? `${Math.round(s.actual_minutes)} min` : '';
+      const cards = s.actual_card_count ? `${s.actual_card_count} tarjetas` : '';
+      const meta = [dateStr, timeStr, mins, cards].filter(Boolean).join(' · ');
+
+      const item = document.createElement('details');
+      item.style.cssText = 'border:1px solid var(--border);border-radius:8px;margin-bottom:10px;overflow:hidden';
+
+      const summary = document.createElement('summary');
+      summary.style.cssText = 'padding:12px 14px;cursor:pointer;font-weight:600;font-size:0.92rem;list-style:none;display:flex;justify-content:space-between;align-items:center';
+      summary.innerHTML = `<span>${escHtml(meta)}</span>`;
+
+      const downloadBtn = document.createElement('button');
+      downloadBtn.type = 'button';
+      downloadBtn.className = 'btn-ghost';
+      downloadBtn.style.cssText = 'font-size:0.78rem;padding:2px 8px;margin-left:10px';
+      downloadBtn.textContent = 'TXT';
+      downloadBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const blob = new Blob([s.analysis], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `sesion-${date.toISOString().slice(0, 10)}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      });
+      summary.appendChild(downloadBtn);
+
+      const pre = document.createElement('pre');
+      pre.style.cssText = 'white-space:pre-wrap;font-family:inherit;font-size:0.83rem;color:var(--text-secondary);padding:12px 14px;margin:0;border-top:1px solid var(--border);background:var(--bg-secondary,#fafafa)';
+      pre.textContent = s.analysis;
+
+      item.appendChild(summary);
+      item.appendChild(pre);
+      list.appendChild(item);
+    }
+  } catch (err) {
+    list.innerHTML = `<p style="color:#c00;font-size:0.9rem">Error: ${escHtml(err.message)}</p>`;
   }
 }
 
@@ -6456,6 +6527,7 @@ function finishStudySession() {
   document.querySelector('#study-overview').classList.remove('hidden');
   document.querySelector('#study-complete').classList.remove('hidden');
 
+  const finishSessionId = studyState.sessionId ?? null;
   const results = studyState.results;
   const passes  = results.filter((r) => r.grade === 'good' || r.grade === 'easy').length;
   const fails   = results.filter((r) => r.grade === 'again' || r.grade === 'hard').length;
@@ -6490,11 +6562,11 @@ function finishStudySession() {
   // guard and doesn't re-persist a completed session.
   studyState.sessionStartTime = null;
 
-  generateAndShowSessionAnalysis([...results]);
+  generateAndShowSessionAnalysis([...results], finishSessionId);
   loadStudyOverview();
 }
 
-async function generateAndShowSessionAnalysis(results) {
+async function generateAndShowSessionAnalysis(results, sessionId = null) {
   const container = document.querySelector('#study-analysis-container');
   if (!container) return;
 
@@ -6519,7 +6591,7 @@ async function generateAndShowSessionAnalysis(results) {
   container.innerHTML = '<p style="color:var(--text-muted);font-size:0.9rem;margin-top:12px">Generando análisis de sesión…</p>';
 
   try {
-    const data = await postJson('/study/sessions/analysis', { reviews });
+    const data = await postJson('/study/sessions/analysis', { reviews, session_id: sessionId });
     const text = data?.analysis || '';
     if (!text) { container.innerHTML = '<p style="color:#c00;font-size:0.85rem;margin-top:10px">El modelo no devolvió análisis.</p>'; return; }
 
