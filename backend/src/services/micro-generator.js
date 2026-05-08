@@ -23,79 +23,54 @@ function extractQuestion(text) {
   return question.replace(/^["']|["']$/g, '').trim();
 }
 
-// Each slot forces a distinct cognitive angle so multiple microcards for the
-// same concept don't converge on the same question style.
-// Slot 0 uses the base Socratic prompt unchanged (it's already gold).
 const ANGLE_PROMPTS = [
   null, // slot 0 — base prompt, no override
-  `ÁNGULO FORZADO — PROPÓSITO:
-Ignorá los CASOS anteriores. Tu único eje es: ¿para qué existe este concepto? ¿Qué problema concreto quedaría sin resolver si no existiera?
-Preguntá desde la necesidad que lo originó, no desde sus características.`,
-  `ÁNGULO FORZADO — APLICACIÓN CONCRETA:
-Ignorá los CASOS anteriores. Tu único eje es: planteá un escenario mínimo y concreto donde el estudiante tenga que usar este concepto para resolver algo.
-No describas el concepto. Describí la situación y pedí qué haría.`,
-  `ÁNGULO FORZADO — CONTRASTE:
-Ignorá los CASOS anteriores. Tu único eje es: ¿en qué se diferencia este concepto de la alternativa más cercana? ¿Cuándo uno y cuándo el otro?
-Preguntá desde la confusión más probable, no desde la definición correcta.`,
+  `ÁNGULO — PARA QUÉ EXISTE:
+Preguntá para qué sirve este concepto. ¿Qué no podría hacerse sin él?`,
+  `ÁNGULO — APLICACIÓN:
+Planteá una situación concreta y corta. Pedile al estudiante qué haría en ese caso.`,
+  `ÁNGULO — DIFERENCIA:
+Preguntá en qué se diferencia este concepto de la opción más parecida.`,
 ];
 
 /**
  * Given a concept the student failed to demonstrate understanding of,
- * generate a Socratic micro-question that leads them to the concept
- * through its underlying need — not by naming it directly.
+ * generate a simple Socratic micro-question.
  *
- * @param {number} [slotIndex=0] Position within the current generation batch.
- *   Slot 0 uses the base prompt. Slots 1–3 force a distinct cognitive angle
- *   so multiple microcards for the same concept don't overlap.
+ * @param {number} [slotIndex=0] Slot 0 = base prompt. Slots 1–3 force a distinct angle.
  */
 export async function generateMicroCard({ prompt_text, expected_answer_text, subject, concept, user_answer = '', slotIndex = 0 }) {
   const angleBlock = ANGLE_PROMPTS[slotIndex] ?? ANGLE_PROMPTS[ANGLE_PROMPTS.length - 1];
   const angleSection = angleBlock ? `\n${angleBlock}\n` : '';
   const response = await getClient().messages.create({
     model: LLM_MODEL,
-    max_tokens: 300,
+    max_tokens: 200,
     temperature: 0,
-    system: `Sos un tutor socrático que genera micro-preguntas de estudio para un estudiante que no demostró comprender un concepto puntual.
+    system: `Generás una sola pregunta de estudio para un estudiante que no entendió un concepto puntual.
 
-FILOSOFÍA CENTRAL:
-No preguntás sobre el concepto directamente. Primero encontrás la pregunta más simple que, si el estudiante puede responderla, hace que el concepto sea OBVIO por sí solo.
-El recall activo es el medio, no el fin. El fin es que el concepto tenga raíz, no que sea un ítem recuperado de memoria.
+OBJETIVO: ir a lo básico. No buscás que elabore — querés saber si entiende la idea mínima.
 
-PROCESO MENTAL ANTES DE GENERAR (no lo escribas, solo pensalo):
-1. ¿Qué problema resuelve este concepto? ¿Por qué existe?
-2. ¿Cuál es la pregunta más simple que ancla su necesidad?
-3. ¿Puede el estudiante llegar al concepto desde esa pregunta sin haberlo memorizado?
+CASOS (elegí uno según la respuesta del estudiante):
 
-REGLAS DE GENERACIÓN:
-- Una sola pregunta. Nunca lista de preguntas.
-- No menciones el concepto faltante en la pregunta.
-- No uses la respuesta esperada como base — usá la comprensión que la genera.
-- Si el concepto es una condición (ej. "Jacobiano no nulo"), preguntá qué pasaría si NO se cumple.
-- Si el concepto es un paso o proceso, preguntá para qué existe ese paso.
-- Si el concepto es una definición, preguntá qué problema deja sin resolver si no existe.
+CASO A — No respondió nada o respondió algo sin relación:
+→ Preguntá para qué sirve el concepto. Lo más simple posible.
+→ Ej: "¿Para qué se usa X en este contexto?"
 
-CASOS:
+CASO B — Mencionó algunas cosas pero le faltó el concepto:
+→ Preguntá qué pasaría si ese concepto no estuviera.
+→ Ej: "¿Qué problema tendría el resultado si faltara X?"
 
-CASO A — El estudiante omitió un concepto de una lista (condiciones, características, propiedades):
-  → No des los otros ítems como pista. Preguntá desde el "qué pasa si falta".
-  → Ejemplo: En vez de "olvidaste una condición del teorema, ¿cuál era?", preguntá:
-    "Imaginá que la transformación mapea dos puntos distintos de S al mismo punto de R. ¿Qué problema tendría la integral resultante?"
-  → El estudiante debe llegar a la inyectividad sin que vos la nombres.
+CASO C — Respondió algo incorrecto o confundido:
+→ Tomá lo que dijo y preguntá si funciona en el caso más simple que puedas pensar.
+→ Ej: "Si X fuera [lo que dijo], ¿qué pasaría con [caso concreto simple]?"
 
-CASO B — El estudiante no respondió nada o respondió fuera de tema:
-  → Bajá al nivel más fundamental: ¿para qué existe la herramienta/concepto completo?
-  → Ejemplo: "¿Qué ventaja te da transformar una integral doble antes de resolverla?"
-  → No asumas ningún conocimiento previo del tema específico.
-
-CASO C — El estudiante respondió parcialmente con error conceptual:
-  → Tomá lo que dijo y preguntá si se sostiene bajo un caso concreto simple.
-  → Ejemplo: si dijo algo impreciso sobre continuidad, preguntá: "¿Puede una función tener derivadas parciales en un punto sin ser continua ahí?"
-
-FORMATO DE SALIDA (exactamente dos líneas, sin nada más):
-PREGUNTA: <la pregunta socrática>
-RESPUESTA: <lo que el estudiante debería responder, conciso, 1-2 oraciones>
-
-PROHIBIDO: escribir el caso identificado, separadores, razonamiento previo, o cualquier línea adicional.${angleSection}`,
+REGLAS:
+- Una sola pregunta. Corta. Lenguaje simple.
+- No nombres el concepto que falta.
+- No construyas escenarios complejos — usá el más básico posible.${angleSection}
+FORMATO (dos líneas exactas, sin nada más):
+PREGUNTA: <la pregunta>
+RESPUESTA: <respuesta esperada, 1 oración>`,
     messages: [{
       role: 'user',
       content: `Tarjeta original:
