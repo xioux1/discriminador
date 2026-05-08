@@ -5772,20 +5772,15 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
     missingEl.textContent = '';
     missingEl.classList.add('hidden');
 
-    const weakTags = weakDimensions.map(([dimension, value]) => {
-      const label = DIM_LABELS[dimension] || dimension;
-      const pct = Math.round(Number(value) * 100);
-      return `<span class="study-dimension-chip weak hl-pink">${label}: ${pct}%</span>`;
-    }).join(' ');
     const missingTags = concepts.map((c) => `<span class="concept-tag hl-yellow">${escHtml(c)}</span>`).join(' ');
-    const groupedTags = (weakTags || missingTags)
-      ? `<div class="study-answer-compare-block"><strong>Etiquetas:</strong> ${weakTags}${weakTags && missingTags ? ' ' : ''}${missingTags}</div>`
+    const missingTagsBlock = missingTags
+      ? `<div class="study-answer-compare-block"><strong>Conceptos faltantes:</strong> ${missingTags}</div>`
       : '';
 
     // Always show answer comparison.
     const _hasChinese = hasChinese(expected_answer_text);
     expectedEl.innerHTML = `
-      ${groupedTags}
+      ${missingTagsBlock}
       ${formatAnswerBlock('Tu respuesta', answer)}
       ${formatAnswerBlock('Respuesta esperada', expected_answer_text)}
       ${_hasChinese ? '<details class="study-pinyin-details"><summary>Pinyin</summary><p class="study-pinyin-text">…</p></details>' : ''}
