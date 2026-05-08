@@ -1222,13 +1222,13 @@ schedulerRouter.post('/scheduler/cards/:id/easy-explanation', async (req, res) =
 
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const msg = await anthropic.messages.create({
-      model: LLM_MODEL,
-      max_tokens: 300,
+      model: 'claude-sonnet-4-6',
+      max_tokens: 600,
       messages: [{
         role: 'user',
         content: `Sos un tutor experto. Tenés una tarjeta de estudio con pregunta y respuesta esperada.
 
-Tu tarea: escribir una explicación clara y sencilla (máximo 4 oraciones en prosa fluida, sin bullets) que ayude al estudiante a ENTENDER por qué esa es la respuesta correcta. Usá lenguaje simple y analogías si clarifican. No repitas literalmente la pregunta ni la respuesta; ampliá el razonamiento detrás. Idioma: español.
+Tu tarea: explicar en detalle qué significa esa respuesta. NO la abstaigas ni la parafrasees con palabras genéricas. En cambio, desglosa concretamente qué quiere decir cada parte: qué es ese concepto, cómo funciona, por qué importa, qué consecuencias o implicancias tiene. Si hay términos técnicos, explicá qué hacen en la práctica. Máximo 5 oraciones en prosa fluida, sin bullets. Idioma: español.
 
 Pregunta: ${card.prompt_text}
 Respuesta esperada:
