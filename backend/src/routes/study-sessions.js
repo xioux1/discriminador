@@ -128,21 +128,28 @@ studySessionsRouter.post('/study/sessions/analysis', async (req, res) => {
     ? `\nMICRO-CONCEPTOS EVALUADOS EN SESIÓN:\n${microReviews.map(r => `  [${isPass(r.grade) ? '✓' : '✗'}] ${r.concept || r.prompt_text}: ${r.expected_answer_text}`).join('\n')}`
     : '';
 
-  const prompt = `Sos un tutor experto analizando los resultados de una sesión de estudio. Tu tarea es producir un informe concreto y específico que se usará directamente como instrucción para generar un episodio de podcast educativo.
+  const cardCount = mainReviews.length;
+  const conciseness = cardCount <= 5
+    ? 'Podés ser detallado: hay pocas tarjetas.'
+    : cardCount <= 12
+    ? 'Sé conciso: 2-3 oraciones por brecha o patrón. Priorizá las más importantes.'
+    : 'Sé muy conciso: 1-2 oraciones por ítem. Incluí solo las brechas más críticas (máx 5) y los patrones más claros (máx 3).';
+
+  const prompt = `Sos un tutor experto analizando los resultados de una sesión de estudio. Tu tarea es producir un informe concreto que se usará como instrucción para generar un episodio de podcast educativo.
 
 REGLAS:
-- Sé muy específico. En vez de "no entiende el Tema X", escribí "entiende la definición de X, pero cuando se le pide aplicarlo a [situación concreta del error], no logra relacionar [concepto A] con [concepto B]".
-- Identificá patrones: ¿falla aplicación pero entiende teoría? ¿Falla términos técnicos? ¿Confunde conceptos similares?
+- ${conciseness}
+- Sé específico: en vez de "no entiende X", escribí "entiende la definición de X, pero cuando se le pide aplicarlo a [situación concreta], no logra relacionar [A] con [B]".
 - Basate en las respuestas reales del alumno y en los conceptos con fallas detectadas.
-- Priorizá: ¿qué es lo más urgente de reforzar?
+- Priorizá lo más urgente.
 
-ESTRUCTURA DEL INFORME:
-1. **Lo que el alumno entiende bien** — lista con detalle de qué aspectos domina
-2. **Lo que el alumno NO entiende o entiende a medias** — para cada brecha, describí específicamente qué parte falla y en qué contexto
-3. **Patrones detectados** — observaciones sobre el tipo de errores
-4. **PROMPT PARA PODCAST** — un párrafo listo para copiar-pegar como instrucción a un generador de podcast: qué temas explicar, a qué profundidad, qué ejemplos o analogías incluir, qué errores comunes aclarar
+ESTRUCTURA (en este orden exacto):
+1. **PROMPT PARA PODCAST** — primero y obligatorio: un párrafo listo para usar como instrucción a un generador de podcast, describiendo qué temas explicar, a qué profundidad, qué ejemplos incluir y qué errores aclarar.
+2. **Lo que el alumno entiende bien** — lista breve de lo que domina.
+3. **Brechas principales** — para cada brecha: qué falla exactamente y en qué contexto.
+4. **Patrones detectados** — tipo de errores recurrentes.
 
-Idioma: español. No uses generalidades. El informe debe ser útil para que alguien que no vio la sesión pueda generar un episodio de podcast perfectamente calibrado a las necesidades de este alumno.
+Idioma: español. Sin generalidades.
 
 ---
 DATOS DE LA SESIÓN:
@@ -156,7 +163,7 @@ ${microSection}`;
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const msg = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
+      max_tokens: 8192,
       messages: [{ role: 'user', content: prompt }],
     });
 
