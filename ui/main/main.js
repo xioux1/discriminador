@@ -5798,13 +5798,13 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
         const cardId = item.data.id;
         easyPanel.classList.remove('hidden');
         if (item.data.easy_explanation) {
-          easyText.textContent = item.data.easy_explanation;
+          easyText.innerHTML = renderCodeMarkdown(item.data.easy_explanation);
         } else {
           easyText.textContent = 'Generando explicación…';
           postJson(`/scheduler/cards/${cardId}/easy-explanation`, {})
             .then((resp) => {
               if (resp?.easy_explanation) {
-                easyText.textContent = resp.easy_explanation;
+                easyText.innerHTML = renderCodeMarkdown(resp.easy_explanation);
                 item.data.easy_explanation = resp.easy_explanation;
               } else {
                 easyPanel.classList.add('hidden');
