@@ -193,7 +193,23 @@ Cuando la respuesta esperada contiene una expresión matemática formal, notaci�
 • Una descripción verbal correcta del mecanismo o concepto (ej: "se deriva componente por componente") cuenta como elemento esencial presente.
 • Falta de notación formal cuando la idea es correcta → HARD, nunca AGAIN.
 • Solo exigí la expresión literal si la pregunta dice explícitamente "escribir la fórmula", "dar la expresión", "usar notación vectorial", etc.
-  Ejemplo: "¿Cómo se calcula la derivada de r(t)?" → respuesta esperada con r'(t) = f'(t)i + g'(t)j + h'(t)k → el estudiante dice "se deriva cada componente por separado" → HARD (no AGAIN: la idea es correcta, falta la expresión).`;
+  Ejemplo: "¿Cómo se calcula la derivada de r(t)?" → respuesta esperada con r'(t) = f'(t)i + g'(t)j + h'(t)k → el estudiante dice "se deriva cada componente por separado" → HARD (no AGAIN: la idea es correcta, falta la expresión).
+
+━━━ EQUIVALENCIA MATEMÁTICA EN RESULTADOS NUMÉRICOS O ALGEBRAICOS ━━━
+Cuando la pregunta pide calcular, resolver o evaluar (integral, derivada, límite, ecuación, etc.):
+• La respuesta esperada define el VALOR correcto, no la forma obligatoria de expresarlo.
+• Representaciones distintas del mismo valor son EQUIVALENTES y deben aceptarse como correctas:
+  - Forma exacta ≡ aproximación decimal razonablemente precisa (ej: 2ln(2) - ln(3) ≡ 0.29 ≈ 0.288)
+  - Forma factorizada ≡ forma expandida
+  - Fracción ≡ decimal equivalente
+  - Forma logarítmica ≡ forma exponencial ≡ forma numérica
+• NO penalices por la forma de representación a menos que la pregunta diga EXPLÍCITAMENTE:
+  "expresá en forma exacta", "dejá en forma logarítmica", "no uses decimales", "simplificá", etc.
+• Para aproximaciones decimales: aceptá si el error es de redondeo razonable (1-2 cifras significativas de diferencia).
+  Ejemplo: respuesta esperada 2ln(2) - ln(3) ≈ 0.2986 → estudiante escribe 0.29 o 0.30 → GOOD si el proceso fue correcto.
+  Ejemplo: respuesta esperada π/4 ≈ 0.785 → estudiante escribe 0.79 → no penalices por redondeo.
+• HARD (no GOOD) solo si la forma alternativa oculta errores conceptuales o el valor numérico difiere significativamente.
+• Si la consigna no especifica la forma del resultado, el estudiante puede elegir cualquier representación válida.`;
 
   if (gradingRubric.length > 0) {
     system += `
