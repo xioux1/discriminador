@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { dbPool } from '../db/client.js';
+import Anthropic from '@anthropic-ai/sdk';
 
 const studySessionsRouter = Router();
 
@@ -85,6 +86,86 @@ studySessionsRouter.get('/study/sessions/calibration', async (req, res) => {
     });
   } catch (err) {
     console.error('GET /study/sessions/calibration error', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+// POST /study/sessions/analysis — LLM analysis of a session's results for podcast prompt generation.
+// Receives all card reviews from the frontend (no DB read needed — data already in memory).
+studySessionsRouter.post('/study/sessions/analysis', async (req, res) => {
+  const { reviews } = req.body || {};
+  if (!Array.isArray(reviews) || reviews.length === 0) {
+    return res.status(422).json({ error: 'validation_error', message: 'reviews es obligatorio.' });
+  }
+
+  const isPass = (g) => { const s = (g || '').toLowerCase(); return s === 'pass' || s === 'good' || s === 'easy'; };
+
+  const mainReviews = reviews.filter(r => r.type === 'card' && r.grade !== 'uncertain' && r.prompt_text);
+  if (mainReviews.length === 0) {
+    return res.status(422).json({ error: 'validation_error', message: 'Sin datos de tarjetas para analizar.' });
+  }
+
+  const microReviews = reviews.filter(r => r.type === 'micro' && r.grade !== 'uncertain' && r.prompt_text);
+  const passed = mainReviews.filter(r => isPass(r.grade));
+  const failed = mainReviews.filter(r => !isPass(r.grade));
+
+  const formatCard = (r, idx) => {
+    let text = `[${idx + 1}] Tema: ${r.subject || 'sin tema'}\nPregunta: ${r.prompt_text}\nRespuesta esperada: ${r.expected_answer_text}`;
+    if (r.user_answer) text += `\nRespuesta del alumno: ${r.user_answer}`;
+    if (r.concept_gaps?.length) text += `\nConceptos con fallas detectadas: ${r.concept_gaps.join(', ')}`;
+    return text;
+  };
+
+  const passedSection = passed.length > 0
+    ? `TARJETAS RESPONDIDAS CORRECTAMENTE (${passed.length}):\n\n${passed.map(formatCard).join('\n\n')}`
+    : 'No hubo tarjetas respondidas correctamente.';
+
+  const failedSection = failed.length > 0
+    ? `TARJETAS FALLADAS (${failed.length}):\n\n${failed.map(formatCard).join('\n\n')}`
+    : 'No hubo tarjetas falladas.';
+
+  const microSection = microReviews.length > 0
+    ? `\nMICRO-CONCEPTOS EVALUADOS EN SESIÓN:\n${microReviews.map(r => `  [${isPass(r.grade) ? '✓' : '✗'}] ${r.concept || r.prompt_text}: ${r.expected_answer_text}`).join('\n')}`
+    : '';
+
+  const prompt = `Sos un tutor experto analizando los resultados de una sesión de estudio. Tu tarea es producir un informe concreto y específico que se usará directamente como instrucción para generar un episodio de podcast educativo.
+
+REGLAS:
+- Sé muy específico. En vez de "no entiende el Tema X", escribí "entiende la definición de X, pero cuando se le pide aplicarlo a [situación concreta del error], no logra relacionar [concepto A] con [concepto B]".
+- Identificá patrones: ¿falla aplicación pero entiende teoría? ¿Falla términos técnicos? ¿Confunde conceptos similares?
+- Basate en las respuestas reales del alumno y en los conceptos con fallas detectadas.
+- Priorizá: ¿qué es lo más urgente de reforzar?
+
+ESTRUCTURA DEL INFORME:
+1. **Lo que el alumno entiende bien** — lista con detalle de qué aspectos domina
+2. **Lo que el alumno NO entiende o entiende a medias** — para cada brecha, describí específicamente qué parte falla y en qué contexto
+3. **Patrones detectados** — observaciones sobre el tipo de errores
+4. **PROMPT PARA PODCAST** — un párrafo listo para copiar-pegar como instrucción a un generador de podcast: qué temas explicar, a qué profundidad, qué ejemplos o analogías incluir, qué errores comunes aclarar
+
+Idioma: español. No uses generalidades. El informe debe ser útil para que alguien que no vio la sesión pueda generar un episodio de podcast perfectamente calibrado a las necesidades de este alumno.
+
+---
+DATOS DE LA SESIÓN:
+
+${passedSection}
+
+${failedSection}
+${microSection}`;
+
+  try {
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const msg = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1800,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    const analysis = msg.content?.[0]?.text?.trim() || '';
+    if (!analysis) return res.status(502).json({ error: 'generation_error', message: 'Empty response from model.' });
+
+    return res.json({ analysis });
+  } catch (err) {
+    console.error('POST /study/sessions/analysis error', err.message);
     return res.status(500).json({ error: 'server_error', message: err.message });
   }
 });
