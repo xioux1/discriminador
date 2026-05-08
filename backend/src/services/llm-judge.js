@@ -137,8 +137,10 @@ MISSING: <concepto1>, <concepto2> | NONE
   • La respuesta contradice directamente el concepto esperado (ej: define algo como lo opuesto de lo que es)
   • No hay ningún elemento correcto de los elementos esenciales requeridos
   • El estudiante solo reescribió o parafraseó el enunciado sin aportar ningún desarrollo ni solución (ej: copió la ecuación o la pregunta tal cual sin resolverla)
+  ATENCIÓN — NO usés AGAIN cuando la respuesta describe correctamente la idea central del concepto aunque le falte la notación formal, la fórmula exacta o detalles técnicos secundarios. Una descripción conceptualmente correcta siempre vale al menos HARD.
   Ejemplo: "¿Qué es un cursor en PL/SQL?" → "es una tabla temporal" → AGAIN (error conceptual grave)
   Ejemplo: "Resolvé dy/dx + y/x = x^3" → "dy/dx + y/x = x^3" → AGAIN (solo copió el enunciado)
+  Contraejemplo — NO AGAIN: "¿Cómo se calcula la derivada vectorial?" → "se calcula componente por componente en cada eje" → NO es AGAIN, es HARD (idea correcta, falta la expresión formal)
 
 ▸ HARD — Idea general correcta, pero le faltan detalles técnicos críticos.
   Usá HARD cuando:
@@ -147,9 +149,11 @@ MISSING: <concepto1>, <concepto2> | NONE
   • O la respuesta es tan vaga que en un parcial sacaría entre 4 y 6 sobre 10
   • O nombró el concepto pero no pudo explicar cómo funciona o para qué sirve
   • O la respuesta es notablemente más corta que la respuesta esperada y omite partes sustanciales del desarrollo (ej: escribió un solo paso de un proceso de varios pasos)
-  REGLA CRÍTICA — respuestas muy cortas: si la respuesta del estudiante tiene muy pocas palabras/caracteres comparada con la respuesta esperada (por ejemplo, 1-5 palabras vs un desarrollo de varios pasos), NO asumas que el resto estaba implícito. Esa brevedad indica desarrollo incompleto → HARD como mínimo, AGAIN si no hay ningún elemento esencial correcto.
+  • O la respuesta esperada incluye una expresión formal (fórmula, notación matemática) pero el estudiante solo describió el mecanismo con palabras correctas sin escribir la expresión
+  REGLA CRÍTICA — respuestas muy cortas: si la respuesta del estudiante tiene muy pocas palabras/caracteres comparada con la respuesta esperada (por ejemplo, 1-5 palabras vs un desarrollo de varios pasos), NO asumas que el resto estaba implícito. Esa brevedad indica desarrollo incompleto → HARD como mínimo, AGAIN solo si la idea central es incorrecta o el estudiante no aportó ningún elemento conceptualmente válido.
   Ejemplo: "¿Qué hace COMMIT?" → "guarda los cambios" → HARD (falta: permanencia, liberación de locks)
   Ejemplo: integral doble con cambio de orden → "x=√y" → HARD (solo escribió un límite, falta todo el desarrollo del cambio de orden y el cálculo)
+  Ejemplo: "¿Cómo se calcula la derivada de una función vectorial?" → "el teorema dice que se calcula término por término en cada eje" → HARD (idea correcta: derivación componente por componente; falta la expresión formal r'(t) = f'(t)i + g'(t)j + h'(t)k y la condición de derivabilidad)
 
 ▸ GOOD — Respuesta correcta con todos los elementos esenciales presentes.
   Usá GOOD cuando:
@@ -181,7 +185,15 @@ Cuando la respuesta esperada está en formato de lista (bullets con "-" o "•")
   "libera los bloqueos" ≡ "libera los locks de la transacción"
   "previene accesos concurrentes" ≡ "bloquea el acceso simultáneo de otros procesos"
 • Para GOOD: el estudiante debe cubrir los conceptos principales. Si hay 4-5 bullets breves en la respuesta esperada, cubrir 3-4 de los conceptos con buena precisión conceptual alcanza para GOOD; no es necesario mencionar cada detalle secundario.
-• Para AGAIN/HARD: solo cuando falten conceptos verdaderamente centrales, no cuando el estudiante usó palabras distintas para el mismo concepto.`;
+• Para AGAIN/HARD: solo cuando falten conceptos verdaderamente centrales, no cuando el estudiante usó palabras distintas para el mismo concepto.
+
+━━━ RESPUESTAS ESPERADAS CON EXPRESIÓN FORMAL O FÓRMULA ━━━
+Cuando la respuesta esperada contiene una expresión matemática formal, notación vectorial, fórmula o ecuación:
+• Si la pregunta NO pide explícitamente "escribir la expresión", "dar la fórmula" o "escribir la notación", la expresión formal es REFERENCIA, no obligación literal.
+• Una descripción verbal correcta del mecanismo o concepto (ej: "se deriva componente por componente") cuenta como elemento esencial presente.
+• Falta de notación formal cuando la idea es correcta → HARD, nunca AGAIN.
+• Solo exigí la expresión literal si la pregunta dice explícitamente "escribir la fórmula", "dar la expresión", "usar notación vectorial", etc.
+  Ejemplo: "¿Cómo se calcula la derivada de r(t)?" → respuesta esperada con r'(t) = f'(t)i + g'(t)j + h'(t)k → el estudiante dice "se deriva cada componente por separado" → HARD (no AGAIN: la idea es correcta, falta la expresión).`;
 
   if (gradingRubric.length > 0) {
     system += `
