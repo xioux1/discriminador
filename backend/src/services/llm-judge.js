@@ -86,10 +86,10 @@ El docente configuró exigencia mínima. Evaluá con máxima generosidad:
     return `
 ━━━ NIVEL DE EXIGENCIA: MODERADA (${strictness}/10) ━━━
 Evaluá con generosidad pero sin resignar la comprensión del tema:
-• GOOD si el estudiante cubre los puntos principales, aunque le falten detalles menores.
+• GOOD si el estudiante cubre los puntos principales.
 • HARD si falta un elemento importante pero la dirección conceptual es correcta.
 • Tolerá paráfrasis y omisiones de detalles claramente secundarios.
-• No es necesario vocabulario técnico exacto si la idea central es clara.
+• No es necesario vocabulario técnico exacto.
 • Ante la duda entre HARD y GOOD, elegí GOOD.`;
   }
   if (strictness <= 6) {
