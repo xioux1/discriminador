@@ -152,6 +152,15 @@ test('validateGeneratedCardDraft rejects card_group with wrong card_type', () =>
   assert.equal(result.valid, false);
 });
 
+test('validateGeneratedCardDraft accepts practical_exercise card_type', () => {
+  const output = {
+    card_group: { title: 'Fundamentos ERP arquitectura', card_type: 'practical_exercise' },
+    variants: [VALID_VARIANT],
+  };
+  const result = validateGeneratedCardDraft(output, CONTEXT, 5);
+  assert.equal(result.valid, true);
+});
+
 test('validateGeneratedCardDraft rejects when variants exceed maxVariants', () => {
   const output = {
     card_group: { title: 'Fundamentos ERP arquitectura', card_type: 'theoretical_open' },

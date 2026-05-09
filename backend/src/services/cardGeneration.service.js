@@ -273,7 +273,9 @@ Reglas estrictas:
 20. Respondé sólo con JSON. Sin markdown, sin backticks, sin texto adicional.
 
 Tipo de card:
-theoretical_open
+Clasificá cada familia de tarjeta como "theoretical_open" o "practical_exercise".
+- "theoretical_open": el alumno explica, define o describe un concepto (sin ejecutar nada).
+- "practical_exercise": el alumno debe producir algo concreto — escribir código/SQL, resolver un ejercicio numérico paso a paso, aplicar un algoritmo, completar una transformación. Si la respuesta esperada es código, una query, una derivación algebraica paso a paso o un cálculo con pasos intermedios, usá "practical_exercise".
 
 Idioma:
 español
@@ -282,7 +284,7 @@ Formato exacto de salida:
 {
   "card_group": {
     "title": "título breve de la familia de tarjeta",
-    "card_type": "theoretical_open"
+    "card_type": "theoretical_open | practical_exercise"
   },
   "variants": [
     {
@@ -343,8 +345,9 @@ export function validateGeneratedCardDraft(output, context, maxVariants) {
     }
   }
 
-  if (card_type !== 'theoretical_open') {
-    errors.push(`card_group.card_type must be "theoretical_open", got "${card_type}"`);
+  const VALID_CARD_TYPES = ['theoretical_open', 'practical_exercise'];
+  if (!VALID_CARD_TYPES.includes(card_type)) {
+    errors.push(`card_group.card_type must be one of ${VALID_CARD_TYPES.map(t => `"${t}"`).join(', ')}, got "${card_type}"`);
   }
 
   if (errors.length > 0) {
@@ -535,7 +538,7 @@ export async function persistGeneratedCardDraft(context, validatedOutput, userId
         primaryVariant.expected_answer,
         cluster.id,
         document.id,
-        'theoretical_open',
+        card_group.card_type,
         JSON.stringify(primaryVariant.grading_rubric ?? []),
       ]
     );
