@@ -9,6 +9,7 @@
     "start": "node src/server.js",
     "test": "node --test src/services/__tests__/*.test.js src/routes/__tests__/*.test.js",
     "audit:overall-variants": "node scripts/compare-overall-variants.js",
+    "reclassify-card-types": "node scripts/reclassify-card-types.js",
     "lint": "eslint src/",
     "format": "prettier --write src/"
   },
