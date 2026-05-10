@@ -67,6 +67,24 @@ export const LLM_MODELS = {
   binary:   process.env.LLM_BINARY_MODEL   || 'claude-opus-4-6'
 };
 
+function parseMicroCount(value, defaultValue) {
+  if (value === undefined) return defaultValue;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed < 0) return defaultValue;
+  return parsed;
+}
+
+// Returns how many micro-cards to generate for a given grade.
+// Configurable via MICRO_COUNT_AGAIN / MICRO_COUNT_HARD / MICRO_COUNT_GOOD / MICRO_COUNT_EASY.
+export function getMicroCountForGrade(grade) {
+  const again = parseMicroCount(process.env.MICRO_COUNT_AGAIN, 1);
+  const hard  = parseMicroCount(process.env.MICRO_COUNT_HARD,  1);
+  const good  = parseMicroCount(process.env.MICRO_COUNT_GOOD,  1);
+  const easy  = parseMicroCount(process.env.MICRO_COUNT_EASY,  0);
+  const map = { again, hard, good, easy, fail: again, pass: good };
+  return map[grade] ?? 0;
+}
+
 export const DISCORD = {
   botToken: process.env.DISCORD_BOT_TOKEN || '',
   userId:   process.env.DISCORD_USER_ID   || ''

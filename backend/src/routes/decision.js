@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { dbPool } from '../db/client.js';
 import { computeNextReview, isPassGrade, isFailGrade } from '../services/scheduler.js';
 import { generateMicroCard } from '../services/micro-generator.js';
+import { getMicroCountForGrade } from '../config/env.js';
 
 const decisionRouter = Router();
 
@@ -20,9 +21,11 @@ const CORRECTION_ACTIONS = new Set([
   'correct-pass', 'correct-fail'
 ]);
 
-function pickTopGap(gaps = []) {
-  const selected = gaps.find((gap) => typeof gap?.concept === 'string' && gap.concept.trim().length > 0);
-  return selected ? [selected] : [];
+function pickTopGaps(gaps = [], count = 1) {
+  if (count <= 0) return [];
+  return gaps
+    .filter((gap) => typeof gap?.concept === 'string' && gap.concept.trim().length > 0)
+    .slice(0, count);
 }
 
 function normalizeString(value) {
@@ -520,8 +523,9 @@ async function syncSchedulerCard(pool, {
   const isManualPassCorrection = isPassGrade(final_grade) &&
     ['correct-pass', 'correct-good', 'correct-easy'].includes(decision_action);
   const shouldCreateMicros = !isManualPassCorrection;
+  const microCount = getMicroCountForGrade(final_grade);
   const targetGaps = shouldCreateMicros
-    ? pickTopGap(gaps)
+    ? pickTopGaps(gaps, microCount)
     : [];
 
   for (const { concept } of targetGaps) {
