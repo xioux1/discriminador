@@ -47,7 +47,7 @@ curriculumRouter.get('/curriculum/:subject', async (req, res) => {
 // PUT /curriculum/:subject — upserta subject_configs (solo syllabus ahora)
 curriculumRouter.put('/curriculum/:subject', async (req, res) => {
   const { subject } = req.params;
-  const { syllabus_text, notes_text, daily_new_cards_limit, max_micro_cards_per_card, grading_strictness, micro_cards_enabled, micro_cards_spawn_siblings, auto_variants_enabled, max_variants_per_card, retention_floor } = req.body || {};
+  const { syllabus_text, notes_text, daily_new_cards_limit, max_micro_cards_per_card, grading_strictness, micro_cards_enabled, micro_cards_spawn_siblings, auto_variants_enabled, max_variants_per_card, retention_floor, micro_count_again, micro_count_hard, micro_count_good, micro_count_easy } = req.body || {};
   const userId = req.user.id;
   const parsedDailyLimit = daily_new_cards_limit === null || daily_new_cards_limit === undefined || daily_new_cards_limit === ''
     ? null
@@ -109,10 +109,20 @@ curriculumRouter.put('/curriculum/:subject', async (req, res) => {
     });
   }
 
+  function parseMicroCountField(value, defaultValue) {
+    if (value === null || value === undefined || value === '') return defaultValue;
+    const parsed = parseInt(value, 10);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : defaultValue;
+  }
+  const parsedMicroCountAgain = parseMicroCountField(micro_count_again, 1);
+  const parsedMicroCountHard  = parseMicroCountField(micro_count_hard,  1);
+  const parsedMicroCountGood  = parseMicroCountField(micro_count_good,  1);
+  const parsedMicroCountEasy  = parseMicroCountField(micro_count_easy,  0);
+
   try {
     const { rows } = await dbPool.query(
-      `INSERT INTO subject_configs (subject, syllabus_text, notes_text, daily_new_cards_limit, max_micro_cards_per_card, grading_strictness, micro_cards_enabled, micro_cards_spawn_siblings, auto_variants_enabled, max_variants_per_card, retention_floor, updated_at, user_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now(), $12)
+      `INSERT INTO subject_configs (subject, syllabus_text, notes_text, daily_new_cards_limit, max_micro_cards_per_card, grading_strictness, micro_cards_enabled, micro_cards_spawn_siblings, auto_variants_enabled, max_variants_per_card, retention_floor, micro_count_again, micro_count_hard, micro_count_good, micro_count_easy, updated_at, user_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, now(), $16)
        ON CONFLICT (subject, user_id) DO UPDATE SET
          syllabus_text                = EXCLUDED.syllabus_text,
          notes_text                   = EXCLUDED.notes_text,
@@ -124,10 +134,14 @@ curriculumRouter.put('/curriculum/:subject', async (req, res) => {
          auto_variants_enabled        = EXCLUDED.auto_variants_enabled,
          max_variants_per_card        = EXCLUDED.max_variants_per_card,
          retention_floor              = EXCLUDED.retention_floor,
+         micro_count_again            = EXCLUDED.micro_count_again,
+         micro_count_hard             = EXCLUDED.micro_count_hard,
+         micro_count_good             = EXCLUDED.micro_count_good,
+         micro_count_easy             = EXCLUDED.micro_count_easy,
          user_id                      = EXCLUDED.user_id,
          updated_at                   = now()
        RETURNING *`,
-      [subject, syllabus_text || null, notes_text || null, parsedDailyLimit, parsedMicroLimit, parsedStrictness, parsedMicroEnabled, parsedSpawnSiblings, parsedAutoVariants, parsedMaxVariants, parsedRetentionFloor, userId]
+      [subject, syllabus_text || null, notes_text || null, parsedDailyLimit, parsedMicroLimit, parsedStrictness, parsedMicroEnabled, parsedSpawnSiblings, parsedAutoVariants, parsedMaxVariants, parsedRetentionFloor, parsedMicroCountAgain, parsedMicroCountHard, parsedMicroCountGood, parsedMicroCountEasy, userId]
     );
     invalidateAdvisorCache(subject, userId);
     return res.json({ config: rows[0] });
