@@ -5113,6 +5113,11 @@ async function _doStartStudySession() {
 
   const sortByPerformance = (items) => items.slice().sort((a, b) => {
     const da = a.data, db = b.data;
+    if (studyState.voiceMode) {
+      const aTime = da.avg_review_time_ms ?? Infinity;
+      const bTime = db.avg_review_time_ms ?? Infinity;
+      return aTime - bTime;
+    }
     const aNew = (da.review_count ?? 0) === 0;
     const bNew = (db.review_count ?? 0) === 0;
     if (aNew !== bNew) return aNew ? -1 : 1;
