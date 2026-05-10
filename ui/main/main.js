@@ -5421,7 +5421,7 @@ function showStudyCard() {
   if (studyFlagBtn)           studyFlagBtn.hidden           = studyState.examMode;
   if (studyClarify)           studyClarify.hidden           = studyState.examMode;
   if (studyEditPrompt)        studyEditPrompt.hidden        = studyState.examMode;
-  if (studyReformatLatexBtn)  studyReformatLatexBtn.hidden  = studyState.examMode || item.type !== 'card' || !!item.data.variant_id;
+  if (studyReformatLatexBtn)  studyReformatLatexBtn.hidden  = studyState.examMode || item.type !== 'card';
   const studyEvalBtn = document.querySelector('#study-eval-btn');
   studyEvalBtn.disabled = false;
   studyState.currentEvalResult = null;
