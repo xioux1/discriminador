@@ -2869,6 +2869,157 @@ textarea:focus, input[type="text"]:focus, select:focus {
   .exam-cal-metric-text { text-align: left; }
 }
 
+/* ─── Mobile layout (≤ 600px) ───────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  /* Remove desktop window-frame chrome — full-bleed on phones */
+  .app-shell {
+    max-width: 100%;
+    margin: 0;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
+  /* Compact the decorative title bar */
+  .window-chrome {
+    padding: 10px 14px 8px;
+  }
+  .window-brand { font-size: 1rem; }
+  .window-controls { display: none; }
+
+  /* Tab nav: smaller buttons, scroll horizontally */
+  .tab-nav {
+    padding: 0 4px;
+    justify-content: flex-start;
+  }
+  .tab-btn {
+    padding: 10px 12px;
+    font-size: 0.80rem;
+  }
+  .logout-btn {
+    padding: 6px 12px;
+    font-size: 0.80rem;
+    margin-bottom: 6px;
+  }
+
+  /* Main content: full width, less vertical padding */
+  .container {
+    padding: 16px 12px 32px;
+  }
+  #tab-study,
+  #tab-evaluate,
+  #tab-explore,
+  #tab-progress {
+    max-width: 100%;
+  }
+
+  /* ── Study: briefing card ──────────────────────────────────────────────── */
+  .briefing-options {
+    gap: 6px;
+  }
+  .briefing-opt {
+    padding: 7px 14px;
+    font-size: 0.85rem;
+    flex: 1 1 auto;
+    text-align: center;
+  }
+  .study-overview-actions {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .study-overview-actions .btn-primary,
+  .study-overview-actions .btn-secondary,
+  .study-overview-actions .btn-ghost {
+    width: 100%;
+    text-align: center;
+  }
+
+  /* ── Study session overlay ─────────────────────────────────────────────── */
+  .study-session-header {
+    padding: 8px 10px;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  /* Move progress bar to its own row when space is tight */
+  .study-progress-bar {
+    flex-basis: 100%;
+    order: 10;
+  }
+  .study-progress-label {
+    font-size: 0.75rem;
+    order: 11;
+  }
+  .toggle-count-btn {
+    order: 12;
+  }
+  /* Shrink header buttons */
+  .study-session-header .btn-ghost {
+    padding: 5px 8px;
+    font-size: 0.80rem;
+  }
+
+  /* ── Study card panel ──────────────────────────────────────────────────── */
+  .study-card-panel {
+    padding: 16px 12px 24px;
+  }
+  .study-card-prompt {
+    font-size: 1.05rem;
+  }
+  #study-answer-input {
+    font-size: 1rem;
+  }
+  .study-card-actions {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .study-card-actions .btn-ghost {
+    font-size: 0.75rem;
+    padding: 4px 8px;
+  }
+
+  /* Grade buttons — bigger tap targets */
+  .study-grade-btn {
+    padding: 6px 14px;
+    font-size: 0.85rem;
+  }
+  .study-grade-override-group {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  /* FSRS result actions — stack for tap comfort */
+  .study-result-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .study-next-btn {
+    width: 100%;
+  }
+  .study-advanced-toggle-btn {
+    width: 100%;
+  }
+
+  /* Result quick block — less padding */
+  .study-result-quick {
+    padding: 10px 10px;
+  }
+
+  /* Dimension chips — already wrap, just reduce gap */
+  .study-result-dimensions {
+    gap: 5px;
+  }
+
+  /* Planner gate — compact on mobile */
+  .planner-gate {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+}
+
 /* ── Weekly Planner ──────────────────────────────────────────────────────────── */
 #tab-planner { padding: 0; }
 
