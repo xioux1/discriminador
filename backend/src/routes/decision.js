@@ -28,6 +28,13 @@ function pickTopGaps(gaps = [], count = 1) {
     .slice(0, count);
 }
 
+// Subject config values take priority over env-var defaults.
+function resolveGradeMicroCount(grade, subjectCfg = {}) {
+  const key = { again: 'micro_count_again', hard: 'micro_count_hard', good: 'micro_count_good', easy: 'micro_count_easy', fail: 'micro_count_again', pass: 'micro_count_good' }[grade];
+  if (key && subjectCfg[key] != null) return subjectCfg[key];
+  return getMicroCountForGrade(grade);
+}
+
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -515,15 +522,23 @@ async function syncSchedulerCard(pool, {
   }
 
   // Fetch concept gaps stored at evaluation time (limited — only top-N needed).
-  const { rows: gaps } = await pool.query(
-    'SELECT concept FROM concept_gaps WHERE evaluation_item_id = $1 ORDER BY created_at DESC LIMIT 10',
-    [evaluation_item_id]
-  );
+  const [{ rows: gaps }, { rows: subjectConfigRows }] = await Promise.all([
+    pool.query(
+      'SELECT concept FROM concept_gaps WHERE evaluation_item_id = $1 ORDER BY created_at DESC LIMIT 10',
+      [evaluation_item_id]
+    ),
+    pool.query(
+      'SELECT micro_count_again, micro_count_hard, micro_count_good, micro_count_easy FROM subject_configs WHERE subject = $1 AND user_id = $2 LIMIT 1',
+      [card.subject || subject || null, user_id]
+    )
+  ]);
+
   // Don't create micros when teacher explicitly corrected to a pass grade
   const isManualPassCorrection = isPassGrade(final_grade) &&
     ['correct-pass', 'correct-good', 'correct-easy'].includes(decision_action);
   const shouldCreateMicros = !isManualPassCorrection;
-  const microCount = getMicroCountForGrade(final_grade);
+  const subjectCfg = subjectConfigRows[0] ?? {};
+  const microCount = resolveGradeMicroCount(final_grade, subjectCfg);
   const targetGaps = shouldCreateMicros
     ? pickTopGaps(gaps, microCount)
     : [];

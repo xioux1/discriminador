@@ -8162,6 +8162,10 @@ async function openCurriculumModal(subject) {
     document.querySelector('#curriculum-auto-variants-enabled').checked = autoVariants;
     document.querySelector('#curriculum-max-variants-per-card').value = data.config?.max_variants_per_card ?? '';
     document.querySelector('#auto-variants-limit-row').style.display = autoVariants ? '' : 'none';
+    document.querySelector('#curriculum-micro-count-again').value = data.config?.micro_count_again ?? '';
+    document.querySelector('#curriculum-micro-count-hard').value  = data.config?.micro_count_hard  ?? '';
+    document.querySelector('#curriculum-micro-count-good').value  = data.config?.micro_count_good  ?? '';
+    document.querySelector('#curriculum-micro-count-easy').value  = data.config?.micro_count_easy  ?? '';
     renderExamDatesList(data.exam_dates || [], subject);
     renderExamsList(data.exams || [], subject);
     renderClassNotesList(classNotesData.class_notes || [], subject);
@@ -8180,6 +8184,10 @@ async function openCurriculumModal(subject) {
     document.querySelector('#curriculum-auto-variants-enabled').checked = false;
     document.querySelector('#curriculum-max-variants-per-card').value = '';
     document.querySelector('#auto-variants-limit-row').style.display = 'none';
+    document.querySelector('#curriculum-micro-count-again').value = '';
+    document.querySelector('#curriculum-micro-count-hard').value  = '';
+    document.querySelector('#curriculum-micro-count-good').value  = '';
+    document.querySelector('#curriculum-micro-count-easy').value  = '';
     renderClassNotesList([], subject);
   }
 
@@ -8226,6 +8234,12 @@ document.querySelector('#curriculum-save-btn').addEventListener('click', async (
     }
     const retFloorRaw = parseInt(document.querySelector('#curriculum-retention-floor').value, 10);
     const retFloorVal = Number.isFinite(retFloorRaw) ? Math.min(99, Math.max(50, retFloorRaw)) / 100 : 0.75;
+    const parseMicroCountInput = (id) => {
+      const raw = document.querySelector(id).value.trim();
+      if (raw === '') return null;
+      const n = parseInt(raw, 10);
+      return Number.isFinite(n) && n >= 0 ? n : null;
+    };
     await postJson(`/curriculum/${encodeURIComponent(subject)}`, {
       syllabus_text:                document.querySelector('#curriculum-syllabus').value,
       daily_new_cards_limit:        parsedDailyLimit,
@@ -8235,7 +8249,11 @@ document.querySelector('#curriculum-save-btn').addEventListener('click', async (
       micro_cards_spawn_siblings:   spawnSiblings,
       auto_variants_enabled:        autoVariants,
       max_variants_per_card:        parsedMaxVariants,
-      retention_floor:              retFloorVal
+      retention_floor:              retFloorVal,
+      micro_count_again:            parseMicroCountInput('#curriculum-micro-count-again'),
+      micro_count_hard:             parseMicroCountInput('#curriculum-micro-count-hard'),
+      micro_count_good:             parseMicroCountInput('#curriculum-micro-count-good'),
+      micro_count_easy:             parseMicroCountInput('#curriculum-micro-count-easy')
     }, 'PUT');
     showToast('Configuración guardada.', 'success');
   } catch (err) {
