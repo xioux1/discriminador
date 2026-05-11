@@ -289,6 +289,28 @@ function parseResponse(text) {
   return { suggested_grade: grade, justification, missing_concepts };
 }
 
+function buildBlindSystemPrompt(strictness = 5) {
+  let system = `Sos un evaluador académico. Tu tarea es calificar la respuesta del estudiante a la pregunta dada, basándote ÚNICAMENTE en tu conocimiento del tema. No tenés respuesta de referencia: evaluás por lo que sabés del tema.
+
+Respondé ÚNICAMENTE con este formato exacto (tres líneas, sin texto adicional):
+GRADE: AGAIN|HARD|GOOD|EASY
+JUSTIFICATION: <una oración breve en español>
+MISSING: <concepto1>, <concepto2> | NONE
+
+━━━ CRITERIOS ━━━
+
+▸ AGAIN — Sin respuesta útil o error conceptual grave.
+▸ HARD — Idea general correcta pero faltan detalles técnicos críticos o la respuesta es vaga.
+▸ GOOD — Respuesta correcta con los elementos esenciales presentes según tu conocimiento del tema.
+▸ EASY — Respuesta que va más allá del mínimo requerido: da ejemplos, conecta conceptos, explica el "por qué".
+
+Si la pregunta es muy específica de un dominio y no podés evaluar con certeza, preferí HARD antes que AGAIN.
+Para MISSING: listá conceptos que faltan o están incorrectos. Usá NONE si no falta nada. Máximo 3 conceptos.`;
+
+  system += buildStrictnessSection(strictness);
+  return system;
+}
+
 /**
  * Evaluate a student answer using an LLM calibrated with past human decisions.
  *
@@ -321,6 +343,38 @@ Respuesta del estudiante: ${user_answer_text}`
   return {
     ...parsed,
     few_shot_count: examples.length,
+    model: LLM_MODEL,
+    missing_concepts: parsed.missing_concepts
+  };
+}
+
+/**
+ * Evaluate a student answer without a reference/expected answer.
+ * Judges purely based on the model's knowledge of the subject.
+ *
+ * @param {object} payload - { prompt_text, user_answer_text, strictness }
+ * @returns {{ suggested_grade, justification, missing_concepts, model }}
+ */
+export async function judgeWithLLMBlind({ prompt_text, user_answer_text, strictness = 5 }) {
+  const response = await getClient().messages.create({
+    model: LLM_MODEL,
+    max_tokens: LLM_MAX_TOKENS,
+    temperature: 0,
+    system: buildBlindSystemPrompt(strictness),
+    messages: [{
+      role: 'user',
+      content: `Pregunta: ${prompt_text}\nRespuesta del estudiante: ${user_answer_text}`
+    }]
+  });
+
+  const text = response.content.find((b) => b.type === 'text')?.text ?? '';
+  if (!text.trim()) {
+    throw new Error('LLM blind judge: received empty response from model');
+  }
+  const parsed = parseResponse(text);
+
+  return {
+    ...parsed,
     model: LLM_MODEL,
     missing_concepts: parsed.missing_concepts
   };
