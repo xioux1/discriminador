@@ -5267,6 +5267,7 @@ function summarizeJustificationLine(result = {}) {
 function showStudyCard() {
   _voiceEpoch++;                          // invalidate any in-flight playStudyVoiceFront call
   if (_voiceFrontAudio) {
+    _voiceFrontAudio._interrupted = true;
     try { _voiceFrontAudio.pause(); } catch (_) {}
     _voiceFrontAudio = null;
   }
@@ -5310,10 +5311,12 @@ function showStudyCard() {
   if (studyState.voiceMode) {
     const epochAtCardStart = _voiceEpoch;
     playStudyVoiceFront(getStudyPromptText(item))
-      .then(() => {
+      .then(async () => {
+        // Brief delay so speaker output fully clears before the microphone starts recording;
+        // prevents acoustic bleed-through (or buffering-pause false triggers) from being
+        // transcribed as the student's answer.
+        await new Promise(r => setTimeout(r, 400));
         // Only auto-start dictation if we're still on the same card that launched this audio.
-        // onpause resolves the Promise when the audio is interrupted; without this check
-        // the callback would fire during the *next* card's expected-answer playback.
         if (!studyState.voiceMode || _voiceEpoch !== epochAtCardStart) return;
         const dictBtn = document.querySelector('#study-dictation-btn');
         if (dictBtn && !dictBtn.disabled && dictBtn.offsetParent !== null) dictBtn.click();
@@ -6023,6 +6026,7 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       // Stop any prompt audio still playing so the audioPlaying guard in
       // handleStudyNextCard doesn't silently abort the auto-advance.
       if (_voiceFrontAudio) {
+        _voiceFrontAudio._interrupted = true;
         try { _voiceFrontAudio.pause(); } catch (_) {}
         _voiceFrontAudio = null;
       }
@@ -6074,9 +6078,10 @@ async function playStudyVoiceFront(text) {
     await new Promise((resolve) => {
       audio.onended = resolve;
       audio.onerror = resolve;
-      // onpause fires when showStudyCard() calls audio.pause() to switch cards,
-      // which would otherwise leave this promise hanging forever.
-      audio.onpause = resolve;
+      // Only resolve on pause if *we* explicitly interrupted it (showStudyCard or eval handler).
+      // Ignoring transient browser buffering-pauses prevents dictation from starting while
+      // the prompt audio is still playing, which would let the mic capture the TTS output.
+      audio.onpause = () => { if (audio._interrupted) resolve(); };
       audio.play().catch(resolve);
     });
   } finally {
