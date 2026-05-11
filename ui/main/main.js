@@ -5818,6 +5818,29 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
     }
     justEl.classList.remove('hidden');
 
+    // Dual-judge comparison: con referencia vs sin referencia
+    const dualEl      = document.querySelector('#study-dual-judge');
+    const dualGradeRef   = document.querySelector('#study-dual-grade-ref');
+    const dualJustRef    = document.querySelector('#study-dual-just-ref');
+    const dualGradeBlind = document.querySelector('#study-dual-grade-blind');
+    const dualJustBlind  = document.querySelector('#study-dual-just-blind');
+    if (dualEl && dualGradeRef && dualGradeBlind) {
+      const refGrade = normalizeSuggestedGrade(result.suggested_grade);
+      dualGradeRef.textContent = getSuggestedGradeLabel(result.suggested_grade);
+      dualGradeRef.className   = `study-grade-inline ${refGrade.toLowerCase()}`;
+      dualJustRef.textContent  = result.justification_short || '';
+
+      if (result.blind_judge) {
+        const blindGrade = normalizeSuggestedGrade(result.blind_judge.suggested_grade);
+        dualGradeBlind.textContent = getSuggestedGradeLabel(result.blind_judge.suggested_grade);
+        dualGradeBlind.className   = `study-grade-inline ${blindGrade.toLowerCase()}`;
+        dualJustBlind.textContent  = result.blind_judge.justification || '';
+        dualEl.classList.remove('hidden');
+      } else {
+        dualEl.classList.add('hidden');
+      }
+    }
+
     const timeEl = document.querySelector('#study-result-time');
     if (timeEl) {
       const elapsed = Math.round((studyState.responseTimeMs || 0) / 1000);

@@ -1322,6 +1322,32 @@ textarea:focus, input[type="text"]:focus, select:focus {
 .study-result-actions { margin-top: 12px; }
 .study-next-btn { width: 100%; }
 
+.study-dual-judge {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-top: 1px dashed var(--border-mid);
+  padding-top: 8px;
+}
+.study-dual-judge-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+}
+.study-dual-judge-label {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  min-width: 88px;
+  flex-shrink: 0;
+}
+.study-dual-judge-just {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  flex: 1;
+}
+
 .study-grade-inline {
   font-weight: 700;
   padding: 3px 10px;

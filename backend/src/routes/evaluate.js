@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import Anthropic from '@anthropic-ai/sdk';
 // import { scoreEvaluation } from '../services/scoring.js';
-import { judgeWithLLM } from '../services/llm-judge.js';
+import { judgeWithLLM, judgeWithLLMBlind } from '../services/llm-judge.js';
 import { LLM_MODELS } from '../config/env.js';
 import { dbPool } from '../db/client.js';
 import { llmRateLimit } from '../middleware/llm-rate-limit.js';
@@ -359,27 +359,49 @@ evaluateRouter.post('/evaluate', llmRateLimit, async (req, res) => {
     : [];
 
   let llmJudge = null;
+  let llmBlindJudge = null;
   let llmFallback = false;
   try {
-    llmJudge = await judgeWithLLM(dbPool, {
-      prompt_text: normalizedFields.prompt_text,
-      user_answer_text: normalizedFields.user_answer_text,
-      expected_answer_text: normalizedFields.expected_answer_text,
-      subject: normalizedSubject,
-      strictness: gradingStrictness,
-      grading_rubric: gradingRubric
-    });
+    const [judgeResult, blindResult] = await Promise.allSettled([
+      judgeWithLLM(dbPool, {
+        prompt_text: normalizedFields.prompt_text,
+        user_answer_text: normalizedFields.user_answer_text,
+        expected_answer_text: normalizedFields.expected_answer_text,
+        subject: normalizedSubject,
+        strictness: gradingStrictness,
+        grading_rubric: gradingRubric
+      }),
+      judgeWithLLMBlind({
+        prompt_text: normalizedFields.prompt_text,
+        user_answer_text: normalizedFields.user_answer_text,
+        strictness: gradingStrictness
+      })
+    ]);
+
+    if (judgeResult.status === 'fulfilled') {
+      llmJudge = judgeResult.value;
+    } else {
+      llmFallback = true;
+      const llmError = judgeResult.reason;
+      if (llmError.status === 429) {
+        console.warn('[LLM judge] Rate limit reached.', { message: llmError.message });
+      } else if (llmError.message?.toLowerCase().includes('parse')) {
+        console.error('[LLM judge] Response parse failure.', { message: llmError.message });
+      } else if (llmError.status >= 500) {
+        console.warn('[LLM judge] API server error.', { status: llmError.status, message: llmError.message });
+      } else {
+        console.error('[LLM judge] Unexpected error.', { message: llmError.message });
+      }
+    }
+
+    if (blindResult.status === 'fulfilled') {
+      llmBlindJudge = blindResult.value;
+    } else {
+      console.warn('[LLM blind judge] Failed.', { message: blindResult.reason?.message });
+    }
   } catch (llmError) {
     llmFallback = true;
-    if (llmError.status === 429) {
-      console.warn('[LLM judge] Rate limit reached.', { message: llmError.message });
-    } else if (llmError.message?.toLowerCase().includes('parse')) {
-      console.error('[LLM judge] Response parse failure.', { message: llmError.message });
-    } else if (llmError.status >= 500) {
-      console.warn('[LLM judge] API server error.', { status: llmError.status, message: llmError.message });
-    } else {
-      console.error('[LLM judge] Unexpected error.', { message: llmError.message });
-    }
+    console.error('[LLM judge] Unexpected error.', { message: llmError.message });
   }
 
   const result = {
@@ -572,7 +594,12 @@ evaluateRouter.post('/evaluate', llmRateLimit, async (req, res) => {
       prompt_text: normalizedFields.prompt_text,
       subject: normalizedSubject || null,
       missing_concepts: result.missing_concepts,
-      llm_fallback: llmFallback
+      llm_fallback: llmFallback,
+      blind_judge: llmBlindJudge ? {
+        suggested_grade:  llmBlindJudge.suggested_grade,
+        justification:    llmBlindJudge.justification,
+        missing_concepts: llmBlindJudge.missing_concepts
+      } : null
     });
   } catch (error) {
     if (client) {
