@@ -5913,27 +5913,38 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
     }
 
     // Easy explanation — shown as a collapsible <details> below the answer comparison.
-    // Uses the parent card id (variants share the parent's explanation).
+    // For variants, only show the parent card's cached explanation (no generation).
+    // Generation is only triggered when viewing the parent card directly.
     if (item.type !== 'micro') {
       const easyPanel = document.querySelector('#study-easy-explanation');
       const easyText  = document.querySelector('#study-easy-explanation-text');
       if (easyPanel && easyText) {
-        const cardId = item.data.id;
-        easyPanel.classList.remove('hidden');
-        if (item.data.easy_explanation) {
-          easyText.innerHTML = renderCodeMarkdown(item.data.easy_explanation);
+        const isVariant = item.data.variant_id != null;
+        if (isVariant) {
+          if (item.data.easy_explanation) {
+            easyPanel.classList.remove('hidden');
+            easyText.innerHTML = renderCodeMarkdown(item.data.easy_explanation);
+          } else {
+            easyPanel.classList.add('hidden');
+          }
         } else {
-          easyText.textContent = 'Generando explicación…';
-          postJson(`/scheduler/cards/${cardId}/easy-explanation`, {})
-            .then((resp) => {
-              if (resp?.easy_explanation) {
-                easyText.innerHTML = renderCodeMarkdown(resp.easy_explanation);
-                item.data.easy_explanation = resp.easy_explanation;
-              } else {
-                easyPanel.classList.add('hidden');
-              }
-            })
-            .catch(() => { easyPanel.classList.add('hidden'); });
+          const cardId = item.data.id;
+          easyPanel.classList.remove('hidden');
+          if (item.data.easy_explanation) {
+            easyText.innerHTML = renderCodeMarkdown(item.data.easy_explanation);
+          } else {
+            easyText.textContent = 'Generando explicación…';
+            postJson(`/scheduler/cards/${cardId}/easy-explanation`, {})
+              .then((resp) => {
+                if (resp?.easy_explanation) {
+                  easyText.innerHTML = renderCodeMarkdown(resp.easy_explanation);
+                  item.data.easy_explanation = resp.easy_explanation;
+                } else {
+                  easyPanel.classList.add('hidden');
+                }
+              })
+              .catch(() => { easyPanel.classList.add('hidden'); });
+          }
         }
       }
     }
