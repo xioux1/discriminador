@@ -3762,33 +3762,39 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = 
       const VAD_POLL_MS       = 100;
 
       vadCtx = new AC();
-      const analyser = vadCtx.createAnalyser();
-      analyser.fftSize = 512;
-      vadCtx.createMediaStreamSource(stream).connect(analyser);
-      const data = new Uint8Array(analyser.frequencyBinCount);
-      let silenceStart = null;
-      const recordingStartedAt = Date.now();
+      // Chrome suspends AudioContext when created without a direct user gesture
+      // (e.g. voice mode auto-starts dictation). Resume so the analyser gets real data.
+      if (vadCtx.state === 'suspended') await vadCtx.resume();
 
-      function vadTick() {
-        analyser.getByteTimeDomainData(data);
-        let sum = 0;
-        for (let i = 0; i < data.length; i++) { const v = (data[i] - 128) / 128; sum += v * v; }
-        const rms = Math.sqrt(sum / data.length) * 100;
+      if (vadCtx.state === 'running') {
+        const analyser = vadCtx.createAnalyser();
+        analyser.fftSize = 512;
+        vadCtx.createMediaStreamSource(stream).connect(analyser);
+        const data = new Uint8Array(analyser.frequencyBinCount);
+        let silenceStart = null;
+        const recordingStartedAt = Date.now();
 
-        if (Date.now() - recordingStartedAt > VAD_MIN_START_MS) {
-          if (rms < VAD_RMS_THRESHOLD) {
-            if (!silenceStart) silenceStart = Date.now();
-            else if (Date.now() - silenceStart >= VAD_SILENCE_MS) {
-              if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
-              return; // don't reschedule — onstop will clean up
+        function vadTick() {
+          analyser.getByteTimeDomainData(data);
+          let sum = 0;
+          for (let i = 0; i < data.length; i++) { const v = (data[i] - 128) / 128; sum += v * v; }
+          const rms = Math.sqrt(sum / data.length) * 100;
+
+          if (Date.now() - recordingStartedAt > VAD_MIN_START_MS) {
+            if (rms < VAD_RMS_THRESHOLD) {
+              if (!silenceStart) silenceStart = Date.now();
+              else if (Date.now() - silenceStart >= VAD_SILENCE_MS) {
+                if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
+                return; // don't reschedule — onstop will clean up
+              }
+            } else {
+              silenceStart = null;
             }
-          } else {
-            silenceStart = null;
           }
+          vadTimerId = setTimeout(vadTick, VAD_POLL_MS);
         }
         vadTimerId = setTimeout(vadTick, VAD_POLL_MS);
       }
-      vadTimerId = setTimeout(vadTick, VAD_POLL_MS);
     }
 
     mediaRecorder.ondataavailable = (event) => {
