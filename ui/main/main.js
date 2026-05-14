@@ -3716,14 +3716,6 @@ function blobToBase64(blob) {
   });
 }
 
-// Matches "enviar respuesta" at the end of a string, case-insensitive,
-// tolerating trailing punctuation and extra whitespace.
-const _KEYPHRASE_RE = /\benviar\s+respuesta\s*[.,!?;:]*\s*$/i;
-
-function _keyphraseAtEnd(text) {
-  return _KEYPHRASE_RE.test(text.trim());
-}
-
 // Returns { cleaned, triggered }. If triggered, cleaned has the phrase removed.
 function _stripKeyPhrase(text) {
   const m = text.match(/^([\s\S]*?)\s*\benviar\s+respuesta\s*[.,!?;:]*\s*$/i);
@@ -3745,7 +3737,8 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = 
   let mediaRecorder = null;
   let audioChunks = [];
   let stream = null;
-  let recognition = null;
+  let vadCtx = null;
+  let vadTimerId = null;
 
   async function startRecording() {
     try {
@@ -3759,27 +3752,43 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = 
     mediaRecorder = new MediaRecorder(stream);
     btn._recorder = mediaRecorder;
 
-    // Parallel SpeechRecognition stream used only to detect the "enviar respuesta"
-    // keyphrase in real-time and stop the MediaRecorder automatically.
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SR) {
-      recognition = new SR();
-      recognition.lang = 'es-ES';
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.onresult = (e) => {
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          if (_keyphraseAtEnd(e.results[i][0].transcript)) {
-            recognition.stop();
-            recognition = null;
-            if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
-            break;
+    // VAD: auto-stop when silence is detected.
+    // Uses Web Audio AnalyserNode on the same stream — no extra microphone capture.
+    if (window.AudioContext || window.webkitAudioContext) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      const VAD_RMS_THRESHOLD = 20;  // 0-100; below = silence
+      const VAD_SILENCE_MS    = 1500; // ms of continuous silence → stop
+      const VAD_MIN_START_MS  = 800;  // ignore silence in first 800 ms (user may hesitate)
+      const VAD_POLL_MS       = 100;
+
+      vadCtx = new AC();
+      const analyser = vadCtx.createAnalyser();
+      analyser.fftSize = 512;
+      vadCtx.createMediaStreamSource(stream).connect(analyser);
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      let silenceStart = null;
+      const recordingStartedAt = Date.now();
+
+      function vadTick() {
+        analyser.getByteTimeDomainData(data);
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) { const v = (data[i] - 128) / 128; sum += v * v; }
+        const rms = Math.sqrt(sum / data.length) * 100;
+
+        if (Date.now() - recordingStartedAt > VAD_MIN_START_MS) {
+          if (rms < VAD_RMS_THRESHOLD) {
+            if (!silenceStart) silenceStart = Date.now();
+            else if (Date.now() - silenceStart >= VAD_SILENCE_MS) {
+              if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
+              return; // don't reschedule — onstop will clean up
+            }
+          } else {
+            silenceStart = null;
           }
         }
-      };
-      recognition.onerror = () => { recognition = null; };
-      recognition.onend = () => { recognition = null; };
-      try { recognition.start(); } catch (_) { recognition = null; }
+        vadTimerId = setTimeout(vadTick, VAD_POLL_MS);
+      }
+      vadTimerId = setTimeout(vadTick, VAD_POLL_MS);
     }
 
     mediaRecorder.ondataavailable = (event) => {
@@ -3787,7 +3796,8 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = 
     };
 
     mediaRecorder.onstop = async () => {
-      if (recognition) { try { recognition.stop(); } catch (_) {} recognition = null; }
+      if (vadTimerId !== null) { clearTimeout(vadTimerId); vadTimerId = null; }
+      if (vadCtx) { vadCtx.close().catch(() => {}); vadCtx = null; }
       stream.getTracks().forEach((t) => t.stop());
       if (btn._recorder === mediaRecorder) btn._recorder = null;
 
