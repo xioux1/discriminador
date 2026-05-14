@@ -3722,7 +3722,7 @@ function blobToBase64(blob) {
  * textarea: the target textarea element
  * labelIdle: button text when idle
  */
-function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = null, onTranscribed = null) {
+function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = null, onTranscribed = null, onRecordingStart = null) {
   if (!window.MediaRecorder || !navigator.mediaDevices) return;
 
   btn.hidden = false;
@@ -3741,6 +3741,7 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = 
 
     audioChunks = [];
     mediaRecorder = new MediaRecorder(stream);
+    btn._recorder = mediaRecorder;
 
     mediaRecorder.ondataavailable = (event) => {
       if (event.data.size > 0) audioChunks.push(event.data);
@@ -3748,6 +3749,16 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = 
 
     mediaRecorder.onstop = async () => {
       stream.getTracks().forEach((t) => t.stop());
+      if (btn._recorder === mediaRecorder) btn._recorder = null;
+
+      // Card changed while recording — discard audio without transcribing.
+      if (mediaRecorder._cancelled) {
+        btn.textContent = labelIdle;
+        btn.disabled = false;
+        btn.classList.remove('recording');
+        return;
+      }
+
       const mimeType = mediaRecorder.mimeType || 'audio/webm';
       const blob = new Blob(audioChunks, { type: mimeType });
 
@@ -3800,6 +3811,7 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = 
       }
     };
 
+    if (typeof onRecordingStart === 'function') onRecordingStart();
     mediaRecorder.start();
     btn.textContent = 'Detener dictado';
     btn.classList.add('recording');
@@ -4117,9 +4129,12 @@ function initStudyTab() {
     () => studyDictBtn.dataset.subject || '',
     () => {
       if (!studyState.voiceMode) return;
+      // Guard against stale transcription completing after card navigation/deletion.
+      if (studyDictBtn._dictEpoch !== _voiceEpoch) return;
       const evalBtn = document.querySelector('#study-eval-btn');
       if (evalBtn && !evalBtn.disabled && evalBtn.offsetParent !== null) evalBtn.click();
-    }
+    },
+    () => { studyDictBtn._dictEpoch = _voiceEpoch; }
   );
   attachMathTabInsertion(
     document.querySelector('#study-answer-input'),
@@ -5270,6 +5285,20 @@ function showStudyCard() {
     _voiceFrontAudio._interrupted = true;
     try { _voiceFrontAudio.pause(); } catch (_) {}
     _voiceFrontAudio = null;
+  }
+  // Stop Chinese TTS (listening cards etc.) that isn't tracked by _voiceFrontAudio.
+  if (_ttsAudio) {
+    try { _ttsAudio.pause(); } catch (_) {}
+    _ttsAudio = null;
+  }
+  // Cancel any active dictation recording so it doesn't transcribe into the next card.
+  const _dictBtn = document.querySelector('#study-dictation-btn');
+  if (_dictBtn?._recorder?.state === 'recording') {
+    _dictBtn._recorder._cancelled = true;
+    try { _dictBtn._recorder.stop(); } catch (_) {}
+    _dictBtn.textContent = 'Dictar';
+    _dictBtn.classList.remove('recording');
+    _dictBtn.disabled = false;
   }
   studyState.audioPlaying = false;
   studyState.voicePhase = 'idle';
