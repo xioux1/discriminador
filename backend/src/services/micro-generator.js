@@ -34,36 +34,94 @@ Preguntá en qué se diferencia este concepto de la opción más parecida.`,
 ];
 
 /**
- * Given a concept the student failed to demonstrate understanding of,
- * generate a simple Socratic micro-question.
+ * Analyse the student's answer and choose the best pedagogical strategy
+ * before generating the micro-card.  Keeps the generator focused on
+ * execution rather than diagnosis.
  *
- * @param {number} [slotIndex=0] Slot 0 = base prompt. Slots 1–3 force a distinct angle.
+ * Returns { diagnosis, strategy, reason } where strategy is one of:
+ *   FUNDAMENTO | CONSECUENCIA | ANALOGÍA | DISTINCIÓN | APLICACIÓN | CORRECCIÓN
  */
-export async function generateMicroCard({ prompt_text, expected_answer_text, subject, concept, user_answer = '', slotIndex = 0 }) {
-  const angleBlock = ANGLE_PROMPTS[slotIndex] ?? ANGLE_PROMPTS[ANGLE_PROMPTS.length - 1];
-  const angleSection = angleBlock ? `\n${angleBlock}\n` : '';
+async function planMicroCard({ prompt_text, expected_answer_text, concept, user_answer }) {
   const response = await getClient().messages.create({
     model: LLM_MODEL,
     max_tokens: 200,
     temperature: 0,
-    system: `Generás una sola pregunta de estudio para un estudiante que no entendió un concepto puntual.
+    system: `Sos un experto en pedagogía. Analizás la respuesta de un estudiante para elegir la mejor estrategia de enseñanza.
 
-OBJETIVO: ir a lo básico. No buscás que elabore — querés saber si entiende la idea mínima.
+ESTRATEGIAS:
+- FUNDAMENTO: No respondió o su respuesta no tiene relación → preguntá qué es/para qué sirve el concepto
+- CONSECUENCIA: Mencionó algo relacionado pero le faltó el concepto → preguntá qué pasaría sin él
+- ANALOGÍA: Está confundido con algo abstracto → conectá con algo cotidiano conocido
+- DISTINCIÓN: Confundió el concepto con otro similar → preguntá la diferencia puntual
+- APLICACIÓN: Entiende en abstracto pero no en práctica → planteá un caso concreto mínimo
+- CORRECCIÓN: Dijo algo específicamente incorrecto → preguntá si su lógica resiste el caso más simple
 
-CASOS (elegí uno según la respuesta del estudiante):
+Respondé SOLO en este formato (3 líneas, sin nada más):
+DIAGNÓSTICO: <qué sabe y qué no sabe el estudiante, 1 oración>
+ESTRATEGIA: <FUNDAMENTO|CONSECUENCIA|ANALOGÍA|DISTINCIÓN|APLICACIÓN|CORRECCIÓN>
+RAZÓN: <por qué esta estrategia es la mejor aquí, 1 oración>`,
+    messages: [{
+      role: 'user',
+      content: `Tarjeta: ${prompt_text}
+Respuesta esperada: ${expected_answer_text}
+Respuesta del estudiante: "${user_answer || '(sin respuesta)'}"
+Concepto no entendido: "${concept}"`,
+    }],
+  });
 
-CASO A — No respondió nada o respondió algo sin relación:
-→ Preguntá para qué sirve el concepto. Lo más simple posible.
-→ Ej: "¿Para qué se usa X en este contexto?"
+  const text = response.content.find((b) => b.type === 'text')?.text ?? '';
+  const diagnosisMatch = text.match(/DIAGNÓSTICO:\s*(.+)/i);
+  const strategyMatch  = text.match(/ESTRATEGIA:\s*(\S+)/i);
+  const reasonMatch    = text.match(/RAZÓN:\s*(.+)/i);
 
-CASO B — Mencionó algunas cosas pero le faltó el concepto:
-→ Preguntá qué pasaría si ese concepto no estuviera.
-→ Ej: "¿Qué problema tendría el resultado si faltara X?"
+  return {
+    diagnosis: diagnosisMatch?.[1]?.trim() ?? '',
+    strategy:  strategyMatch?.[1]?.trim().toUpperCase() ?? 'FUNDAMENTO',
+    reason:    reasonMatch?.[1]?.trim() ?? '',
+  };
+}
 
-CASO C — Respondió algo incorrecto o confundido:
-→ Tomá lo que dijo y preguntá si funciona en el caso más simple que puedas pensar.
-→ Ej: "Si X fuera [lo que dijo], ¿qué pasaría con [caso concreto simple]?"
+const STRATEGY_GUIDE = `CÓMO EJECUTAR CADA ESTRATEGIA:
+- FUNDAMENTO: Preguntá para qué existe el concepto o qué es. Lo más simple posible.
+- CONSECUENCIA: Preguntá qué pasaría si ese concepto no estuviera.
+- ANALOGÍA: Planteá una analogía con algo cotidiano y preguntá si la entiende.
+- DISTINCIÓN: Preguntá en qué se diferencia del concepto con el que lo confundió.
+- APLICACIÓN: Planteá una situación concreta mínima. Pedile qué haría.
+- CORRECCIÓN: Tomá lo que dijo y preguntá si funciona en el caso más simple posible.`;
 
+/**
+ * Given a concept the student failed to demonstrate understanding of,
+ * generate a simple Socratic micro-question.
+ *
+ * Slot 0 (primary card): runs a planner first to choose the best pedagogical
+ * strategy based on the student's specific answer, then generates accordingly.
+ * Slots 1–3 (sibling diversity cards): skip planning and use the fixed angle
+ * override defined in ANGLE_PROMPTS.
+ *
+ * @param {number} [slotIndex=0] Slot 0 = planned. Slots 1–3 force a distinct angle.
+ */
+export async function generateMicroCard({ prompt_text, expected_answer_text, subject, concept, user_answer = '', slotIndex = 0 }) {
+  const angleBlock = ANGLE_PROMPTS[slotIndex] ?? ANGLE_PROMPTS[ANGLE_PROMPTS.length - 1];
+  const angleSection = angleBlock ? `\n${angleBlock}\n` : '';
+
+  // For the primary card, plan first; sibling cards use fixed angles for diversity.
+  let strategySection = '';
+  if (slotIndex === 0) {
+    const plan = await planMicroCard({ prompt_text, expected_answer_text, concept, user_answer });
+    strategySection = `\nESTRATEGIA ELEGIDA: ${plan.strategy}
+Diagnóstico del estudiante: ${plan.diagnosis}
+
+${STRATEGY_GUIDE}\n`;
+  }
+
+  const response = await getClient().messages.create({
+    model: LLM_MODEL,
+    max_tokens: 200,
+    temperature: 0,
+    system: `Generás una sola micro-pregunta socrática de estudio.
+
+OBJETIVO: ir a lo básico — querés saber si el estudiante entiende la idea mínima.
+${strategySection}
 REGLAS:
 - Una sola pregunta. Corta. Lenguaje simple.
 - No nombres el concepto que falta.
@@ -82,7 +140,7 @@ Respuesta que dio el estudiante: "${user_answer || '(sin respuesta registrada)'}
 
 Concepto que el estudiante no demostró comprender: "${concept}"
 
-Identificá el caso correspondiente y generá la micro-pregunta socrática.`
+Generá la micro-pregunta socrática.`
     }]
   });
 
