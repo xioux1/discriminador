@@ -390,3 +390,61 @@ Example output:
     return gaps;
   }
 }
+
+/**
+ * Remove gaps that are redundant before allocating microcard slots.
+ * Two kinds of redundancy are removed:
+ *   1. Gaps the student already addressed in their answer (even if phrased differently)
+ *   2. Semantically duplicate gaps — where two entries target the same underlying concept
+ *
+ * Preserves the order of the input list (ranking should happen before this call).
+ * Falls back to the original list on any error.
+ */
+export async function filterRedundantGaps({ prompt_text, expected_answer_text, user_answer = '', gaps }) {
+  if (!gaps || gaps.length === 0) return gaps ?? [];
+  // Single gap: only check if the student already covered it.
+  // Multiple gaps: also deduplicate semantic overlaps.
+
+  const numberedList = gaps.map((g, i) => `${i + 1}. ${g}`).join('\n');
+
+  const prompt = `A student answered a flashcard. An evaluator identified the following concept gaps. Before creating study cards, you must filter this list.
+
+## Card
+- Question: ${prompt_text}
+- Expected answer: ${expected_answer_text}
+- Student's answer: "${user_answer || '(no answer provided)'}"
+
+## Identified gaps (already ranked best-first)
+${numberedList}
+
+## Filtering rules (apply both)
+1. REMOVE any gap the student already demonstrated in their answer — even if they used different words, synonyms, or a paraphrase. If the student showed they understand the idea, don't drill them on it.
+2. REMOVE semantic duplicates — if two gaps target the same underlying concept from slightly different angles, keep only the first (highest-ranked) one and drop the rest.
+
+KEEP only gaps that are (a) genuinely absent from the student's answer AND (b) conceptually distinct from every other kept gap.
+
+## Output format
+Return ONLY a JSON array of the gap strings to keep, preserving their order. Return [] if all are redundant. No explanation, no markdown fences.
+
+Example output:
+["gap 2 text", "gap 4 text"]`;
+
+  try {
+    const response = await getClient().messages.create({
+      model:       LLM_MODEL,
+      max_tokens:  256,
+      temperature: 0,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    const text     = response.content.find((b) => b.type === 'text')?.text?.trim() ?? '';
+    const filtered = JSON.parse(text);
+
+    if (!Array.isArray(filtered)) return gaps;
+
+    const gapSet = new Set(gaps);
+    return filtered.filter((g) => typeof g === 'string' && gapSet.has(g));
+  } catch {
+    return gaps;
+  }
+}
