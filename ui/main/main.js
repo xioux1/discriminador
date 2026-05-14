@@ -3716,6 +3716,21 @@ function blobToBase64(blob) {
   });
 }
 
+// Matches "enviar respuesta" at the end of a string, case-insensitive,
+// tolerating trailing punctuation and extra whitespace.
+const _KEYPHRASE_RE = /\benviar\s+respuesta\s*[.,!?;:]*\s*$/i;
+
+function _keyphraseAtEnd(text) {
+  return _KEYPHRASE_RE.test(text.trim());
+}
+
+// Returns { cleaned, triggered }. If triggered, cleaned has the phrase removed.
+function _stripKeyPhrase(text) {
+  const m = text.match(/^([\s\S]*?)\s*\benviar\s+respuesta\s*[.,!?;:]*\s*$/i);
+  if (m) return { cleaned: m[1].trim(), triggered: true };
+  return { cleaned: text, triggered: false };
+}
+
 /**
  * Attach dictation (record + Whisper transcribe) to a button/textarea pair.
  * btn: the trigger button element
@@ -3730,6 +3745,7 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = 
   let mediaRecorder = null;
   let audioChunks = [];
   let stream = null;
+  let recognition = null;
 
   async function startRecording() {
     try {
@@ -3743,11 +3759,35 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = 
     mediaRecorder = new MediaRecorder(stream);
     btn._recorder = mediaRecorder;
 
+    // Parallel SpeechRecognition stream used only to detect the "enviar respuesta"
+    // keyphrase in real-time and stop the MediaRecorder automatically.
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SR) {
+      recognition = new SR();
+      recognition.lang = 'es-ES';
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.onresult = (e) => {
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          if (_keyphraseAtEnd(e.results[i][0].transcript)) {
+            recognition.stop();
+            recognition = null;
+            if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
+            break;
+          }
+        }
+      };
+      recognition.onerror = () => { recognition = null; };
+      recognition.onend = () => { recognition = null; };
+      try { recognition.start(); } catch (_) { recognition = null; }
+    }
+
     mediaRecorder.ondataavailable = (event) => {
       if (event.data.size > 0) audioChunks.push(event.data);
     };
 
     mediaRecorder.onstop = async () => {
+      if (recognition) { try { recognition.stop(); } catch (_) {} recognition = null; }
       stream.getTracks().forEach((t) => t.stop());
       if (btn._recorder === mediaRecorder) btn._recorder = null;
 
@@ -3785,22 +3825,26 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = 
 
         const { text } = await response.json();
         if (text) {
+          const { cleaned, triggered } = _stripKeyPhrase(text);
+          const insertText = triggered ? cleaned : text;
           const mathEditor = textarea._mathEditorEl;
           const isMathActive = mathEditor && !mathEditor.classList.contains('hidden');
-          if (isMathActive) {
-            // In math mode the textarea is hidden — insert into the contenteditable.
-            // execCommand fires the editor's input→sync chain automatically.
-            mathEditor.focus();
-            const needsSpace = mathEditor.textContent.length > 0 && !mathEditor.textContent.endsWith(' ');
-            document.execCommand('insertText', false, (needsSpace ? ' ' : '') + text);
-          } else {
-            const current = textarea.value;
-            const separator = current && !current.endsWith(' ') ? ' ' : '';
-            textarea.value = current + separator + text;
-            // Dispatch input so SqlEditor gutter and any other listeners update.
-            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+          if (insertText) {
+            if (isMathActive) {
+              // In math mode the textarea is hidden — insert into the contenteditable.
+              // execCommand fires the editor's input→sync chain automatically.
+              mathEditor.focus();
+              const needsSpace = mathEditor.textContent.length > 0 && !mathEditor.textContent.endsWith(' ');
+              document.execCommand('insertText', false, (needsSpace ? ' ' : '') + insertText);
+            } else {
+              const current = textarea.value;
+              const separator = current && !current.endsWith(' ') ? ' ' : '';
+              textarea.value = current + separator + insertText;
+              // Dispatch input so SqlEditor gutter and any other listeners update.
+              textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            }
           }
-          if (text && typeof onTranscribed === 'function') onTranscribed();
+          if (insertText && typeof onTranscribed === 'function') onTranscribed(triggered);
         }
       } catch (err) {
         setFeedback(`Error de transcripción: ${err.message}`, 'error');
@@ -4127,8 +4171,8 @@ function initStudyTab() {
     document.querySelector('#study-answer-input'),
     'Dictar',
     () => studyDictBtn.dataset.subject || '',
-    () => {
-      if (!studyState.voiceMode) return;
+    (keyphraseDetected) => {
+      if (!studyState.voiceMode && !keyphraseDetected) return;
       // Guard against stale transcription completing after card navigation/deletion.
       if (studyDictBtn._dictEpoch !== _voiceEpoch) return;
       const evalBtn = document.querySelector('#study-eval-btn');
