@@ -3737,8 +3737,6 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = 
   let mediaRecorder = null;
   let audioChunks = [];
   let stream = null;
-  let vadCtx = null;
-  let vadTimerId = null;
 
   async function startRecording() {
     try {
@@ -3752,58 +3750,35 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = 
     mediaRecorder = new MediaRecorder(stream);
     btn._recorder = mediaRecorder;
 
-    // VAD: auto-stop when silence is detected.
-    // Uses Web Audio AnalyserNode on the same stream — no extra microphone capture.
-    if (window.AudioContext || window.webkitAudioContext) {
-      const AC = window.AudioContext || window.webkitAudioContext;
-      const VAD_RMS_THRESHOLD = 20;  // 0-100; below = silence
-      const VAD_SILENCE_MS    = 2500; // ms of continuous silence → stop
-      const VAD_MIN_START_MS  = 800;  // ignore silence in first 800 ms (user may hesitate)
-      const VAD_POLL_MS       = 100;
-
-      vadCtx = new AC();
-      // Chrome suspends AudioContext when created without a direct user gesture
-      // (e.g. voice mode auto-starts dictation). Resume so the analyser gets real data.
-      if (vadCtx.state === 'suspended') await vadCtx.resume();
-
-      if (vadCtx.state === 'running') {
-        const analyser = vadCtx.createAnalyser();
-        analyser.fftSize = 512;
-        vadCtx.createMediaStreamSource(stream).connect(analyser);
-        const data = new Uint8Array(analyser.frequencyBinCount);
-        let silenceStart = null;
-        const recordingStartedAt = Date.now();
-
-        function vadTick() {
-          analyser.getByteTimeDomainData(data);
-          let sum = 0;
-          for (let i = 0; i < data.length; i++) { const v = (data[i] - 128) / 128; sum += v * v; }
-          const rms = Math.sqrt(sum / data.length) * 100;
-
-          if (Date.now() - recordingStartedAt > VAD_MIN_START_MS) {
-            if (rms < VAD_RMS_THRESHOLD) {
-              if (!silenceStart) silenceStart = Date.now();
-              else if (Date.now() - silenceStart >= VAD_SILENCE_MS) {
-                if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
-                return; // don't reschedule — onstop will clean up
-              }
-            } else {
-              silenceStart = null;
-            }
-          }
-          vadTimerId = setTimeout(vadTick, VAD_POLL_MS);
-        }
-        vadTimerId = setTimeout(vadTick, VAD_POLL_MS);
-      }
-    }
+    // VAD: Opus compresses silence to ~100-400 bytes per 200 ms chunk and speech
+    // to ~2000+ bytes. Comparing chunk sizes avoids AudioContext entirely and works
+    // reliably across browsers without needing a user-gesture-resumed context.
+    const VAD_CHUNK_MS      = 200;
+    const VAD_SILENT_BYTES  = 1000; // below this per chunk = silence
+    const VAD_SILENCE_MS    = 2500; // continuous silence duration → stop
+    const VAD_MIN_START_MS  = 800;  // ignore first 800 ms (user may hesitate)
+    let vadSilenceStart     = null;
+    let vadHadSpeech        = false;
+    const vadStartedAt      = Date.now();
 
     mediaRecorder.ondataavailable = (event) => {
-      if (event.data.size > 0) audioChunks.push(event.data);
+      if (event.data.size > 0) {
+        audioChunks.push(event.data);
+
+        const elapsed = Date.now() - vadStartedAt;
+        if (elapsed > VAD_MIN_START_MS && mediaRecorder.state === 'recording') {
+          if (event.data.size > VAD_SILENT_BYTES) {
+            vadHadSpeech    = true;
+            vadSilenceStart = null;
+          } else if (vadHadSpeech) {
+            if (!vadSilenceStart) vadSilenceStart = Date.now();
+            else if (Date.now() - vadSilenceStart >= VAD_SILENCE_MS) mediaRecorder.stop();
+          }
+        }
+      }
     };
 
     mediaRecorder.onstop = async () => {
-      if (vadTimerId !== null) { clearTimeout(vadTimerId); vadTimerId = null; }
-      if (vadCtx) { vadCtx.close().catch(() => {}); vadCtx = null; }
       stream.getTracks().forEach((t) => t.stop());
       if (btn._recorder === mediaRecorder) btn._recorder = null;
 
@@ -3872,7 +3847,7 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = 
     };
 
     if (typeof onRecordingStart === 'function') onRecordingStart();
-    mediaRecorder.start();
+    mediaRecorder.start(VAD_CHUNK_MS);
     btn.textContent = 'Detener dictado';
     btn.classList.add('recording');
   }
