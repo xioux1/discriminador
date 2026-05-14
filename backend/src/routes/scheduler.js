@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { dbPool } from '../db/client.js';
 import { computeNextReview, isPassGrade, isFailGrade } from '../services/scheduler.js';
-import { generateMicroCard, generateMicroCardFromCheckError, generateChineseMicroCard, generateChineseListeningMicroCard, isChineseCard, rankGaps } from '../services/micro-generator.js';
+import { generateMicroCard, generateMicroCardFromCheckError, generateChineseMicroCard, generateChineseListeningMicroCard, isChineseCard, rankGaps, filterRedundantGaps } from '../services/micro-generator.js';
 import { generateVariant, buildChineseListeningVariant } from '../services/variant-generator.js';
 import Anthropic from '@anthropic-ai/sdk';
 
@@ -607,7 +607,13 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
       user_answer:          userAnswer,
       gaps:                 validGaps,
     });
-    const targetConcepts = rankedGaps.slice(0, slotsAvailable);
+    const dedupedGaps = await filterRedundantGaps({
+      prompt_text:          microPromptText,
+      expected_answer_text: microExpectedText,
+      user_answer:          userAnswer,
+      gaps:                 rankedGaps,
+    });
+    const targetConcepts = dedupedGaps.slice(0, slotsAvailable);
 
     const isListeningReview = variantType === 'listening';
 
@@ -826,7 +832,13 @@ async function reviewMicroCard(res, microCardId, grade, conceptGaps, userAnswer,
           user_answer:          userAnswer || '',
           gaps:                 validSiblingGaps,
         });
-        const targetConcepts = rankedSiblingGaps.slice(0, slotsAvailable);
+        const dedupedSiblingGaps = await filterRedundantGaps({
+          prompt_text:          parent.prompt_text,
+          expected_answer_text: parent.expected_answer_text,
+          user_answer:          userAnswer || '',
+          gaps:                 rankedSiblingGaps,
+        });
+        const targetConcepts = dedupedSiblingGaps.slice(0, slotsAvailable);
 
         for (const [slotIndex, concept] of targetConcepts.entries()) {
           try {
