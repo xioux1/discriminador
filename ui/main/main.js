@@ -3750,15 +3750,17 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = 
     mediaRecorder = new MediaRecorder(stream);
     btn._recorder = mediaRecorder;
 
-    // VAD: Opus compresses silence to ~100-400 bytes per 200 ms chunk and speech
-    // to ~2000+ bytes. Comparing chunk sizes avoids AudioContext entirely and works
-    // reliably across browsers without needing a user-gesture-resumed context.
+    // VAD: speech chunks are much larger than silence chunks in Opus regardless of
+    // absolute byte counts (which vary by browser/container). We collect a silence
+    // baseline during the first 800 ms, then set the speech threshold to 4× that
+    // average — adaptive to Chrome, Firefox, and different container overheads.
     const VAD_CHUNK_MS      = 200;
-    const VAD_SILENT_BYTES  = 1000; // below this per chunk = silence
-    const VAD_SILENCE_MS    = 2500; // continuous silence duration → stop
-    const VAD_MIN_START_MS  = 800;  // ignore first 800 ms (user may hesitate)
+    const VAD_SILENCE_MS    = 2500; // continuous silence after first speech → stop
+    const VAD_MIN_START_MS  = 800;  // collect silence baseline for this many ms
     let vadSilenceStart     = null;
     let vadHadSpeech        = false;
+    let vadThreshold        = null; // computed once after baseline window
+    const vadBaselineChunks = [];
     const vadStartedAt      = Date.now();
 
     mediaRecorder.ondataavailable = (event) => {
@@ -3766,14 +3768,28 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = 
         audioChunks.push(event.data);
 
         const elapsed = Date.now() - vadStartedAt;
-        if (elapsed > VAD_MIN_START_MS && mediaRecorder.state === 'recording') {
-          if (event.data.size > VAD_SILENT_BYTES) {
-            vadHadSpeech    = true;
-            vadSilenceStart = null;
-          } else if (vadHadSpeech) {
-            if (!vadSilenceStart) vadSilenceStart = Date.now();
-            else if (Date.now() - vadSilenceStart >= VAD_SILENCE_MS) mediaRecorder.stop();
-          }
+
+        if (elapsed <= VAD_MIN_START_MS) {
+          vadBaselineChunks.push(event.data.size);
+          return;
+        }
+
+        // Compute threshold once from the silence baseline
+        if (vadThreshold === null) {
+          const avg = vadBaselineChunks.length
+            ? vadBaselineChunks.reduce((a, b) => a + b, 0) / vadBaselineChunks.length
+            : 500;
+          vadThreshold = avg * 4; // 4× silence avg reliably separates speech
+        }
+
+        if (mediaRecorder.state !== 'recording') return;
+
+        if (event.data.size > vadThreshold) {
+          vadHadSpeech    = true;
+          vadSilenceStart = null;
+        } else if (vadHadSpeech) {
+          if (!vadSilenceStart) vadSilenceStart = Date.now();
+          else if (Date.now() - vadSilenceStart >= VAD_SILENCE_MS) mediaRecorder.stop();
         }
       }
     };
