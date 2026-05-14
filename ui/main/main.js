@@ -5761,6 +5761,8 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
   const item     = studyState.queue[studyState.index];
   const answer   = MathPreview.serialize(document.querySelector('#study-answer-input')).trim();
   const evalBtn  = document.querySelector('#study-eval-btn');
+  // Capture epoch so we can detect card navigation/deletion while the eval fetch is in-flight.
+  const evalEpoch = _voiceEpoch;
 
   if (!answer) return;
 
@@ -6086,12 +6088,20 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       document.querySelector('#study-doubt-input').value = '';
     }
     if (studyState.voiceMode) {
+      // If the card was navigated or deleted while the eval fetch was in-flight, skip
+      // all audio and UI updates — another card is already showing.
+      if (_voiceEpoch !== evalEpoch) return;
       // Stop any prompt audio still playing so the audioPlaying guard in
       // handleStudyNextCard doesn't silently abort the auto-advance.
       if (_voiceFrontAudio) {
         _voiceFrontAudio._interrupted = true;
         try { _voiceFrontAudio.pause(); } catch (_) {}
         _voiceFrontAudio = null;
+      }
+      // Stop Chinese TTS (auto-played above) so it doesn't overlap with the correction audio.
+      if (_ttsAudio) {
+        try { _ttsAudio.pause(); } catch (_) {}
+        _ttsAudio = null;
       }
       studyState.audioPlaying = false;
       studyState.voicePhase = 'idle';
