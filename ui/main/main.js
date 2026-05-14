@@ -3737,6 +3737,9 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = 
   let mediaRecorder = null;
   let audioChunks = [];
   let stream = null;
+  let vadCtx = null;
+  let vadTimerId = null;
+  let vadStream = null; // separate stream for analyser — avoids Firefox bug
 
   async function startRecording() {
     try {
@@ -3750,51 +3753,84 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = 
     mediaRecorder = new MediaRecorder(stream);
     btn._recorder = mediaRecorder;
 
-    // VAD: speech chunks are much larger than silence chunks in Opus regardless of
-    // absolute byte counts (which vary by browser/container). We collect a silence
-    // baseline during the first 800 ms, then set the speech threshold to 4× that
-    // average — adaptive to Chrome, Firefox, and different container overheads.
-    const VAD_CHUNK_MS      = 200;
-    const VAD_SILENCE_MS    = 2500; // continuous silence after first speech → stop
-    const VAD_MIN_START_MS  = 800;  // collect silence baseline for this many ms
-    let vadSilenceStart     = null;
-    let vadHadSpeech        = false;
-    let vadThreshold        = null; // computed once after baseline window
-    const vadBaselineChunks = [];
-    const vadStartedAt      = Date.now();
+    // VAD: uses a separate getUserMedia stream fed into an AnalyserNode.
+    // Firefox returns flat data from AnalyserNode when the same stream is shared
+    // with MediaRecorder, so we open a second capture exclusively for analysis.
+    // The async IIFE runs in parallel so recording starts without waiting for it.
+    (async () => {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      try { vadStream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+      catch (_) { return; }
 
-    mediaRecorder.ondataavailable = (event) => {
-      if (event.data.size > 0) {
-        audioChunks.push(event.data);
+      vadCtx = new AC();
+      if (vadCtx.state === 'suspended') { try { await vadCtx.resume(); } catch (_) {} }
+      if (vadCtx.state !== 'running') {
+        vadCtx.close().catch(() => {}); vadCtx = null;
+        vadStream.getTracks().forEach((t) => t.stop()); vadStream = null;
+        return;
+      }
+
+      const VAD_SILENCE_MS   = 2500;
+      const VAD_MIN_START_MS = 800;
+      const VAD_POLL_MS      = 100;
+
+      const analyser = vadCtx.createAnalyser();
+      analyser.fftSize = 2048;
+      vadCtx.createMediaStreamSource(vadStream).connect(analyser);
+      const data = new Uint8Array(analyser.frequencyBinCount);
+
+      // Adaptive: measure noise floor during the first 800 ms, then use 4× as
+      // the speech threshold so the VAD self-calibrates to the microphone level.
+      let noiseFloorSamples = [];
+      let noiseFloor        = null;
+      let silenceStart      = null;
+      let hadSpeech         = false;
+      const vadStartedAt    = Date.now();
+
+      function vadTick() {
+        if (!mediaRecorder || mediaRecorder.state !== 'recording') return;
+
+        analyser.getByteTimeDomainData(data);
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) { const v = (data[i] - 128) / 128; sum += v * v; }
+        const rms = Math.sqrt(sum / data.length) * 100;
 
         const elapsed = Date.now() - vadStartedAt;
 
         if (elapsed <= VAD_MIN_START_MS) {
-          vadBaselineChunks.push(event.data.size);
-          return;
+          noiseFloorSamples.push(rms);
+        } else {
+          if (noiseFloor === null) {
+            const avg = noiseFloorSamples.length
+              ? noiseFloorSamples.reduce((a, b) => a + b, 0) / noiseFloorSamples.length
+              : 1;
+            noiseFloor = Math.max(avg * 4, 3); // at least 3 to avoid triggering in silence
+          }
+          if (rms > noiseFloor) {
+            hadSpeech    = true;
+            silenceStart = null;
+          } else if (hadSpeech) {
+            if (!silenceStart) silenceStart = Date.now();
+            else if (Date.now() - silenceStart >= VAD_SILENCE_MS) {
+              mediaRecorder.stop();
+              return; // don't reschedule
+            }
+          }
         }
-
-        // Compute threshold once from the silence baseline
-        if (vadThreshold === null) {
-          const avg = vadBaselineChunks.length
-            ? vadBaselineChunks.reduce((a, b) => a + b, 0) / vadBaselineChunks.length
-            : 500;
-          vadThreshold = avg * 4; // 4× silence avg reliably separates speech
-        }
-
-        if (mediaRecorder.state !== 'recording') return;
-
-        if (event.data.size > vadThreshold) {
-          vadHadSpeech    = true;
-          vadSilenceStart = null;
-        } else if (vadHadSpeech) {
-          if (!vadSilenceStart) vadSilenceStart = Date.now();
-          else if (Date.now() - vadSilenceStart >= VAD_SILENCE_MS) mediaRecorder.stop();
-        }
+        vadTimerId = setTimeout(vadTick, VAD_POLL_MS);
       }
+      vadTimerId = setTimeout(vadTick, VAD_POLL_MS);
+    })();
+
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) audioChunks.push(event.data);
     };
 
     mediaRecorder.onstop = async () => {
+      if (vadTimerId !== null) { clearTimeout(vadTimerId); vadTimerId = null; }
+      if (vadCtx) { vadCtx.close().catch(() => {}); vadCtx = null; }
+      if (vadStream) { vadStream.getTracks().forEach((t) => t.stop()); vadStream = null; }
       stream.getTracks().forEach((t) => t.stop());
       if (btn._recorder === mediaRecorder) btn._recorder = null;
 
@@ -3863,7 +3899,7 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = 
     };
 
     if (typeof onRecordingStart === 'function') onRecordingStart();
-    mediaRecorder.start(VAD_CHUNK_MS);
+    mediaRecorder.start();
     btn.textContent = 'Detener dictado';
     btn.classList.add('recording');
   }
