@@ -3757,7 +3757,7 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = 
     if (window.AudioContext || window.webkitAudioContext) {
       const AC = window.AudioContext || window.webkitAudioContext;
       const VAD_RMS_THRESHOLD = 20;  // 0-100; below = silence
-      const VAD_SILENCE_MS    = 1500; // ms of continuous silence → stop
+      const VAD_SILENCE_MS    = 2500; // ms of continuous silence → stop
       const VAD_MIN_START_MS  = 800;  // ignore silence in first 800 ms (user may hesitate)
       const VAD_POLL_MS       = 100;
 
