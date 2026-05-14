@@ -3757,15 +3757,31 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = 
     // Firefox returns flat data from AnalyserNode when the same stream is shared
     // with MediaRecorder, so we open a second capture exclusively for analysis.
     // The async IIFE runs in parallel so recording starts without waiting for it.
+    //
+    // Race-condition fixes:
+    //  - vadStartedAt is captured NOW (before the IIFE) so the baseline window
+    //    is anchored to recording start, not to when getUserMedia resolves.
+    //  - vadCancelled prevents the IIFE from wiring up VAD after onstop fires.
+    //  - 25th-percentile noise floor avoids inflating the baseline when the
+    //    user starts speaking before the calibration window closes.
+    const vadStartedAt = Date.now();
+    let vadCancelled   = false;
+
     (async () => {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return;
-      try { vadStream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+
+      let tempVadStream;
+      try { tempVadStream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
       catch (_) { return; }
+
+      // Recording may have already stopped while we awaited getUserMedia.
+      if (vadCancelled) { tempVadStream.getTracks().forEach((t) => t.stop()); return; }
+      vadStream = tempVadStream;
 
       vadCtx = new AC();
       if (vadCtx.state === 'suspended') { try { await vadCtx.resume(); } catch (_) {} }
-      if (vadCtx.state !== 'running') {
+      if (vadCancelled || vadCtx.state !== 'running') {
         vadCtx.close().catch(() => {}); vadCtx = null;
         vadStream.getTracks().forEach((t) => t.stop()); vadStream = null;
         return;
@@ -3780,16 +3796,15 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = 
       vadCtx.createMediaStreamSource(vadStream).connect(analyser);
       const data = new Uint8Array(analyser.frequencyBinCount);
 
-      // Adaptive: measure noise floor during the first 800 ms, then use 4× as
-      // the speech threshold so the VAD self-calibrates to the microphone level.
+      // Use 25th-percentile RMS over the first 800 ms as noise floor so that
+      // speech spikes during the calibration window don't inflate the threshold.
       let noiseFloorSamples = [];
       let noiseFloor        = null;
       let silenceStart      = null;
       let hadSpeech         = false;
-      const vadStartedAt    = Date.now();
 
       function vadTick() {
-        if (!mediaRecorder || mediaRecorder.state !== 'recording') return;
+        if (vadCancelled || !mediaRecorder || mediaRecorder.state !== 'recording') return;
 
         analyser.getByteTimeDomainData(data);
         let sum = 0;
@@ -3802,10 +3817,9 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = 
           noiseFloorSamples.push(rms);
         } else {
           if (noiseFloor === null) {
-            const avg = noiseFloorSamples.length
-              ? noiseFloorSamples.reduce((a, b) => a + b, 0) / noiseFloorSamples.length
-              : 1;
-            noiseFloor = Math.max(avg * 4, 3); // at least 3 to avoid triggering in silence
+            const sorted = [...noiseFloorSamples].sort((a, b) => a - b);
+            const p25    = sorted[Math.floor(sorted.length * 0.25)] ?? 1;
+            noiseFloor   = Math.max(p25 * 5, 3); // 5× 25th-percentile; min 3
           }
           if (rms > noiseFloor) {
             hadSpeech    = true;
@@ -3828,6 +3842,7 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = 
     };
 
     mediaRecorder.onstop = async () => {
+      vadCancelled = true;
       if (vadTimerId !== null) { clearTimeout(vadTimerId); vadTimerId = null; }
       if (vadCtx) { vadCtx.close().catch(() => {}); vadCtx = null; }
       if (vadStream) { vadStream.getTracks().forEach((t) => t.stop()); vadStream = null; }
