@@ -3737,6 +3737,8 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = 
   let mediaRecorder = null;
   let audioChunks = [];
   let stream = null;
+  let vadCtx = null;
+  let vadTimerId = null;
 
   async function startRecording() {
     try {
@@ -3750,11 +3752,52 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = 
     mediaRecorder = new MediaRecorder(stream);
     btn._recorder = mediaRecorder;
 
+    // VAD: auto-stop when silence is detected.
+    // Uses Web Audio AnalyserNode on the same stream — no extra microphone capture.
+    if (window.AudioContext || window.webkitAudioContext) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      const VAD_RMS_THRESHOLD = 20;  // 0-100; below = silence
+      const VAD_SILENCE_MS    = 1500; // ms of continuous silence → stop
+      const VAD_MIN_START_MS  = 800;  // ignore silence in first 800 ms (user may hesitate)
+      const VAD_POLL_MS       = 100;
+
+      vadCtx = new AC();
+      const analyser = vadCtx.createAnalyser();
+      analyser.fftSize = 512;
+      vadCtx.createMediaStreamSource(stream).connect(analyser);
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      let silenceStart = null;
+      const recordingStartedAt = Date.now();
+
+      function vadTick() {
+        analyser.getByteTimeDomainData(data);
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) { const v = (data[i] - 128) / 128; sum += v * v; }
+        const rms = Math.sqrt(sum / data.length) * 100;
+
+        if (Date.now() - recordingStartedAt > VAD_MIN_START_MS) {
+          if (rms < VAD_RMS_THRESHOLD) {
+            if (!silenceStart) silenceStart = Date.now();
+            else if (Date.now() - silenceStart >= VAD_SILENCE_MS) {
+              if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
+              return; // don't reschedule — onstop will clean up
+            }
+          } else {
+            silenceStart = null;
+          }
+        }
+        vadTimerId = setTimeout(vadTick, VAD_POLL_MS);
+      }
+      vadTimerId = setTimeout(vadTick, VAD_POLL_MS);
+    }
+
     mediaRecorder.ondataavailable = (event) => {
       if (event.data.size > 0) audioChunks.push(event.data);
     };
 
     mediaRecorder.onstop = async () => {
+      if (vadTimerId !== null) { clearTimeout(vadTimerId); vadTimerId = null; }
+      if (vadCtx) { vadCtx.close().catch(() => {}); vadCtx = null; }
       stream.getTracks().forEach((t) => t.stop());
       if (btn._recorder === mediaRecorder) btn._recorder = null;
 
