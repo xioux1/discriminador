@@ -3716,14 +3716,6 @@ function blobToBase64(blob) {
   });
 }
 
-// Matches "enviar respuesta" at the end of a string, case-insensitive,
-// tolerating trailing punctuation and extra whitespace.
-const _KEYPHRASE_RE = /\benviar\s+respuesta\s*[.,!?;:]*\s*$/i;
-
-function _keyphraseAtEnd(text) {
-  return _KEYPHRASE_RE.test(text.trim());
-}
-
 // Returns { cleaned, triggered }. If triggered, cleaned has the phrase removed.
 function _stripKeyPhrase(text) {
   const m = text.match(/^([\s\S]*?)\s*\benviar\s+respuesta\s*[.,!?;:]*\s*$/i);
@@ -3745,7 +3737,6 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = 
   let mediaRecorder = null;
   let audioChunks = [];
   let stream = null;
-  let recognition = null;
 
   async function startRecording() {
     try {
@@ -3759,35 +3750,11 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = 
     mediaRecorder = new MediaRecorder(stream);
     btn._recorder = mediaRecorder;
 
-    // Parallel SpeechRecognition stream used only to detect the "enviar respuesta"
-    // keyphrase in real-time and stop the MediaRecorder automatically.
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SR) {
-      recognition = new SR();
-      recognition.lang = 'es-ES';
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.onresult = (e) => {
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          if (_keyphraseAtEnd(e.results[i][0].transcript)) {
-            recognition.stop();
-            recognition = null;
-            if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
-            break;
-          }
-        }
-      };
-      recognition.onerror = () => { recognition = null; };
-      recognition.onend = () => { recognition = null; };
-      try { recognition.start(); } catch (_) { recognition = null; }
-    }
-
     mediaRecorder.ondataavailable = (event) => {
       if (event.data.size > 0) audioChunks.push(event.data);
     };
 
     mediaRecorder.onstop = async () => {
-      if (recognition) { try { recognition.stop(); } catch (_) {} recognition = null; }
       stream.getTracks().forEach((t) => t.stop());
       if (btn._recorder === mediaRecorder) btn._recorder = null;
 
