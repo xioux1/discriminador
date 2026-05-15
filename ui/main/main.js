@@ -5753,11 +5753,19 @@ function showStudyCard() {
   document.querySelector('#study-doubt-section')?.classList.add('hidden');
   const advancedPanel = document.querySelector('#study-advanced-panel');
   const advancedToggleBtn = document.querySelector('#study-advanced-toggle-btn');
-  if (advancedPanel) advancedPanel.open = false;
+  if (advancedPanel) { advancedPanel.open = false; advancedPanel.classList.remove('hidden'); }
   if (advancedToggleBtn) {
     advancedToggleBtn.textContent = 'Ver explicación';
     advancedToggleBtn.setAttribute('aria-expanded', 'false');
+    advancedToggleBtn.classList.remove('hidden');
   }
+  // Restore elements moved/hidden during voice mode result view
+  const _expectedElReset = document.querySelector('#study-result-expected');
+  if (_expectedElReset && advancedPanel) advancedPanel.appendChild(_expectedElReset);
+  document.querySelector('#study-result-time')?.classList.remove('hidden');
+  document.querySelector('#study-result-justification')?.classList.remove('hidden');
+  document.querySelector('#study-dual-judge')?.classList.add('hidden');
+  document.querySelector('.study-result-actions')?.classList.remove('hidden');
   const easyPanel = document.querySelector('#study-easy-explanation');
   if (easyPanel) { easyPanel.open = false; easyPanel.classList.add('hidden'); }
   // In exam mode hide secondary controls that don't belong in a simulation
@@ -6409,6 +6417,23 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       document.querySelector('#study-doubt-form').classList.add('hidden');
       document.querySelector('#study-doubt-answer').classList.add('hidden');
       document.querySelector('#study-doubt-input').value = '';
+    }
+    if (studyState.voiceMode) {
+      // Simplify result view: show only grade + expected answer prominently.
+      const _quickResult = document.querySelector('.study-result-quick');
+      const _expectedEl  = document.querySelector('#study-result-expected');
+      if (_quickResult && _expectedEl) {
+        _quickResult.appendChild(_expectedEl);
+        _expectedEl.classList.remove('hidden');
+      }
+      document.querySelector('#study-result-time')?.classList.add('hidden');
+      document.querySelector('#study-result-justification')?.classList.add('hidden');
+      document.querySelector('#study-result-dimensions')?.classList.add('hidden');
+      document.querySelector('#study-dual-judge')?.classList.add('hidden');
+      document.querySelector('#study-advanced-toggle-btn')?.classList.add('hidden');
+      document.querySelector('#study-advanced-panel')?.classList.add('hidden');
+      document.querySelector('#study-doubt-section')?.classList.add('hidden');
+      document.querySelector('.study-result-actions')?.classList.add('hidden');
     }
     if (studyState.voiceMode) {
       // If the card was navigated or deleted while the eval fetch was in-flight, skip
