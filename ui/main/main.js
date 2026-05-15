@@ -5775,7 +5775,7 @@ function showStudyCard() {
   const studyBackBtn = document.querySelector('#study-back-btn');
   const studyDeleteBtn = document.querySelector('#study-delete-btn');
   if (studyBackBtn)   studyBackBtn.hidden   = studyState.voiceMode;
-  if (studyDeleteBtn) studyDeleteBtn.hidden = studyState.voiceMode || !['card', 'micro'].includes(item.type);
+  if (studyDeleteBtn) studyDeleteBtn.hidden = !['card', 'micro'].includes(item.type);
   document.querySelector('#study-card')?.classList.toggle('voice-mode-active', studyState.voiceMode);
   const studyEvalBtn = document.querySelector('#study-eval-btn');
   studyEvalBtn.disabled = false;
