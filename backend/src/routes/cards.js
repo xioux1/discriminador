@@ -821,4 +821,222 @@ FORMATO DE RESPUESTA — respondé SOLO con JSON válido, sin texto antes ni des
   return res.json({ result, saved: save });
 });
 
+const CODE_ENTITY_SYSTEM_PROMPT_MULTI = `Sos un experto en bases de datos, programación y documentación técnica para tarjetas de estudio universitario.
+Tu tarea: identificar y marcar con backticks los términos que son entidades de código en el texto de consignas.
+
+REGLAS ESTRICTAS:
+- Marcá con \`backticks\` los siguientes elementos cuando aparecen sin marcar:
+  * Nombres de colecciones, tablas, relaciones (ej: socios, empleados, orders)
+  * Nombres de campos, atributos, columnas (ej: id_socio, nombre, apellido, fecha_nacimiento)
+  * Nombres de variables, parámetros, funciones, métodos (ej: miVariable, calcularTotal, find)
+  * Palabras clave de lenguajes de programación o SQL/NoSQL (ej: SELECT, INSERT, WHERE, db.find)
+  * Valores literales de código: strings de código, booleanos, null (ej: "Juvenil", true, null, 42)
+  * Expresiones de código cuando son parte de ejemplos técnicos
+- NO marcás palabras comunes del español aunque aparezcan en contexto técnico
+- NO marcás nombres propios de personas ni palabras genéricas de la consigna
+- Si el texto ya tiene backticks en los lugares correctos, no cambiés nada
+- Conservá exactamente el resto del texto incluyendo puntuación y saltos de línea
+
+FORMATO DE RESPUESTA — respondé SOLO con JSON válido, sin texto antes ni después:
+{
+  "results": [
+    {
+      "id": <número>,
+      "reformatted": "<texto con backticks>",
+      "score": <número 1-10 indicando cuántas entidades se identificaron y marcaron>,
+      "comment": "<una línea explicando qué entidades marcaste o por qué no cambiaste nada>"
+    }
+  ]
+}`;
+
+const CODE_ENTITY_SYSTEM_PROMPT_SINGLE = `Sos un experto en bases de datos, programación y documentación técnica para tarjetas de estudio universitario.
+Tu tarea: identificar y marcar con backticks los términos que son entidades de código en el texto de consignas.
+
+REGLAS ESTRICTAS:
+- Marcá con \`backticks\` los siguientes elementos cuando aparecen sin marcar:
+  * Nombres de colecciones, tablas, relaciones (ej: socios, empleados, orders)
+  * Nombres de campos, atributos, columnas (ej: id_socio, nombre, apellido, fecha_nacimiento)
+  * Nombres de variables, parámetros, funciones, métodos (ej: miVariable, calcularTotal, find)
+  * Palabras clave de lenguajes de programación o SQL/NoSQL (ej: SELECT, INSERT, WHERE, db.find)
+  * Valores literales de código: strings de código, booleanos, null (ej: "Juvenil", true, null, 42)
+  * Expresiones de código cuando son parte de ejemplos técnicos
+- NO marcás palabras comunes del español aunque aparezcan en contexto técnico
+- NO marcás nombres propios de personas ni palabras genéricas de la consigna
+- Si el texto ya tiene backticks en los lugares correctos, no cambiés nada
+- Conservá exactamente el resto del texto incluyendo puntuación y saltos de línea
+
+FORMATO DE RESPUESTA — respondé SOLO con JSON válido, sin texto antes ni después:
+{
+  "reformatted": "<texto con backticks>",
+  "score": <número 1-10 indicando cuántas entidades se identificaron y marcaron>,
+  "comment": "<una línea explicando qué entidades marcaste o por qué no cambiaste nada>"
+}`;
+
+// POST /cards/reformat-code-prompt — identify and backtick code entities in prompt_text(s) using Claude
+// Body: { card_ids: number[], save?: boolean }
+// Returns: { results: [{id, original, reformatted, score, comment}] }
+cardsRouter.post('/cards/reformat-code-prompt', llmRateLimit, async (req, res) => {
+  const userId = req.user.id;
+  const cardIds = Array.isArray(req.body?.card_ids)
+    ? req.body.card_ids.map(Number).filter(n => Number.isFinite(n) && n > 0)
+    : [];
+  const save = req.body?.save === true;
+
+  if (!cardIds.length) {
+    return res.status(422).json({ error: 'validation_error', message: 'card_ids es obligatorio y debe ser un arreglo no vacío.' });
+  }
+  if (cardIds.length > 30) {
+    return res.status(422).json({ error: 'validation_error', message: 'Máximo 30 tarjetas por llamada.' });
+  }
+
+  const placeholders = cardIds.map((_, i) => `$${i + 2}`).join(', ');
+  const { rows: cards } = await dbPool.query(
+    `SELECT id, subject, prompt_text, notes FROM cards WHERE id IN (${placeholders}) AND user_id = $1 AND archived_at IS NULL`,
+    [userId, ...cardIds]
+  );
+
+  if (!cards.length) {
+    return res.status(404).json({ error: 'not_found', message: 'No se encontraron tarjetas.' });
+  }
+
+  const cardsText = cards.map((c, i) =>
+    `--- Tarjeta ${i + 1} (id=${c.id}) [${c.subject || 'sin materia'}] ---\n${c.prompt_text}`
+  ).join('\n\n');
+
+  const client = new Anthropic();
+  let rawResponse;
+  try {
+    const msg = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 4096,
+      temperature: 0,
+      system: CODE_ENTITY_SYSTEM_PROMPT_MULTI,
+      messages: [{ role: 'user', content: cardsText }],
+    });
+    rawResponse = msg.content.find(b => b.type === 'text')?.text?.trim() ?? '';
+  } catch (err) {
+    console.error('POST /cards/reformat-code-prompt (LLM)', err.message);
+    return res.status(500).json({ error: 'llm_error', message: err.message });
+  }
+
+  let parsed;
+  try {
+    const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
+    parsed = JSON.parse(jsonMatch ? jsonMatch[0] : rawResponse);
+  } catch (_) {
+    return res.status(500).json({ error: 'parse_error', message: 'La IA devolvió una respuesta inválida.', raw: rawResponse.slice(0, 500) });
+  }
+
+  const results = Array.isArray(parsed?.results) ? parsed.results : [];
+  const cardMap = Object.fromEntries(cards.map(c => [c.id, c]));
+  const enriched = results.map(r => ({
+    id: r.id,
+    original: cardMap[r.id]?.prompt_text ?? '',
+    reformatted: typeof r.reformatted === 'string' ? r.reformatted : '',
+    score: typeof r.score === 'number' ? r.score : null,
+    comment: typeof r.comment === 'string' ? r.comment : '',
+  })).filter(r => cardMap[r.id]);
+
+  if (save && enriched.length) {
+    const client2 = await dbPool.connect();
+    try {
+      await client2.query('BEGIN');
+      for (const r of enriched) {
+        if (!r.reformatted || r.reformatted === r.original) continue;
+        const card = cardMap[r.id];
+        const backupNote = card.notes
+          ? `${card.notes}\n[original prompt] ${card.prompt_text}`
+          : `[original prompt] ${card.prompt_text}`;
+        await client2.query(
+          `UPDATE cards SET prompt_text = $1, notes = $2, updated_at = now() WHERE id = $3 AND user_id = $4`,
+          [r.reformatted, backupNote.slice(0, 2000), r.id, userId]
+        );
+      }
+      await client2.query('COMMIT');
+    } catch (err) {
+      await client2.query('ROLLBACK');
+      console.error('POST /cards/reformat-code-prompt (save)', err.message);
+      return res.status(500).json({ error: 'server_error', message: err.message });
+    } finally {
+      client2.release();
+    }
+  }
+
+  return res.json({ results: enriched, saved: save });
+});
+
+// POST /cards/reformat-code-variant — identify and backtick code entities in a single variant using Claude
+// Body: { card_id: number, variant_id: number, save?: boolean }
+// Returns: { result: { id, original, reformatted, score, comment }, saved }
+cardsRouter.post('/cards/reformat-code-variant', llmRateLimit, async (req, res) => {
+  const userId    = req.user.id;
+  const cardId    = Number(req.body?.card_id);
+  const variantId = Number(req.body?.variant_id);
+  const save      = req.body?.save === true;
+
+  if (!Number.isFinite(cardId) || cardId <= 0 || !Number.isFinite(variantId) || variantId <= 0) {
+    return res.status(422).json({ error: 'validation_error', message: 'card_id y variant_id son obligatorios.' });
+  }
+
+  const { rows } = await dbPool.query(
+    `SELECT cv.id, cv.prompt_text, c.subject
+     FROM card_variants cv
+     JOIN cards c ON c.id = cv.card_id
+     WHERE cv.id = $1 AND cv.card_id = $2 AND c.user_id = $3`,
+    [variantId, cardId, userId]
+  );
+  if (!rows.length) {
+    return res.status(404).json({ error: 'not_found', message: 'Variante no encontrada.' });
+  }
+
+  const variant = rows[0];
+
+  const client = new Anthropic();
+  let rawResponse;
+  try {
+    const msg = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1024,
+      temperature: 0,
+      system: CODE_ENTITY_SYSTEM_PROMPT_SINGLE,
+      messages: [{ role: 'user', content: variant.prompt_text }],
+    });
+    rawResponse = msg.content.find(b => b.type === 'text')?.text?.trim() ?? '';
+  } catch (err) {
+    console.error('POST /cards/reformat-code-variant (LLM)', err.message);
+    return res.status(500).json({ error: 'llm_error', message: err.message });
+  }
+
+  let parsed;
+  try {
+    const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
+    parsed = JSON.parse(jsonMatch ? jsonMatch[0] : rawResponse);
+  } catch (_) {
+    return res.status(500).json({ error: 'parse_error', message: 'La IA devolvió una respuesta inválida.', raw: rawResponse.slice(0, 500) });
+  }
+
+  const reformatted = typeof parsed?.reformatted === 'string' ? parsed.reformatted : variant.prompt_text;
+  const result = {
+    id:          variantId,
+    original:    variant.prompt_text,
+    reformatted,
+    score:       typeof parsed?.score === 'number' ? parsed.score : null,
+    comment:     typeof parsed?.comment === 'string' ? parsed.comment : '',
+  };
+
+  if (save && reformatted && reformatted !== variant.prompt_text) {
+    try {
+      await dbPool.query(
+        `UPDATE card_variants SET prompt_text = $1 WHERE id = $2 AND card_id = $3`,
+        [reformatted, variantId, cardId]
+      );
+    } catch (err) {
+      console.error('POST /cards/reformat-code-variant (save)', err.message);
+      return res.status(500).json({ error: 'server_error', message: err.message });
+    }
+  }
+
+  return res.json({ result, saved: save });
+});
+
 export default cardsRouter;

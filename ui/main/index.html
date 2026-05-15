@@ -485,6 +485,7 @@
               <button type="button" id="study-delete-btn" class="btn-ghost study-delete-btn" title="Eliminar tarjeta">Eliminar</button>
               <button type="button" id="study-flag-btn" class="btn-ghost study-flag-btn" title="Reportar tarjeta como duplicada o con error" hidden>Reportar</button>
               <button type="button" id="study-reformat-latex-btn" class="btn-ghost" title="Convertir consigna a LaTeX con IA" hidden>LaTeX</button>
+              <button type="button" id="study-reformat-code-btn" class="btn-ghost" title="Resaltar entidades de código con IA" hidden>Código</button>
             </div>
             <p id="study-prompt-feedback" class="study-prompt-feedback hidden"></p>
 
@@ -778,6 +779,7 @@
             <button type="button" id="browser-edit-btn" class="btn-secondary">Editar</button>
             <button type="button" id="browser-detect-redundant-btn" class="btn-secondary">Detectar redundantes</button>
             <button type="button" id="browser-reformat-latex-btn" class="btn-secondary">Reformatear LaTeX con IA</button>
+            <button type="button" id="browser-reformat-code-btn" class="btn-secondary">Resaltar código con IA</button>
           </div>
           <p id="browser-feedback" class="feedback"></p>
         </div>
@@ -846,14 +848,14 @@
         </div>
       </section>
 
-      <!-- ═══ LaTeX reformat modal ═══════════════════════════════════════════ -->
-      <div id="reformat-modal-overlay" class="card-detail-overlay hidden" role="dialog" aria-modal="true" aria-label="Reformatear con LaTeX">
+      <!-- ═══ LaTeX / code-entity reformat modal ══════════════════════════════ -->
+      <div id="reformat-modal-overlay" class="card-detail-overlay hidden" role="dialog" aria-modal="true" aria-label="Reformatear consignas">
         <div class="card-detail-popup redundant-modal-popup">
           <div class="card-detail-header">
-            <span style="font-weight:700;font-size:1rem">Reformatear consignas con LaTeX</span>
+            <span id="reformat-modal-title" style="font-weight:700;font-size:1rem">Reformatear consignas con LaTeX</span>
             <button type="button" id="reformat-modal-close" class="btn-ghost" aria-label="Cerrar">✕</button>
           </div>
-          <p style="font-size:0.84rem;color:var(--text-muted);margin-bottom:14px">
+          <p id="reformat-modal-desc" style="font-size:0.84rem;color:var(--text-muted);margin-bottom:14px">
             La IA reescribe las consignas usando notación LaTeX (<code>$...$</code> inline, <code>$$...$$</code> en bloque).
             Revisá los cambios antes de guardar.
           </p>
