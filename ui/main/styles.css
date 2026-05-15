@@ -6449,4 +6449,36 @@ textarea.chinese-input {
 
 /* ── Voice / Oral review: simplified card interface ─────────────────────── */
 .voice-mode-active #study-answer-block .field-header label { display: none; }
-.voice-mode-active #study-answer-block .study-answer-actions { display: none; }
+.voice-mode-active #study-answer-block .study-timer    { display: none; }
+.voice-mode-active #study-answer-block .hl-picker      { display: none; }
+.voice-mode-active #study-answer-block .editor-mode-select { display: none; }
+
+/* Recording status indicator — shown in voice mode */
+.voice-mode-active #study-dictation-btn {
+  display: block;
+  width: 100%;
+  text-align: center;
+  font-size: 0.95rem;
+  padding: 8px 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  background: transparent;
+  pointer-events: none;
+  cursor: default;
+}
+.voice-mode-active #study-dictation-btn.recording {
+  border-color: #d94f4f;
+  color: #d94f4f;
+  background: rgba(217, 79, 79, 0.07);
+  animation: voice-pulse 1.2s ease-in-out infinite;
+}
+.voice-mode-active #study-dictation-btn.transcribing {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: rgba(var(--primary-rgb, 66, 133, 244), 0.07);
+}
+@keyframes voice-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.55; }
+}

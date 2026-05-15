@@ -4064,6 +4064,7 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = 
         btn.textContent = labelIdle;
         btn.disabled = false;
         btn.classList.remove('recording');
+        btn.classList.remove('transcribing');
         return;
       }
 
@@ -4072,6 +4073,8 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = 
 
       btn.textContent = 'Transcribiendo...';
       btn.disabled = true;
+      btn.classList.remove('recording');
+      btn.classList.add('transcribing');
 
       try {
         const base64 = await blobToBase64(blob);
@@ -4120,12 +4123,13 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = 
         btn.textContent = labelIdle;
         btn.disabled = false;
         btn.classList.remove('recording');
+        btn.classList.remove('transcribing');
       }
     };
 
     if (typeof onRecordingStart === 'function') onRecordingStart();
     mediaRecorder.start();
-    btn.textContent = 'Detener dictado';
+    btn.textContent = studyState?.voiceMode ? '🎙 Grabando...' : 'Detener dictado';
     btn.classList.add('recording');
   }
 
