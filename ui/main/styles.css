@@ -6445,3 +6445,8 @@ textarea.chinese-input {
   white-space: nowrap;
   flex-shrink: 0;
 }
+
+
+/* ── Voice / Oral review: simplified card interface ─────────────────────── */
+.voice-mode-active #study-answer-block .field-header label { display: none; }
+.voice-mode-active #study-answer-block .study-answer-actions { display: none; }

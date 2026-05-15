@@ -5634,6 +5634,7 @@ function showStudyCard() {
   const subjectLabel = subject || '(sin materia)';
 
   subjectEl.textContent = `Materia: ${subjectLabel}`;
+  subjectEl.classList.toggle('hidden', studyState.voiceMode);
 
   const listeningBar = document.querySelector('#study-listening-bar');
   const isListeningVariant = item.type === 'card' && item.data.variant_type === 'listening';
@@ -5674,11 +5675,12 @@ function showStudyCard() {
       if (nextExpected) prefetchVoiceFront(nextExpected);
     }
   }
-  badgesEl.innerHTML = cardBadges.join('');
+  badgesEl.innerHTML = studyState.voiceMode ? '' : cardBadges.join('');
+  badgesEl.classList.toggle('hidden', studyState.voiceMode);
 
   if (item.type === 'micro') {
     // Show parent card as context so student knows what topic this stems from
-    if (item.data.parent_prompt) {
+    if (item.data.parent_prompt && !studyState.voiceMode) {
       parentPromptEl.textContent = item.data.parent_prompt;
       parentContextEl.classList.remove('hidden');
     } else {
@@ -5751,11 +5753,19 @@ function showStudyCard() {
   document.querySelector('#study-doubt-section')?.classList.add('hidden');
   const advancedPanel = document.querySelector('#study-advanced-panel');
   const advancedToggleBtn = document.querySelector('#study-advanced-toggle-btn');
-  if (advancedPanel) advancedPanel.open = false;
+  if (advancedPanel) { advancedPanel.open = false; advancedPanel.classList.remove('hidden'); }
   if (advancedToggleBtn) {
     advancedToggleBtn.textContent = 'Ver explicación';
     advancedToggleBtn.setAttribute('aria-expanded', 'false');
+    advancedToggleBtn.classList.remove('hidden');
   }
+  // Restore elements moved/hidden during voice mode result view
+  const _expectedElReset = document.querySelector('#study-result-expected');
+  if (_expectedElReset && advancedPanel) advancedPanel.appendChild(_expectedElReset);
+  document.querySelector('#study-result-time')?.classList.remove('hidden');
+  document.querySelector('#study-result-justification')?.classList.remove('hidden');
+  document.querySelector('#study-dual-judge')?.classList.add('hidden');
+  document.querySelector('.study-result-actions')?.classList.remove('hidden');
   const easyPanel = document.querySelector('#study-easy-explanation');
   if (easyPanel) { easyPanel.open = false; easyPanel.classList.add('hidden'); }
   // In exam mode hide secondary controls that don't belong in a simulation
@@ -5764,11 +5774,17 @@ function showStudyCard() {
   const studyEditPrompt = document.querySelector('#study-edit-prompt-btn');
   const studyReformatLatexBtn = document.querySelector('#study-reformat-latex-btn');
   const studyReformatCodeBtn  = document.querySelector('#study-reformat-code-btn');
-  if (studyFlagBtn)           studyFlagBtn.hidden           = studyState.examMode;
-  if (studyClarify)           studyClarify.hidden           = studyState.examMode;
-  if (studyEditPrompt)        studyEditPrompt.hidden        = studyState.examMode;
-  if (studyReformatLatexBtn)  studyReformatLatexBtn.hidden  = studyState.examMode || item.type !== 'card';
-  if (studyReformatCodeBtn)   studyReformatCodeBtn.hidden   = studyState.examMode || item.type !== 'card';
+  const hideForSimplified = studyState.examMode || studyState.voiceMode;
+  if (studyFlagBtn)           studyFlagBtn.hidden           = hideForSimplified;
+  if (studyClarify)           studyClarify.hidden           = hideForSimplified;
+  if (studyEditPrompt)        studyEditPrompt.hidden        = hideForSimplified;
+  if (studyReformatLatexBtn)  studyReformatLatexBtn.hidden  = hideForSimplified || item.type !== 'card';
+  if (studyReformatCodeBtn)   studyReformatCodeBtn.hidden   = hideForSimplified || item.type !== 'card';
+  const studyBackBtn = document.querySelector('#study-back-btn');
+  const studyDeleteBtn = document.querySelector('#study-delete-btn');
+  if (studyBackBtn)   studyBackBtn.hidden   = studyState.voiceMode;
+  if (studyDeleteBtn) studyDeleteBtn.hidden = !['card', 'micro'].includes(item.type);
+  document.querySelector('#study-card')?.classList.toggle('voice-mode-active', studyState.voiceMode);
   const studyEvalBtn = document.querySelector('#study-eval-btn');
   studyEvalBtn.disabled = false;
   studyState.currentEvalResult = null;
@@ -6401,6 +6417,23 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       document.querySelector('#study-doubt-form').classList.add('hidden');
       document.querySelector('#study-doubt-answer').classList.add('hidden');
       document.querySelector('#study-doubt-input').value = '';
+    }
+    if (studyState.voiceMode) {
+      // Simplify result view: show only grade + expected answer prominently.
+      const _quickResult = document.querySelector('.study-result-quick');
+      const _expectedEl  = document.querySelector('#study-result-expected');
+      if (_quickResult && _expectedEl) {
+        _quickResult.appendChild(_expectedEl);
+        _expectedEl.classList.remove('hidden');
+      }
+      document.querySelector('#study-result-time')?.classList.add('hidden');
+      document.querySelector('#study-result-justification')?.classList.add('hidden');
+      document.querySelector('#study-result-dimensions')?.classList.add('hidden');
+      document.querySelector('#study-dual-judge')?.classList.add('hidden');
+      document.querySelector('#study-advanced-toggle-btn')?.classList.add('hidden');
+      document.querySelector('#study-advanced-panel')?.classList.add('hidden');
+      document.querySelector('#study-doubt-section')?.classList.add('hidden');
+      document.querySelector('.study-result-actions')?.classList.add('hidden');
     }
     if (studyState.voiceMode) {
       // If the card was navigated or deleted while the eval fetch was in-flight, skip
