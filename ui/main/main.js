@@ -6410,13 +6410,17 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
     studyState.reviewStartTime = Date.now();
     studyState.reviewTimeMs = 0;
 
-    // Show doubt section, reset it
+    // Show doubt section, reset it (hidden in voice mode for simpler interface)
     const doubtSection = document.querySelector('#study-doubt-section');
     if (doubtSection) {
-      doubtSection.classList.remove('hidden');
-      document.querySelector('#study-doubt-form').classList.add('hidden');
-      document.querySelector('#study-doubt-answer').classList.add('hidden');
-      document.querySelector('#study-doubt-input').value = '';
+      if (studyState.voiceMode) {
+        doubtSection.classList.add('hidden');
+      } else {
+        doubtSection.classList.remove('hidden');
+        document.querySelector('#study-doubt-form').classList.add('hidden');
+        document.querySelector('#study-doubt-answer').classList.add('hidden');
+        document.querySelector('#study-doubt-input').value = '';
+      }
     }
     if (studyState.voiceMode) {
       // Simplify result view: show only grade + expected answer prominently.
@@ -6439,30 +6443,61 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       // If the card was navigated or deleted while the eval fetch was in-flight, skip
       // all audio and UI updates — another card is already showing.
       if (_voiceEpoch !== evalEpoch) return;
-      // Stop any prompt audio still playing so the audioPlaying guard in
-      // handleStudyNextCard doesn't silently abort the auto-advance.
+      // Stop any prompt audio still playing.
       if (_voiceFrontAudio) {
         _voiceFrontAudio._interrupted = true;
         try { _voiceFrontAudio.pause(); } catch (_) {}
         _voiceFrontAudio = null;
       }
-      // Stop Chinese TTS (auto-played above) so it doesn't overlap with the correction audio.
       if (_ttsAudio) {
         try { _ttsAudio.pause(); } catch (_) {}
         _ttsAudio = null;
       }
       studyState.audioPlaying = false;
       studyState.voicePhase = 'idle';
-      if (!['GOOD', 'EASY'].includes(grade)) {
-        // Read the expected answer aloud so the student hears the correction before advancing.
-        await playStudyVoiceFront(expected_answer_text).catch(() => {});
-      } else {
-        // Brief pause so the user can see the grade and click "pause review" if needed.
-        await new Promise(r => setTimeout(r, 1500));
+      // Read the expected answer aloud for all grades so the student hears the correct answer.
+      await playStudyVoiceFront(expected_answer_text).catch(() => {});
+      // Show simplified result: expected answer + only grade buttons, hide everything else.
+      const advancedToggleBtnVoice = document.querySelector('#study-advanced-toggle-btn');
+      const advancedPanelVoice = document.querySelector('#study-advanced-panel');
+      const resultGradeHeader = document.querySelector('.study-result-header');
+      const resultJust = document.querySelector('#study-result-justification');
+      const resultDims = document.querySelector('#study-result-dimensions');
+      const resultDual = document.querySelector('#study-dual-judge');
+      if (advancedToggleBtnVoice) advancedToggleBtnVoice.hidden = true;
+      if (advancedPanelVoice) advancedPanelVoice.hidden = true;
+      if (resultGradeHeader) resultGradeHeader.hidden = true;
+      if (resultJust) resultJust.hidden = true;
+      if (resultDims) resultDims.hidden = true;
+      if (resultDual) resultDual.hidden = true;
+      // In voice mode show the decision block (grade buttons only) directly in the quick result area,
+      // hiding the accept-suggestion button and misc buttons.
+      if (decisionBlock) {
+        const acceptBtn = decisionBlock.querySelector('[data-study-action="accept"]');
+        const overrideLabel = decisionBlock.querySelector('.study-grade-override-label');
+        const miscBtns = decisionBlock.querySelectorAll('.study-decision-misc-btn');
+        const archiveBtn = decisionBlock.querySelector('#study-archive-card-btn');
+        const reasonLabel = decisionBlock.querySelector('label[for="study-correction-reason"]');
+        const reasonTextarea = decisionBlock.querySelector('#study-correction-reason');
+        const decisionHint = decisionBlock.querySelector('.study-decision-hint');
+        if (acceptBtn) acceptBtn.hidden = true;
+        if (overrideLabel) overrideLabel.hidden = true;
+        miscBtns.forEach((b) => { b.hidden = true; });
+        if (archiveBtn) archiveBtn.hidden = true;
+        if (reasonLabel) reasonLabel.hidden = true;
+        if (reasonTextarea) reasonTextarea.hidden = true;
+        if (decisionHint) decisionHint.hidden = true;
+        decisionBlock.classList.remove('hidden');
+        decisionBlock.querySelectorAll('button').forEach((btn) => { btn.disabled = false; });
+        // Move decision block into the quick result area so it appears above the fold
+        const quickResult = document.querySelector('.study-result-quick');
+        const resultActions = quickResult?.querySelector('.study-result-actions');
+        if (quickResult && resultActions) {
+          quickResult.insertBefore(decisionBlock, resultActions);
+        }
       }
-      // If the user paused oral review, stop here — they'll click "Siguiente" manually.
-      if (studyState.voiceReviewPaused) return;
-      await handleStudyNextCard();
+      // Hide the "Siguiente" button — grade buttons act as next in voice mode.
+      if (nextBtn) nextBtn.hidden = true;
       return;
     }
   } catch (err) {
@@ -6632,7 +6667,10 @@ if (studyDecisionBlock) {
       const { finalGrade } = await persistStudyDecision(action, reason);
       const nextBtn = document.querySelector('#study-next-btn');
       if (nextBtn) nextBtn.disabled = false;
-      if (!isArchiveAction && action === 'accept') {
+      // In voice mode, grade buttons always advance to the next card immediately.
+      if (studyState.voiceMode && !isArchiveAction) {
+        await handleStudyNextCard();
+      } else if (!isArchiveAction && action === 'accept') {
         await handleStudyNextCard();
       } else {
         const msg = isArchiveAction
