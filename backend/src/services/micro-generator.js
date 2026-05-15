@@ -10,6 +10,26 @@ function getClient() {
   return _client;
 }
 
+// ─── Code-subject detection ────────────────────────────────────────────────
+
+function stripDiacritics(s) {
+  return s.normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+const CODE_SUBJECT_KEYWORDS = [
+  'sql', 'base', 'datos', 'bd', 'oracle', 'pl/sql', 'plsql', 'query',
+  'consult', 'stored', 'cursor', 'trigger', 'procedure',
+  'python', 'java', 'codigo', 'code', 'programac', 'algoritm',
+];
+
+export function isCodeSubject(subject) {
+  if (!subject || typeof subject !== 'string') return false;
+  const s = stripDiacritics(subject.trim().toLowerCase());
+  return CODE_SUBJECT_KEYWORDS.some((k) => s.includes(k));
+}
+
+// ─── Strip leaked reasoning ─────────────────────────────────────────────────
+
 // Strip leaked reasoning (CASO labels, separators) and return only the question.
 function extractQuestion(text) {
   const lines = text.split('\n')
@@ -389,6 +409,143 @@ Example output:
   } catch {
     return gaps;
   }
+}
+
+// ─── Code scaffold micro-cards ─────────────────────────────────────────────
+
+/**
+ * Analyse the student's code answer and decide what kind of scaffold to build.
+ *
+ * Returns:
+ *   { seccionFallida, tipoScaffold, razon }
+ *
+ * tipoScaffold:
+ *   COMPLETION — student wrote something but a specific section is wrong/missing
+ *   STRUCTURE  — student left it blank or wrote something unrecognisable
+ */
+async function planCodeScaffoldMicroCard({ prompt_text, expected_answer_text, concept, user_answer }) {
+  const response = await getClient().messages.create({
+    model: LLM_MODEL,
+    max_tokens: 200,
+    temperature: 0,
+    system: `Sos un tutor experto en programación. Analizás la respuesta de código de un estudiante para planificar el mejor ejercicio de scaffolding.
+
+TIPOS DE SCAFFOLD:
+- COMPLETION: El estudiante escribió algo pero falló o dejó incompleta una sección específica (excepciones, condiciones, cursor, declaraciones, transacciones, bucle, etc.) → mostrarle el ejercicio resuelto excepto esa sección.
+- STRUCTURE: El estudiante no escribió nada, escribió algo incoherente, o no se puede identificar qué parte falló → mostrarle un ejemplo minimal y completo de la estructura pedida.
+
+Respondé SOLO en este formato (3 líneas, sin nada más):
+SECCIÓN_FALLIDA: <parte del código que falló: excepciones | declaraciones | cursor | bucle | condición | transacción | estructura completa>
+TIPO_SCAFFOLD: <COMPLETION|STRUCTURE>
+RAZÓN: <por qué este scaffold, 1 oración>`,
+    messages: [{
+      role: 'user',
+      content: `Ejercicio: ${prompt_text}
+Respuesta esperada: ${expected_answer_text}
+Respuesta del estudiante: "${user_answer || '(sin respuesta)'}"
+Concepto no demostrado: "${concept}"`,
+    }],
+  });
+
+  const text = response.content.find((b) => b.type === 'text')?.text ?? '';
+  const seccionMatch = text.match(/SECCIÓN_FALLIDA:\s*(.+)/i);
+  const tipoMatch    = text.match(/TIPO_SCAFFOLD:\s*(\S+)/i);
+  const razonMatch   = text.match(/RAZÓN:\s*(.+)/i);
+
+  return {
+    seccionFallida: seccionMatch?.[1]?.trim() ?? 'estructura completa',
+    tipoScaffold:   tipoMatch?.[1]?.trim().toUpperCase() === 'COMPLETION' ? 'COMPLETION' : 'STRUCTURE',
+    razon:          razonMatch?.[1]?.trim() ?? '',
+  };
+}
+
+/**
+ * Generate a scaffold micro-card for a code-related subject.
+ *
+ * Two-stage:
+ *   1. planCodeScaffoldMicroCard — diagnoses which section failed and what scaffold type to use.
+ *   2. This function — generates the actual scaffold exercise using the plan.
+ *
+ * Slot 0 (primary card): runs the planner first.
+ * Slots 1–3 (sibling diversity cards): skip planning and use ANGLE_PROMPTS overrides.
+ *
+ * Output:
+ *   question        — scaffold exercise (pre-solved code with a gap, or structure example + question)
+ *   expected_answer — only the code for the missing/incorrect section
+ */
+export async function generateCodeScaffoldMicroCard({ prompt_text, expected_answer_text, subject, concept, user_answer = '', slotIndex = 0 }) {
+  let planSection = '';
+
+  if (slotIndex === 0) {
+    const plan = await planCodeScaffoldMicroCard({ prompt_text, expected_answer_text, concept, user_answer });
+
+    if (plan.tipoScaffold === 'COMPLETION') {
+      planSection = `\nTIPO: COMPLETION
+SECCIÓN A COMPLETAR: ${plan.seccionFallida}
+
+INSTRUCCIONES DE GENERACIÓN:
+- Tomá el tipo de ejercicio de la respuesta esperada (misma operación: UPDATE, cursor, procedure, etc.) pero usá datos/nombres diferentes y más simples.
+- Presentá la mayor parte del código RESUELTO.
+- Dejá SOLO la sección "${plan.seccionFallida}" sin resolver.
+- Señalá claramente dónde completar con un comentario: -- [COMPLETAR: ${plan.seccionFallida}]
+- No uses los mismos nombres de variables, tablas o columnas del ejercicio original.\n`;
+    } else {
+      planSection = `\nTIPO: STRUCTURE
+SECCIÓN FALLIDA: ${plan.seccionFallida}
+
+INSTRUCCIONES DE GENERACIÓN:
+- El estudiante no logró demostrar la estructura básica requerida.
+- Mostrá un ejemplo minimal y completo (10-15 líneas máximo) del tipo de código pedido.
+- Usá datos/nombres simples y distintos al ejercicio original.
+- Al final del ejemplo preguntá por qué se necesita la sección "${plan.seccionFallida}" o qué hace.\n`;
+    }
+  } else {
+    const angleBlock = ANGLE_PROMPTS[slotIndex] ?? ANGLE_PROMPTS[ANGLE_PROMPTS.length - 1];
+    if (angleBlock) planSection = `\n${angleBlock}\n`;
+  }
+
+  const response = await getClient().messages.create({
+    model: LLM_MODEL,
+    max_tokens: 500,
+    temperature: 0,
+    system: `Sos un tutor de programación que genera micro-ejercicios de completado para estudiantes.
+${planSection}
+REGLAS ESTRICTAS:
+- PROHIBIDO usar nombres de variables, tablas, columnas o entidades del ejercicio original.
+- Usá siempre datos simples y ficticios (empleados, productos, clientes, etc.).
+- El código presentado debe ser sintácticamente correcto excepto por la sección marcada.
+- La respuesta esperada debe ser SOLO el código de la sección faltante (sin repetir el resto).
+- Máximo 20 líneas de código en el EJERCICIO.
+
+FORMATO (exactamente estas dos etiquetas, sin nada más):
+EJERCICIO:
+<código del ejercicio con gap claramente marcado, o ejemplo minimal + pregunta al final>
+
+RESPUESTA_ESPERADA:
+<solo el código o explicación de la sección que el estudiante debe completar>`,
+    messages: [{
+      role: 'user',
+      content: `Materia: ${subject || 'no especificada'}
+Concepto que el estudiante no demostró: "${concept}"
+
+[CONTEXTO — no reutilizar nombres ni detalles]
+Ejercicio original: ${prompt_text}
+Respuesta de referencia: ${expected_answer_text}
+Respuesta del estudiante: "${user_answer || '(sin respuesta)'}"
+[FIN CONTEXTO]
+
+Generá el micro-ejercicio de scaffolding.`,
+    }],
+  });
+
+  const text = response.content.find((b) => b.type === 'text')?.text ?? '';
+  const ejercicioMatch  = text.match(/EJERCICIO:\s*([\s\S]+?)(?=\nRESPUESTA_ESPERADA:|$)/i);
+  const respuestaMatch  = text.match(/RESPUESTA_ESPERADA:\s*([\s\S]+)/i);
+
+  const question        = ejercicioMatch?.[1]?.trim()  || `Completá la sección de "${concept}" en un bloque ${subject || 'de código'}.`;
+  const expected_answer = respuestaMatch?.[1]?.trim()  || expected_answer_text;
+
+  return { question, expected_answer };
 }
 
 /**

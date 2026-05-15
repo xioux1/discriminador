@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { dbPool } from '../db/client.js';
 import { computeNextReview, isPassGrade, isFailGrade } from '../services/scheduler.js';
-import { generateMicroCard } from '../services/micro-generator.js';
+import { generateMicroCard, generateCodeScaffoldMicroCard, isCodeSubject } from '../services/micro-generator.js';
 import { getMicroCountForGrade } from '../config/env.js';
 
 const decisionRouter = Router();
@@ -315,6 +315,7 @@ decisionRouter.post('/decision', async (req, res) => {
       syncSchedulerCard(dbPool, {
         prompt_text: inputPrompt,
         expected_answer_text: inputExpectedAnswer,
+        user_answer: inputUserAnswer,
         subject: inputSubject || null,
         final_grade: finalGrade,
         evaluation_item_id: evaluationItemId,
@@ -376,6 +377,7 @@ decisionRouter.post('/decision', async (req, res) => {
 async function syncSchedulerCard(pool, {
   prompt_text,
   expected_answer_text,
+  user_answer,
   subject,
   final_grade,
   evaluation_item_id,
@@ -543,18 +545,30 @@ async function syncSchedulerCard(pool, {
     ? pickTopGaps(gaps, microCount)
     : [];
 
+  const cardIsCodeSubject = isCodeSubject(card.subject || subject);
+
   for (const { concept } of targetGaps) {
     if (!concept) continue;
 
     try {
       let micro;
       try {
-        micro = await generateMicroCard({
-          prompt_text: card.prompt_text,
-          expected_answer_text: card.expected_answer_text,
-          subject: card.subject,
-          concept
-        });
+        if (cardIsCodeSubject) {
+          micro = await generateCodeScaffoldMicroCard({
+            prompt_text: card.prompt_text,
+            expected_answer_text: card.expected_answer_text,
+            subject: card.subject,
+            concept,
+            user_answer: user_answer || '',
+          });
+        } else {
+          micro = await generateMicroCard({
+            prompt_text: card.prompt_text,
+            expected_answer_text: card.expected_answer_text,
+            subject: card.subject,
+            concept,
+          });
+        }
       } catch (generationError) {
         console.warn(`[scheduler sync] micro-card gen failed for "${concept}", using fallback:`, generationError.message);
         micro = {
