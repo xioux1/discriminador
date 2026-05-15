@@ -5634,6 +5634,7 @@ function showStudyCard() {
   const subjectLabel = subject || '(sin materia)';
 
   subjectEl.textContent = `Materia: ${subjectLabel}`;
+  subjectEl.classList.toggle('hidden', studyState.voiceMode);
 
   const listeningBar = document.querySelector('#study-listening-bar');
   const isListeningVariant = item.type === 'card' && item.data.variant_type === 'listening';
@@ -5674,11 +5675,12 @@ function showStudyCard() {
       if (nextExpected) prefetchVoiceFront(nextExpected);
     }
   }
-  badgesEl.innerHTML = cardBadges.join('');
+  badgesEl.innerHTML = studyState.voiceMode ? '' : cardBadges.join('');
+  badgesEl.classList.toggle('hidden', studyState.voiceMode);
 
   if (item.type === 'micro') {
     // Show parent card as context so student knows what topic this stems from
-    if (item.data.parent_prompt) {
+    if (item.data.parent_prompt && !studyState.voiceMode) {
       parentPromptEl.textContent = item.data.parent_prompt;
       parentContextEl.classList.remove('hidden');
     } else {
@@ -5751,10 +5753,45 @@ function showStudyCard() {
   document.querySelector('#study-doubt-section')?.classList.add('hidden');
   const advancedPanel = document.querySelector('#study-advanced-panel');
   const advancedToggleBtn = document.querySelector('#study-advanced-toggle-btn');
-  if (advancedPanel) advancedPanel.open = false;
+  if (advancedPanel) { advancedPanel.open = false; advancedPanel.hidden = false; }
   if (advancedToggleBtn) {
     advancedToggleBtn.textContent = 'Ver explicación';
     advancedToggleBtn.setAttribute('aria-expanded', 'false');
+    advancedToggleBtn.hidden = false;
+  }
+  // Reset elements that are hidden/moved in voice mode result view
+  const _resultGradeHeader = document.querySelector('.study-result-header');
+  const _resultJust = document.querySelector('#study-result-justification');
+  const _resultDims = document.querySelector('#study-result-dimensions');
+  const _resultDual = document.querySelector('#study-dual-judge');
+  const _nextBtnReset = document.querySelector('#study-next-btn');
+  if (_resultGradeHeader) _resultGradeHeader.hidden = false;
+  if (_resultJust) _resultJust.hidden = false;
+  if (_resultDims) _resultDims.hidden = false;
+  if (_resultDual) _resultDual.hidden = false;
+  if (_nextBtnReset) _nextBtnReset.hidden = false;
+  // Restore decision block to its original position inside the advanced panel
+  const _decisionBlockReset = document.querySelector('#study-decision-block');
+  const _advancedPanelSummary = advancedPanel?.querySelector('summary');
+  if (_decisionBlockReset && advancedPanel && _advancedPanelSummary) {
+    advancedPanel.appendChild(_decisionBlockReset);
+  }
+  // Restore elements hidden inside the decision block for voice mode
+  if (_decisionBlockReset) {
+    const _acceptBtn = _decisionBlockReset.querySelector('[data-study-action="accept"]');
+    const _overrideLabel = _decisionBlockReset.querySelector('.study-grade-override-label');
+    const _miscBtns = _decisionBlockReset.querySelectorAll('.study-decision-misc-btn');
+    const _archiveBtn = _decisionBlockReset.querySelector('#study-archive-card-btn');
+    const _reasonLabel = _decisionBlockReset.querySelector('label[for="study-correction-reason"]');
+    const _reasonTextarea = _decisionBlockReset.querySelector('#study-correction-reason');
+    const _decisionHint = _decisionBlockReset.querySelector('.study-decision-hint');
+    if (_acceptBtn) _acceptBtn.hidden = false;
+    if (_overrideLabel) _overrideLabel.hidden = false;
+    _miscBtns.forEach((b) => { b.hidden = false; });
+    if (_archiveBtn) _archiveBtn.hidden = false;
+    if (_reasonLabel) _reasonLabel.hidden = false;
+    if (_reasonTextarea) _reasonTextarea.hidden = false;
+    if (_decisionHint) _decisionHint.hidden = false;
   }
   const easyPanel = document.querySelector('#study-easy-explanation');
   if (easyPanel) { easyPanel.open = false; easyPanel.classList.add('hidden'); }
@@ -5764,11 +5801,17 @@ function showStudyCard() {
   const studyEditPrompt = document.querySelector('#study-edit-prompt-btn');
   const studyReformatLatexBtn = document.querySelector('#study-reformat-latex-btn');
   const studyReformatCodeBtn  = document.querySelector('#study-reformat-code-btn');
-  if (studyFlagBtn)           studyFlagBtn.hidden           = studyState.examMode;
-  if (studyClarify)           studyClarify.hidden           = studyState.examMode;
-  if (studyEditPrompt)        studyEditPrompt.hidden        = studyState.examMode;
-  if (studyReformatLatexBtn)  studyReformatLatexBtn.hidden  = studyState.examMode || item.type !== 'card';
-  if (studyReformatCodeBtn)   studyReformatCodeBtn.hidden   = studyState.examMode || item.type !== 'card';
+  const hideForSimplified = studyState.examMode || studyState.voiceMode;
+  if (studyFlagBtn)           studyFlagBtn.hidden           = hideForSimplified;
+  if (studyClarify)           studyClarify.hidden           = hideForSimplified;
+  if (studyEditPrompt)        studyEditPrompt.hidden        = hideForSimplified;
+  if (studyReformatLatexBtn)  studyReformatLatexBtn.hidden  = hideForSimplified || item.type !== 'card';
+  if (studyReformatCodeBtn)   studyReformatCodeBtn.hidden   = hideForSimplified || item.type !== 'card';
+  const studyBackBtn = document.querySelector('#study-back-btn');
+  const studyDeleteBtn = document.querySelector('#study-delete-btn');
+  if (studyBackBtn)   studyBackBtn.hidden   = studyState.voiceMode;
+  if (studyDeleteBtn) studyDeleteBtn.hidden = studyState.voiceMode || !['card', 'micro'].includes(item.type);
+  document.querySelector('#study-card')?.classList.toggle('voice-mode-active', studyState.voiceMode);
   const studyEvalBtn = document.querySelector('#study-eval-btn');
   studyEvalBtn.disabled = false;
   studyState.currentEvalResult = null;
@@ -6394,42 +6437,77 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
     studyState.reviewStartTime = Date.now();
     studyState.reviewTimeMs = 0;
 
-    // Show doubt section, reset it
+    // Show doubt section, reset it (hidden in voice mode for simpler interface)
     const doubtSection = document.querySelector('#study-doubt-section');
     if (doubtSection) {
-      doubtSection.classList.remove('hidden');
-      document.querySelector('#study-doubt-form').classList.add('hidden');
-      document.querySelector('#study-doubt-answer').classList.add('hidden');
-      document.querySelector('#study-doubt-input').value = '';
+      if (studyState.voiceMode) {
+        doubtSection.classList.add('hidden');
+      } else {
+        doubtSection.classList.remove('hidden');
+        document.querySelector('#study-doubt-form').classList.add('hidden');
+        document.querySelector('#study-doubt-answer').classList.add('hidden');
+        document.querySelector('#study-doubt-input').value = '';
+      }
     }
     if (studyState.voiceMode) {
       // If the card was navigated or deleted while the eval fetch was in-flight, skip
       // all audio and UI updates — another card is already showing.
       if (_voiceEpoch !== evalEpoch) return;
-      // Stop any prompt audio still playing so the audioPlaying guard in
-      // handleStudyNextCard doesn't silently abort the auto-advance.
+      // Stop any prompt audio still playing.
       if (_voiceFrontAudio) {
         _voiceFrontAudio._interrupted = true;
         try { _voiceFrontAudio.pause(); } catch (_) {}
         _voiceFrontAudio = null;
       }
-      // Stop Chinese TTS (auto-played above) so it doesn't overlap with the correction audio.
       if (_ttsAudio) {
         try { _ttsAudio.pause(); } catch (_) {}
         _ttsAudio = null;
       }
       studyState.audioPlaying = false;
       studyState.voicePhase = 'idle';
-      if (!['GOOD', 'EASY'].includes(grade)) {
-        // Read the expected answer aloud so the student hears the correction before advancing.
-        await playStudyVoiceFront(expected_answer_text).catch(() => {});
-      } else {
-        // Brief pause so the user can see the grade and click "pause review" if needed.
-        await new Promise(r => setTimeout(r, 1500));
+      // Read the expected answer aloud for all grades so the student hears the correct answer.
+      await playStudyVoiceFront(expected_answer_text).catch(() => {});
+      // Show simplified result: expected answer + only grade buttons, hide everything else.
+      const advancedToggleBtnVoice = document.querySelector('#study-advanced-toggle-btn');
+      const advancedPanelVoice = document.querySelector('#study-advanced-panel');
+      const resultGradeHeader = document.querySelector('.study-result-header');
+      const resultJust = document.querySelector('#study-result-justification');
+      const resultDims = document.querySelector('#study-result-dimensions');
+      const resultDual = document.querySelector('#study-dual-judge');
+      if (advancedToggleBtnVoice) advancedToggleBtnVoice.hidden = true;
+      if (advancedPanelVoice) advancedPanelVoice.hidden = true;
+      if (resultGradeHeader) resultGradeHeader.hidden = true;
+      if (resultJust) resultJust.hidden = true;
+      if (resultDims) resultDims.hidden = true;
+      if (resultDual) resultDual.hidden = true;
+      // In voice mode show the decision block (grade buttons only) directly in the quick result area,
+      // hiding the accept-suggestion button and misc buttons.
+      if (decisionBlock) {
+        const acceptBtn = decisionBlock.querySelector('[data-study-action="accept"]');
+        const overrideLabel = decisionBlock.querySelector('.study-grade-override-label');
+        const miscBtns = decisionBlock.querySelectorAll('.study-decision-misc-btn');
+        const archiveBtn = decisionBlock.querySelector('#study-archive-card-btn');
+        const reasonLabel = decisionBlock.querySelector('label[for="study-correction-reason"]');
+        const reasonTextarea = decisionBlock.querySelector('#study-correction-reason');
+        const decisionHint = decisionBlock.querySelector('.study-decision-hint');
+        if (acceptBtn) acceptBtn.hidden = true;
+        if (overrideLabel) overrideLabel.hidden = true;
+        miscBtns.forEach((b) => { b.hidden = true; });
+        if (archiveBtn) archiveBtn.hidden = true;
+        if (reasonLabel) reasonLabel.hidden = true;
+        if (reasonTextarea) reasonTextarea.hidden = true;
+        if (decisionHint) decisionHint.hidden = true;
+        decisionBlock.classList.remove('hidden');
+        decisionBlock.querySelectorAll('button').forEach((btn) => { btn.disabled = false; });
+        // Move decision block into the quick result area so it appears above the fold
+        const quickResult = document.querySelector('.study-result-quick');
+        const resultActions = quickResult?.querySelector('.study-result-actions');
+        if (quickResult && resultActions) {
+          quickResult.insertBefore(decisionBlock, resultActions);
+        }
       }
-      // If the user paused oral review, stop here — they'll click "Siguiente" manually.
-      if (studyState.voiceReviewPaused) return;
-      await handleStudyNextCard();
+      // Hide the "Siguiente" button — grade buttons act as next in voice mode.
+      if (nextBtn) nextBtn.hidden = true;
       return;
     }
   } catch (err) {
@@ -6599,7 +6677,10 @@ if (studyDecisionBlock) {
       const { finalGrade } = await persistStudyDecision(action, reason);
       const nextBtn = document.querySelector('#study-next-btn');
       if (nextBtn) nextBtn.disabled = false;
-      if (!isArchiveAction && action === 'accept') {
+      // In voice mode, grade buttons always advance to the next card immediately.
+      if (studyState.voiceMode && !isArchiveAction) {
+        await handleStudyNextCard();
+      } else if (!isArchiveAction && action === 'accept') {
         await handleStudyNextCard();
       } else {
         const msg = isArchiveAction
