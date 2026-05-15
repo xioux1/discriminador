@@ -847,6 +847,7 @@ function initBrowserTab() {
   document.querySelector('#browser-edit-btn')?.addEventListener('click', () => runBrowserBatchAction('edit'));
   document.querySelector('#browser-detect-redundant-btn')?.addEventListener('click', openDetectRedundantModal);
   document.querySelector('#browser-reformat-latex-btn')?.addEventListener('click', openReformatLatexModal);
+  document.querySelector('#browser-reformat-code-btn')?.addEventListener('click', openReformatCodeModal);
 
   loadBrowserCards().catch((err) => {
     showToast(`Error al cargar navegador: ${err.message}`, 'error');
@@ -1249,10 +1250,15 @@ async function openReformatLatexModal() {
   }
 
   const overlay    = document.querySelector('#reformat-modal-overlay');
+  const titleEl    = document.querySelector('#reformat-modal-title');
+  const descEl     = document.querySelector('#reformat-modal-desc');
   const resultList = document.querySelector('#reformat-results-list');
   const feedback   = document.querySelector('#reformat-modal-feedback');
   const saveBtn    = document.querySelector('#reformat-save-btn');
   const reformatBtn = document.querySelector('#browser-reformat-latex-btn');
+
+  if (titleEl) titleEl.textContent = 'Reformatear consignas con LaTeX';
+  if (descEl) descEl.innerHTML = 'La IA reescribe las consignas usando notación LaTeX (<code>$...$</code> inline, <code>$$...$$</code> en bloque). Revisá los cambios antes de guardar.';
 
   overlay.classList.remove('hidden');
   resultList.innerHTML = '<div style="color:var(--text-muted);padding:12px 0;font-size:0.88rem">Analizando con IA… esto puede tardar unos segundos.</div>';
@@ -1336,10 +1342,15 @@ async function openStudyReformatLatex() {
   const isVariant = variantId != null;
 
   const overlay    = document.querySelector('#reformat-modal-overlay');
+  const titleEl    = document.querySelector('#reformat-modal-title');
+  const descEl     = document.querySelector('#reformat-modal-desc');
   const resultList = document.querySelector('#reformat-results-list');
   const feedback   = document.querySelector('#reformat-modal-feedback');
   const saveBtn    = document.querySelector('#reformat-save-btn');
   const triggerBtn = document.querySelector('#study-reformat-latex-btn');
+
+  if (titleEl) titleEl.textContent = 'Reformatear consignas con LaTeX';
+  if (descEl) descEl.innerHTML = 'La IA reescribe las consignas usando notación LaTeX (<code>$...$</code> inline, <code>$$...$$</code> en bloque). Revisá los cambios antes de guardar.';
 
   overlay.classList.remove('hidden');
   resultList.innerHTML = '<div style="color:var(--text-muted);padding:12px 0;font-size:0.88rem">Analizando con IA… esto puede tardar unos segundos.</div>';
@@ -1419,6 +1430,205 @@ async function openStudyReformatLatex() {
         if (promptEl) renderStudyPrompt(promptEl, result.reformatted);
       }
       showToast('Consigna actualizada con LaTeX.', 'success');
+      closeReformatModal();
+    } catch (err) {
+      showToast(`Error al guardar: ${err.message}`, 'error');
+      saveBtn.disabled = false;
+    }
+  };
+}
+
+async function openReformatCodeModal() {
+  const selectedIds = getSelectedCardIds();
+  if (!selectedIds.length) {
+    showToast('Seleccioná al menos una tarjeta para reformatear.', 'error');
+    return;
+  }
+  if (selectedIds.length > 30) {
+    showToast('Máximo 30 tarjetas por vez.', 'error');
+    return;
+  }
+
+  const overlay    = document.querySelector('#reformat-modal-overlay');
+  const titleEl    = document.querySelector('#reformat-modal-title');
+  const descEl     = document.querySelector('#reformat-modal-desc');
+  const resultList = document.querySelector('#reformat-results-list');
+  const feedback   = document.querySelector('#reformat-modal-feedback');
+  const saveBtn    = document.querySelector('#reformat-save-btn');
+  const reformatBtn = document.querySelector('#browser-reformat-code-btn');
+
+  if (titleEl) titleEl.textContent = 'Resaltar entidades de código con IA';
+  if (descEl) descEl.innerHTML = 'La IA identifica nombres de colecciones, campos, variables y valores de código y los marca con <code>`backticks`</code> para resaltarlos. Revisá los cambios antes de guardar.';
+
+  overlay.classList.remove('hidden');
+  resultList.innerHTML = '<div style="color:var(--text-muted);padding:12px 0;font-size:0.88rem">Analizando con IA… esto puede tardar unos segundos.</div>';
+  if (feedback) { feedback.textContent = ''; feedback.className = 'feedback'; }
+  saveBtn.classList.add('hidden');
+  saveBtn.disabled = false;
+  reformatBtn.disabled = true;
+
+  let results = [];
+
+  try {
+    const data = await postJson('/cards/reformat-code-prompt', { card_ids: selectedIds, save: false });
+    results = data?.results || [];
+
+    if (!results.length) {
+      resultList.innerHTML = '<div style="color:var(--text-muted)">No se obtuvieron resultados.</div>';
+      return;
+    }
+
+    resultList.innerHTML = results.map(r => {
+      const changed = r.reformatted && r.reformatted !== r.original;
+      const scoreHtml = r.score != null
+        ? `<span style="font-size:0.78rem;color:var(--text-muted);margin-left:8px">Entidades: ${r.score}/10</span>`
+        : '';
+      const commentHtml = r.comment
+        ? `<div style="font-size:0.78rem;color:var(--text-muted);margin-top:4px;font-style:italic">${escHtml(r.comment)}</div>`
+        : '';
+      const changeTag = changed
+        ? '<span style="font-size:0.75rem;background:var(--hl-green-bg,#d4edda);color:#155724;padding:1px 6px;border-radius:3px;margin-left:6px">modificada</span>'
+        : '<span style="font-size:0.75rem;background:var(--bg-subtle);color:var(--text-muted);padding:1px 6px;border-radius:3px;margin-left:6px">sin cambios</span>';
+
+      return `<div class="reformat-result-item" data-id="${r.id}" style="margin-bottom:16px;border:1px solid var(--border-mid);border-radius:6px;padding:12px">
+        <div style="font-weight:600;font-size:0.84rem;margin-bottom:8px">Tarjeta #${r.id}${changeTag}${scoreHtml}</div>
+        ${commentHtml}
+        ${changed ? `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
+          <div>
+            <div style="font-size:0.75rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px;letter-spacing:.04em">Original</div>
+            <div style="font-size:0.84rem;background:var(--bg-subtle);padding:8px;border-radius:4px;white-space:pre-wrap">${escHtml(r.original)}</div>
+          </div>
+          <div>
+            <div style="font-size:0.75rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px;letter-spacing:.04em">Reformateado</div>
+            <div class="reformat-preview-rendered" style="font-size:0.84rem;background:var(--bg-subtle);padding:8px;border-radius:4px">${formatPromptForDisplay(r.reformatted)}</div>
+          </div>
+        </div>` : `
+        <div style="font-size:0.84rem;color:var(--text-muted);margin-top:4px">${escHtml(r.original)}</div>`}
+      </div>`;
+    }).join('');
+
+    const hasChanges = results.some(r => r.reformatted && r.reformatted !== r.original);
+    if (hasChanges) saveBtn.classList.remove('hidden');
+
+  } catch (err) {
+    resultList.innerHTML = '';
+    showToast(`Error al reformatear: ${err.message}`, 'error');
+  } finally {
+    reformatBtn.disabled = false;
+  }
+
+  saveBtn.onclick = async () => {
+    saveBtn.disabled = true;
+    try {
+      const idsToSave = results.filter(r => r.reformatted && r.reformatted !== r.original).map(r => r.id);
+      await postJson('/cards/reformat-code-prompt', { card_ids: idsToSave, save: true });
+      showToast(`${idsToSave.length} tarjeta(s) actualizadas. El texto original quedó en las notas.`, 'success');
+      saveBtn.classList.add('hidden');
+      loadBrowserCards().catch(() => {});
+    } catch (err) {
+      showToast(`Error al guardar: ${err.message}`, 'error');
+      saveBtn.disabled = false;
+    }
+  };
+}
+
+async function openStudyReformatCode() {
+  const item = studyState.queue[studyState.index];
+  if (!item || item.type !== 'card') return;
+
+  const cardId    = item.data.id;
+  const variantId = item.data.variant_id ?? null;
+  const isVariant = variantId != null;
+
+  const overlay    = document.querySelector('#reformat-modal-overlay');
+  const titleEl    = document.querySelector('#reformat-modal-title');
+  const descEl     = document.querySelector('#reformat-modal-desc');
+  const resultList = document.querySelector('#reformat-results-list');
+  const feedback   = document.querySelector('#reformat-modal-feedback');
+  const saveBtn    = document.querySelector('#reformat-save-btn');
+  const triggerBtn = document.querySelector('#study-reformat-code-btn');
+
+  if (titleEl) titleEl.textContent = 'Resaltar entidades de código con IA';
+  if (descEl) descEl.innerHTML = 'La IA identifica nombres de colecciones, campos, variables y valores de código y los marca con <code>`backticks`</code> para resaltarlos. Revisá los cambios antes de guardar.';
+
+  overlay.classList.remove('hidden');
+  resultList.innerHTML = '<div style="color:var(--text-muted);padding:12px 0;font-size:0.88rem">Analizando con IA… esto puede tardar unos segundos.</div>';
+  if (feedback) { feedback.textContent = ''; feedback.className = 'feedback'; }
+  saveBtn.classList.add('hidden');
+  saveBtn.disabled = false;
+  if (triggerBtn) triggerBtn.disabled = true;
+
+  let result = null;
+
+  try {
+    if (isVariant) {
+      const data = await postJson('/cards/reformat-code-variant', { card_id: cardId, variant_id: variantId, save: false });
+      result = data?.result ?? null;
+    } else {
+      const data = await postJson('/cards/reformat-code-prompt', { card_ids: [cardId], save: false });
+      result = data?.results?.[0] ?? null;
+    }
+
+    if (!result) {
+      resultList.innerHTML = '<div style="color:var(--text-muted)">No se obtuvieron resultados.</div>';
+      return;
+    }
+
+    const r = result;
+    const changed = r.reformatted && r.reformatted !== r.original;
+    const label = isVariant ? `Variante #${variantId}` : `Tarjeta #${r.id}`;
+    const scoreHtml = r.score != null
+      ? `<span style="font-size:0.78rem;color:var(--text-muted);margin-left:8px">Entidades: ${r.score}/10</span>`
+      : '';
+    const commentHtml = r.comment
+      ? `<div style="font-size:0.78rem;color:var(--text-muted);margin-top:4px;font-style:italic">${escHtml(r.comment)}</div>`
+      : '';
+    const changeTag = changed
+      ? '<span style="font-size:0.75rem;background:var(--hl-green-bg,#d4edda);color:#155724;padding:1px 6px;border-radius:3px;margin-left:6px">modificada</span>'
+      : '<span style="font-size:0.75rem;background:var(--bg-subtle);color:var(--text-muted);padding:1px 6px;border-radius:3px;margin-left:6px">sin cambios</span>';
+
+    resultList.innerHTML = `<div class="reformat-result-item" style="margin-bottom:16px;border:1px solid var(--border-mid);border-radius:6px;padding:12px">
+      <div style="font-weight:600;font-size:0.84rem;margin-bottom:8px">${label}${changeTag}${scoreHtml}</div>
+      ${commentHtml}
+      ${changed ? `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
+        <div>
+          <div style="font-size:0.75rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px;letter-spacing:.04em">Original</div>
+          <div style="font-size:0.84rem;background:var(--bg-subtle);padding:8px;border-radius:4px;white-space:pre-wrap">${escHtml(r.original)}</div>
+        </div>
+        <div>
+          <div style="font-size:0.75rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px;letter-spacing:.04em">Reformateado</div>
+          <div class="reformat-preview-rendered" style="font-size:0.84rem;background:var(--bg-subtle);padding:8px;border-radius:4px">${formatPromptForDisplay(r.reformatted)}</div>
+        </div>
+      </div>` : `
+      <div style="font-size:0.84rem;color:var(--text-muted);margin-top:4px">${escHtml(r.original)}</div>`}
+    </div>`;
+
+    if (changed) saveBtn.classList.remove('hidden');
+
+  } catch (err) {
+    resultList.innerHTML = '';
+    showToast(`Error al reformatear: ${err.message}`, 'error');
+  } finally {
+    if (triggerBtn) triggerBtn.disabled = false;
+  }
+
+  saveBtn.onclick = async () => {
+    saveBtn.disabled = true;
+    try {
+      if (isVariant) {
+        await postJson('/cards/reformat-code-variant', { card_id: cardId, variant_id: variantId, save: true });
+      } else {
+        await postJson('/cards/reformat-code-prompt', { card_ids: [result.id], save: true });
+      }
+      if (result?.reformatted && result.reformatted !== result.original) {
+        item.data.prompt_text = result.reformatted;
+        item.data.session_prompt_text = result.reformatted;
+        const promptEl = document.querySelector('#study-card-prompt');
+        if (promptEl) renderStudyPrompt(promptEl, result.reformatted);
+      }
+      showToast('Consigna actualizada con entidades de código resaltadas.', 'success');
       closeReformatModal();
     } catch (err) {
       showToast(`Error al guardar: ${err.message}`, 'error');
@@ -4214,6 +4424,7 @@ function initStudyTab() {
   document.querySelector('#study-clarify-prompt-btn').addEventListener('click', clarifyStudyPrompt);
   document.querySelector('#study-delete-btn').addEventListener('click', deleteCurrentStudyCardFromFront);
   document.querySelector('#study-reformat-latex-btn').addEventListener('click', openStudyReformatLatex);
+  document.querySelector('#study-reformat-code-btn').addEventListener('click', openStudyReformatCode);
 
   // Link to show overview/add-card from briefing
   document.querySelector('#briefing-overview-link').addEventListener('click', () => {
@@ -5552,10 +5763,12 @@ function showStudyCard() {
   const studyClarify   = document.querySelector('#study-clarify-prompt-btn');
   const studyEditPrompt = document.querySelector('#study-edit-prompt-btn');
   const studyReformatLatexBtn = document.querySelector('#study-reformat-latex-btn');
+  const studyReformatCodeBtn  = document.querySelector('#study-reformat-code-btn');
   if (studyFlagBtn)           studyFlagBtn.hidden           = studyState.examMode;
   if (studyClarify)           studyClarify.hidden           = studyState.examMode;
   if (studyEditPrompt)        studyEditPrompt.hidden        = studyState.examMode;
   if (studyReformatLatexBtn)  studyReformatLatexBtn.hidden  = studyState.examMode || item.type !== 'card';
+  if (studyReformatCodeBtn)   studyReformatCodeBtn.hidden   = studyState.examMode || item.type !== 'card';
   const studyEvalBtn = document.querySelector('#study-eval-btn');
   studyEvalBtn.disabled = false;
   studyState.currentEvalResult = null;
