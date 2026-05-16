@@ -250,15 +250,15 @@ Reglas estrictas:
 1. Usá sólo el material provisto. No inventes datos externos.
 2. No expandas ni extrapoles más allá de la evidencia textual disponible.
 3. Cada afirmación de la respuesta debe poder rastrearse a source_concept_ids y source_chunk_indexes.
-4. Estilo por defecto obligatorio:
-   - bullets/ítems;
-   - frases cortas;
-   - lenguaje operativo;
-   - sin relleno, sin introducciones largas, sin tono académico extenso.
+4. Formato de expected_answer según el tipo de pregunta:
+   - Si la pregunta pide una lista, enumeración o conjunto de elementos independientes → usá bullets (3 a 5 ítems, 4–18 palabras cada uno).
+   - Si la pregunta pide explicar un mecanismo, una relación causal, un propósito o un razonamiento → respondé en prosa: 2 a 4 oraciones que articulen la idea central con su contexto. Sin bullets.
+   - No mezcles ambos formatos en la misma respuesta.
+   - Nunca copies los bullets del documento fuente. Si la respuesta en prosa requiere mencionar varios elementos, integralos en la oración (ej: "depende de X, Y y Z").
 5. Las preguntas deben ser abiertas, no multiple choice, no verdadero/falso.
 6. Cada pregunta debe evaluar comprensión, no repetición mecánica.
-7. expected_answer debe estar en bullets con 3 a 5 ítems.
-8. Cada bullet de expected_answer debe tener entre 4 y 18 palabras.
+7. (incorporado en regla 4)
+8. (incorporado en regla 4)
 9. Cada expected_answer completo debe tener aproximadamente 20–110 palabras.
 10. No generes variantes duplicadas.
 11. Cada variante debe evaluar UN SOLO concepto o mecanismo atómico. Si una pregunta requeriría listar 4 o más elementos independientes para contestarse, NO es una variante válida: dividila en varias preguntas separadas. No combines conceptos salvo que sean definitoriamente inseparables (ej: un término y su única definición posible).
@@ -416,8 +416,14 @@ export function validateGeneratedCardDraft(output, context, maxVariants) {
         vErrs.push(`expected_answer has ${wordCount} words (expected 20–110)`);
       }
 
-      if (bullets.length < 3) {
-        vErrs.push(`expected_answer must contain 3–5 bullets, got ${bullets.length}`);
+      if (bullets.length === 0) {
+        // formato prosa: exigir 20–110 palabras (ya validado arriba) y al menos 2 oraciones
+        const sentences = v.expected_answer.trim().split(/[.?!]+/).filter(s => s.trim().length > 0);
+        if (sentences.length < 2) {
+          vErrs.push(`expected_answer en prosa debe tener al menos 2 oraciones, tiene ${sentences.length}`);
+        }
+      } else if (bullets.length < 3) {
+        vErrs.push(`expected_answer tiene formato ambiguo: ${bullets.length} bullet(s) (debe tener 0 para prosa o 3–5 para lista)`);
       } else {
         for (const bullet of bullets) {
           const bulletWords = bullet.replace(/^[-*•]\s+/, '').split(/\s+/).filter(Boolean).length;
