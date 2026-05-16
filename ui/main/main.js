@@ -5649,6 +5649,23 @@ function showStudyCard() {
   const item = studyState.queue[studyState.index];
   if (!item) { finishStudySession(); return; }
 
+  // Pre-generate explanation artifact in background for regular cards.
+  // By the time the user answers and gets AGAIN/HARD, it will be cached.
+  if (item.type === 'card' && item.data?.id) {
+    const _bgCardId = item.data.id;
+    const _bgHeaders = { 'Content-Type': 'application/json' };
+    if (Auth.getToken()) _bgHeaders['Authorization'] = 'Bearer ' + Auth.getToken();
+    fetch(`/api/cards/${_bgCardId}/explanation-artifact`, { headers: _bgHeaders })
+      .then((r) => {
+        if (r.status === 404) {
+          fetch(`/api/cards/${_bgCardId}/explanation-artifact/generate`, {
+            method: 'POST', headers: _bgHeaders, body: JSON.stringify({}),
+          }).catch(() => {});
+        }
+      })
+      .catch(() => {});
+  }
+
   const total   = studyState.queue.length;
   const current = studyState.index + 1;
 
