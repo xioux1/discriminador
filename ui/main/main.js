@@ -2014,7 +2014,7 @@ async function loadDashboard() {
 
         return `
           <div class="dsh-mat-row${i > 0 ? ' dsh-row-border' : ''}">
-            <span class="dsh-mat-pend ${hasPend ? 'pend-has' : 'pend-zero'}">${hasPend ? pend : '·'}</span>
+            <span class="dsh-mat-pend ${hasPend ? 'pend-has' : 'pend-zero'}"${hasPend ? ` data-pend="${pend}"` : ''}>${hasPend ? '••' : '·'}</span>
             <span class="dsh-mat-name ${hasPend ? 'name-active' : 'name-dim'}">${escHtml(name)}</span>
             <span class="dsh-mat-event">${examCell}</span>
             <span class="dsh-mat-readiness">${readinessCell}</span>
@@ -2030,7 +2030,7 @@ async function loadDashboard() {
         <div class="dsh-card-header">
           <span>
             <span class="dsh-card-title">Materias</span>
-            <span class="dsh-card-meta"> (${totalSubjects} · ${totalPendingAll} pendientes)</span>
+            <span class="dsh-card-meta"> (${totalSubjects} · <span class="dsh-total-pend" data-pend="${totalPendingAll}">••</span> pendientes)</span>
           </span>
           <div class="dsh-card-header-right">
             <span class="dsh-card-meta">orden: pendientes ↓</span>
@@ -2038,7 +2038,7 @@ async function loadDashboard() {
           </div>
         </div>
         <div class="dsh-mat-colhead">
-          <span class="dsh-col-pend">pend.</span>
+          <span class="dsh-col-pend">pend. <button type="button" class="dsh-pend-eye" title="Mantener presionado para ver">👁</button></span>
           <span>materia</span>
           <span>próximo evento</span>
           <span>preparación</span>
@@ -2049,6 +2049,32 @@ async function loadDashboard() {
       card.querySelector('.dsh-btn-new-subject').addEventListener('click', () => {
         document.querySelector('[data-tab="browser"]')?.click();
       });
+
+      // Hold-to-reveal pending counts
+      const eyeBtn = card.querySelector('.dsh-pend-eye');
+      function showPendCounts() {
+        card.querySelectorAll('.dsh-mat-pend.pend-has').forEach(s => {
+          s.textContent = s.dataset.pend;
+          s.classList.add('pend-visible');
+        });
+        const tps = card.querySelector('.dsh-total-pend');
+        if (tps) tps.textContent = tps.dataset.pend;
+        eyeBtn.classList.add('active');
+      }
+      function hidePendCounts() {
+        if (!card.isConnected) return;
+        card.querySelectorAll('.dsh-mat-pend.pend-has').forEach(s => {
+          s.textContent = '••';
+          s.classList.remove('pend-visible');
+        });
+        const tps = card.querySelector('.dsh-total-pend');
+        if (tps) tps.textContent = '••';
+        eyeBtn.classList.remove('active');
+      }
+      eyeBtn.addEventListener('mousedown', (e) => { e.preventDefault(); showPendCounts(); });
+      eyeBtn.addEventListener('touchstart', (e) => { e.preventDefault(); showPendCounts(); }, { passive: false });
+      document.addEventListener('mouseup', hidePendCounts);
+      document.addEventListener('touchend', hidePendCounts);
 
       card.addEventListener('click', async (e) => {
         if (e.target.classList.contains('deck-study-btn')) {
