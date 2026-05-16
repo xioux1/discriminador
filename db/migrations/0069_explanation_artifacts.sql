@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS card_explanation_artifacts (
   id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  card_id         UUID        NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
-  user_id         UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  card_id         BIGINT      NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+  user_id         INTEGER     NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   version         INTEGER     NOT NULL DEFAULT 1,
   language        TEXT        NOT NULL DEFAULT 'es',
   expected_answer TEXT,
