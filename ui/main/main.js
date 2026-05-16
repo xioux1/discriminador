@@ -6512,12 +6512,25 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
           : null;
 
         if (needsExplanation) {
+          // Show panel immediately with loading state so user sees something right away.
+          const _epanel = document.querySelector('#study-explanation-panel');
+          const _eoralEl = document.querySelector('#explanation-oral-text');
+          if (_epanel && _eoralEl) {
+            _epanel.classList.remove('hidden');
+            _eoralEl.textContent = 'Cargando explicación…';
+            document.querySelector('#explanation-diagram').innerHTML = '';
+          }
+
           fetchExplanationArtifact(item.data.id)
             .then((artifact) => {
+              console.log('[explanation] artifact received', artifact ? 'ok' : 'null', 'epoch match:', _voiceEpoch === evalEpoch);
               if (artifact && _voiceEpoch === evalEpoch) showExplanationDiagramImmediate(artifact);
               _artifactReadyResolve(artifact || null);
             })
-            .catch(() => _artifactReadyResolve(null));
+            .catch((err) => {
+              console.error('[explanation] fetch error:', err);
+              _artifactReadyResolve(null);
+            });
         }
 
         // Read the expected answer aloud — diagram may appear while this plays.
