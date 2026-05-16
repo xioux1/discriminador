@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import OpenAI from 'openai';
+import { createEmbedding as voyageEmbed } from '../utils/voyage-embed.js';
 import { dbPool } from '../db/client.js';
 import { logger } from '../utils/logger.js';
 import { withRetry } from '../utils/retry.js';
@@ -13,12 +13,6 @@ function getAnthropicClient() {
     timeout: Number(process.env.CONCEPT_LLM_TIMEOUT_MS || 30_000),
   });
   return _anthropic;
-}
-
-let _openai = null;
-function getOpenAIClient() {
-  if (!_openai) _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  return _openai;
 }
 
 // Lazy-load pdf-parse (v2 ESM-friendly import)
@@ -291,9 +285,8 @@ async function callAnthropicConceptExtraction(chunkText) {
 }
 
 export async function createEmbedding(text) {
-  const model = process.env.CONCEPT_EMBEDDING_MODEL || 'text-embedding-3-small';
-  const response = await getOpenAIClient().embeddings.create({ model, input: text });
-  return response.data[0].embedding;
+  const model = process.env.CONCEPT_EMBEDDING_MODEL || 'voyage-large-2';
+  return voyageEmbed(text, model);
 }
 
 async function getDocumentById(documentId) {
@@ -308,7 +301,7 @@ async function deleteConceptsForDocument(documentId) {
 async function insertConcept(documentId, concept) {
   const { label, definition, source_chunk, source_chunk_index, evidence, embedding } = concept;
   const extractionModel = process.env.CONCEPT_EXTRACTION_MODEL || 'claude-sonnet-4-20250514';
-  const embeddingModel = process.env.CONCEPT_EMBEDDING_MODEL || 'text-embedding-3-small';
+  const embeddingModel = process.env.CONCEPT_EMBEDDING_MODEL || 'voyage-large-2';
   const vectorString = `[${embedding.join(',')}]`;
 
   const { rows } = await dbPool.query(

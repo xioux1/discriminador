@@ -115,7 +115,7 @@ export function assertRequiredEnv() {
   if (!process.env.DEEPGRAM_API_KEY) {
     console.warn('[startup] DEEPGRAM_API_KEY not set — speech-to-text (/transcribe) and TTS (/tts) will return 503.');
   }
-  if (!process.env.OPENAI_API_KEY) {
-    console.warn('[startup] OPENAI_API_KEY not set — concept embeddings will fail.');
+  if (!process.env.VOYAGE_API_KEY) {
+    console.warn('[startup] VOYAGE_API_KEY not set — concept embeddings will fail.');
   }
 }

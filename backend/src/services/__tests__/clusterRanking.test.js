@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgres://test:test@localhost:5432/test';
 process.env.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || 'sk-ant-test';
-process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || 'sk-test';
+process.env.VOYAGE_API_KEY = process.env.VOYAGE_API_KEY || 'voyage-test';
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-that-is-at-least-32-chars-x';
 
 const {

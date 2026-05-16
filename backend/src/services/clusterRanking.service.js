@@ -1,15 +1,7 @@
-import OpenAI from 'openai';
+import { createEmbedding as voyageEmbed } from '../utils/voyage-embed.js';
 import { dbPool } from '../db/client.js';
 import { logger } from '../utils/logger.js';
 import { chunkText, cosineSimilarity, normalizeText } from './conceptExtractor.service.js';
-
-// ==================== Lazy client ====================
-
-let _openai = null;
-function getOpenAIClient() {
-  if (!_openai) _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  return _openai;
-}
 
 // ==================== Pure utility functions (exported for testing) ====================
 
@@ -248,8 +240,7 @@ function parseEmbedding(raw) {
 }
 
 async function createEmbedding(text, model) {
-  const response = await getOpenAIClient().embeddings.create({ model, input: text });
-  return response.data[0].embedding;
+  return voyageEmbed(text, model);
 }
 
 async function getDocumentText(document) {
@@ -451,7 +442,7 @@ export async function rankClustersForDocument(documentId) {
   const modelSet = new Set(rawConcepts.map(c => c.embedding_model).filter(Boolean));
   let embeddingModel;
   if (modelSet.size === 0) {
-    embeddingModel = process.env.CONCEPT_EMBEDDING_MODEL || 'text-embedding-3-small';
+    embeddingModel = process.env.CONCEPT_EMBEDDING_MODEL || 'voyage-large-2';
   } else if (modelSet.size > 1) {
     const err = new Error(
       'Concepts for this document use multiple embedding models. Cannot rank clusters safely.'
