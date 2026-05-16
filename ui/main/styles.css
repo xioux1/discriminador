@@ -6040,6 +6040,23 @@ textarea.chinese-input {
 .dsh-col-pend    { text-align: right; }
 .dsh-col-actions { text-align: right; }
 
+.dsh-pend-eye {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  font-size: 0.65rem;
+  line-height: 1;
+  color: var(--text-light);
+  vertical-align: middle;
+  user-select: none;
+  -webkit-user-select: none;
+  opacity: 0.55;
+  transition: opacity 0.1s;
+}
+.dsh-pend-eye:hover { opacity: 0.85; }
+.dsh-pend-eye.active { opacity: 1; }
+
 .dsh-mat-row {
   display: grid;
   grid-template-columns: 44px 1fr 180px 130px 140px;
@@ -6049,8 +6066,9 @@ textarea.chinese-input {
   font-size: 0.8125rem;
 }
 .dsh-mat-pend { text-align: right; font-variant-numeric: tabular-nums; }
-.pend-has     { font-weight: 600; color: var(--text); }
-.pend-zero    { color: var(--text-light); }
+.pend-has              { font-weight: 400; color: var(--text-light); letter-spacing: 0.06em; }
+.pend-has.pend-visible { font-weight: 600; color: var(--text); letter-spacing: normal; }
+.pend-zero             { color: var(--text-light); }
 .name-active  { color: var(--text); font-weight: 500; }
 .name-dim     { color: var(--text-muted); font-weight: 400; }
 .dsh-mat-event { color: var(--text-muted); font-size: 0.75rem; }
