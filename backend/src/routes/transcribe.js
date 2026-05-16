@@ -28,7 +28,7 @@ transcribeRouter.post('/transcribe', llmRateLimit, async (req, res) => {
     });
   }
 
-  const { audio, mime_type } = req.body;
+  const { audio, mime_type, subject } = req.body;
 
   if (!audio || typeof audio !== 'string') {
     return res.status(422).json({
@@ -51,15 +51,25 @@ transcribeRouter.post('/transcribe', llmRateLimit, async (req, res) => {
   try {
     const buffer = Buffer.from(audio, 'base64');
 
+    const transcribeOptions = {
+      model: 'nova-2',
+      language: 'es',
+      smart_format: true,
+      punctuate: true,
+    };
+
+    // Boost topic-specific words so nova-2 recognises domain vocabulary
+    if (typeof subject === 'string' && subject.trim().length > 0) {
+      const keywords = subject.trim().split(/\s+/).filter(w => w.length > 3);
+      if (keywords.length > 0) transcribeOptions.keywords = keywords;
+    }
+
+    // Pass mimetype so Deepgram sets the correct Content-Type header
+    const source = { buffer, mimetype: mimeType };
+
     const { result, error } = await getClient().listen.prerecorded.transcribeFile(
-      buffer,
-      {
-        model: 'nova-2',
-        language: 'es',
-        smart_format: true,
-        punctuate: true,
-        mimetype: mimeType,
-      }
+      source,
+      transcribeOptions,
     );
 
     if (error) throw error;
