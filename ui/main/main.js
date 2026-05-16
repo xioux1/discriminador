@@ -6485,19 +6485,31 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       studyState.audioPlaying = false;
       studyState.voicePhase = 'idle';
       if (!['GOOD', 'EASY'].includes(grade)) {
-        // Kick off artifact fetch in parallel with audio so it's ready when audio ends.
         const needsExplanation = ['AGAIN', 'HARD'].includes(grade) && item?.type === 'card' && item?.data?.id;
-        const artifactPromise = needsExplanation
-          ? fetchExplanationArtifact(item.data.id).catch(() => null)
+
+        // Kick off artifact fetch. As soon as it resolves, render diagram to DOM
+        // even if the expected-answer audio is still playing.
+        let _artifactReadyResolve;
+        const artifactReadyPromise = needsExplanation
+          ? new Promise((res) => { _artifactReadyResolve = res; })
           : null;
 
-        // Read the expected answer aloud so the student hears the correction before advancing.
+        if (needsExplanation) {
+          fetchExplanationArtifact(item.data.id)
+            .then((artifact) => {
+              if (artifact && _voiceEpoch === evalEpoch) showExplanationDiagramImmediate(artifact);
+              _artifactReadyResolve(artifact || null);
+            })
+            .catch(() => _artifactReadyResolve(null));
+        }
+
+        // Read the expected answer aloud — diagram may appear while this plays.
         await playStudyVoiceFront(expected_answer_text).catch(() => {});
 
-        // Artifact should be ready (or nearly) — await and render.
-        if (artifactPromise && _voiceEpoch === evalEpoch) {
-          const artifact = await artifactPromise;
-          await renderAndPlayExplanation(artifact, evalEpoch).catch(() => {});
+        // After audio: wait for artifact if still pending, then play explanation TTS + reveal.
+        if (artifactReadyPromise && _voiceEpoch === evalEpoch) {
+          const artifact = await artifactReadyPromise;
+          await playExplanationThenReveal(artifact, evalEpoch).catch(() => {});
         }
       } else {
         // Brief pause so the user can see the grade and click "pause review" if needed.
@@ -6724,23 +6736,27 @@ async function fetchExplanationArtifact(cardId) {
   return resp.json();
 }
 
-async function renderAndPlayExplanation(artifact, epochAtStart) {
-  if (!artifact || _voiceEpoch !== epochAtStart) return;
-
+// Show diagram on screen immediately (called as soon as artifact arrives, possibly mid-audio).
+function showExplanationDiagramImmediate(artifact) {
   const panel = document.querySelector('#study-explanation-panel');
   const oralEl = document.querySelector('#explanation-oral-text');
   if (!panel || !oralEl) return;
-
   panel.classList.remove('hidden');
   oralEl.textContent = artifact.oral_explanation_short || '';
   renderExplanationDiagram(artifact.diagram, artifact.reveal_steps);
+  // Show all elements immediately — reveal will re-highlight them after audio.
+  document.querySelectorAll(
+    '#explanation-diagram .expl-node, #explanation-diagram .expl-step, #explanation-diagram .expl-column, #explanation-diagram .expl-arrow'
+  ).forEach((el) => el.classList.remove('hidden'));
+}
 
+// Called after expected-answer audio ends: play explanation TTS then run progressive reveal.
+async function playExplanationThenReveal(artifact, epochAtStart) {
+  if (!artifact || _voiceEpoch !== epochAtStart) return;
   if (artifact.oral_explanation_short) {
     await playStudyVoiceFront(artifact.oral_explanation_short).catch(() => {});
   }
-
   if (_voiceEpoch !== epochAtStart) return;
-
   await runExplanationReveal(artifact, epochAtStart).catch(() => {});
 }
 
