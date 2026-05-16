@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { createHash } from 'crypto';
-import OpenAI from 'openai';
+import { createClient } from '@deepgram/sdk';
 import { pinyin } from 'pinyin-pro';
 import { dbPool } from '../db/client.js';
 import { llmRateLimit } from '../middleware/llm-rate-limit.js';
@@ -9,9 +9,15 @@ const ttsRouter = Router();
 
 let _client = null;
 function getClient() {
-  if (!_client) _client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  if (!_client) _client = createClient(process.env.DEEPGRAM_API_KEY);
   return _client;
 }
+
+// Configure voices via env; defaults work for Spanish and Chinese (best-effort).
+// Deepgram Aura does not officially support Chinese — set DEEPGRAM_TTS_VOICE_ZH
+// to a multilingual model if one becomes available.
+const VOICE_ES = process.env.DEEPGRAM_TTS_VOICE_ES || 'aura-asteria-en';
+const VOICE_ZH = process.env.DEEPGRAM_TTS_VOICE_ZH || 'aura-asteria-en';
 
 /** Convert hanzi to toned pinyin string, e.g. "你好" → "nǐ hǎo" */
 function hanziToPinyin(text) {
@@ -22,14 +28,25 @@ function hanziToPinyin(text) {
   }
 }
 
-// POST /tts — convert Chinese text to speech (MP3, base64-encoded)
-// Results are cached permanently in the tts_cache table so the OpenAI API
+async function streamToBuffer(stream) {
+  const reader = stream.getReader();
+  const chunks = [];
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) chunks.push(Buffer.isBuffer(value) ? value : Buffer.from(value));
+  }
+  return Buffer.concat(chunks);
+}
+
+// POST /tts — convert text to speech (MP3, base64-encoded)
+// Results are cached permanently in the tts_cache table so the Deepgram API
 // is only called once per unique text string.
 // Response includes { audio, pinyin, cached } so the frontend can display
 // romanisation without a separate API call.
 ttsRouter.post('/tts', llmRateLimit, async (req, res) => {
-  if (!process.env.OPENAI_API_KEY) {
-    return res.status(503).json({ error: 'service_unavailable', message: 'OPENAI_API_KEY not configured.' });
+  if (!process.env.DEEPGRAM_API_KEY) {
+    return res.status(503).json({ error: 'service_unavailable', message: 'DEEPGRAM_API_KEY not configured.' });
   }
 
   const { text, lang, mode } = req.body || {};
@@ -45,7 +62,8 @@ ttsRouter.post('/tts', llmRateLimit, async (req, res) => {
     || normalizedLang === 'zh-cn'
     || normalizedLang === 'zh-hans';
   const voiceProfile = useChineseVoice ? 'zh' : 'es';
-  const hash  = createHash('sha256').update(`${voiceProfile}::${input}`).digest('hex');
+  const voiceModel = useChineseVoice ? VOICE_ZH : VOICE_ES;
+  const hash = createHash('sha256').update(`${voiceProfile}::${input}`).digest('hex');
 
   // 1. Check persistent cache
   try {
@@ -55,7 +73,6 @@ ttsRouter.post('/tts', llmRateLimit, async (req, res) => {
     );
     if (rows.length > 0) {
       const row = rows[0];
-      // Back-fill pinyin if an old cache row lacks it (migration added column later)
       const pinyinText = row.pinyin_text ?? hanziToPinyin(input);
       if (!row.pinyin_text) {
         dbPool.query('UPDATE tts_cache SET pinyin_text = $1 WHERE text_hash = $2', [pinyinText, hash])
@@ -68,25 +85,19 @@ ttsRouter.post('/tts', llmRateLimit, async (req, res) => {
     // Non-fatal: fall through to generation
   }
 
-  const ttsInstructions = useChineseVoice
-    ? '以标准普通话朗读以下中文文本，发音清晰准确。Read the following Chinese text in standard Mandarin (普通话) with clear and accurate pronunciation.'
-    : 'Leé el siguiente texto en español neutro latinoamericano, con pronunciación clara y natural.';
-
-  // 2. Generate via OpenAI.
+  // 2. Generate via Deepgram
   let audioB64;
   try {
-    const response = await getClient().audio.speech.create({
-      model: 'gpt-4o-mini-tts',
-      voice: 'nova',
-      input,
-      instructions: ttsInstructions,
-      response_format: 'mp3',
-    });
+    const response = await getClient().speak.request(
+      { text: input },
+      { model: voiceModel, encoding: 'mp3' },
+    );
 
-    const buffer = Buffer.from(await response.arrayBuffer());
+    const stream = await response.getStream();
+    const buffer = await streamToBuffer(stream);
     audioB64 = buffer.toString('base64');
   } catch (err) {
-    console.error('POST /tts OpenAI error:', err.message);
+    console.error('POST /tts Deepgram error:', err.message);
     return res.status(500).json({ error: 'server_error', message: err.message });
   }
 
