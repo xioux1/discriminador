@@ -102,15 +102,14 @@ function validateArtifact(artifact) {
       steps.forEach((s) => s?.id && validIds.add(s.id));
     }
 
-    for (const step of artifact.reveal_steps) {
-      if (!ALLOWED_REVEAL_ACTIONS.has(step.action)) {
-        throw new Error(`Invalid reveal action: "${step.action}".`);
-      }
+    // Filter out steps with missing/invalid actions instead of failing hard.
+    artifact.reveal_steps = artifact.reveal_steps.filter((step) => {
+      if (!ALLOWED_REVEAL_ACTIONS.has(step.action)) return false;
       if (step.target_id && !validIds.has(step.target_id)) {
-        // Non-fatal: just flag it
         artifact.quality_flags = { ...artifact.quality_flags, needs_manual_review: true };
       }
-    }
+      return true;
+    });
   }
 
   // Size guard: no more than 10 nodes/columns/steps total
