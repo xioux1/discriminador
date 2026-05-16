@@ -6742,11 +6742,7 @@ async function runExplanationReveal(artifact, epochAtStart) {
       if (el) el.classList.add('highlighted');
     }
 
-    if (spoken_text) {
-      await playStudyVoiceFront(spoken_text).catch(() => {});
-    } else {
-      await new Promise((r) => setTimeout(r, 600));
-    }
+    await new Promise((r) => setTimeout(r, 700));
   }
 }
 
@@ -6783,10 +6779,6 @@ function showExplanationDiagramImmediate(artifact) {
 // Called after expected-answer audio ends: play explanation TTS then run progressive reveal.
 async function playExplanationThenReveal(artifact, epochAtStart) {
   if (!artifact || _voiceEpoch !== epochAtStart) return;
-  if (artifact.oral_explanation_short) {
-    await playStudyVoiceFront(artifact.oral_explanation_short).catch(() => {});
-  }
-  if (_voiceEpoch !== epochAtStart) return;
   await runExplanationReveal(artifact, epochAtStart).catch(() => {});
 }
 
