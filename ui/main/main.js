@@ -5645,6 +5645,7 @@ function showStudyCard() {
   }
   studyState.audioPlaying = false;
   studyState.voicePhase = 'idle';
+  hideExplanationPanel();
   const item = studyState.queue[studyState.index];
   if (!item) { finishStudySession(); return; }
 
@@ -6486,6 +6487,12 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       if (!['GOOD', 'EASY'].includes(grade)) {
         // Read the expected answer aloud so the student hears the correction before advancing.
         await playStudyVoiceFront(expected_answer_text).catch(() => {});
+        // Show explanation panel for negative grades on regular cards (not micro).
+        if (['AGAIN', 'HARD'].includes(grade) && item?.type === 'card' && item?.data?.id) {
+          if (_voiceEpoch === evalEpoch) {
+            await showExplanationPanel(item.data.id, evalEpoch).catch(() => {});
+          }
+        }
       } else {
         // Brief pause so the user can see the grade and click "pause review" if needed.
         await new Promise(r => setTimeout(r, 1500));
@@ -6545,6 +6552,214 @@ async function playStudyVoiceFront(text) {
     }
   }
 }
+
+// ── Explanation Layer ──────────────────────────────────────────────────────────
+
+function renderExplanationDiagram(diagram, revealSteps) {
+  const container = document.querySelector('#explanation-diagram');
+  if (!container) return;
+  container.innerHTML = '';
+
+  const { type, title, nodes = [], edges = [], columns = [], steps = [] } = diagram || {};
+
+  if (title) {
+    const h = document.createElement('div');
+    h.className = 'expl-diagram-title';
+    h.style.cssText = 'font-weight:600;font-size:0.9rem;margin-bottom:8px;color:var(--text-muted)';
+    h.textContent = title;
+    container.appendChild(h);
+  }
+
+  if (type === 'sequence' || type === 'concept_map') {
+    const wrap = document.createElement('div');
+    wrap.className = 'expl-nodes';
+    nodes.forEach((node, i) => {
+      if (i > 0) {
+        const arrow = document.createElement('div');
+        arrow.className = 'expl-arrow hidden';
+        arrow.dataset.nodeArrow = node.id;
+        arrow.textContent = '↓';
+        wrap.appendChild(arrow);
+      }
+      const el = document.createElement('div');
+      el.className = 'expl-node hidden';
+      el.dataset.nodeId = node.id;
+      const label = document.createElement('div');
+      label.className = 'expl-node-label';
+      label.textContent = node.label || '';
+      el.appendChild(label);
+      if (node.text) {
+        const txt = document.createElement('div');
+        txt.className = 'expl-node-text';
+        txt.textContent = node.text;
+        el.appendChild(txt);
+      }
+      wrap.appendChild(el);
+    });
+    container.appendChild(wrap);
+
+  } else if (type === 'compare') {
+    const wrap = document.createElement('div');
+    wrap.className = 'expl-columns';
+    columns.forEach((col) => {
+      const colEl = document.createElement('div');
+      colEl.className = 'expl-column hidden';
+      colEl.dataset.colId = col.id;
+      const titleEl = document.createElement('div');
+      titleEl.className = 'expl-column-title';
+      titleEl.textContent = col.title || '';
+      colEl.appendChild(titleEl);
+      const ul = document.createElement('ul');
+      ul.className = 'expl-column-items';
+      (col.items || []).forEach((item) => {
+        const li = document.createElement('li');
+        li.textContent = item;
+        ul.appendChild(li);
+      });
+      colEl.appendChild(ul);
+      wrap.appendChild(colEl);
+    });
+    container.appendChild(wrap);
+
+  } else if (type === 'step_derivation') {
+    const wrap = document.createElement('div');
+    wrap.className = 'expl-steps';
+    steps.forEach((step, i) => {
+      const el = document.createElement('div');
+      el.className = 'expl-step hidden';
+      el.dataset.stepId = step.id;
+      const num = document.createElement('div');
+      num.className = 'expl-step-num';
+      num.textContent = String(i + 1);
+      el.appendChild(num);
+      const body = document.createElement('div');
+      body.className = 'expl-step-body';
+      if (step.expression) {
+        const expr = document.createElement('div');
+        expr.className = 'expl-step-expr';
+        expr.textContent = step.expression;
+        body.appendChild(expr);
+      }
+      if (step.explanation) {
+        const expl = document.createElement('div');
+        expl.className = 'expl-step-expl';
+        expl.textContent = step.explanation;
+        body.appendChild(expl);
+      }
+      el.appendChild(body);
+      wrap.appendChild(el);
+    });
+    container.appendChild(wrap);
+  }
+}
+
+async function runExplanationReveal(artifact, epochAtStart) {
+  const revealSteps = artifact.reveal_steps || [];
+  if (revealSteps.length === 0) {
+    // No reveal steps: show everything immediately
+    document.querySelectorAll('#explanation-diagram .expl-node, #explanation-diagram .expl-step, #explanation-diagram .expl-column').forEach((el) => {
+      el.classList.remove('hidden');
+    });
+    document.querySelectorAll('#explanation-diagram .expl-arrow').forEach((el) => el.classList.remove('hidden'));
+    return;
+  }
+
+  for (const step of revealSteps) {
+    if (_voiceEpoch !== epochAtStart) return;
+    const { action, target_id, spoken_text } = step;
+
+    if (action === 'show_node') {
+      const el = document.querySelector(`[data-node-id="${target_id}"]`);
+      if (el) {
+        el.classList.remove('hidden');
+        const arrow = document.querySelector(`[data-node-arrow="${target_id}"]`);
+        if (arrow) arrow.classList.remove('hidden');
+      }
+    } else if (action === 'highlight_node') {
+      document.querySelectorAll('#explanation-diagram .expl-node').forEach((n) => n.classList.remove('highlighted'));
+      const el = document.querySelector(`[data-node-id="${target_id}"]`);
+      if (el) el.classList.add('highlighted');
+    } else if (action === 'show_edge') {
+      const arrow = document.querySelector(`[data-node-arrow="${target_id}"]`);
+      if (arrow) arrow.classList.remove('hidden');
+    } else if (action === 'show_column') {
+      const el = document.querySelector(`[data-col-id="${target_id}"]`);
+      if (el) el.classList.remove('hidden');
+    } else if (action === 'show_step') {
+      const el = document.querySelector(`[data-step-id="${target_id}"]`);
+      if (el) el.classList.remove('hidden');
+    } else if (action === 'highlight_step') {
+      document.querySelectorAll('#explanation-diagram .expl-step').forEach((s) => s.classList.remove('highlighted'));
+      const el = document.querySelector(`[data-step-id="${target_id}"]`);
+      if (el) el.classList.add('highlighted');
+    }
+
+    if (spoken_text) {
+      await playStudyVoiceFront(spoken_text).catch(() => {});
+    } else {
+      await new Promise((r) => setTimeout(r, 600));
+    }
+  }
+}
+
+async function showExplanationPanel(cardId, epochAtStart) {
+  const panel = document.querySelector('#study-explanation-panel');
+  const oralEl = document.querySelector('#explanation-oral-text');
+  if (!panel || !oralEl) return;
+
+  panel.classList.remove('hidden');
+  oralEl.textContent = 'Cargando explicación…';
+  document.querySelector('#explanation-diagram').innerHTML = '';
+
+  let artifact = null;
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
+
+    // Try GET first (cache hit)
+    let resp = await fetch(`/api/cards/${cardId}/explanation-artifact`, { headers });
+    if (resp.status === 404) {
+      // Generate on-demand
+      resp = await fetch(`/api/cards/${cardId}/explanation-artifact/generate`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({}),
+      });
+    }
+    if (resp.ok) artifact = await resp.json();
+  } catch (_) {}
+
+  if (_voiceEpoch !== epochAtStart) return;
+
+  if (!artifact) {
+    panel.classList.add('hidden');
+    return;
+  }
+
+  oralEl.textContent = artifact.oral_explanation_short || '';
+  renderExplanationDiagram(artifact.diagram, artifact.reveal_steps);
+
+  // Play the short oral explanation
+  if (artifact.oral_explanation_short) {
+    await playStudyVoiceFront(artifact.oral_explanation_short).catch(() => {});
+  }
+
+  if (_voiceEpoch !== epochAtStart) return;
+
+  // Progressive reveal
+  await runExplanationReveal(artifact, epochAtStart).catch(() => {});
+}
+
+function hideExplanationPanel() {
+  document.querySelector('#study-explanation-panel')?.classList.add('hidden');
+}
+
+// Close button
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelector('#explanation-close-btn')?.addEventListener('click', hideExplanationPanel);
+});
+
+// ── End Explanation Layer ──────────────────────────────────────────────────────
 
 function prefetchVoiceFront(text) {
   const input = (text || '').trim();

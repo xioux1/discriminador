@@ -524,6 +524,15 @@
             </div>
 
             <div id="study-result-block" class="study-result-block hidden">
+              <!-- Explanation Layer — shown after AGAIN/HARD/incorrect answers -->
+              <div id="study-explanation-panel" class="study-explanation-panel hidden">
+                <div class="explanation-header">
+                  <span class="explanation-label">Explicación</span>
+                  <button type="button" id="explanation-close-btn" class="explanation-close-btn" aria-label="Cerrar">✕</button>
+                </div>
+                <p id="explanation-oral-text" class="explanation-oral-text"></p>
+                <div id="explanation-diagram" class="explanation-diagram"></div>
+              </div>
               <div class="study-result-quick">
                 <div class="study-result-header">
                   <span id="study-result-grade" class="study-grade-inline"></span>

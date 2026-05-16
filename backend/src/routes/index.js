@@ -30,10 +30,12 @@ import clusterConceptsRouter from './cluster-concepts.routes.js';
 import rankClustersRouter from './rank-clusters.routes.js';
 import generateCardsRouter from './generate-cards.routes.js';
 import transcriptsRouter from './transcripts.routes.js';
+import explanationRouter from './explanation.routes.js';
 
 const router = Router();
 
 router.use(transcriptsRouter);
+router.use(explanationRouter);
 router.use(conceptsRouter);
 router.use(clusterConceptsRouter);
 router.use(rankClustersRouter);
