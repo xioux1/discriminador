@@ -5652,14 +5652,19 @@ function showStudyCard() {
   // Pre-generate explanation artifact in background for regular cards.
   // By the time the user answers and gets AGAIN/HARD, it will be cached.
   if (item.type === 'card' && item.data?.id) {
-    const _bgCardId = item.data.id;
-    const _bgHeaders = { 'Content-Type': 'application/json' };
+    const _bgCardId   = item.data.id;
+    const _bgVariantId = item.data.variant_id ?? null;
+    const _bgHeaders  = { 'Content-Type': 'application/json' };
     if (Auth.getToken()) _bgHeaders['Authorization'] = 'Bearer ' + Auth.getToken();
-    fetch(`/api/cards/${_bgCardId}/explanation-artifact`, { headers: _bgHeaders })
+    const _bgGetUrl = _bgVariantId
+      ? `/api/cards/${_bgCardId}/explanation-artifact?variant_id=${_bgVariantId}`
+      : `/api/cards/${_bgCardId}/explanation-artifact`;
+    fetch(_bgGetUrl, { headers: _bgHeaders })
       .then((r) => {
         if (r.status === 404) {
           fetch(`/api/cards/${_bgCardId}/explanation-artifact/generate`, {
-            method: 'POST', headers: _bgHeaders, body: JSON.stringify({}),
+            method: 'POST', headers: _bgHeaders,
+            body: JSON.stringify(_bgVariantId ? { variant_id: _bgVariantId } : {}),
           }).catch(() => {});
         }
       })
@@ -6521,7 +6526,7 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
             document.querySelector('#explanation-diagram').innerHTML = '';
           }
 
-          fetchExplanationArtifact(item.data.id)
+          fetchExplanationArtifact(item.data.id, item.data.variant_id ?? null)
             .then((artifact) => {
               console.log('[explanation] artifact received', artifact ? 'ok' : 'null', 'epoch match:', _voiceEpoch === evalEpoch);
               if (artifact && _voiceEpoch === evalEpoch) showExplanationDiagramImmediate(artifact);
@@ -6746,16 +6751,19 @@ async function runExplanationReveal(artifact, epochAtStart) {
   }
 }
 
-async function fetchExplanationArtifact(cardId) {
+async function fetchExplanationArtifact(cardId, variantId = null) {
   const headers = { 'Content-Type': 'application/json' };
   if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
 
-  let resp = await fetch(`/api/cards/${cardId}/explanation-artifact`, { headers });
+  const getUrl = variantId
+    ? `/api/cards/${cardId}/explanation-artifact?variant_id=${variantId}`
+    : `/api/cards/${cardId}/explanation-artifact`;
+  let resp = await fetch(getUrl, { headers });
   if (resp.status === 404) {
     resp = await fetch(`/api/cards/${cardId}/explanation-artifact/generate`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({}),
+      body: JSON.stringify(variantId ? { variant_id: variantId } : {}),
     });
   }
   if (!resp.ok) return null;
