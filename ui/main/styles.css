@@ -6543,7 +6543,7 @@ textarea.chinese-input {
 /* Diagram containers */
 .explanation-diagram { width: 100%; }
 
-/* sequence / concept_map */
+/* flow */
 .expl-nodes { display: flex; flex-direction: column; gap: 6px; }
 .expl-node {
   padding: 8px 12px;
@@ -6568,6 +6568,69 @@ textarea.chinese-input {
   margin: 1px 0;
 }
 .expl-arrow.hidden { display: none; }
+
+/* tree */
+.expl-tree {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  gap: 0;
+}
+.expl-tree-root {
+  min-width: 50%;
+  max-width: 90%;
+  text-align: center;
+  background: var(--primary-light, #e8f0fe);
+  border-color: var(--primary, #4285f4);
+  position: relative;
+  z-index: 1;
+}
+.expl-tree-root::after {
+  content: '';
+  position: absolute;
+  bottom: -14px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  height: 14px;
+  background: var(--border-mid, #ccc);
+}
+.expl-tree-children {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: 100%;
+  padding-top: 14px;
+  position: relative;
+}
+.expl-tree-children::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 10%;
+  right: 10%;
+  height: 2px;
+  background: var(--border-mid, #ccc);
+}
+.expl-tree-child {
+  flex: 1 1 calc(33% - 6px);
+  min-width: 80px;
+  max-width: 160px;
+  text-align: center;
+  position: relative;
+}
+.expl-tree-child::before {
+  content: '';
+  position: absolute;
+  top: -14px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  height: 14px;
+  background: var(--border-mid, #ccc);
+}
 
 /* compare */
 .expl-columns { display: flex; gap: 10px; }

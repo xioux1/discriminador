@@ -6623,7 +6623,7 @@ function renderExplanationDiagram(diagram, revealSteps) {
     container.appendChild(h);
   }
 
-  if (type === 'sequence' || type === 'concept_map') {
+  if (type === 'flow') {
     const wrap = document.createElement('div');
     wrap.className = 'expl-nodes';
     nodes.forEach((node, i) => {
@@ -6649,6 +6649,54 @@ function renderExplanationDiagram(diagram, revealSteps) {
       }
       wrap.appendChild(el);
     });
+    container.appendChild(wrap);
+
+  } else if (type === 'tree') {
+    const wrap = document.createElement('div');
+    wrap.className = 'expl-tree';
+
+    // Root node — always the node with id "root", fallback to first node.
+    const rootNode = nodes.find((n) => n.id === 'root') || nodes[0];
+    const childNodes = nodes.filter((n) => n !== rootNode);
+
+    if (rootNode) {
+      const rootEl = document.createElement('div');
+      rootEl.className = 'expl-node expl-tree-root hidden';
+      rootEl.dataset.nodeId = rootNode.id;
+      const rootLabel = document.createElement('div');
+      rootLabel.className = 'expl-node-label';
+      rootLabel.textContent = rootNode.label || '';
+      rootEl.appendChild(rootLabel);
+      if (rootNode.text) {
+        const rootTxt = document.createElement('div');
+        rootTxt.className = 'expl-node-text';
+        rootTxt.textContent = rootNode.text;
+        rootEl.appendChild(rootTxt);
+      }
+      wrap.appendChild(rootEl);
+    }
+
+    if (childNodes.length > 0) {
+      const childrenWrap = document.createElement('div');
+      childrenWrap.className = 'expl-tree-children';
+      childNodes.forEach((node) => {
+        const el = document.createElement('div');
+        el.className = 'expl-node expl-tree-child hidden';
+        el.dataset.nodeId = node.id;
+        const label = document.createElement('div');
+        label.className = 'expl-node-label';
+        label.textContent = node.label || '';
+        el.appendChild(label);
+        if (node.text) {
+          const txt = document.createElement('div');
+          txt.className = 'expl-node-text';
+          txt.textContent = node.text;
+          el.appendChild(txt);
+        }
+        childrenWrap.appendChild(el);
+      });
+      wrap.appendChild(childrenWrap);
+    }
     container.appendChild(wrap);
 
   } else if (type === 'compare') {
@@ -6709,11 +6757,9 @@ function renderExplanationDiagram(diagram, revealSteps) {
 async function runExplanationReveal(artifact, epochAtStart) {
   const revealSteps = artifact.reveal_steps || [];
   if (revealSteps.length === 0) {
-    // No reveal steps: show everything immediately
-    document.querySelectorAll('#explanation-diagram .expl-node, #explanation-diagram .expl-step, #explanation-diagram .expl-column').forEach((el) => {
-      el.classList.remove('hidden');
-    });
-    document.querySelectorAll('#explanation-diagram .expl-arrow').forEach((el) => el.classList.remove('hidden'));
+    document.querySelectorAll(
+      '#explanation-diagram .expl-node, #explanation-diagram .expl-step, #explanation-diagram .expl-column, #explanation-diagram .expl-arrow'
+    ).forEach((el) => el.classList.remove('hidden'));
     return;
   }
 
@@ -6780,7 +6826,7 @@ function showExplanationDiagramImmediate(artifact) {
   renderExplanationDiagram(artifact.diagram, artifact.reveal_steps);
   // Show all elements immediately — reveal will re-highlight them after audio.
   document.querySelectorAll(
-    '#explanation-diagram .expl-node, #explanation-diagram .expl-step, #explanation-diagram .expl-column, #explanation-diagram .expl-arrow'
+    '#explanation-diagram .expl-node, #explanation-diagram .expl-step, #explanation-diagram .expl-column, #explanation-diagram .expl-arrow, #explanation-diagram .expl-tree-children'
   ).forEach((el) => el.classList.remove('hidden'));
 }
 
