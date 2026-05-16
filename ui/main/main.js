@@ -6472,21 +6472,17 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       document.querySelector('#study-doubt-input').value = '';
     }
     if (studyState.voiceMode) {
-      // Simplify result view: show only grade + expected answer prominently.
-      const _quickResult = document.querySelector('.study-result-quick');
-      const _expectedEl  = document.querySelector('#study-result-expected');
-      if (_quickResult && _expectedEl) {
-        _quickResult.appendChild(_expectedEl);
-        _expectedEl.classList.remove('hidden');
-      }
+      // Voice mode: show only grade badge + explanation diagram. Nothing else.
       document.querySelector('#study-result-time')?.classList.add('hidden');
       document.querySelector('#study-result-justification')?.classList.add('hidden');
       document.querySelector('#study-result-dimensions')?.classList.add('hidden');
+      document.querySelector('#study-result-expected')?.classList.add('hidden');
       document.querySelector('#study-dual-judge')?.classList.add('hidden');
       document.querySelector('#study-advanced-toggle-btn')?.classList.add('hidden');
       document.querySelector('#study-advanced-panel')?.classList.add('hidden');
       document.querySelector('#study-doubt-section')?.classList.add('hidden');
       document.querySelector('.study-result-actions')?.classList.add('hidden');
+      document.querySelector('#study-easy-explanation')?.classList.add('hidden');
     }
     if (studyState.voiceMode) {
       // If the card was navigated or deleted while the eval fetch was in-flight, skip

@@ -6680,3 +6680,16 @@ textarea.chinese-input {
 .expl-step-body { flex: 1; }
 .expl-step-expr { font-family: monospace; font-size: 0.9rem; font-weight: 600; margin-bottom: 2px; }
 .expl-step-expl { font-size: 0.83rem; color: var(--text-muted, #555); }
+
+/* Voice mode result — grade badge only, large and centered */
+.voice-mode-active .study-result-block .study-result-header {
+  justify-content: center;
+  padding: 24px 0 8px;
+}
+.voice-mode-active .study-result-block .study-grade-inline {
+  font-size: 1.6rem;
+  padding: 10px 28px;
+  border-radius: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
