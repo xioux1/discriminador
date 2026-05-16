@@ -6485,13 +6485,19 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       studyState.audioPlaying = false;
       studyState.voicePhase = 'idle';
       if (!['GOOD', 'EASY'].includes(grade)) {
+        // Kick off artifact fetch in parallel with audio so it's ready when audio ends.
+        const needsExplanation = ['AGAIN', 'HARD'].includes(grade) && item?.type === 'card' && item?.data?.id;
+        const artifactPromise = needsExplanation
+          ? fetchExplanationArtifact(item.data.id).catch(() => null)
+          : null;
+
         // Read the expected answer aloud so the student hears the correction before advancing.
         await playStudyVoiceFront(expected_answer_text).catch(() => {});
-        // Show explanation panel for negative grades on regular cards (not micro).
-        if (['AGAIN', 'HARD'].includes(grade) && item?.type === 'card' && item?.data?.id) {
-          if (_voiceEpoch === evalEpoch) {
-            await showExplanationPanel(item.data.id, evalEpoch).catch(() => {});
-          }
+
+        // Artifact should be ready (or nearly) — await and render.
+        if (artifactPromise && _voiceEpoch === evalEpoch) {
+          const artifact = await artifactPromise;
+          await renderAndPlayExplanation(artifact, evalEpoch).catch(() => {});
         }
       } else {
         // Brief pause so the user can see the grade and click "pause review" if needed.
@@ -6702,51 +6708,39 @@ async function runExplanationReveal(artifact, epochAtStart) {
   }
 }
 
-async function showExplanationPanel(cardId, epochAtStart) {
+async function fetchExplanationArtifact(cardId) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
+
+  let resp = await fetch(`/api/cards/${cardId}/explanation-artifact`, { headers });
+  if (resp.status === 404) {
+    resp = await fetch(`/api/cards/${cardId}/explanation-artifact/generate`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({}),
+    });
+  }
+  if (!resp.ok) return null;
+  return resp.json();
+}
+
+async function renderAndPlayExplanation(artifact, epochAtStart) {
+  if (!artifact || _voiceEpoch !== epochAtStart) return;
+
   const panel = document.querySelector('#study-explanation-panel');
   const oralEl = document.querySelector('#explanation-oral-text');
   if (!panel || !oralEl) return;
 
   panel.classList.remove('hidden');
-  oralEl.textContent = 'Cargando explicación…';
-  document.querySelector('#explanation-diagram').innerHTML = '';
-
-  let artifact = null;
-  try {
-    const headers = { 'Content-Type': 'application/json' };
-    if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
-
-    // Try GET first (cache hit)
-    let resp = await fetch(`/api/cards/${cardId}/explanation-artifact`, { headers });
-    if (resp.status === 404) {
-      // Generate on-demand
-      resp = await fetch(`/api/cards/${cardId}/explanation-artifact/generate`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({}),
-      });
-    }
-    if (resp.ok) artifact = await resp.json();
-  } catch (_) {}
-
-  if (_voiceEpoch !== epochAtStart) return;
-
-  if (!artifact) {
-    panel.classList.add('hidden');
-    return;
-  }
-
   oralEl.textContent = artifact.oral_explanation_short || '';
   renderExplanationDiagram(artifact.diagram, artifact.reveal_steps);
 
-  // Play the short oral explanation
   if (artifact.oral_explanation_short) {
     await playStudyVoiceFront(artifact.oral_explanation_short).catch(() => {});
   }
 
   if (_voiceEpoch !== epochAtStart) return;
 
-  // Progressive reveal
   await runExplanationReveal(artifact, epochAtStart).catch(() => {});
 }
 
