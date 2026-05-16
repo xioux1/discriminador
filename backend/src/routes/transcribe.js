@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import OpenAI, { toFile } from 'openai';
+import { createClient } from '@deepgram/sdk';
 import { llmRateLimit } from '../middleware/llm-rate-limit.js';
 
 const transcribeRouter = Router();
@@ -8,23 +8,16 @@ let _client = null;
 
 function getClient() {
   if (!_client) {
-    _client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    _client = createClient(process.env.DEEPGRAM_API_KEY);
   }
   return _client;
 }
 
-function mimeToExt(mimeType) {
-  if (mimeType.includes('ogg')) return 'ogg';
-  if (mimeType.includes('mp4')) return 'mp4';
-  if (mimeType.includes('wav')) return 'wav';
-  return 'webm';
-}
-
 transcribeRouter.post('/transcribe', llmRateLimit, async (req, res) => {
-  if (!process.env.OPENAI_API_KEY) {
+  if (!process.env.DEEPGRAM_API_KEY) {
     return res.status(503).json({
       error: 'service_unavailable',
-      message: 'OPENAI_API_KEY is not configured.'
+      message: 'DEEPGRAM_API_KEY is not configured.'
     });
   }
 
@@ -35,7 +28,7 @@ transcribeRouter.post('/transcribe', llmRateLimit, async (req, res) => {
     });
   }
 
-  const { audio, mime_type, subject } = req.body;
+  const { audio, mime_type } = req.body;
 
   if (!audio || typeof audio !== 'string') {
     return res.status(422).json({
@@ -44,7 +37,7 @@ transcribeRouter.post('/transcribe', llmRateLimit, async (req, res) => {
     });
   }
 
-  // Whisper limit is 25 MB; base64 adds ~33% overhead → ~34 MB base64 string max
+  // 25 MB limit; base64 adds ~33% overhead → ~34 MB base64 string max
   const MAX_AUDIO_BASE64_BYTES = 34 * 1024 * 1024;
   if (Buffer.byteLength(audio, 'utf8') > MAX_AUDIO_BASE64_BYTES) {
     return res.status(413).json({
@@ -54,26 +47,25 @@ transcribeRouter.post('/transcribe', llmRateLimit, async (req, res) => {
   }
 
   const mimeType = typeof mime_type === 'string' ? mime_type : 'audio/webm';
-  const ext = mimeToExt(mimeType);
 
   try {
     const buffer = Buffer.from(audio, 'base64');
-    const file = await toFile(buffer, `audio.${ext}`, { type: mimeType });
 
-    const transcribeParams = {
-      file,
-      model: 'whisper-1',
-      language: 'es'
-    };
+    const { result, error } = await getClient().listen.prerecorded.transcribeFile(
+      buffer,
+      {
+        model: 'nova-2',
+        language: 'es',
+        smart_format: true,
+        punctuate: true,
+        mimetype: mimeType,
+      }
+    );
 
-    if (typeof subject === 'string' && subject.trim().length > 0) {
-      transcribeParams.prompt = subject.trim();
-    }
+    if (error) throw error;
 
-    const timeout = AbortSignal.timeout(30_000);
-    const transcription = await getClient().audio.transcriptions.create(transcribeParams, { signal: timeout });
-
-    return res.status(200).json({ text: transcription.text });
+    const text = result?.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? '';
+    return res.status(200).json({ text });
   } catch (error) {
     console.error('Transcription failed', { message: error.message });
     return res.status(500).json({

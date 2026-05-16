@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",
+    "@deepgram/sdk": "^3.10.0",
     "bcryptjs": "^3.0.3",
     "discord.js": "^14.26.3",
     "dotenv": "^16.6.1",
