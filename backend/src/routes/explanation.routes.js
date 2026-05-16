@@ -49,7 +49,7 @@ explanationRouter.post('/api/cards/:id/explanation-artifact/generate', llmRateLi
 
   // Verify the card belongs to this user
   const cardRes = await dbPool.query(
-    `SELECT id, prompt_text, expected_answer_text, subject, card_type, tags
+    `SELECT id, prompt_text, expected_answer_text, subject, card_type
        FROM cards WHERE id = $1 AND user_id = $2`,
     [cardId, userId],
   );
@@ -93,7 +93,7 @@ explanationRouter.post('/api/cards/:id/explanation-artifact/generate', llmRateLi
       cardType:  card.card_type,
       subject:   card.subject,
       language:  'es',
-      labels:    card.tags || [],
+      labels:    [],
     });
   } catch (err) {
     console.error('[explanation] generation error:', err.message);
