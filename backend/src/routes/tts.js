@@ -16,8 +16,8 @@ function getClient() {
 // Configure voices via env; defaults work for Spanish and Chinese (best-effort).
 // Deepgram Aura does not officially support Chinese — set DEEPGRAM_TTS_VOICE_ZH
 // to a multilingual model if one becomes available.
-const VOICE_ES = process.env.DEEPGRAM_TTS_VOICE_ES || 'aura-asteria-en';
-const VOICE_ZH = process.env.DEEPGRAM_TTS_VOICE_ZH || 'aura-asteria-en';
+const VOICE_ES = process.env.DEEPGRAM_TTS_VOICE_ES || 'aura-2-celeste-es';
+const VOICE_ZH = process.env.DEEPGRAM_TTS_VOICE_ZH || 'aura-2-celeste-es';
 
 /** Convert hanzi to toned pinyin string, e.g. "你好" → "nǐ hǎo" */
 function hanziToPinyin(text) {
