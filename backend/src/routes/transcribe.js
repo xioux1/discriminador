@@ -56,7 +56,6 @@ transcribeRouter.post('/transcribe', llmRateLimit, async (req, res) => {
       language: 'es',
       smart_format: true,
       punctuate: true,
-      mimetype: mimeType,
     };
 
     // Boost topic-specific words so nova-2 recognises domain vocabulary
@@ -65,8 +64,11 @@ transcribeRouter.post('/transcribe', llmRateLimit, async (req, res) => {
       if (keywords.length > 0) transcribeOptions.keywords = keywords;
     }
 
+    // Pass mimetype so Deepgram sets the correct Content-Type header
+    const source = { buffer, mimetype: mimeType };
+
     const { result, error } = await getClient().listen.prerecorded.transcribeFile(
-      buffer,
+      source,
       transcribeOptions,
     );
 
