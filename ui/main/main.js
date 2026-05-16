@@ -6515,10 +6515,8 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
         if (needsExplanation) {
           // Show panel immediately with loading state so user sees something right away.
           const _epanel = document.querySelector('#study-explanation-panel');
-          const _eoralEl = document.querySelector('#explanation-oral-text');
-          if (_epanel && _eoralEl) {
+          if (_epanel) {
             _epanel.classList.remove('hidden');
-            _eoralEl.textContent = 'Cargando explicación…';
             document.querySelector('#explanation-diagram').innerHTML = '';
           }
 
@@ -6815,10 +6813,8 @@ async function fetchExplanationArtifact(cardId, variantId = null) {
 // Show diagram on screen immediately (called as soon as artifact arrives, possibly mid-audio).
 function showExplanationDiagramImmediate(artifact) {
   const panel = document.querySelector('#study-explanation-panel');
-  const oralEl = document.querySelector('#explanation-oral-text');
-  if (!panel || !oralEl) return;
+  if (!panel) return;
   panel.classList.remove('hidden');
-  oralEl.textContent = artifact.oral_explanation_short || '';
   renderExplanationDiagram(artifact.diagram, artifact.reveal_steps);
   // Show all elements immediately — reveal will re-highlight them after audio.
   document.querySelectorAll(
