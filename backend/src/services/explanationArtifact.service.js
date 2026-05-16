@@ -22,7 +22,7 @@ function buildPrompt({ cardId, cardFront, cardBack, cardType, subject, language,
 You must output valid JSON only. No markdown. No prose outside the JSON object.
 You do not create images. You do not create SVG.
 You choose one diagram type from: sequence, concept_map, compare, step_derivation.
-Your job is to help the student understand the mechanism behind the answer.`,
+CRITICAL: The diagram must contain ONLY the information present in the expected answer. Do not add, infer, or invent any content not explicitly stated in the expected answer.`,
 
     user: `Generate an explanation artifact for this study card.
 
@@ -33,10 +33,8 @@ Card type: ${cardType || 'generic'}
 Question:
 ${cardFront}
 
-Expected answer:
+Expected answer (use ONLY this content for the diagram — do not add anything else):
 ${cardBack}
-
-Labels/tags: ${labelsStr}
 
 Allowed diagram types:
 - sequence       (processes, cause-effect, workflows, biological processes)
@@ -46,14 +44,15 @@ Allowed diagram types:
 
 Requirements:
 - Output valid JSON only.
+- The nodes/steps/columns must reflect EXACTLY the items listed in the expected answer. Copy them verbatim if possible.
+- Do not add extra items, synonyms, context, or elaboration not present in the expected answer.
 - Keep it minimal: 3 to 6 visual elements.
-- oral_explanation_short must be under 60 words.
+- oral_explanation_short must be under 60 words and must only paraphrase the expected answer.
 - oral_explanation_detailed must be under 150 words.
 - For sequence/concept_map: populate nodes and edges, leave columns/steps empty.
 - For compare: populate columns, leave nodes/edges/steps empty.
 - For step_derivation: populate steps, leave nodes/edges/columns empty.
 - reveal_steps must only reference IDs that exist in the chosen structure.
-- Do not invent facts beyond the expected answer.
 - No markdown inside JSON fields.
 
 Return this exact JSON structure:
