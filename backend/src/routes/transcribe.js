@@ -64,13 +64,12 @@ transcribeRouter.post('/transcribe', llmRateLimit, async (req, res) => {
       if (keywords.length > 0) transcribeOptions.keywords = keywords;
     }
 
-    // Pass mimetype so Deepgram sets the correct Content-Type header
-    const source = { buffer, mimetype: mimeType };
-
-    const { result, error } = await getClient().listen.prerecorded.transcribeFile(
-      source,
-      transcribeOptions,
-    );
+    const { result, error } = await Promise.race([
+      getClient().listen.prerecorded.transcribeFile(buffer, transcribeOptions),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Deepgram transcription timeout')), 30_000)
+      ),
+    ]);
 
     if (error) throw error;
 
