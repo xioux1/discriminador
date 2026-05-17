@@ -9,6 +9,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-that-is-at-least
 
 const {
   chunkText,
+  chunkBySlideHeadings,
   safeJsonParseArray,
   validateConcept,
   cosineSimilarity,
@@ -335,4 +336,75 @@ test('validateConcept with both fields null behaves like pre-type documents', ()
   assert.equal(result.concept_type, null);
   assert.equal(result.importance, null);
   assert.equal(result.label, BASE.label);
+});
+
+// ---- chunkBySlideHeadings ----
+
+function makeSlideMarkdown(count) {
+  return Array.from({ length: count }, (_, i) =>
+    `## Slide ${i + 1} — Título del slide ${i + 1}\n\nContenido del slide ${i + 1} con algo de texto de ejemplo.`
+  ).join('\n\n');
+}
+
+test('chunkBySlideHeadings groups 2 slides per chunk by default', () => {
+  const md = makeSlideMarkdown(6);
+  const chunks = chunkBySlideHeadings(md);
+  assert.equal(chunks.length, 3, 'should produce 3 chunks for 6 slides with maxSlidesPerChunk=2');
+});
+
+test('chunkBySlideHeadings assigns sequential index values', () => {
+  const md = makeSlideMarkdown(5);
+  const chunks = chunkBySlideHeadings(md, 2);
+  for (let i = 0; i < chunks.length; i++) {
+    assert.equal(chunks[i].index, i);
+  }
+});
+
+test('chunkBySlideHeadings last chunk has 1 slide when count is odd', () => {
+  const md = makeSlideMarkdown(5);
+  const chunks = chunkBySlideHeadings(md, 2);
+  assert.equal(chunks.length, 3, '5 slides / 2 = 3 chunks');
+  assert.ok(chunks[2].text.includes('## Slide 5'), 'last chunk contains slide 5');
+  assert.ok(!chunks[2].text.includes('## Slide 4'), 'last chunk does not contain slide 4');
+});
+
+test('chunkBySlideHeadings preserves ## Slide headings in chunk text', () => {
+  const md = makeSlideMarkdown(4);
+  const chunks = chunkBySlideHeadings(md, 2);
+  assert.ok(chunks[0].text.includes('## Slide 1'), 'chunk 0 contains ## Slide 1');
+  assert.ok(chunks[0].text.includes('## Slide 2'), 'chunk 0 contains ## Slide 2');
+  assert.ok(chunks[1].text.includes('## Slide 3'), 'chunk 1 contains ## Slide 3');
+  assert.ok(chunks[1].text.includes('## Slide 4'), 'chunk 1 contains ## Slide 4');
+});
+
+test('chunkBySlideHeadings respects maxSlidesPerChunk=1', () => {
+  const md = makeSlideMarkdown(4);
+  const chunks = chunkBySlideHeadings(md, 1);
+  assert.equal(chunks.length, 4, 'each slide becomes its own chunk');
+  for (let i = 0; i < 4; i++) {
+    assert.ok(chunks[i].text.includes(`## Slide ${i + 1}`));
+  }
+});
+
+test('chunkBySlideHeadings falls back to word-based when no slide headings found', () => {
+  const text = Array.from({ length: 400 }, (_, i) => `word${i}`).join(' ');
+  const chunks = chunkBySlideHeadings(text, 2);
+  assert.ok(chunks.length >= 2, 'falls back to word-based chunking');
+  // Word-based chunks should not contain ## Slide headings
+  for (const c of chunks) {
+    assert.ok(!c.text.includes('## Slide'), 'no slide headings in fallback chunks');
+  }
+});
+
+test('chunkBySlideHeadings handles Página and Page heading variants', () => {
+  const md = [
+    '## Página 1 — Introducción\n\nTexto de la página uno.',
+    '## Page 2 — Content\n\nText for page two.',
+    '## Página 3 — Cierre\n\nTexto de cierre.',
+  ].join('\n\n');
+  const chunks = chunkBySlideHeadings(md, 2);
+  assert.equal(chunks.length, 2, 'should produce 2 chunks for 3 pages with maxSlidesPerChunk=2');
+  assert.ok(chunks[0].text.includes('## Página 1'));
+  assert.ok(chunks[0].text.includes('## Page 2'));
+  assert.ok(chunks[1].text.includes('## Página 3'));
 });

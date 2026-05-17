@@ -47,6 +47,26 @@ export function chunkText(text, windowSize = 300, overlap = 50) {
   return chunks;
 }
 
+// Splits visual markdown (## Slide N / ## Página N / ## Page N headings) into
+// chunks of at most maxSlidesPerChunk slides each. Falls back to word-based
+// chunking if no slide headings are detected.
+export function chunkBySlideHeadings(markdown, maxSlidesPerChunk = 2) {
+  const SLIDE_HEADING_RE = /(?=##\s+(?:Slide|Página|Page)\s+\d+)/gi;
+  const sections = markdown.split(SLIDE_HEADING_RE).filter(s => s.trim());
+
+  if (sections.length <= 1) {
+    return chunkText(normalizeText(markdown), 300, 50);
+  }
+
+  const chunks = [];
+  for (let i = 0; i < sections.length; i += maxSlidesPerChunk) {
+    const text = sections.slice(i, i + maxSlidesPerChunk).join('\n\n').trim();
+    if (text) chunks.push({ index: chunks.length, text });
+  }
+
+  return chunks;
+}
+
 export function safeJsonParseArray(raw) {
   if (!raw || typeof raw !== 'string') return [];
 
@@ -288,7 +308,7 @@ async function getDocumentText(document) {
   );
 }
 
-function buildConceptPrompt(chunk) {
+function buildConceptPrompt(chunk, maxConcepts = 6) {
   return `Dado el siguiente fragmento de material de estudio, extraé los temas principales tratados.
 
 Cada tema debe ser:
@@ -321,7 +341,7 @@ Guía para concept_type:
 Reglas:
 - No uses conocimiento externo.
 - Si el fragmento usa un acrónimo o sigla (ej: SIG, ERP, CRM) sin expandirlo, NO lo expandas en el label ni en la definition. Usá el acrónimo tal como aparece en el texto. Solo expandí un acrónimo si el propio fragmento lo define explícitamente.
-- No generes más de 6 temas por fragmento. Si el fragmento desarrolla un único ejemplo extenso,
+- No generes más de ${maxConcepts} temas por fragmento. Si el fragmento desarrolla un único ejemplo extenso,
   extraé el concepto central que ilustra y como máximo 2 pasos del ejemplo marcados como
   "calculation_step" o "example" — no uno por cada paso.
 - No generes temas demasiado genéricos como "Introducción", "Conceptos básicos", "Aspectos generales", "Tema principal" o "Resumen general".
@@ -336,7 +356,7 @@ Fragmento:
 ${chunk}`;
 }
 
-async function callAnthropicConceptExtraction(chunkText) {
+async function callAnthropicConceptExtraction(chunkText, maxConcepts = 6) {
   const model = process.env.CONCEPT_EXTRACTION_MODEL || 'claude-sonnet-4-20250514';
 
   const response = await withRetry(
@@ -344,7 +364,7 @@ async function callAnthropicConceptExtraction(chunkText) {
       model,
       max_tokens: 1200,
       temperature: 0.1,
-      messages: [{ role: 'user', content: buildConceptPrompt(chunkText) }],
+      messages: [{ role: 'user', content: buildConceptPrompt(chunkText, maxConcepts) }],
     }),
     { label: 'callAnthropicConceptExtraction' },
   );
@@ -399,17 +419,28 @@ export async function extractConceptsForDocument(documentId) {
   logger.info('[conceptExtractor] Starting extraction', { documentId });
 
   const rawText = await getDocumentText(document);
-  const text = normalizeText(rawText);
+  const isVisual = document.processing_mode === 'pptx_visual' || document.processing_mode === 'pdf_visual';
 
-  const wordCount = text.split(/\s+/).filter(Boolean).length;
-  if (wordCount < 20) {
-    throw new Error('Document does not contain enough text for concept extraction.');
+  let chunks;
+  let maxConcepts;
+
+  if (isVisual) {
+    // Visual docs: split on ## Slide N / ## Página N / ## Page N headings (max 2 slides per chunk).
+    // Preserves heading structure so evidence is traceable to specific slides.
+    chunks = chunkBySlideHeadings(rawText, 2);
+    maxConcepts = 8;
+    logger.info('[conceptExtractor] Chunked (slide-based)', { documentId, chunkCount: chunks.length, maxConcepts });
+  } else {
+    const text = normalizeText(rawText);
+    const wordCount = text.split(/\s+/).filter(Boolean).length;
+    if (wordCount < 20) {
+      throw new Error('Document does not contain enough text for concept extraction.');
+    }
+    logger.info('[conceptExtractor] Text ready', { documentId, wordCount });
+    chunks = chunkText(text, 300, 50);
+    maxConcepts = 6;
+    logger.info('[conceptExtractor] Chunked (word-based)', { documentId, chunkCount: chunks.length });
   }
-
-  logger.info('[conceptExtractor] Text ready', { documentId, wordCount });
-
-  const chunks = chunkText(text, 300, 50);
-  logger.info('[conceptExtractor] Chunked', { documentId, chunkCount: chunks.length });
 
   const extractedConcepts = [];
   let failedChunks = 0;
@@ -418,7 +449,7 @@ export async function extractConceptsForDocument(documentId) {
   for (let i = 0; i < chunks.length; i += CHUNK_CONCURRENCY) {
     const batch = chunks.slice(i, i + CHUNK_CONCURRENCY);
     const results = await Promise.allSettled(
-      batch.map(chunk => callAnthropicConceptExtraction(chunk.text))
+      batch.map(chunk => callAnthropicConceptExtraction(chunk.text, maxConcepts))
     );
     results.forEach((result, j) => {
       const chunk = batch[j];
