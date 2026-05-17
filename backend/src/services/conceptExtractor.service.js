@@ -292,6 +292,7 @@ Guía para concept_type:
 
 Reglas:
 - No uses conocimiento externo.
+- Si el fragmento usa un acrónimo o sigla (ej: SIG, ERP, CRM) sin expandirlo, NO lo expandas en el label ni en la definition. Usá el acrónimo tal como aparece en el texto. Solo expandí un acrónimo si el propio fragmento lo define explícitamente.
 - No generes más de 6 temas por fragmento. Si el fragmento desarrolla un único ejemplo extenso,
   extraé el concepto central que ilustra y como máximo 2 pasos del ejemplo marcados como
   "calculation_step" o "example" — no uno por cada paso.
