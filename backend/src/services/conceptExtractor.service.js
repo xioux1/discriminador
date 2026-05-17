@@ -120,9 +120,9 @@ export function validateConcept(rawConcept, sourceChunk, sourceChunkIndex) {
 
   if (!label || !definition) return null;
 
-  // Validate word count: 4 to 8 words
+  // Validate word count: 2 to 8 words (2 allows short technical terms like "Business Blueprint")
   const labelWords = label.split(/\s+/).filter(Boolean);
-  if (labelWords.length < 4 || labelWords.length > 8) return null;
+  if (labelWords.length < 2 || labelWords.length > 8) return null;
 
   const normalized = label.toLowerCase();
 
@@ -235,11 +235,16 @@ export function deduplicateConcepts(concepts, threshold = 0.86) {
 // ==================== I/O helpers ====================
 
 async function getDocumentText(document) {
+  const docId = document.id;
+  const mode  = document.processing_mode;
+
   // 1. Visual modes: use the pre-generated markdown produced by the visual pipeline.
   //    The markdown already contains slide-level headings ("## Slide N — Title")
   //    so source_chunk evidence in concepts will be traceable back to slides.
-  if (document.processing_mode === 'pptx_visual' || document.processing_mode === 'pdf_visual') {
+  if (mode === 'pptx_visual' || mode === 'pdf_visual') {
     if (document.generated_markdown && document.generated_markdown.trim()) {
+      const wc = document.generated_markdown.trim().split(/\s+/).filter(Boolean).length;
+      logger.info('[getDocumentText]', { document_id: docId, processing_mode: mode, source: 'generated_markdown', word_count: wc });
       return document.generated_markdown;
     }
     throw new Error(
@@ -251,9 +256,14 @@ async function getDocumentText(document) {
 
   // 2. Direct text fields
   const directText = document.text || document.content || document.transcript;
-  if (directText && directText.trim()) return directText;
+  if (directText && directText.trim()) {
+    const source = document.text ? 'text' : document.content ? 'content' : 'transcript';
+    const wc = directText.trim().split(/\s+/).filter(Boolean).length;
+    logger.info('[getDocumentText]', { document_id: docId, processing_mode: mode, source, word_count: wc });
+    return directText;
+  }
 
-  // 2. PDF via file_path
+  // 3. PDF via file_path
   if (document.file_path) {
     const isPdf =
       (document.mime_type && document.mime_type.toLowerCase().includes('pdf')) ||
@@ -265,7 +275,11 @@ async function getDocumentText(document) {
       const buffer = await readFile(document.file_path);
       const parser = new PDFParse({ data: buffer });
       const result = await parser.getText();
-      if (result && result.text && result.text.trim()) return result.text;
+      if (result && result.text && result.text.trim()) {
+        const wc = result.text.trim().split(/\s+/).filter(Boolean).length;
+        logger.info('[getDocumentText]', { document_id: docId, processing_mode: mode, source: 'pdf_parse', word_count: wc });
+        return result.text;
+      }
     }
   }
 
@@ -285,7 +299,7 @@ Cada tema debe ser:
 El texto puede tener errores, cortes o ruido de transcripción. Ignorá el ruido, pero no inventes temas que no estén apoyados por el fragmento.
 
 Para cada tema:
-- "label": nombre descriptivo de 4 a 8 palabras, nunca una sola palabra
+- "label": nombre descriptivo de 2 a 8 palabras, nunca una sola palabra suelta
 - "definition": qué cubre este tema en una oración completa
 - "evidence": frase breve o fragmento del texto que justifica el tema
 - "concept_type": tipo del tema según su naturaleza. Elegí exactamente uno de estos valores:

@@ -10131,16 +10131,19 @@ function initDocumentsTab() {
   const emptyEl       = document.getElementById('docs-empty');
 
   // File upload mode elements
-  const modeBtns      = document.querySelectorAll('.docs-mode-btn');
-  const textPanel     = document.getElementById('docs-text-panel');
-  const filePanel     = document.getElementById('docs-file-panel');
-  const fileInput     = document.getElementById('doc-file-input');
-  const fileInfo      = document.getElementById('docs-file-info');
-  const fileNameEl    = document.getElementById('docs-file-name');
-  const fileSizeEl    = document.getElementById('docs-file-size');
-  const fileClearBtn  = document.getElementById('docs-file-clear-btn');
-  let   currentMode   = 'text'; // 'text' | 'file'
-  let   selectedFile  = null;
+  const modeBtns        = document.querySelectorAll('.docs-mode-btn');
+  const textPanel       = document.getElementById('docs-text-panel');
+  const filePanel       = document.getElementById('docs-file-panel');
+  const fileInput       = document.getElementById('doc-file-input');
+  const fileInfo        = document.getElementById('docs-file-info');
+  const fileNameEl      = document.getElementById('docs-file-name');
+  const fileSizeEl      = document.getElementById('docs-file-size');
+  const fileClearBtn    = document.getElementById('docs-file-clear-btn');
+  const visualModeRow   = document.getElementById('docs-visual-mode-row');
+  const visualCheckbox  = document.getElementById('docs-visual-checkbox');
+  const pptxModeNote    = document.getElementById('docs-pptx-mode-note');
+  let   currentMode     = 'text'; // 'text' | 'file'
+  let   selectedFile    = null;
 
   // documentId → setInterval id for background polling
   const polling    = new Map();
@@ -10169,6 +10172,8 @@ function initDocumentsTab() {
     if (!file) {
       selectedFile = null;
       fileInfo.classList.add('hidden');
+      visualModeRow.classList.add('hidden');
+      pptxModeNote.classList.add('hidden');
       fileInput.value = '';
       return;
     }
@@ -10182,6 +10187,16 @@ function initDocumentsTab() {
     fileNameEl.textContent = file.name;
     fileSizeEl.textContent = formatBytes(file.size);
     fileInfo.classList.remove('hidden');
+
+    // Show processing mode controls based on file type
+    if (ext === 'pdf') {
+      visualModeRow.classList.remove('hidden');
+      pptxModeNote.classList.add('hidden');
+      visualCheckbox.checked = true; // default: visual
+    } else {
+      visualModeRow.classList.add('hidden');
+      pptxModeNote.classList.remove('hidden');
+    }
   }
 
   fileInput.addEventListener('change', () => setSelectedFile(fileInput.files[0] || null));
@@ -10272,6 +10287,12 @@ function initDocumentsTab() {
       if (docName) formData.append('name', docName);
       const subj = subjectInput.value.trim();
       if (subj) formData.append('subject', subj);
+
+      // Send processing_mode for PDFs (PPTX is always visual on the backend)
+      const ext = selectedFile.name.split('.').pop().toLowerCase();
+      if (ext === 'pdf') {
+        formData.append('processing_mode', visualCheckbox.checked ? 'pdf_visual' : 'pdf_text');
+      }
 
       const headers = {};
       if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();

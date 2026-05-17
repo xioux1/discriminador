@@ -1283,6 +1283,15 @@
               <span id="docs-file-size" class="docs-file-size"></span>
               <button type="button" id="docs-file-clear-btn" class="btn-ghost" style="font-size:var(--fs-sm);padding:2px 8px">✕</button>
             </div>
+            <!-- PDF-only: processing mode selector -->
+            <label id="docs-visual-mode-row" class="docs-visual-mode-row hidden">
+              <input type="checkbox" id="docs-visual-checkbox" checked>
+              Procesar visualmente / como diapositivas
+            </label>
+            <!-- PPTX-only: informative note -->
+            <p id="docs-pptx-mode-note" class="docs-pptx-mode-note hidden">
+              Los PowerPoints se procesan visualmente de forma automática.
+            </p>
           </div>
 
           <label for="doc-subject-input" style="display:block;font-size:var(--fs-sm);color:var(--text-muted);margin-bottom:4px;margin-top:10px">
