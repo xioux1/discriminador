@@ -31,14 +31,25 @@ router.get('/api/documents', async (req, res, next) => {
          d.visual_processing_status,
          d.page_count,
          d.processing_error,
-         COALESCE(
-           array_length(
-             regexp_split_to_array(
-               trim(COALESCE(d.text, d.content, d.transcript, '')),
-               '\\s+'
-             ), 1
-           ), 0
-         ) AS word_count,
+         CASE
+           WHEN d.processing_mode IN ('pdf_visual', 'pptx_visual') THEN
+             CASE
+               WHEN d.generated_markdown IS NOT NULL AND trim(d.generated_markdown) <> ''
+               THEN COALESCE(
+                 array_length(regexp_split_to_array(trim(d.generated_markdown), '\\s+'), 1), 0
+               )
+               ELSE 0
+             END
+           ELSE
+             COALESCE(
+               array_length(
+                 regexp_split_to_array(
+                   trim(COALESCE(d.text, d.content, d.transcript, '')),
+                   '\\s+'
+                 ), 1
+               ), 0
+             )
+         END AS word_count,
          COUNT(DISTINCT c.id)::int AS concept_count,
          COUNT(DISTINCT cl.id)::int AS cluster_count,
          COALESCE(BOOL_OR(cl.importance_computed_at IS NOT NULL), false) AS has_ranking

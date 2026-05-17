@@ -6816,3 +6816,28 @@ textarea.chinese-input {
 [data-theme="dark"] .docs-visual-status--converting     { color: #a5b4fc; }
 [data-theme="dark"] .docs-visual-status--analyzing      { color: #93c5fd; }
 [data-theme="dark"] .docs-visual-status--reconstructing { color: #c4b5fd; }
+
+/* ─── Docs visual mode row (PDF checkbox / PPTX note) ────────────────────────── */
+.docs-visual-mode-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: var(--fs-sm);
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+.docs-visual-mode-row input[type="checkbox"] {
+  accent-color: var(--primary);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.docs-pptx-mode-note {
+  margin-top: 10px;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-style: italic;
+}
