@@ -10456,6 +10456,7 @@ function initDocumentsTab() {
         </button>
         <button type="button" class="btn-ghost docs-view-content-btn" style="font-size:var(--fs-sm)" title="Ver texto del documento">Ver contenido</button>
         <button type="button" class="btn-ghost docs-load-exam-btn ${doc.subject ? '' : 'hidden'}" style="font-size:var(--fs-sm)" title="Cargar examen de referencia para esta materia">+ Examen de referencia</button>
+        <button type="button" class="btn-ghost docs-reset-btn" style="font-size:var(--fs-sm);color:var(--warn-fg,#b45309)" title="Resetear extracción: borra conceptos, clusters y cards para volver a empezar">↺ Resetear</button>
         <button type="button" class="btn-ghost docs-delete-btn" style="font-size:var(--fs-sm)">Eliminar</button>
         <span class="docs-extract-status"></span>
       </div>
@@ -10495,6 +10496,7 @@ function initDocumentsTab() {
     item.querySelector('.docs-clusters-toggle').addEventListener('click', () => toggleClustersPanel(docId, item));
     item.querySelector('.docs-rank-btn').addEventListener('click', () => rankClusters(docId, item));
     item.querySelector('.docs-ranking-toggle').addEventListener('click', () => toggleRankingPanel(docId, item));
+    item.querySelector('.docs-reset-btn').addEventListener('click', () => resetDoc(docId, item));
     item.querySelector('.docs-delete-btn').addEventListener('click', () => deleteDoc(docId, item));
     item.querySelector('.docs-view-content-btn').addEventListener('click', () => toggleContentPanel(docId, item));
     item.querySelector('.docs-load-exam-btn').addEventListener('click', () => toggleExamLoadPanel(item));
@@ -10819,6 +10821,51 @@ function initDocumentsTab() {
   }
 
   // ── Delete document ───────────────────────────────────────────────────────────
+  async function resetDoc(docId, item) {
+    if (!confirm('¿Resetear este documento?\n\nEsto borrará todos los conceptos, clusters y cards generados. El archivo original y el análisis visual (slides) se conservan.\nPodrás volver a extraer desde cero.')) return;
+
+    const btn      = item.querySelector('.docs-reset-btn');
+    const statusEl = item.querySelector('.docs-extract-status');
+    btn.disabled    = true;
+    btn.textContent = 'Reseteando...';
+    statusEl.textContent = '';
+    statusEl.style.color = '';
+
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
+      const res = await fetch(`/api/documents/${docId}/reset`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ confirm: true }),
+      });
+      Auth.handleRefreshToken(res);
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload.message || `HTTP ${res.status}`);
+
+      // Reset badges and panels to virgin state
+      const { concepts, clusters, cards } = payload.deleted;
+      updateConceptBadge(item, 0);
+      updateClusterBadge(item, 0);
+      item.querySelector('.docs-concepts-panel').innerHTML = '';
+      item.querySelector('.docs-clusters-panel').innerHTML = '';
+      item.querySelector('.docs-ranking-panel').innerHTML  = '';
+      item.querySelector('.docs-ranking-toggle').classList.add('hidden');
+      item.querySelector('.docs-extract-btn').disabled = false;
+
+      statusEl.textContent = `Reseteado: ${concepts} conceptos, ${clusters} clusters, ${cards} cards eliminados.`;
+      statusEl.style.color = 'var(--text-muted)';
+      showToast('Documento reseteado. Podés volver a extraer conceptos.', 'success');
+    } catch (err) {
+      statusEl.textContent = `Error: ${err.message}`;
+      statusEl.style.color = 'var(--fail-fg)';
+      showToast(`Error al resetear: ${err.message}`, 'error');
+    } finally {
+      btn.disabled    = false;
+      btn.textContent = '↺ Resetear';
+    }
+  }
+
   async function deleteDoc(docId, item) {
     if (!confirm('¿Eliminar este documento y todos sus conceptos?')) return;
 
