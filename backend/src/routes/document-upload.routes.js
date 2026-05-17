@@ -420,4 +420,81 @@ router.post('/api/documents/:id/reconstruct-markdown', async (req, res, next) =>
   }
 });
 
+// ── POST /api/documents/:id/reset ─────────────────────────────────────────────
+// Hard-resets a document's extraction state so the full pipeline can be re-run.
+// Deletes: concepts (→ concept_relations), clusters, cards, document_chunk_embeddings.
+// Clears: document_structure_json.
+// Preserves: the original file, document_slides, and generated_markdown so visual
+//            documents don't need to re-run the expensive image-analysis step.
+// Requires { "confirm": true } in the request body as an intentional guard.
+
+router.post('/api/documents/:id/reset', async (req, res, next) => {
+  const userId     = req.user.id;
+  const documentId = req.params.id;
+
+  if (!UUID_RE.test(documentId)) {
+    return res.status(400).json({ error: 'invalid_id', message: 'Document ID must be a valid UUID.' });
+  }
+
+  if (req.body?.confirm !== true) {
+    return res.status(400).json({
+      error:   'confirmation_required',
+      message: 'Send { "confirm": true } in the request body to confirm the reset.',
+    });
+  }
+
+  try {
+    const { rows } = await dbPool.query(
+      'SELECT id, processing_mode FROM documents WHERE id = $1 AND user_id = $2',
+      [documentId, userId]
+    );
+    if (!rows.length) {
+      return res.status(404).json({ error: 'not_found', message: 'Document not found.' });
+    }
+
+    const client = await dbPool.connect();
+    let counts;
+    try {
+      await client.query('BEGIN');
+
+      const [conceptsRes, clustersRes, cardsRes, embeddingsRes] = await Promise.all([
+        client.query('DELETE FROM concepts               WHERE document_id = $1', [documentId]),
+        client.query('DELETE FROM clusters               WHERE document_id = $1', [documentId]),
+        client.query('DELETE FROM cards                  WHERE document_id = $1', [documentId]),
+        client.query('DELETE FROM document_chunk_embeddings WHERE document_id = $1', [documentId]),
+      ]);
+
+      await client.query(
+        'UPDATE documents SET document_structure_json = NULL, updated_at = NOW() WHERE id = $1',
+        [documentId]
+      );
+
+      await client.query('COMMIT');
+
+      counts = {
+        concepts:             conceptsRes.rowCount,
+        clusters:             clustersRes.rowCount,
+        cards:                cardsRes.rowCount,
+        chunk_embeddings:     embeddingsRes.rowCount,
+      };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+
+    logger.info('[documentReset] Document reset complete', { documentId, userId, counts });
+
+    return res.json({
+      reset:       true,
+      document_id: documentId,
+      deleted:     counts,
+      message:     'Document reset. Re-run concept extraction to restart the pipeline.',
+    });
+  } catch (err) {
+    return next(err);
+  }
+});
+
 export default router;
