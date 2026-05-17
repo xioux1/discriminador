@@ -22,6 +22,39 @@ export function computeCentroid(embeddings) {
   return centroid.map(v => v / embeddings.length);
 }
 
+// Pesos por tipo de concepto para el centroide ponderado.
+// NULL (documentos sin tipo) → 1.0 para retrocompatibilidad con docs existentes.
+const CONCEPT_TYPE_WEIGHTS = {
+  core_concept:           1.0,
+  architecture_component: 1.0,
+  method_or_technique:    0.9,
+  limitation:             0.8,
+  sub_concept:            0.7,
+  formula:                0.6,
+  implementation_detail:  0.4,
+  example:                0.25,
+  calculation_step:       0.2,
+};
+
+export function computeWeightedCentroid(concepts) {
+  // concepts: array de { embedding: number[], concept_type?: string | null }
+  if (!concepts || concepts.length === 0) return [];
+  const dim = concepts[0].embedding.length;
+  const centroid = new Array(dim).fill(0);
+  let totalWeight = 0;
+
+  for (const concept of concepts) {
+    const weight = CONCEPT_TYPE_WEIGHTS[concept.concept_type] ?? 1.0;
+    for (let i = 0; i < dim; i++) {
+      centroid[i] += concept.embedding[i] * weight;
+    }
+    totalWeight += weight;
+  }
+
+  if (totalWeight === 0) return new Array(dim).fill(0);
+  return centroid.map(v => v / totalWeight);
+}
+
 export function computeDensityScore(clusterCentroid, chunkEmbeddings, threshold = 0.70) {
   const similarities = chunkEmbeddings
     .map(chunk => cosineSimilarity(clusterCentroid, chunk.embedding))
@@ -392,7 +425,7 @@ export async function rankClustersForDocument(documentId) {
 
   // Step 1 — Fetch clustered concepts with embeddings
   const { rows: rawConcepts } = await dbPool.query(
-    `SELECT id, label, embedding, embedding_model, cluster_id
+    `SELECT id, label, embedding, embedding_model, cluster_id, concept_type
      FROM concepts
      WHERE document_id = $1
        AND cluster_id IS NOT NULL
@@ -460,10 +493,12 @@ export async function rankClustersForDocument(documentId) {
     embeddingModel,
   });
 
-  // Step 2 — Compute centroid per cluster
+  // Step 2 — Compute weighted centroid per cluster (concept_type NULL → weight 1.0)
   for (const cluster of clusters) {
     const clusterConcepts = conceptsByCluster.get(cluster.id);
-    cluster._centroid = computeCentroid(clusterConcepts.map(c => c._embedding));
+    cluster._centroid = computeWeightedCentroid(
+      clusterConcepts.map(c => ({ embedding: c._embedding, concept_type: c.concept_type }))
+    );
   }
 
   // Step 3 — Get document text

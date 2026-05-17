@@ -115,18 +115,20 @@ export function preclusterConcepts(concepts, threshold, minClusterSize) {
 // ==================== LLM input / prompt ====================
 
 function buildLLMInput(groups, orphans, conceptMap) {
+  function formatConcept(id) {
+    const c = conceptMap.get(id);
+    const entry = { id: c.id, label: c.label, definition: c.definition };
+    if (c.concept_type) entry.concept_type = c.concept_type;
+    if (c.importance)   entry.importance   = c.importance;
+    return entry;
+  }
+
   return {
     groups: groups.map(g => ({
       group_id: g.group_id,
-      concepts: g.concept_ids.map(id => {
-        const c = conceptMap.get(id);
-        return { id: c.id, label: c.label, definition: c.definition };
-      }),
+      concepts: g.concept_ids.map(formatConcept),
     })),
-    orphans: orphans.map(id => {
-      const c = conceptMap.get(id);
-      return { id: c.id, label: c.label, definition: c.definition };
-    }),
+    orphans: orphans.map(formatConcept),
   };
 }
 
@@ -164,7 +166,18 @@ Reglas:
 - No modifiques labels ni definitions.
 - No agregues conceptos nuevos.
 - Si un concepto huérfano no encaja perfectamente, asignalo al cluster más cercano temáticamente.
-- Evitá clusters genéricos como "Conceptos generales" salvo que sea estrictamente necesario.`;
+- Evitá clusters genéricos como "Conceptos generales" salvo que sea estrictamente necesario.
+
+Reglas adicionales sobre concept_type (cuando el campo está presente en los conceptos):
+- Los conceptos de tipo "example" y "calculation_step" no deben definir el nombre ni el foco de
+  un cluster. Son conceptos de soporte: agrupalos junto al concepto central al que ilustran.
+- Si un grupo geométrico está compuesto mayormente por "example" o "calculation_step", identificá
+  el "core_concept" o "sub_concept" más cercano temáticamente y fusioná ese grupo con ese cluster.
+- Conceptos de tipo "core_concept", "architecture_component" y "method_or_technique" pueden
+  formar clusters propios si tienen coherencia temática suficiente entre sí.
+- Componentes de arquitecturas específicas (por ejemplo: multi-head attention, QKV, MLP, capas de
+  normalización, BERT, GPT) deben agruparse en sus propios clusters si aparecen como conceptos
+  centrales del material — no los subsumas en un cluster genérico de "arquitectura general".`;
 }
 
 async function callAnthropicClustering(llmInput) {
@@ -566,7 +579,7 @@ export async function clusterConceptsForDocument(documentId) {
 
   // Step 1: Fetch concepts with embeddings
   const { rows } = await dbPool.query(
-    `SELECT id, label, definition, embedding, cluster_id
+    `SELECT id, label, definition, embedding, cluster_id, concept_type, importance
      FROM concepts
      WHERE document_id = $1
      ORDER BY created_at ASC`,

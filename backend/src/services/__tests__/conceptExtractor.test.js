@@ -14,6 +14,8 @@ const {
   cosineSimilarity,
   deduplicateConcepts,
   normalizeText,
+  VALID_CONCEPT_TYPES,
+  VALID_IMPORTANCE,
 } = await import('../conceptExtractor.service.js');
 
 // ---- chunkText ----
@@ -256,4 +258,72 @@ test('normalizeText collapses whitespace and trims', () => {
 test('normalizeText handles null/undefined gracefully', () => {
   assert.equal(normalizeText(null), '');
   assert.equal(normalizeText(undefined), '');
+});
+
+// ---- VALID_CONCEPT_TYPES / VALID_IMPORTANCE ----
+
+test('VALID_CONCEPT_TYPES contains expected types', () => {
+  for (const t of ['core_concept', 'sub_concept', 'example', 'formula', 'calculation_step',
+                   'implementation_detail', 'limitation', 'architecture_component', 'method_or_technique']) {
+    assert.ok(VALID_CONCEPT_TYPES.has(t), `missing type: ${t}`);
+  }
+});
+
+test('VALID_IMPORTANCE contains exactly high/medium/low', () => {
+  assert.deepEqual([...VALID_IMPORTANCE].sort(), ['high', 'low', 'medium']);
+});
+
+// ---- validateConcept: concept_type and importance ----
+
+const BASE = {
+  label: 'Mecanismo de atención multi-cabeza en transformers',
+  definition: 'Permite que el modelo atienda a distintas partes del input simultáneamente usando múltiples cabezas de atención.',
+  evidence: 'multi-head attention permite capturar distintas relaciones',
+};
+
+test('validateConcept passes valid concept_type through', () => {
+  const result = validateConcept({ ...BASE, concept_type: 'core_concept', importance: 'high' }, 'chunk', 0);
+  assert.ok(result !== null);
+  assert.equal(result.concept_type, 'core_concept');
+  assert.equal(result.importance, 'high');
+});
+
+test('validateConcept accepts all valid concept_type values', () => {
+  for (const t of VALID_CONCEPT_TYPES) {
+    const result = validateConcept({ ...BASE, concept_type: t, importance: 'medium' }, 'chunk', 0);
+    assert.ok(result !== null, `should accept type: ${t}`);
+    assert.equal(result.concept_type, t);
+  }
+});
+
+test('validateConcept maps invalid concept_type to null', () => {
+  const result = validateConcept({ ...BASE, concept_type: 'key_concept', importance: 'high' }, 'chunk', 0);
+  assert.ok(result !== null);
+  assert.equal(result.concept_type, null);
+});
+
+test('validateConcept maps undefined concept_type to null', () => {
+  const result = validateConcept({ ...BASE }, 'chunk', 0);
+  assert.ok(result !== null);
+  assert.equal(result.concept_type, null);
+});
+
+test('validateConcept maps invalid importance to null', () => {
+  const result = validateConcept({ ...BASE, concept_type: 'core_concept', importance: 'critical' }, 'chunk', 0);
+  assert.ok(result !== null);
+  assert.equal(result.importance, null);
+});
+
+test('validateConcept maps undefined importance to null', () => {
+  const result = validateConcept({ ...BASE, concept_type: 'example' }, 'chunk', 0);
+  assert.ok(result !== null);
+  assert.equal(result.importance, null);
+});
+
+test('validateConcept with both fields null behaves like pre-type documents', () => {
+  const result = validateConcept({ ...BASE, concept_type: null, importance: null }, 'chunk', 0);
+  assert.ok(result !== null);
+  assert.equal(result.concept_type, null);
+  assert.equal(result.importance, null);
+  assert.equal(result.label, BASE.label);
 });
