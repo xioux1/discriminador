@@ -95,12 +95,21 @@ export async function buildClusterCardContext(clusterId) {
   }
   const doc = docRows[0];
 
-  // Fetch concepts for this cluster
+  // Fetch concepts for this cluster — ordered so main/support appear before examples
   const { rows: conceptRows } = await dbPool.query(
-    `SELECT id, label, definition, evidence, source_chunk, source_chunk_index
+    `SELECT id, label, definition, evidence, source_chunk, source_chunk_index,
+            role_in_cluster, concept_type
      FROM concepts
      WHERE cluster_id = $1
-     ORDER BY source_chunk_index ASC NULLS LAST`,
+     ORDER BY
+       CASE role_in_cluster
+         WHEN 'main'    THEN 0
+         WHEN 'support' THEN 1
+         WHEN 'context' THEN 2
+         WHEN 'example' THEN 3
+         ELSE 4
+       END,
+       source_chunk_index ASC NULLS LAST`,
     [clusterId]
   );
   if (!conceptRows.length) {
@@ -169,6 +178,17 @@ export async function buildClusterCardContext(clusterId) {
     .slice(0, MAX_SOURCE_EXCERPTS)
     .map(([chunk_index, text]) => ({ chunk_index, text }));
 
+  // Fetch intra-cluster semantic relations
+  const conceptIds = conceptRows.map(c => c.id);
+  const { rows: relationRows } = await dbPool.query(
+    `SELECT source_concept_id, target_concept_id, relation_type, confidence, rationale
+     FROM concept_relations
+     WHERE source_concept_id = ANY($1::uuid[])
+       AND target_concept_id = ANY($1::uuid[])
+     ORDER BY confidence DESC`,
+    [conceptIds]
+  );
+
   return {
     cluster: {
       id: cluster.id,
@@ -191,6 +211,15 @@ export async function buildClusterCardContext(clusterId) {
       evidence: c.evidence ?? null,
       source_chunk: c.source_chunk ?? null,
       source_chunk_index: c.source_chunk_index ?? null,
+      role_in_cluster: c.role_in_cluster ?? null,
+      concept_type: c.concept_type ?? null,
+    })),
+    relations: relationRows.map(r => ({
+      from: r.source_concept_id,
+      to:   r.target_concept_id,
+      type: r.relation_type,
+      confidence: r.confidence,
+      rationale: r.rationale,
     })),
     source_excerpts: sourceExcerpts,
   };
@@ -199,7 +228,7 @@ export async function buildClusterCardContext(clusterId) {
 // ==================== buildCardGenerationPrompt ====================
 
 export function buildCardGenerationPrompt(context, options = {}) {
-  const { cluster, concepts, source_excerpts } = context;
+  const { cluster, concepts, relations = [], source_excerpts } = context;
   const maxVariants = options.maxVariants ?? 5;
   const minCoverage = Math.max(
     Math.min(2, concepts.length),
@@ -213,16 +242,33 @@ export function buildCardGenerationPrompt(context, options = {}) {
   }, null, 2);
 
   const conceptsJson = JSON.stringify(
-    concepts.map(c => ({
-      id: c.id,
-      label: c.label,
-      definition: c.definition,
-      evidence: c.evidence,
-      source_chunk_index: c.source_chunk_index,
-    })),
+    concepts.map(c => {
+      const entry = {
+        id: c.id,
+        label: c.label,
+        definition: c.definition,
+        evidence: c.evidence,
+        source_chunk_index: c.source_chunk_index,
+      };
+      if (c.role_in_cluster) entry.role_in_cluster = c.role_in_cluster;
+      if (c.concept_type)    entry.concept_type    = c.concept_type;
+      return entry;
+    }),
     null,
     2
   );
+
+  // Determine if the cluster is predominantly non-generatable (all examples/calc steps)
+  const hasNonExampleConcepts = concepts.some(
+    c => c.role_in_cluster !== 'example' && c.concept_type !== 'calculation_step'
+  );
+
+  const relationsSection = relations.length > 0
+    ? `\nRelaciones semánticas entre conceptos:\n${JSON.stringify(
+        relations.map(r => ({ from: r.from, to: r.to, type: r.type, rationale: r.rationale })),
+        null, 2
+      )}\n`
+    : '';
 
   const sourceExcerptsJson = JSON.stringify(source_excerpts, null, 2);
 
@@ -271,6 +317,17 @@ Reglas estrictas:
 18. Cada variante debe incluir tag_labels (2 a 5 etiquetas cortas, snake_case) para tagging posterior.
 19. No modifiques los UUIDs.
 20. Respondé sólo con JSON. Sin markdown, sin backticks, sin texto adicional.
+${hasNonExampleConcepts
+  ? `21. Los conceptos con role_in_cluster "example" o concept_type "calculation_step" son material de soporte, no el foco de estudio. No generes preguntas cuyo único source_concept_id sea uno de esos conceptos. Usálos como evidencia dentro de preguntas sobre conceptos "main" o "support". Si un ejemplo ilustra un mecanismo central, la pregunta debe ser sobre el mecanismo, no sobre los pasos del ejemplo.`
+  : `21. Todos los conceptos de este cluster son ejemplos o pasos de cálculo. Generá preguntas que ayuden al alumno a entender el procedimiento o el ejemplo, orientándolas a comprensión del método general, no a memorización de pasos individuales.`
+}${relationsSection ? `
+22. Usá las relaciones semánticas provistas para estructurar las preguntas:
+   - "example_of": la pregunta sobre el concepto target puede usar el source como evidencia concreta; no preguntes sobre el ejemplo en sí.
+   - "motivates": generá preguntas que conecten el problema (source) con la solución (target) — "¿por qué X llevó a Y?".
+   - "contrasts_with": considerá una variante que explore la diferencia entre los dos conceptos.
+   - "depends_on": asegurate de que la pregunta sobre source presuponga o mencione target como contexto.
+   - "part_of" / "formula_for": anclar preguntas de detalle al todo que explican.
+   Las relaciones son hints; priorizá siempre la comprensión del alumno.` : ''}
 
 Tipo de card:
 Clasificá cada familia de tarjeta como "theoretical_open" o "practical_exercise".
@@ -309,7 +366,7 @@ ${clusterJson}
 
 Conceptos:
 ${conceptsJson}
-
+${relationsSection}
 Fragmentos fuente:
 ${sourceExcerptsJson}
 
