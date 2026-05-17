@@ -1,6 +1,6 @@
 import { exec as execCb } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdir, rm, readdir } from 'node:fs/promises';
+import { mkdir, rm, readdir, access } from 'node:fs/promises';
 import path from 'node:path';
 import { dbPool } from '../db/client.js';
 import { logger } from '../utils/logger.js';
@@ -68,6 +68,17 @@ async function pptxToPdf(pptxPath, outDir) {
   // LibreOffice names the output after the input filename
   const basename = path.basename(pptxPath, '.pptx');
   const pdfPath  = path.join(outDir, `${basename}.pdf`);
+
+  // Verify the PDF was actually produced — LibreOffice may exit 0 even on failure
+  try {
+    await access(pdfPath);
+  } catch {
+    throw new Error(
+      `LibreOffice exited without error but did not produce the expected PDF at "${pdfPath}". ` +
+      'This can happen when LibreOffice cannot load the source file in headless mode. ' +
+      'Ensure libreoffice is installed and the container has the required display libraries.'
+    );
+  }
 
   return pdfPath;
 }
