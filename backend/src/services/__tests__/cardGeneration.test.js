@@ -9,6 +9,8 @@ const {
   safeJsonParseObject,
   getDefaultMaxVariantsForCluster,
   validateGeneratedCardDraft,
+  detectEnumerativeCluster,
+  buildCardGenerationPrompt,
 } = await import('../cardGeneration.service.js');
 
 // ---- Shared test data ----
@@ -98,30 +100,30 @@ test('safeJsonParseObject returns null for invalid JSON', () => {
 
 // ==================== getDefaultMaxVariantsForCluster ====================
 
-test('getDefaultMaxVariantsForCluster returns 5 for tier A', () => {
-  assert.equal(getDefaultMaxVariantsForCluster({ relative_priority_tier: 'A' }), 5);
+test('getDefaultMaxVariantsForCluster returns 9 for tier A', () => {
+  assert.equal(getDefaultMaxVariantsForCluster({ relative_priority_tier: 'A' }), 9);
 });
 
-test('getDefaultMaxVariantsForCluster returns 3 for tier B', () => {
-  assert.equal(getDefaultMaxVariantsForCluster({ relative_priority_tier: 'B' }), 3);
+test('getDefaultMaxVariantsForCluster returns 7 for tier B', () => {
+  assert.equal(getDefaultMaxVariantsForCluster({ relative_priority_tier: 'B' }), 7);
 });
 
-test('getDefaultMaxVariantsForCluster returns 2 for tier C', () => {
-  assert.equal(getDefaultMaxVariantsForCluster({ relative_priority_tier: 'C' }), 2);
+test('getDefaultMaxVariantsForCluster returns 5 for tier C', () => {
+  assert.equal(getDefaultMaxVariantsForCluster({ relative_priority_tier: 'C' }), 5);
 });
 
-test('getDefaultMaxVariantsForCluster returns 1 for tier D', () => {
-  assert.equal(getDefaultMaxVariantsForCluster({ relative_priority_tier: 'D' }), 1);
+test('getDefaultMaxVariantsForCluster returns 3 for tier D', () => {
+  assert.equal(getDefaultMaxVariantsForCluster({ relative_priority_tier: 'D' }), 3);
 });
 
-test('getDefaultMaxVariantsForCluster returns 5 for null tier', () => {
-  assert.equal(getDefaultMaxVariantsForCluster({ relative_priority_tier: null }), 5);
-  assert.equal(getDefaultMaxVariantsForCluster({}), 5);
-  assert.equal(getDefaultMaxVariantsForCluster(null), 5);
+test('getDefaultMaxVariantsForCluster returns 9 for null tier', () => {
+  assert.equal(getDefaultMaxVariantsForCluster({ relative_priority_tier: null }), 9);
+  assert.equal(getDefaultMaxVariantsForCluster({}), 9);
+  assert.equal(getDefaultMaxVariantsForCluster(null), 9);
 });
 
 test('getDefaultMaxVariantsForCluster falls back to priority_tier when relative_priority_tier is null', () => {
-  assert.equal(getDefaultMaxVariantsForCluster({ relative_priority_tier: null, priority_tier: 'B' }), 3);
+  assert.equal(getDefaultMaxVariantsForCluster({ relative_priority_tier: null, priority_tier: 'B' }), 7);
 });
 
 // ==================== validateGeneratedCardDraft ====================
@@ -263,4 +265,102 @@ test('validateGeneratedCardDraft discards invalid variant and keeps valid ones',
   assert.equal(result.valid, true);
   assert.equal(result.validVariants.length, 1);
   assert.equal(result.validVariants[0].question, goodVariant.question);
+});
+
+// ==================== detectEnumerativeCluster ====================
+
+const ASAP_CONTEXT = {
+  cluster: {
+    id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    name: 'Metodología ASAP para implementar SIG',
+    definition: 'Conjunto de fases secuenciales para implementar un sistema ERP.',
+  },
+  concepts: [
+    { label: 'Fases de la metodología ASAP', definition: 'Etapas del proceso de implementación: preparación, blueprint, realización.' },
+    { label: 'Business Blueprint', definition: 'Fase de análisis y documentación de procesos de negocio.' },
+  ],
+  source_excerpts: [],
+};
+
+const NON_ENUM_CONTEXT = {
+  cluster: {
+    id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+    name: 'Transformada inversa de Laplace',
+    definition: 'Operación que recupera una función del tiempo a partir de su transformada.',
+  },
+  concepts: [
+    { label: 'Función de transferencia', definition: 'Cociente de transformadas de Laplace de salida sobre entrada.' },
+    { label: 'Polo del sistema', definition: 'Valor de s que anula el denominador de la función de transferencia.' },
+  ],
+  source_excerpts: [],
+};
+
+test('detectEnumerativeCluster returns true for ASAP methodology cluster', () => {
+  assert.equal(detectEnumerativeCluster(ASAP_CONTEXT), true);
+});
+
+test('detectEnumerativeCluster returns true when signal is in concept label', () => {
+  const ctx = {
+    cluster: { name: 'Gestión de proyectos de software', definition: 'Concepto genérico.' },
+    concepts: [{ label: 'Entregables del sprint', definition: 'Documentos producidos al final de cada iteración.' }],
+    source_excerpts: [],
+  };
+  assert.equal(detectEnumerativeCluster(ctx), true);
+});
+
+test('detectEnumerativeCluster returns false for non-enumerative cluster', () => {
+  assert.equal(detectEnumerativeCluster(NON_ENUM_CONTEXT), false);
+});
+
+test('detectEnumerativeCluster returns false for empty context', () => {
+  assert.equal(detectEnumerativeCluster({ cluster: { name: '', definition: '' }, concepts: [] }), false);
+});
+
+// ==================== buildCardGenerationPrompt — enumerative signals ====================
+
+test('buildCardGenerationPrompt includes enumeration rule for enumerative cluster', () => {
+  const prompt = buildCardGenerationPrompt(ASAP_CONTEXT, { maxVariants: 7 });
+  assert.ok(prompt.includes('enumeración estructural'), 'prompt must include "enumeración estructural"');
+  assert.ok(prompt.includes('Cuáles son'), 'prompt must include enumeration question example');
+  assert.ok(prompt.includes('22-enum'), 'prompt must include rule 22-enum');
+});
+
+test('buildCardGenerationPrompt does not include enumeration rule for non-enumerative cluster', () => {
+  const prompt = buildCardGenerationPrompt(NON_ENUM_CONTEXT, { maxVariants: 7 });
+  assert.ok(!prompt.includes('22-enum'), 'prompt must not include rule 22-enum for non-enumerative cluster');
+});
+
+test('buildCardGenerationPrompt rule 11 contains enumeration exception', () => {
+  const prompt = buildCardGenerationPrompt(ASAP_CONTEXT, { maxVariants: 7 });
+  assert.ok(prompt.includes('EXCEPCIÓN — enumeración estructural'), 'rule 11 must mention enumeration exception');
+});
+
+// ==================== validateGeneratedCardDraft — 8-bullet limit ====================
+
+function makeBullets(n, text = 'Fase del proceso de implementación') {
+  return Array.from({ length: n }, (_, i) => `- ${text} ${i + 1}`).join('\n');
+}
+
+test('validateGeneratedCardDraft accepts 6 bullets in expected_answer', () => {
+  const v = { ...VALID_VARIANT, expected_answer: makeBullets(6) };
+  const output = { card_group: VALID_OUTPUT.card_group, variants: [v] };
+  const result = validateGeneratedCardDraft(output, CONTEXT, 9);
+  assert.ok(result.validVariants.length > 0 || result.valid, '6 bullets should be accepted');
+});
+
+test('validateGeneratedCardDraft accepts 8 bullets in expected_answer', () => {
+  const v = { ...VALID_VARIANT, expected_answer: makeBullets(8) };
+  const output = { card_group: VALID_OUTPUT.card_group, variants: [v] };
+  const result = validateGeneratedCardDraft(output, CONTEXT, 9);
+  assert.ok(result.validVariants.length > 0 || result.valid, '8 bullets should be accepted');
+});
+
+test('validateGeneratedCardDraft trims to 8 bullets (not 5) when 9 are provided', () => {
+  const v = { ...VALID_VARIANT, expected_answer: makeBullets(9) };
+  const output = { card_group: VALID_OUTPUT.card_group, variants: [v] };
+  validateGeneratedCardDraft(output, CONTEXT, 9);
+  const remaining = output.variants[0].expected_answer
+    .split('\n')
+    .filter(l => /^[-*•]\s+/.test(l));
+  assert.equal(remaining.length, 8, 'should trim to 8, not 5');
 });

@@ -225,11 +225,38 @@ export async function buildClusterCardContext(clusterId) {
   };
 }
 
+// ==================== detectEnumerativeCluster ====================
+
+const ENUM_SIGNALS = [
+  'fase', 'etapa', 'proceso', 'metodología', 'metodologia',
+  'secuencia', 'paso', 'pasos', 'opcion', 'opción', 'opciones',
+  'tipo', 'tipos', 'herramienta', 'herramientas', 'entregable', 'entregables',
+  'flujo', 'flujos', 'componente', 'componentes', 'workflow',
+  'ciclo', 'etapas', 'fases', 'procedimiento', 'implementacion', 'implementación',
+];
+
+/**
+ * Returns true when the cluster name, definition, or concept labels/definitions
+ * contain signals that suggest the cluster has an enumerative structure
+ * (phases, steps, types, tools, deliverables, etc.).
+ * Exported for testing.
+ */
+export function detectEnumerativeCluster(context) {
+  const text = [
+    context.cluster?.name ?? '',
+    context.cluster?.definition ?? '',
+    ...(context.concepts ?? []).map(c => c.label ?? ''),
+    ...(context.concepts ?? []).map(c => c.definition ?? ''),
+  ].join(' ').toLowerCase();
+  return ENUM_SIGNALS.some(s => text.includes(s));
+}
+
 // ==================== buildCardGenerationPrompt ====================
 
 export function buildCardGenerationPrompt(context, options = {}) {
   const { cluster, concepts, relations = [], source_excerpts } = context;
   const maxVariants = options.maxVariants ?? 5;
+  const isEnumerative = detectEnumerativeCluster(context);
   const minCoverage = Math.max(
     Math.min(2, concepts.length),
     Math.min(Math.floor(concepts.length * 0.5), maxVariants * 3),
@@ -297,7 +324,7 @@ Reglas estrictas:
 2. No expandas ni extrapoles más allá de la evidencia textual disponible.
 3. Cada afirmación de la respuesta debe poder rastrearse a source_concept_ids y source_chunk_indexes.
 4. Formato de expected_answer según el tipo de pregunta:
-   - Si la pregunta pide una lista, enumeración o conjunto de elementos independientes → usá bullets (3 a 5 ítems, 4–18 palabras cada uno).
+   - Si la pregunta pide una lista, enumeración o conjunto de elementos independientes → usá bullets (3 a 5 ítems, 4–18 palabras cada uno). EXCEPCIÓN: las preguntas de enumeración estructural (ver regla 11) pueden tener hasta 8 bullets.
    - Si la pregunta pide explicar un mecanismo, una relación causal, un propósito o un razonamiento → respondé en prosa: 2 a 4 oraciones que articulen la idea central con su contexto. Sin bullets.
    - No mezcles ambos formatos en la misma respuesta.
    - Nunca copies los bullets del documento fuente. Si la respuesta en prosa requiere mencionar varios elementos, integralos en la oración (ej: "depende de X, Y y Z").
@@ -308,6 +335,7 @@ Reglas estrictas:
 9. Cada expected_answer completo debe tener aproximadamente 20–110 palabras.
 10. No generes variantes duplicadas.
 11. Cada variante debe evaluar UN SOLO concepto o mecanismo atómico. Si una pregunta requeriría listar 4 o más elementos independientes para contestarse, NO es una variante válida: dividila en varias preguntas separadas. No combines conceptos salvo que sean definitoriamente inseparables (ej: un término y su única definición posible).
+    EXCEPCIÓN — enumeración estructural: si el cluster representa una metodología, proceso, taxonomía o estructura con elementos nombrados, podés generar UNA sola pregunta de enumeración estructural del tipo "¿Cuáles son las fases/etapas/opciones/herramientas/flujos de X?". Esa card puede tener hasta 8 bullets en la respuesta. Si hay más de 8 elementos en la fuente, limitá a los principales. Esta excepción aplica solo UNA VEZ por familia de cards.
 12. Cada variante debe incluir una rúbrica de corrección con 3 a 6 bullets.
 13. La rúbrica debe indicar elementos mínimos para aprobar, en frases cortas.
 14. No generes más de ${maxVariants} variantes.
@@ -320,7 +348,13 @@ Reglas estrictas:
 ${hasNonExampleConcepts
   ? `21. Los conceptos con role_in_cluster "example" o concept_type "calculation_step" son material de soporte, no el foco de estudio. No generes preguntas cuyo único source_concept_id sea uno de esos conceptos. Usálos como evidencia dentro de preguntas sobre conceptos "main" o "support". Si un ejemplo ilustra un mecanismo central, la pregunta debe ser sobre el mecanismo, no sobre los pasos del ejemplo.`
   : `21. Todos los conceptos de este cluster son ejemplos o pasos de cálculo. Generá preguntas que ayuden al alumno a entender el procedimiento o el ejemplo, orientándolas a comprensión del método general, no a memorización de pasos individuales.`
-}${relationsSection ? `
+}${isEnumerative ? `
+22-enum. Este cluster tiene estructura enumerativa (fases, etapas, opciones, herramientas, flujos, componentes u otro conjunto nombrado). Generá AL MENOS UNA variante de enumeración estructural con pregunta del tipo "¿Cuáles son las [fases/etapas/opciones/herramientas/flujos/entregables] de [X]?". Reglas para esa variante:
+   - Solo incluí elementos que aparezcan explícitamente en source_excerpts. No inventes.
+   - Si el documento usa sinónimos, incluirlos en el mismo bullet (ej: "GoLive / Entrada en producción").
+   - Si hay más de 8 elementos, limitá a los más importantes.
+   - La respuesta debe ser una lista limpia de bullets (hasta 8).
+   - Priorizá esta variante como primera o segunda del array.` : ''}${relationsSection ? `
 22. Usá las relaciones semánticas provistas para estructurar las preguntas:
    - "example_of": la pregunta sobre el concepto target puede usar el source como evidencia concreta; no preguntes sobre el ejemplo en sí.
    - "motivates": generá preguntas que conecten el problema (source) con la solución (target) — "¿por qué X llevó a Y?".
@@ -462,9 +496,9 @@ export function validateGeneratedCardDraft(output, context, maxVariants) {
         .map(line => line.trim())
         .filter(line => /^[-*•]\s+/.test(line));
 
-      if (bullets.length > 5) {
-        logger.warn(`[cardGen] variant ${i}: trimming expected_answer from ${bullets.length} to 5 bullets`);
-        bullets = bullets.slice(0, 5);
+      if (bullets.length > 8) {
+        logger.warn(`[cardGen] variant ${i}: trimming expected_answer from ${bullets.length} to 8 bullets`);
+        bullets = bullets.slice(0, 8);
         v.expected_answer = bullets.join('\n');
       }
 
@@ -480,7 +514,7 @@ export function validateGeneratedCardDraft(output, context, maxVariants) {
           vErrs.push(`expected_answer en prosa debe tener al menos 2 oraciones, tiene ${sentences.length}`);
         }
       } else if (bullets.length < 3) {
-        vErrs.push(`expected_answer tiene formato ambiguo: ${bullets.length} bullet(s) (debe tener 0 para prosa o 3–5 para lista)`);
+        vErrs.push(`expected_answer tiene formato ambiguo: ${bullets.length} bullet(s) (debe tener 0 para prosa o 3–8 para lista)`);
       } else {
         for (const bullet of bullets) {
           const bulletWords = bullet.replace(/^[-*•]\s+/, '').split(/\s+/).filter(Boolean).length;
