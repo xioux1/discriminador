@@ -10614,6 +10614,7 @@ function initDocumentsTab() {
     } else {
       toggle.classList.add('hidden');
       rankBtn.classList.add('hidden');
+      clusterizeBtn.classList.remove('hidden');
     }
   }
 
