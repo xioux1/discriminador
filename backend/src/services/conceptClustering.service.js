@@ -132,7 +132,9 @@ function buildLLMInput(groups, orphans, conceptMap) {
   };
 }
 
-function buildClusteringPrompt(inputJson) {
+export function buildClusteringPrompt(inputJson, outline = null) {
+  const structureSection = buildStructureSection(outline);
+
   return `Sos un asistente que organiza material de estudio en clusters temáticos.
 
 Se te dan grupos de conceptos pre-agrupados geométricamente y conceptos huérfanos.
@@ -141,7 +143,7 @@ Tu tarea:
 2. Asignar los conceptos huérfanos al grupo más apropiado, o crear un nuevo grupo si corresponde.
 3. Nombrar cada cluster final con un título descriptivo de 3 a 6 palabras.
 4. Escribir una definición breve del cluster en una oración.
-
+${structureSection}
 Input:
 ${inputJson}
 
@@ -180,7 +182,48 @@ Reglas adicionales sobre concept_type (cuando el campo está presente en los con
   centrales del material — no los subsumas en un cluster genérico de "arquitectura general".`;
 }
 
-async function callAnthropicClustering(llmInput) {
+/**
+ * Builds the optional structure-guidance section injected into the clustering prompt.
+ * Only emits content when the outline describes a process_stages document with at least
+ * one named section — the most common case where clustering needs global guidance.
+ */
+function buildStructureSection(outline) {
+  if (
+    !outline ||
+    outline.structure_type !== 'process_stages' ||
+    !Array.isArray(outline.ordered_sections) ||
+    outline.ordered_sections.length === 0
+  ) {
+    return '';
+  }
+
+  const sectionList = outline.ordered_sections
+    .sort((a, b) => a.order - b.order)
+    .map(s => {
+      const aliases = s.aliases?.length ? ` (también: ${s.aliases.join(', ')})` : '';
+      return `  ${s.order}. ${s.name}${aliases}`;
+    })
+    .join('\n');
+
+  return `
+CONTEXTO ESTRUCTURAL DEL DOCUMENTO:
+El documento describe un proceso por etapas. Eje principal: "${outline.primary_axis || 'etapas secuenciales'}".
+Etapas en orden:
+${sectionList}
+
+Regla adicional de estructura:
+- Preferí clusters que correspondan a las etapas del proceso en lugar de clusters temáticos transversales.
+- Si un concepto pertenece claramente a una etapa (por su label, definition o el contexto del proceso),
+  asignalo a un cluster cuyo nombre refleje esa etapa.
+- Los conceptos transversales (testing, migración de datos, gestión del cambio) que aplican a múltiples
+  etapas pueden formar su propio cluster solo si tienen suficiente masa (≥ 4 conceptos). De lo contrario,
+  asignalos a la etapa donde tienen mayor peso.
+- El cluster_name debe mencionar el nombre de la etapa cuando el cluster la representa.
+
+`;
+}
+
+async function callAnthropicClustering(llmInput, outline = null) {
   const model     = process.env.CONCEPT_CLUSTERING_MODEL || 'claude-sonnet-4-20250514';
   const inputJson = JSON.stringify(llmInput, null, 2);
 
@@ -189,7 +232,7 @@ async function callAnthropicClustering(llmInput) {
       model,
       max_tokens:  16000,
       temperature: 0.1,
-      messages: [{ role: 'user', content: buildClusteringPrompt(inputJson) }],
+      messages: [{ role: 'user', content: buildClusteringPrompt(inputJson, outline) }],
     }),
     { label: 'callAnthropicClustering' },
   );
@@ -574,8 +617,28 @@ export async function getClustersForDocument(documentId) {
   return { document_id: documentId, cluster_count: clusters.length, clusters };
 }
 
-export async function clusterConceptsForDocument(documentId) {
+export async function clusterConceptsForDocument(documentId, outline = null) {
   logger.info('[conceptClustering] Starting', { documentId });
+
+  // Step 0: Fetch document structure if not provided
+  if (!outline) {
+    try {
+      const { rows: docRows } = await dbPool.query(
+        'SELECT document_structure_json FROM documents WHERE id = $1',
+        [documentId]
+      );
+      if (docRows.length && docRows[0].document_structure_json) {
+        outline = docRows[0].document_structure_json;
+        logger.info('[conceptClustering] Loaded document structure', {
+          documentId, structure_type: outline.structure_type,
+        });
+      }
+    } catch (err) {
+      logger.warn('[conceptClustering] Could not load document structure (non-fatal)', {
+        documentId, error: err.message,
+      });
+    }
+  }
 
   // Step 1: Fetch concepts with embeddings
   const { rows } = await dbPool.query(
@@ -622,7 +685,7 @@ export async function clusterConceptsForDocument(documentId) {
     parsed = await clusterInPhases(groups, orphans, conceptMap);
   } else {
     const llmInput    = buildLLMInput(groups, orphans, conceptMap);
-    const rawResponse = await callAnthropicClustering(llmInput);
+    const rawResponse = await callAnthropicClustering(llmInput, outline);
     parsed = safeJsonParseArray(rawResponse);
     if (!parsed.length) {
       throw new Error('LLM returned invalid or empty JSON for clustering.');

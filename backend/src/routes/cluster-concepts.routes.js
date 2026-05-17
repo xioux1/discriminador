@@ -4,6 +4,7 @@ import { clusterConceptsForDocument, getClustersForDocument } from '../services/
 import { clusterConceptsForChineseDocument } from '../services/chineseClassParser.service.js';
 import { assignRolesForDocument } from '../services/conceptRoles.service.js';
 import { assignRelationsForDocument } from '../services/conceptRelations.service.js';
+import { detectDocumentStructure } from '../services/documentStructure.service.js';
 import { logger } from '../utils/logger.js';
 
 function isChineseSubject(subject) {
@@ -23,9 +24,9 @@ router.post('/api/documents/:id/cluster-concepts', async (req, res, next) => {
     return res.status(400).json({ error: 'invalid_id', message: 'Document ID must be a valid UUID.' });
   }
 
-  // Check document exists and get subject
+  // Check document exists and get subject + structure
   const { rows: docRows } = await dbPool.query(
-    'SELECT id, subject FROM documents WHERE id = $1',
+    'SELECT id, subject, document_structure_json FROM documents WHERE id = $1',
     [documentId]
   );
   if (!docRows.length) {
@@ -78,8 +79,19 @@ router.post('/api/documents/:id/cluster-concepts', async (req, res, next) => {
     });
   }
 
+  // Ensure document structure is detected before clustering (non-fatal if it fails)
+  let outline = doc.document_structure_json || null;
+  if (!outline) {
+    outline = await detectDocumentStructure(documentId).catch(err => {
+      logger.warn('[clusterConcepts] Structure detection failed (non-fatal)', {
+        documentId, error: err.message,
+      });
+      return null;
+    });
+  }
+
   try {
-    const result = await clusterConceptsForDocument(documentId);
+    const result = await clusterConceptsForDocument(documentId, outline);
 
     // Assign roles async — does not block the clustering response.
     // If it fails, roles stay NULL and the pipeline continues unaffected.
