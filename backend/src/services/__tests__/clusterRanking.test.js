@@ -10,6 +10,7 @@ const {
   cosineSimilarity,
   clamp01,
   computeCentroid,
+  computeWeightedCentroid,
   computeDensityScore,
   computeImportanceScore,
   computePriorityTier,
@@ -680,4 +681,109 @@ test('ranking pipeline still produces valid tiers when all exam_scores are null'
   // Top cluster by importance_score should be tier A
   const top = withOverrides.find(c => c.id === '1');
   assert.equal(top.relative_priority_tier, 'A', 'top cluster should be A when no exams');
+});
+
+// ---- computeWeightedCentroid ----
+
+function makeConcept(embedding, concept_type) {
+  return { embedding, concept_type };
+}
+
+test('computeWeightedCentroid with all null types equals computeCentroid', () => {
+  const embeddings = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  const concepts = embeddings.map(e => makeConcept(e, null));
+
+  const weighted = computeWeightedCentroid(concepts);
+  const plain    = computeCentroid(embeddings);
+
+  for (let i = 0; i < plain.length; i++) {
+    assert.ok(Math.abs(weighted[i] - plain[i]) < 1e-9,
+      `dim ${i}: weighted=${weighted[i]}, plain=${plain[i]}`);
+  }
+});
+
+test('computeWeightedCentroid pulls centroid toward core_concept away from calculation_step', () => {
+  // core_concept at [1,0], calculation_step at [0,1]
+  // With equal weights: centroid = [0.5, 0.5]
+  // With type weights (1.0 vs 0.2): centroid pulled toward [1,0]
+  const concepts = [
+    makeConcept([1, 0], 'core_concept'),
+    makeConcept([0, 1], 'calculation_step'),
+  ];
+  const weighted = computeWeightedCentroid(concepts);
+  // core weight=1.0, calc weight=0.2, total=1.2
+  // centroid[0] = (1*1.0 + 0*0.2) / 1.2 = 1/1.2 ≈ 0.833
+  // centroid[1] = (0*1.0 + 1*0.2) / 1.2 = 0.2/1.2 ≈ 0.167
+  assert.ok(weighted[0] > 0.8, `centroid dim0 should be > 0.8 (core dominates), got ${weighted[0]}`);
+  assert.ok(weighted[1] < 0.2, `centroid dim1 should be < 0.2 (calc_step suppressed), got ${weighted[1]}`);
+});
+
+test('computeWeightedCentroid with all core_concept equals computeCentroid', () => {
+  const embeddings = [[1, 0], [0, 1], [0.5, 0.5]];
+  const concepts = embeddings.map(e => makeConcept(e, 'core_concept'));
+
+  const weighted = computeWeightedCentroid(concepts);
+  const plain    = computeCentroid(embeddings);
+
+  for (let i = 0; i < plain.length; i++) {
+    assert.ok(Math.abs(weighted[i] - plain[i]) < 1e-9,
+      `dim ${i}: weighted=${weighted[i]}, plain=${plain[i]}`);
+  }
+});
+
+test('computeWeightedCentroid with all example types weights all at 0.25 (same as uniform)', () => {
+  // All same type → uniform weighting → same as plain average
+  const embeddings = [[1, 0], [0, 1]];
+  const concepts = embeddings.map(e => makeConcept(e, 'example'));
+
+  const weighted = computeWeightedCentroid(concepts);
+  const plain    = computeCentroid(embeddings);
+
+  for (let i = 0; i < plain.length; i++) {
+    assert.ok(Math.abs(weighted[i] - plain[i]) < 1e-9,
+      `uniform type weighting should equal plain average, dim ${i}`);
+  }
+});
+
+test('computeWeightedCentroid cluster dominated by example has lower dim-0 than core_concept cluster', () => {
+  // Cluster A: 1 core_concept at [1,0] + 3 examples at [1,0]
+  // Cluster B: 4 core_concepts at [1,0]
+  // Both point in same direction, but we confirm the weighted sum doesn't inflate
+  const clusterA = [
+    makeConcept([1, 0], 'core_concept'),
+    makeConcept([0, 1], 'example'),
+    makeConcept([0, 1], 'example'),
+    makeConcept([0, 1], 'example'),
+  ];
+  const clusterB = [
+    makeConcept([1, 0], 'core_concept'),
+    makeConcept([1, 0], 'core_concept'),
+    makeConcept([0, 1], 'example'),
+    makeConcept([0, 1], 'example'),
+  ];
+
+  const centA = computeWeightedCentroid(clusterA);
+  const centB = computeWeightedCentroid(clusterB);
+
+  // B has more core_concept weight on dim[0] → higher value on dim[0]
+  assert.ok(centB[0] > centA[0],
+    `cluster with more core_concepts should have higher dim0: B=${centB[0]}, A=${centA[0]}`);
+});
+
+test('computeWeightedCentroid returns empty array for empty input', () => {
+  const result = computeWeightedCentroid([]);
+  assert.deepEqual(result, []);
+});
+
+test('computeWeightedCentroid treats undefined concept_type as core_concept weight 1.0', () => {
+  const conceptsUndefined = [makeConcept([1, 0], undefined), makeConcept([0, 1], undefined)];
+  const conceptsCore      = [makeConcept([1, 0], 'core_concept'), makeConcept([0, 1], 'core_concept')];
+
+  const wUndefined = computeWeightedCentroid(conceptsUndefined);
+  const wCore      = computeWeightedCentroid(conceptsCore);
+
+  for (let i = 0; i < wCore.length; i++) {
+    assert.ok(Math.abs(wUndefined[i] - wCore[i]) < 1e-9,
+      `undefined type should behave as core_concept, dim ${i}: got ${wUndefined[i]} vs ${wCore[i]}`);
+  }
 });

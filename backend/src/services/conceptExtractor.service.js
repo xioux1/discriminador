@@ -88,6 +88,22 @@ const WEAK_STARTS = [
   'generalidades de',
 ];
 
+// ── Concept type / importance vocabulary ──────────────────────────────────────
+
+export const VALID_CONCEPT_TYPES = new Set([
+  'core_concept',
+  'sub_concept',
+  'example',
+  'formula',
+  'calculation_step',
+  'implementation_detail',
+  'limitation',
+  'architecture_component',
+  'method_or_technique',
+]);
+
+export const VALID_IMPORTANCE = new Set(['high', 'medium', 'low']);
+
 export function validateConcept(rawConcept, sourceChunk, sourceChunkIndex) {
   if (!rawConcept || typeof rawConcept !== 'object') return null;
 
@@ -135,12 +151,21 @@ export function validateConcept(rawConcept, sourceChunk, sourceChunkIndex) {
 
   const evidence = typeof rawEvidence === 'string' && rawEvidence.trim() ? rawEvidence.trim() : null;
 
+  const concept_type = VALID_CONCEPT_TYPES.has(rawConcept.concept_type)
+    ? rawConcept.concept_type
+    : null;
+  const importance = VALID_IMPORTANCE.has(rawConcept.importance)
+    ? rawConcept.importance
+    : null;
+
   return {
     label,
     definition,
     evidence,
     source_chunk: sourceChunk,
     source_chunk_index: sourceChunkIndex,
+    concept_type,
+    importance,
   };
 }
 
@@ -249,10 +274,27 @@ Para cada tema:
 - "label": nombre descriptivo de 4 a 8 palabras, nunca una sola palabra
 - "definition": qué cubre este tema en una oración completa
 - "evidence": frase breve o fragmento del texto que justifica el tema
+- "concept_type": tipo del tema según su naturaleza. Elegí exactamente uno de estos valores:
+  "core_concept" | "sub_concept" | "example" | "formula" | "calculation_step" |
+  "implementation_detail" | "limitation" | "architecture_component" | "method_or_technique"
+- "importance": importancia didáctica del tema. Elegí exactamente uno: "high" | "medium" | "low"
+
+Guía para concept_type:
+- core_concept: tema central e independiente, pilar conceptual del fragmento
+- sub_concept: aspecto, variante o extensión de un concepto central
+- example: ejemplo concreto, ilustración, analogía o caso de uso
+- formula: expresión matemática, ecuación o relación formal nombrada
+- calculation_step: paso intermedio de un cálculo o derivación algebraica
+- implementation_detail: detalle de implementación, configuración o código
+- limitation: restricción, desventaja o caso borde de un concepto
+- architecture_component: componente de una arquitectura (capa, módulo, bloque, cabeza de atención)
+- method_or_technique: procedimiento, técnica o algoritmo con nombre propio
 
 Reglas:
 - No uses conocimiento externo.
-- No generes más de 6 temas por fragmento.
+- No generes más de 6 temas por fragmento. Si el fragmento desarrolla un único ejemplo extenso,
+  extraé el concepto central que ilustra y como máximo 2 pasos del ejemplo marcados como
+  "calculation_step" o "example" — no uno por cada paso.
 - No generes temas demasiado genéricos como "Introducción", "Conceptos básicos", "Aspectos generales", "Tema principal" o "Resumen general".
 - Si el fragmento no contiene contenido conceptual suficiente, devolvé [].
 - El campo "evidence" debe contener texto que aparezca o esté claramente basado en el fragmento.
@@ -299,7 +341,7 @@ async function deleteConceptsForDocument(documentId) {
 }
 
 async function insertConcept(documentId, concept) {
-  const { label, definition, source_chunk, source_chunk_index, evidence, embedding } = concept;
+  const { label, definition, source_chunk, source_chunk_index, evidence, embedding, concept_type, importance } = concept;
   const extractionModel = process.env.CONCEPT_EXTRACTION_MODEL || 'claude-sonnet-4-20250514';
   const embeddingModel = process.env.CONCEPT_EMBEDDING_MODEL || 'voyage-large-2';
   const vectorString = `[${embedding.join(',')}]`;
@@ -307,11 +349,13 @@ async function insertConcept(documentId, concept) {
   const { rows } = await dbPool.query(
     `INSERT INTO concepts (
        document_id, label, definition, source_chunk, source_chunk_index,
-       evidence, cluster_id, embedding, extraction_model, embedding_model, status
-     ) VALUES ($1, $2, $3, $4, $5, $6, NULL, $7::vector, $8, $9, 'accepted')
+       evidence, cluster_id, embedding, extraction_model, embedding_model, status,
+       concept_type, importance
+     ) VALUES ($1, $2, $3, $4, $5, $6, NULL, $7::vector, $8, $9, 'accepted', $10, $11)
      RETURNING *`,
     [documentId, label, definition, source_chunk, source_chunk_index,
-     evidence, vectorString, extractionModel, embeddingModel]
+     evidence, vectorString, extractionModel, embeddingModel,
+     concept_type ?? null, importance ?? null]
   );
 
   return rows[0];
