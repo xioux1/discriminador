@@ -3,6 +3,7 @@ import { dbPool } from '../db/client.js';
 import { clusterConceptsForDocument, getClustersForDocument } from '../services/conceptClustering.service.js';
 import { clusterConceptsForChineseDocument } from '../services/chineseClassParser.service.js';
 import { assignRolesForDocument } from '../services/conceptRoles.service.js';
+import { assignRelationsForDocument } from '../services/conceptRelations.service.js';
 import { logger } from '../utils/logger.js';
 
 function isChineseSubject(subject) {
@@ -83,11 +84,13 @@ router.post('/api/documents/:id/cluster-concepts', async (req, res, next) => {
     // Assign roles async — does not block the clustering response.
     // If it fails, roles stay NULL and the pipeline continues unaffected.
     setImmediate(() => {
-      assignRolesForDocument(documentId).catch(err =>
-        logger.warn('[clusterConcepts] Role assignment failed (non-fatal)', {
-          documentId, error: err.message,
-        })
-      );
+      assignRolesForDocument(documentId)
+        .then(() => assignRelationsForDocument(documentId))
+        .catch(err =>
+          logger.warn('[clusterConcepts] Post-clustering pipeline failed (non-fatal)', {
+            documentId, error: err.message,
+          })
+        );
     });
 
     return res.json(result);
