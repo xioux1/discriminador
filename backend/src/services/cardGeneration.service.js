@@ -95,12 +95,21 @@ export async function buildClusterCardContext(clusterId) {
   }
   const doc = docRows[0];
 
-  // Fetch concepts for this cluster
+  // Fetch concepts for this cluster — ordered so main/support appear before examples
   const { rows: conceptRows } = await dbPool.query(
-    `SELECT id, label, definition, evidence, source_chunk, source_chunk_index
+    `SELECT id, label, definition, evidence, source_chunk, source_chunk_index,
+            role_in_cluster, concept_type
      FROM concepts
      WHERE cluster_id = $1
-     ORDER BY source_chunk_index ASC NULLS LAST`,
+     ORDER BY
+       CASE role_in_cluster
+         WHEN 'main'    THEN 0
+         WHEN 'support' THEN 1
+         WHEN 'context' THEN 2
+         WHEN 'example' THEN 3
+         ELSE 4
+       END,
+       source_chunk_index ASC NULLS LAST`,
     [clusterId]
   );
   if (!conceptRows.length) {
@@ -191,6 +200,8 @@ export async function buildClusterCardContext(clusterId) {
       evidence: c.evidence ?? null,
       source_chunk: c.source_chunk ?? null,
       source_chunk_index: c.source_chunk_index ?? null,
+      role_in_cluster: c.role_in_cluster ?? null,
+      concept_type: c.concept_type ?? null,
     })),
     source_excerpts: sourceExcerpts,
   };
@@ -213,15 +224,25 @@ export function buildCardGenerationPrompt(context, options = {}) {
   }, null, 2);
 
   const conceptsJson = JSON.stringify(
-    concepts.map(c => ({
-      id: c.id,
-      label: c.label,
-      definition: c.definition,
-      evidence: c.evidence,
-      source_chunk_index: c.source_chunk_index,
-    })),
+    concepts.map(c => {
+      const entry = {
+        id: c.id,
+        label: c.label,
+        definition: c.definition,
+        evidence: c.evidence,
+        source_chunk_index: c.source_chunk_index,
+      };
+      if (c.role_in_cluster) entry.role_in_cluster = c.role_in_cluster;
+      if (c.concept_type)    entry.concept_type    = c.concept_type;
+      return entry;
+    }),
     null,
     2
+  );
+
+  // Determine if the cluster is predominantly non-generatable (all examples/calc steps)
+  const hasNonExampleConcepts = concepts.some(
+    c => c.role_in_cluster !== 'example' && c.concept_type !== 'calculation_step'
   );
 
   const sourceExcerptsJson = JSON.stringify(source_excerpts, null, 2);
@@ -271,6 +292,10 @@ Reglas estrictas:
 18. Cada variante debe incluir tag_labels (2 a 5 etiquetas cortas, snake_case) para tagging posterior.
 19. No modifiques los UUIDs.
 20. Respondé sólo con JSON. Sin markdown, sin backticks, sin texto adicional.
+${hasNonExampleConcepts
+  ? `21. Los conceptos con role_in_cluster "example" o concept_type "calculation_step" son material de soporte, no el foco de estudio. No generes preguntas cuyo único source_concept_id sea uno de esos conceptos. Usálos como evidencia dentro de preguntas sobre conceptos "main" o "support". Si un ejemplo ilustra un mecanismo central, la pregunta debe ser sobre el mecanismo, no sobre los pasos del ejemplo.`
+  : `21. Todos los conceptos de este cluster son ejemplos o pasos de cálculo. Generá preguntas que ayuden al alumno a entender el procedimiento o el ejemplo, orientándolas a comprensión del método general, no a memorización de pasos individuales.`
+}
 
 Tipo de card:
 Clasificá cada familia de tarjeta como "theoretical_open" o "practical_exercise".
