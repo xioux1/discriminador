@@ -124,9 +124,18 @@ test('validateConcept accepts label with 4 to 8 words', () => {
   assert.equal(result.source_chunk_index, 2);
 });
 
-test('validateConcept rejects label with fewer than 4 words', () => {
+test('validateConcept accepts label with 2 words (minimum)', () => {
   const concept = {
     label: 'Prescripción seguro',
+    definition: 'Cubre el plazo y el momento desde el cual se computa la prescripción de acciones.',
+    evidence: 'text',
+  };
+  assert.ok(validateConcept(concept, 'chunk', 0) !== null, 'should accept 2-word label');
+});
+
+test('validateConcept rejects label with 1 word', () => {
+  const concept = {
+    label: 'Prescripción',
     definition: 'Cubre el plazo y el momento desde el cual se computa la prescripción de acciones.',
     evidence: 'text',
   };

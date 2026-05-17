@@ -76,16 +76,44 @@ router.post('/api/documents/upload', (req, res, next) => {
       });
     }
 
-    // For PDFs, probe word count to distinguish visual from text-based
-    if (processingMode === 'pdf_text') {
-      const wordCount = await probePdfWordCount(tmpPath);
-      if (wordCount < 200) {
-        processingMode = 'pdf_visual';
-        logger.info('[documentUpload] PDF has few words, treating as visual', {
-          wordCount, originalname,
+    // Apply user override for PDFs.
+    // PPTX always stays pptx_visual — the override field is ignored for PPTX.
+    const rawOverride = req.body?.processing_mode ? String(req.body.processing_mode).trim() : null;
+    const modeOverride = rawOverride || 'auto';
+
+    if (processingMode === 'pdf_text' && rawOverride !== null) {
+      const VALID_OVERRIDES = ['auto', 'pdf_text', 'pdf_visual'];
+      if (!VALID_OVERRIDES.includes(rawOverride)) {
+        return res.status(400).json({
+          error:   'invalid_processing_mode',
+          message: `Invalid processing_mode "${rawOverride}". Allowed values for PDF: auto, pdf_text, pdf_visual.`,
         });
       }
     }
+
+    let probeWordCount = null;
+
+    if (processingMode === 'pdf_text') {
+      if (modeOverride === 'pdf_visual') {
+        // User explicitly requested visual pipeline — skip heuristic
+        processingMode = 'pdf_visual';
+      } else if (modeOverride === 'pdf_text') {
+        // User explicitly requested text pipeline — leave as pdf_text
+      } else {
+        // auto: fall back to heuristic (threshold 400 words)
+        probeWordCount = await probePdfWordCount(tmpPath);
+        if (probeWordCount < 400) {
+          processingMode = 'pdf_visual';
+        }
+      }
+    }
+
+    logger.info('[UPLOAD_PROCESSING_MODE]', {
+      filename:   safeOriginal,
+      requested:  modeOverride,
+      resolved:   processingMode,
+      word_count: probeWordCount,
+    });
 
     const isVisual = processingMode === 'pptx_visual' || processingMode === 'pdf_visual';
 
