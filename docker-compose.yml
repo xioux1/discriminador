@@ -22,6 +22,16 @@ services:
     env_file: .env.docker
     environment:
       DATABASE_URL: postgres://discriminador:discriminador@db:5432/discriminador
+      UPLOAD_DIR: /app/uploads
+      UPLOAD_MAX_FILE_MB: "100"
+      VISUAL_MAX_SLIDES: "60"
+      VISUAL_SLIDE_MODEL: "claude-sonnet-4-6"
+      VISUAL_MARKDOWN_MODEL: "claude-sonnet-4-6"
+      VISUAL_SLIDE_CONCURRENCY: "3"
+      VISUAL_LLM_TIMEOUT_MS: "60000"
+    volumes:
+      - uploads_data:/app/uploads
 
 volumes:
   pgdata:
+  uploads_data:
