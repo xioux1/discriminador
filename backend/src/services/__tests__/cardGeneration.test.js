@@ -10,6 +10,7 @@ const {
   getDefaultMaxVariantsForCluster,
   validateGeneratedCardDraft,
   detectEnumerativeCluster,
+  detectPhaseCluster,
   buildCardGenerationPrompt,
 } = await import('../cardGeneration.service.js');
 
@@ -363,4 +364,113 @@ test('validateGeneratedCardDraft trims to 8 bullets (not 5) when 9 are provided'
     .split('\n')
     .filter(l => /^[-*•]\s+/.test(l));
   assert.equal(remaining.length, 8, 'should trim to 8, not 5');
+});
+
+// ==================== detectPhaseCluster ====================
+
+const ASAP_PHASE_CONTEXT = {
+  cluster: {
+    id: 'pppppppp-pppp-pppp-pppp-pppppppppppp',
+    name: 'Metodología ASAP para implementar SIG',
+    definition: 'Conjunto de fases secuenciales para implementar un ERP.',
+  },
+  concepts: [
+    { label: 'Fases de la metodología ASAP', definition: 'Preparación, Business Blueprint, Realización, Preparación final, GoLive.' },
+    { label: 'Business Blueprint', definition: 'Fase de análisis y documentación de procesos de negocio.' },
+  ],
+  source_excerpts: [],
+};
+
+const ENUM_ONLY_CONTEXT = {
+  cluster: {
+    id: 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
+    name: 'Opciones de implementación de SIG',
+    definition: 'Distintas opciones para implementar un SIG según alcance.',
+  },
+  concepts: [
+    { label: 'Implementación Big Bang', definition: 'Opción que implanta todos los módulos simultáneamente.' },
+    { label: 'Implementación incremental', definition: 'Opción que implanta módulos por etapas.' },
+  ],
+  source_excerpts: [],
+};
+
+test('detectPhaseCluster returns true for ASAP methodology cluster', () => {
+  assert.equal(detectPhaseCluster(ASAP_PHASE_CONTEXT), true);
+});
+
+test('detectPhaseCluster returns true when cluster name contains "fases"', () => {
+  const ctx = {
+    cluster: { name: 'Fases del ciclo de vida del proyecto', definition: 'Etapas principales del proyecto.' },
+    concepts: [],
+    source_excerpts: [],
+  };
+  assert.equal(detectPhaseCluster(ctx), true);
+});
+
+test('detectPhaseCluster returns true when concept label contains "Business Blueprint"', () => {
+  const ctx = {
+    cluster: { name: 'Implementación ERP', definition: 'Proceso de implementación.' },
+    concepts: [{ label: 'Business Blueprint', definition: 'Análisis de procesos.' }],
+    source_excerpts: [],
+  };
+  assert.equal(detectPhaseCluster(ctx), true);
+});
+
+test('detectPhaseCluster returns true when concept label contains "GoLive"', () => {
+  const ctx = {
+    cluster: { name: 'Puesta en marcha del sistema', definition: 'Último paso de la implementación.' },
+    concepts: [{ label: 'GoLive y soporte post-implementación', definition: 'Inicio de operaciones productivas.' }],
+    source_excerpts: [],
+  };
+  assert.equal(detectPhaseCluster(ctx), true);
+});
+
+test('detectPhaseCluster returns false for enumerative-but-not-phase cluster', () => {
+  // ENUM_ONLY_CONTEXT has "opciones" and "implementación" but no phase signals
+  assert.equal(detectPhaseCluster(ENUM_ONLY_CONTEXT), false);
+});
+
+test('detectPhaseCluster returns false for non-enumerative cluster', () => {
+  assert.equal(detectPhaseCluster(NON_ENUM_CONTEXT), false);
+});
+
+// ==================== buildCardGenerationPrompt — phase priority ====================
+
+test('buildCardGenerationPrompt includes phase-first rule and ASAP example for phase cluster', () => {
+  const prompt = buildCardGenerationPrompt(ASAP_PHASE_CONTEXT, { maxVariants: 7 });
+  assert.ok(prompt.includes('PRIMERA variante del array DEBE ser una pregunta de enumeración de fases'),
+    'prompt must require phase card as first variant');
+  assert.ok(prompt.includes('Business Blueprint / Plano de negocios'),
+    'prompt must include ASAP example with synonym bullet');
+  assert.ok(prompt.includes('GoLive y soporte'),
+    'prompt must include GoLive phase in example');
+});
+
+test('buildCardGenerationPrompt uses general enum rule (not phase rule) for non-phase enumerative cluster', () => {
+  const prompt = buildCardGenerationPrompt(ENUM_ONLY_CONTEXT, { maxVariants: 7 });
+  assert.ok(!prompt.includes('PRIMERA variante del array DEBE ser una pregunta de enumeración de fases'),
+    'general enum cluster must not get phase-first rule');
+  assert.ok(prompt.includes('22-enum'),
+    'general enum cluster must still get 22-enum rule');
+});
+
+test('buildCardGenerationPrompt omits 22-enum for non-enumerative cluster', () => {
+  const prompt = buildCardGenerationPrompt(NON_ENUM_CONTEXT, { maxVariants: 7 });
+  assert.ok(!prompt.includes('22-enum'));
+});
+
+// ==================== validateGeneratedCardDraft — ASAP 5-bullet phase answer ====================
+
+test('validateGeneratedCardDraft accepts 5-bullet ASAP phase answer', () => {
+  const asapAnswer = [
+    '- Preparación del proyecto',
+    '- Business Blueprint / Plano de negocios',
+    '- Realización',
+    '- Preparación final',
+    '- Entrada en producción / GoLive y soporte',
+  ].join('\n');
+  const v = { ...VALID_VARIANT, expected_answer: asapAnswer };
+  const output = { card_group: VALID_OUTPUT.card_group, variants: [v] };
+  const result = validateGeneratedCardDraft(output, CONTEXT, 9);
+  assert.ok(result.validVariants.length > 0, '5-bullet ASAP phase answer must pass validation');
 });

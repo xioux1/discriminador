@@ -225,7 +225,7 @@ export async function buildClusterCardContext(clusterId) {
   };
 }
 
-// ==================== detectEnumerativeCluster ====================
+// ==================== detectEnumerativeCluster / detectPhaseCluster ====================
 
 const ENUM_SIGNALS = [
   'fase', 'etapa', 'proceso', 'metodología', 'metodologia',
@@ -233,6 +233,19 @@ const ENUM_SIGNALS = [
   'tipo', 'tipos', 'herramienta', 'herramientas', 'entregable', 'entregables',
   'flujo', 'flujos', 'componente', 'componentes', 'workflow',
   'ciclo', 'etapas', 'fases', 'procedimiento', 'implementacion', 'implementación',
+];
+
+// Signals that indicate a sequential methodology with named phases/stages.
+// Deliberately excludes generic words like 'etapa'/'etapas' (too broad) to avoid
+// false positives in clusters that merely mention "phases" in passing.
+// When matched, the prompt instructs Claude to put the phase-enumeration card first.
+const PHASE_SIGNALS = [
+  'fase', 'fases',
+  'business blueprint', 'realización', 'realizacion',
+  'preparación final', 'preparacion final',
+  'golive', 'go-live', 'go live', 'entrada en producción', 'entrada en produccion',
+  'implementación secuencial', 'implementacion secuencial',
+  'asap',
 ];
 
 /**
@@ -251,12 +264,29 @@ export function detectEnumerativeCluster(context) {
   return ENUM_SIGNALS.some(s => text.includes(s));
 }
 
+/**
+ * Returns true when the cluster describes a sequential methodology with named
+ * phases or stages (e.g. ASAP, PMBOK phases, sprint cycles).
+ * A phase cluster is always also enumerative; this is the stricter sub-check.
+ * Exported for testing.
+ */
+export function detectPhaseCluster(context) {
+  const text = [
+    context.cluster?.name ?? '',
+    context.cluster?.definition ?? '',
+    ...(context.concepts ?? []).map(c => c.label ?? ''),
+    ...(context.concepts ?? []).map(c => c.definition ?? ''),
+  ].join(' ').toLowerCase();
+  return PHASE_SIGNALS.some(s => text.includes(s));
+}
+
 // ==================== buildCardGenerationPrompt ====================
 
 export function buildCardGenerationPrompt(context, options = {}) {
   const { cluster, concepts, relations = [], source_excerpts } = context;
   const maxVariants = options.maxVariants ?? 5;
   const isEnumerative = detectEnumerativeCluster(context);
+  const isPhase       = detectPhaseCluster(context);
   const minCoverage = Math.max(
     Math.min(2, concepts.length),
     Math.min(Math.floor(concepts.length * 0.5), maxVariants * 3),
@@ -348,8 +378,27 @@ Reglas estrictas:
 ${hasNonExampleConcepts
   ? `21. Los conceptos con role_in_cluster "example" o concept_type "calculation_step" son material de soporte, no el foco de estudio. No generes preguntas cuyo único source_concept_id sea uno de esos conceptos. Usálos como evidencia dentro de preguntas sobre conceptos "main" o "support". Si un ejemplo ilustra un mecanismo central, la pregunta debe ser sobre el mecanismo, no sobre los pasos del ejemplo.`
   : `21. Todos los conceptos de este cluster son ejemplos o pasos de cálculo. Generá preguntas que ayuden al alumno a entender el procedimiento o el ejemplo, orientándolas a comprensión del método general, no a memorización de pasos individuales.`
-}${isEnumerative ? `
-22-enum. Este cluster tiene estructura enumerativa (fases, etapas, opciones, herramientas, flujos, componentes u otro conjunto nombrado). Generá AL MENOS UNA variante de enumeración estructural con pregunta del tipo "¿Cuáles son las [fases/etapas/opciones/herramientas/flujos/entregables] de [X]?". Reglas para esa variante:
+}${isPhase ? `
+22-enum. Este cluster describe una metodología con fases o etapas secuenciales. La PRIMERA variante del array DEBE ser una pregunta de enumeración de fases.
+   Pregunta tipo: "¿Cuáles son las fases de [nombre exacto de la metodología]?"
+   Respuesta: lista de bullets con las fases en orden, usando los nombres exactos del documento. Si el documento usa sinónimos, incluirlos en el mismo bullet.
+
+   Ejemplo de card correcta (tomalo como modelo de formato, no como respuesta fija):
+   Pregunta: "¿Cuáles son las fases de la metodología ASAP para implementar un SIG?"
+   Respuesta:
+   - Preparación del proyecto
+   - Business Blueprint / Plano de negocios
+   - Realización
+   - Preparación final
+   - Entrada en producción / GoLive y soporte
+
+   Reglas para esta variante:
+   - Solo incluí fases que aparezcan explícitamente en source_excerpts. No inventes.
+   - Respetá el orden secuencial del documento.
+   - Si hay más de 8 fases, limitá a las principales.
+   - Esta variante va PRIMERA en el array. Otras enumeraciones (opciones, herramientas, flujos) pueden seguir.
+   - La excepción de 8 bullets de la regla 11 aplica aquí.` : isEnumerative ? `
+22-enum. Este cluster tiene estructura enumerativa (opciones, herramientas, flujos, componentes u otro conjunto nombrado). Generá AL MENOS UNA variante de enumeración estructural con pregunta del tipo "¿Cuáles son las [opciones/herramientas/flujos/entregables] de [X]?". Reglas para esa variante:
    - Solo incluí elementos que aparezcan explícitamente en source_excerpts. No inventes.
    - Si el documento usa sinónimos, incluirlos en el mismo bullet (ej: "GoLive / Entrada en producción").
    - Si hay más de 8 elementos, limitá a los más importantes.
@@ -518,8 +567,8 @@ export function validateGeneratedCardDraft(output, context, maxVariants) {
       } else {
         for (const bullet of bullets) {
           const bulletWords = bullet.replace(/^[-*•]\s+/, '').split(/\s+/).filter(Boolean).length;
-          if (bulletWords < 4 || bulletWords > 18) {
-            vErrs.push(`expected_answer bullet has ${bulletWords} words (expected 4–18)`);
+          if (bulletWords < 1 || bulletWords > 18) {
+            vErrs.push(`expected_answer bullet has ${bulletWords} words (expected 1–18)`);
             break;
           }
         }
