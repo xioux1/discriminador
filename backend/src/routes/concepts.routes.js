@@ -27,6 +27,10 @@ router.get('/api/documents', async (req, res, next) => {
          d.subject,
          d.status,
          d.created_at,
+         d.processing_mode,
+         d.visual_processing_status,
+         d.page_count,
+         d.processing_error,
          COALESCE(
            array_length(
              regexp_split_to_array(
