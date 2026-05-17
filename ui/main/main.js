@@ -4264,7 +4264,8 @@ function persistStudySession() {
       lastBreakNudgeMinuteKey: studyState.lastBreakNudgeMinuteKey ?? null,
       selectedTime: briefingState.selectedTime,
       selectedEnergy: briefingState.selectedEnergy,
-      selectedSubject: briefingState.selectedSubject
+      selectedSubject: briefingState.selectedSubject,
+      voiceMode: studyState.voiceMode ?? false
     }));
   } catch (_) {}
 }
@@ -4307,6 +4308,19 @@ function restorePersistedStudySession() {
     studyState.isPaused = false;
     studyState.pausedAt = 0;
     studyState.cardPausedMs = 0;
+    studyState.voiceMode = Boolean(saved.voiceMode);
+    studyState.voiceReviewPaused = false;
+
+    const vPauseBtn = document.querySelector('#study-voice-pause-btn');
+    if (vPauseBtn) {
+      if (studyState.voiceMode) {
+        vPauseBtn.classList.remove('hidden');
+      } else {
+        vPauseBtn.classList.add('hidden');
+      }
+      vPauseBtn.textContent = '⏸ Revisar';
+      vPauseBtn.classList.remove('study-voice-pause-btn--active');
+    }
 
     document.querySelector('#study-briefing').classList.add('hidden');
     document.querySelector('#study-overview').classList.add('hidden');
