@@ -6,6 +6,7 @@ import { dbPool } from '../db/client.js';
 import { logger } from '../utils/logger.js';
 import { uploadMiddleware, UPLOAD_DIR, resolvedExtension } from '../middleware/upload.js';
 import { runVisualPipeline } from '../services/visualProcessor.service.js';
+import { reconstructMarkdown } from '../services/markdownReconstructor.service.js';
 
 const router = Router();
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -331,6 +332,89 @@ router.get('/api/documents/:id/slides/:slideNumber/image', async (req, res, next
     res.setHeader('Content-Type', 'image/jpeg');
     res.setHeader('Cache-Control', 'private, max-age=3600');
     return res.sendFile(absPath);
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// ── POST /api/documents/:id/reconstruct-markdown ──────────────────────────────
+// Retries only the markdown reconstruction step for a visual document whose
+// slides are already fully analyzed. Does not re-convert or re-analyze images.
+
+router.post('/api/documents/:id/reconstruct-markdown', async (req, res, next) => {
+  const userId     = req.user.id;
+  const documentId = req.params.id;
+
+  if (!UUID_RE.test(documentId)) {
+    return res.status(400).json({ error: 'invalid_id', message: 'Document ID must be a valid UUID.' });
+  }
+
+  try {
+    const { rows } = await dbPool.query(
+      `SELECT id, processing_mode, visual_processing_status, page_count
+       FROM documents WHERE id = $1 AND user_id = $2`,
+      [documentId, userId]
+    );
+    if (!rows.length) {
+      return res.status(404).json({ error: 'not_found', message: 'Document not found.' });
+    }
+
+    const doc = rows[0];
+
+    if (doc.processing_mode !== 'pptx_visual' && doc.processing_mode !== 'pdf_visual') {
+      return res.status(422).json({
+        error:   'not_visual',
+        message: 'Only visual documents (pptx_visual, pdf_visual) support markdown reconstruction.',
+      });
+    }
+
+    const { rows: countRows } = await dbPool.query(
+      'SELECT COUNT(*)::int AS count FROM document_slides WHERE document_id = $1',
+      [documentId]
+    );
+    if (countRows[0].count === 0) {
+      return res.status(422).json({
+        error:   'no_slides',
+        message: 'No slide analyses found. Re-upload and re-process the document.',
+      });
+    }
+
+    await dbPool.query(
+      `UPDATE documents
+       SET visual_processing_status = 'reconstructing', processing_error = NULL, updated_at = NOW()
+       WHERE id = $1`,
+      [documentId]
+    );
+
+    setImmediate(async () => {
+      try {
+        await reconstructMarkdown(documentId);
+        await dbPool.query(
+          `UPDATE documents
+           SET visual_processing_status = 'done',
+               processing_completed_at  = NOW(),
+               processing_error         = NULL,
+               updated_at               = NOW()
+           WHERE id = $1`,
+          [documentId]
+        );
+        logger.info('[reconstructEndpoint] Reconstruction complete', { documentId });
+      } catch (err) {
+        logger.error('[reconstructEndpoint] Reconstruction failed', { documentId, error: err.message });
+        await dbPool.query(
+          `UPDATE documents
+           SET visual_processing_status = 'failed', processing_error = $1, updated_at = NOW()
+           WHERE id = $2`,
+          [err.message, documentId]
+        ).catch(() => {});
+      }
+    });
+
+    return res.status(202).json({
+      status:      'queued',
+      document_id: documentId,
+      message:     'Markdown reconstruction started. Poll /processing-status for updates.',
+    });
   } catch (err) {
     return next(err);
   }

@@ -138,7 +138,7 @@ export async function runVisualPipeline(documentId) {
 
   // ── Fetch document ──────────────────────────────────────────────────────────
   const { rows } = await dbPool.query(
-    'SELECT id, file_path, processing_mode FROM documents WHERE id = $1',
+    'SELECT id, file_path, processing_mode, page_count FROM documents WHERE id = $1',
     [documentId]
   );
 
@@ -148,6 +148,33 @@ export async function runVisualPipeline(documentId) {
   }
 
   const document = rows[0];
+
+  // ── Resume: if all slides are already in document_slides, skip straight to
+  //    reconstruction. This handles a previous reconstruction timeout without
+  //    re-converting or re-analyzing the images.
+  if (document.page_count) {
+    const { rows: existingSlides } = await dbPool.query(
+      'SELECT COUNT(*)::int AS count FROM document_slides WHERE document_id = $1',
+      [documentId]
+    );
+    if (existingSlides[0].count >= document.page_count) {
+      logger.info('[visualProcessor] Slides already complete — resuming from reconstruction', {
+        documentId, slideCount: existingSlides[0].count,
+      });
+      await setStatus(documentId, 'reconstructing', { processing_error: null });
+      try {
+        await reconstructMarkdown(documentId);
+        await setStatus(documentId, 'done', {
+          processing_completed_at: new Date().toISOString(),
+          processing_error: null,
+        });
+        logger.info('[visualProcessor] Pipeline complete (resumed)', { documentId });
+      } catch (err) {
+        await setFailed(documentId, err.message);
+      }
+      return;
+    }
+  }
 
   // ── Mark started ────────────────────────────────────────────────────────────
   await setStatus(documentId, 'converting', {
