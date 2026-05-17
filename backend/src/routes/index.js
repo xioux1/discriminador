@@ -31,9 +31,11 @@ import rankClustersRouter from './rank-clusters.routes.js';
 import generateCardsRouter from './generate-cards.routes.js';
 import transcriptsRouter from './transcripts.routes.js';
 import explanationRouter from './explanation.routes.js';
+import documentUploadRouter from './document-upload.routes.js';
 
 const router = Router();
 
+router.use(documentUploadRouter);
 router.use(transcriptsRouter);
 router.use(explanationRouter);
 router.use(conceptsRouter);

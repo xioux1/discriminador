@@ -146,6 +146,24 @@ router.post('/api/documents/:id/extract-concepts', async (req, res, next) => {
 
   const document = rows[0];
 
+  // Guard: visual documents must have completed processing before concept extraction
+  if (document.processing_mode === 'pptx_visual' || document.processing_mode === 'pdf_visual') {
+    if (document.visual_processing_status !== 'done') {
+      return res.status(422).json({
+        error:   'visual_not_ready',
+        message: `Visual processing is not complete. Current status: "${document.visual_processing_status || 'pending'}". ` +
+                 'Poll GET /api/documents/:id/processing-status and retry when status is "done".',
+        visual_processing_status: document.visual_processing_status,
+      });
+    }
+    if (!document.generated_markdown) {
+      return res.status(422).json({
+        error:   'visual_not_processed',
+        message: 'Visual processing is marked done but generated_markdown is missing. Re-upload and re-process the document.',
+      });
+    }
+  }
+
   // Chinese subject: use specialized parser (single Haiku call, no chunking)
   if (isChineseSubject(document.subject)) {
     try {

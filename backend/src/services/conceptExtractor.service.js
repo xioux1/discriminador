@@ -235,7 +235,21 @@ export function deduplicateConcepts(concepts, threshold = 0.86) {
 // ==================== I/O helpers ====================
 
 async function getDocumentText(document) {
-  // 1. Direct text fields
+  // 1. Visual modes: use the pre-generated markdown produced by the visual pipeline.
+  //    The markdown already contains slide-level headings ("## Slide N — Title")
+  //    so source_chunk evidence in concepts will be traceable back to slides.
+  if (document.processing_mode === 'pptx_visual' || document.processing_mode === 'pdf_visual') {
+    if (document.generated_markdown && document.generated_markdown.trim()) {
+      return document.generated_markdown;
+    }
+    throw new Error(
+      'Visual document has not been processed yet. ' +
+      `Current visual_processing_status: "${document.visual_processing_status || 'unknown'}". ` +
+      'Wait for visual processing to complete before extracting concepts.'
+    );
+  }
+
+  // 2. Direct text fields
   const directText = document.text || document.content || document.transcript;
   if (directText && directText.trim()) return directText;
 
