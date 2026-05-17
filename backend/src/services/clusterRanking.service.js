@@ -277,6 +277,11 @@ async function createEmbedding(text, model) {
 }
 
 async function getDocumentText(document) {
+  // Visual documents store their extracted text in generated_markdown
+  if (document.generated_markdown && document.generated_markdown.trim()) {
+    return document.generated_markdown;
+  }
+
   const directText = document.text || document.content || document.transcript;
   if (directText && directText.trim()) return directText;
 
@@ -397,7 +402,7 @@ const TIER_SORT_ORDER = { A: 0, B: 1, C: 2, D: 3 };
 export async function rankClustersForDocument(documentId) {
   // Step 1 — Fetch document
   const { rows: docRows } = await dbPool.query(
-    `SELECT id, text, content, transcript, file_path, mime_type, subject, user_id
+    `SELECT id, text, content, transcript, generated_markdown, file_path, mime_type, processing_mode, subject, user_id
      FROM documents WHERE id = $1`,
     [documentId]
   );
