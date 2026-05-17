@@ -10130,8 +10130,180 @@ function initDocumentsTab() {
   const loadingEl     = document.getElementById('docs-loading');
   const emptyEl       = document.getElementById('docs-empty');
 
+  // File upload mode elements
+  const modeBtns      = document.querySelectorAll('.docs-mode-btn');
+  const textPanel     = document.getElementById('docs-text-panel');
+  const filePanel     = document.getElementById('docs-file-panel');
+  const fileInput     = document.getElementById('doc-file-input');
+  const fileInfo      = document.getElementById('docs-file-info');
+  const fileNameEl    = document.getElementById('docs-file-name');
+  const fileSizeEl    = document.getElementById('docs-file-size');
+  const fileClearBtn  = document.getElementById('docs-file-clear-btn');
+  let   currentMode   = 'text'; // 'text' | 'file'
+  let   selectedFile  = null;
+
   // documentId → setInterval id for background polling
-  const polling = new Map();
+  const polling    = new Map();
+  // documentId → setInterval id for visual processing polling
+  const visPoll    = new Map();
+
+  // ── Mode toggle ───────────────────────────────────────────────────────────────
+  function switchMode(mode) {
+    currentMode = mode;
+    modeBtns.forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+    textPanel.classList.toggle('hidden', mode !== 'text');
+    filePanel.classList.toggle('hidden', mode !== 'file');
+    createBtn.textContent = mode === 'file' ? 'Subir archivo' : 'Crear documento';
+    feedback.textContent = '';
+  }
+  modeBtns.forEach(b => b.addEventListener('click', () => switchMode(b.dataset.mode)));
+
+  // ── File selection ────────────────────────────────────────────────────────────
+  function formatBytes(bytes) {
+    if (bytes < 1024)        return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  function setSelectedFile(file) {
+    if (!file) {
+      selectedFile = null;
+      fileInfo.classList.add('hidden');
+      fileInput.value = '';
+      return;
+    }
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (!['pdf', 'pptx'].includes(ext)) {
+      showToast('Solo se aceptan archivos .pdf o .pptx', 'error');
+      fileInput.value = '';
+      return;
+    }
+    selectedFile = file;
+    fileNameEl.textContent = file.name;
+    fileSizeEl.textContent = formatBytes(file.size);
+    fileInfo.classList.remove('hidden');
+  }
+
+  fileInput.addEventListener('change', () => setSelectedFile(fileInput.files[0] || null));
+  fileClearBtn.addEventListener('click', () => setSelectedFile(null));
+
+  // Drag-and-drop on the label
+  const dropZone = document.getElementById('docs-file-drop-label');
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    setSelectedFile(e.dataTransfer.files[0] || null);
+  });
+
+  // ── Visual processing status poll ─────────────────────────────────────────────
+  function startVisualPolling(docId, item) {
+    if (visPoll.has(docId)) clearInterval(visPoll.get(docId));
+
+    let attempts = 0;
+    const id = setInterval(async () => {
+      attempts++;
+      if (attempts > 400) { // 20 min max
+        clearInterval(id);
+        visPoll.delete(docId);
+        updateVisualStatus(item, { visual_processing_status: 'failed', processing_error: 'Tiempo de espera agotado.' });
+        return;
+      }
+      try {
+        const data = await getJson(`/api/documents/${docId}/processing-status`);
+        updateVisualStatus(item, data);
+        const done = data.visual_processing_status === 'done';
+        const failed = data.visual_processing_status === 'failed';
+        if (done || failed) {
+          clearInterval(id);
+          visPoll.delete(docId);
+          if (done) {
+            item.querySelector('.docs-extract-btn').disabled = false;
+          }
+        }
+      } catch { /* ignore transient polling errors */ }
+    }, 3000);
+    visPoll.set(docId, id);
+  }
+
+  function updateVisualStatus(item, data) {
+    const st  = data.visual_processing_status;
+    const el  = item.querySelector('.docs-visual-status');
+    if (!el) return;
+
+    const LABELS = {
+      pending:        'Pendiente',
+      converting:     'Convirtiendo...',
+      analyzing:      'Analizando',
+      reconstructing: 'Generando markdown...',
+      done:           'Listo',
+      failed:         'Error',
+    };
+
+    const label = LABELS[st] || st || '';
+    let text = label;
+    if (st === 'analyzing' && data.slides_analyzed != null && data.page_count) {
+      text = `Analizando ${data.slides_analyzed}/${data.page_count} slides`;
+    }
+    if (st === 'failed' && data.processing_error) {
+      text = `Error: ${data.processing_error}`;
+    }
+
+    el.textContent = text;
+    el.className = `docs-visual-status docs-visual-status--${st || 'pending'}`;
+  }
+
+  // ── Upload file ───────────────────────────────────────────────────────────────
+  async function uploadFile() {
+    if (!selectedFile) {
+      showToast('Seleccioná un archivo primero.', 'error');
+      return;
+    }
+
+    createBtn.disabled = true;
+    createBtn.textContent = 'Subiendo...';
+    feedback.textContent = '';
+
+    try {
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      const docName = nameInput.value.trim();
+      if (docName) formData.append('name', docName);
+      const subj = subjectInput.value.trim();
+      if (subj) formData.append('subject', subj);
+
+      const headers = {};
+      if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
+
+      const res = await fetch('/api/documents/upload', { method: 'POST', headers, body: formData });
+      if (res.headers.get('x-refresh-token')) Auth.handleRefreshToken(res);
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload.message || `HTTP ${res.status}`);
+
+      setSelectedFile(null);
+      nameInput.value   = '';
+      subjectInput.value = '';
+      showToast('Archivo subido. Procesando...', 'success');
+
+      await loadDocuments();
+
+      // Auto-start visual polling if it's a visual document
+      const docId = payload.document?.id;
+      const isVisual = payload.document?.processing_mode === 'pdf_visual' ||
+                       payload.document?.processing_mode === 'pptx_visual';
+      if (docId && isVisual) {
+        const newItem = listEl.querySelector(`[data-doc-id="${docId}"]`);
+        if (newItem) startVisualPolling(docId, newItem);
+      }
+    } catch (err) {
+      feedback.textContent = err.message;
+      feedback.style.color = 'var(--fail-fg)';
+    } finally {
+      createBtn.disabled   = false;
+      createBtn.textContent = 'Subir archivo';
+    }
+  }
 
   // ── Load list ────────────────────────────────────────────────────────────────
   async function loadDocuments() {
@@ -10213,9 +10385,21 @@ function initDocumentsTab() {
 
     item.dataset.subject = doc.subject || '';
 
+    const isVisual = doc.processing_mode === 'pdf_visual' || doc.processing_mode === 'pptx_visual';
+    const modeBadge = isVisual
+      ? `<span class="docs-mode-badge docs-mode-badge--${doc.processing_mode === 'pptx_visual' ? 'pptx' : 'pdf'}">${doc.processing_mode === 'pptx_visual' ? 'PPTX' : 'PDF visual'}</span>`
+      : '';
+
+    const visualStatusHtml = isVisual
+      ? `<div class="docs-visual-status-row"><span class="docs-visual-status docs-visual-status--${doc.visual_processing_status || 'pending'}"></span></div>`
+      : '';
+
+    const extractDisabled = isVisual && doc.visual_processing_status !== 'done' ? 'disabled' : '';
+
     item.innerHTML = `
       <div class="docs-document-header">
         <span class="docs-document-name" title="${escHtml(name)}">${escHtml(name)}</span>
+        ${modeBadge}
         <span class="docs-document-meta">${escHtml(metaParts.join(' · '))}</span>
       </div>
       <div class="docs-subject-row">
@@ -10232,8 +10416,9 @@ function initDocumentsTab() {
       <div class="docs-no-subject-warning ${doc.subject ? 'hidden' : ''}">
         ⚠ Sin materia asignada — el exam_score quedará null al rankear. Asigná una materia para activar la brújula de exámenes.
       </div>
+      ${visualStatusHtml}
       <div class="docs-document-actions">
-        <button type="button" class="btn-secondary docs-extract-btn">Extraer conceptos</button>
+        <button type="button" class="btn-secondary docs-extract-btn" ${extractDisabled}>Extraer conceptos</button>
         <button type="button" class="docs-concepts-toggle hidden">
           <span class="docs-toggle-count">0 conceptos</span>
           <span class="docs-toggle-arrow">▼</span>
@@ -10263,6 +10448,19 @@ function initDocumentsTab() {
     if (doc.concept_count > 0) updateConceptBadge(item, doc.concept_count);
     if (doc.cluster_count > 0) updateClusterBadge(item, doc.cluster_count);
     if (doc.has_ranking)       showRankingToggle(item);
+
+    // Populate visual status text and start polling if still in progress
+    if (isVisual) {
+      updateVisualStatus(item, {
+        visual_processing_status: doc.visual_processing_status,
+        slides_analyzed: null,
+        page_count: doc.page_count,
+        processing_error: doc.processing_error,
+      });
+      const st = doc.visual_processing_status;
+      const inProgress = st && st !== 'done' && st !== 'failed';
+      if (inProgress) startVisualPolling(doc.id, item);
+    }
 
     wire(item, doc.id, doc.subject);
     return item;
@@ -10613,7 +10811,8 @@ function initDocumentsTab() {
         throw new Error(e.message || `HTTP ${res.status}`);
       }
 
-      if (polling.has(docId)) { clearInterval(polling.get(docId)); polling.delete(docId); }
+      if (polling.has(docId))  { clearInterval(polling.get(docId));  polling.delete(docId); }
+      if (visPoll.has(docId))  { clearInterval(visPoll.get(docId));  visPoll.delete(docId); }
       item.remove();
       if (!listEl.querySelector('.docs-document-item')) emptyEl.classList.remove('hidden');
     } catch (err) {
@@ -11207,6 +11406,11 @@ function initDocumentsTab() {
 
   // ── Create document ───────────────────────────────────────────────────────────
   createBtn.addEventListener('click', async () => {
+    if (currentMode === 'file') {
+      await uploadFile();
+      return;
+    }
+
     const text = textInput.value.trim();
     if (!text) {
       showToast('El texto no puede estar vacío.', 'error');

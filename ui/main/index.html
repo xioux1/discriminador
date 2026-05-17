@@ -1253,10 +1253,38 @@
         <!-- Create document form -->
         <div class="card docs-create-card">
           <h3 style="margin:0 0 14px">Nuevo documento</h3>
+
+          <!-- Mode toggle -->
+          <div class="docs-mode-toggle" role="group" aria-label="Modo de entrada">
+            <button type="button" class="docs-mode-btn active" data-mode="text">Pegar texto</button>
+            <button type="button" class="docs-mode-btn" data-mode="file">Subir archivo</button>
+          </div>
+
           <label for="doc-name-input" style="display:block;font-size:var(--fs-sm);color:var(--text-muted);margin-bottom:4px">Nombre (opcional)</label>
           <input type="text" id="doc-name-input" placeholder="Ej: Clase 5 — Prescripción" style="width:100%;max-width:480px;margin-bottom:10px">
-          <label for="doc-text-input" style="display:block;font-size:var(--fs-sm);color:var(--text-muted);margin-bottom:4px">Texto / transcripción</label>
-          <textarea id="doc-text-input" rows="8" placeholder="Pegá el texto, apuntes o transcripción del material..."></textarea>
+
+          <!-- Text mode panel -->
+          <div id="docs-text-panel">
+            <label for="doc-text-input" style="display:block;font-size:var(--fs-sm);color:var(--text-muted);margin-bottom:4px">Texto / transcripción</label>
+            <textarea id="doc-text-input" rows="8" placeholder="Pegá el texto, apuntes o transcripción del material..."></textarea>
+          </div>
+
+          <!-- File mode panel -->
+          <div id="docs-file-panel" class="hidden">
+            <label style="display:block;font-size:var(--fs-sm);color:var(--text-muted);margin-bottom:6px">Archivo PDF o PowerPoint (PPTX)</label>
+            <label class="docs-file-drop-zone" for="doc-file-input" id="docs-file-drop-label">
+              <span class="docs-file-drop-icon">📄</span>
+              <span class="docs-file-drop-text">Arrastrá o hacé clic para elegir un archivo</span>
+              <span class="docs-file-drop-hint">.pdf o .pptx — máximo 100 MB — máximo 60 páginas</span>
+              <input type="file" id="doc-file-input" accept=".pdf,.pptx" style="display:none">
+            </label>
+            <div id="docs-file-info" class="docs-file-info hidden">
+              <span id="docs-file-name" class="docs-file-name"></span>
+              <span id="docs-file-size" class="docs-file-size"></span>
+              <button type="button" id="docs-file-clear-btn" class="btn-ghost" style="font-size:var(--fs-sm);padding:2px 8px">✕</button>
+            </div>
+          </div>
+
           <label for="doc-subject-input" style="display:block;font-size:var(--fs-sm);color:var(--text-muted);margin-bottom:4px;margin-top:10px">
             Materia <span style="color:var(--review-fg);font-size:0.78rem">— necesario para la brújula de exámenes</span>
           </label>
