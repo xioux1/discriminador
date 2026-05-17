@@ -148,7 +148,9 @@ function daysFromNow(days) {
   const y = parts.find((p) => p.type === 'year').value;
   const m = parts.find((p) => p.type === 'month').value;
   const d = parts.find((p) => p.type === 'day').value;
-  const midnightLocal = new Date(`${y}-${m}-${d}T00:00:00`);
-  midnightLocal.setDate(midnightLocal.getDate() + days);
-  return midnightLocal;
+  // Parse as midnight Argentina time (UTC-3, no DST) so the scheduled
+  // timestamp is always in the future relative to the Argentina calendar day,
+  // regardless of what timezone the Node.js runtime is in.
+  const midnightArgentina = new Date(`${y}-${m}-${d}T00:00:00-03:00`);
+  return new Date(midnightArgentina.getTime() + days * 24 * 60 * 60 * 1000);
 }
