@@ -21,6 +21,26 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const MAX_EXCERPT_LENGTH = 1200;
 const MAX_SOURCE_EXCERPTS = 8;
 
+
+function deriveClusterStructuralPath(concepts) {
+  const withPath = concepts.filter(
+    (c) => Array.isArray(c.structural_path) && c.structural_path.length > 0
+  );
+
+  if (!withPath.length) {
+    return { structural_path: [], depth: 0, source_chunk_id: null };
+  }
+
+  const representative = withPath.reduce((best, c) =>
+    (Number(c.confidence ?? 0) > Number(best.confidence ?? 0) ? c : best), withPath[0]);
+
+  return {
+    structural_path: representative.structural_path,
+    depth: representative.depth ?? 0,
+    source_chunk_id: representative.chunk_id ?? null,
+  };
+}
+
 // ==================== safeJsonParseObject ====================
 
 export function safeJsonParseObject(raw) {
@@ -97,19 +117,32 @@ export async function buildClusterCardContext(clusterId) {
 
   // Fetch concepts for this cluster — ordered so main/support appear before examples
   const { rows: conceptRows } = await dbPool.query(
-    `SELECT id, label, definition, evidence, source_chunk, source_chunk_index,
-            role_in_cluster, concept_type
-     FROM concepts
-     WHERE cluster_id = $1
+    `SELECT c.id,
+            c.label,
+            c.definition,
+            c.evidence,
+            c.source_chunk,
+            c.source_chunk_index,
+            c.role_in_cluster,
+            c.concept_type,
+            c.confidence,
+            c.chunk_id,
+            c.canonical_label,
+            c.description,
+            ch.structural_path,
+            ch.depth
+     FROM concepts c
+     LEFT JOIN chunks ch ON ch.id = c.chunk_id
+     WHERE c.cluster_id = $1
      ORDER BY
-       CASE role_in_cluster
+       CASE c.role_in_cluster
          WHEN 'main'    THEN 0
          WHEN 'support' THEN 1
          WHEN 'context' THEN 2
          WHEN 'example' THEN 3
          ELSE 4
        END,
-       source_chunk_index ASC NULLS LAST`,
+       c.source_chunk_index ASC NULLS LAST`,
     [clusterId]
   );
   if (!conceptRows.length) {
@@ -178,6 +211,8 @@ export async function buildClusterCardContext(clusterId) {
     .slice(0, MAX_SOURCE_EXCERPTS)
     .map(([chunk_index, text]) => ({ chunk_index, text }));
 
+  const { structural_path, depth, source_chunk_id } = deriveClusterStructuralPath(conceptRows);
+
   // Fetch intra-cluster semantic relations
   const conceptIds = conceptRows.map(c => c.id);
   const { rows: relationRows } = await dbPool.query(
@@ -206,13 +241,17 @@ export async function buildClusterCardContext(clusterId) {
     },
     concepts: conceptRows.map(c => ({
       id: c.id,
-      label: c.label,
-      definition: c.definition,
+      label: c.label ?? c.canonical_label,
+      definition: c.definition ?? c.description,
       evidence: c.evidence ?? null,
       source_chunk: c.source_chunk ?? null,
       source_chunk_index: c.source_chunk_index ?? null,
       role_in_cluster: c.role_in_cluster ?? null,
       concept_type: c.concept_type ?? null,
+      confidence: c.confidence ?? null,
+      chunk_id: c.chunk_id ?? null,
+      structural_path: c.structural_path ?? [],
+      depth: c.depth ?? 0,
     })),
     relations: relationRows.map(r => ({
       from: r.source_concept_id,
@@ -222,6 +261,9 @@ export async function buildClusterCardContext(clusterId) {
       rationale: r.rationale,
     })),
     source_excerpts: sourceExcerpts,
+    structural_path,
+    depth,
+    source_chunk_id,
   };
 }
 
@@ -625,8 +667,9 @@ export async function persistGeneratedCardDraft(context, validatedOutput, userId
     const cardInsert = await client.query(
       `INSERT INTO cards
          (user_id, subject, prompt_text, expected_answer_text,
-          cluster_id, document_id, card_type, status, grading_rubric)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'draft', $8)
+          cluster_id, document_id, card_type, status, grading_rubric,
+          structural_path, depth, source_chunk_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'draft', $8, $9, $10, $11)
        RETURNING id`,
       [
         userId ?? null,
@@ -637,6 +680,9 @@ export async function persistGeneratedCardDraft(context, validatedOutput, userId
         document.id,
         card_group.card_type,
         JSON.stringify(primaryVariant.grading_rubric ?? []),
+        context.structural_path ?? [],
+        context.depth ?? 0,
+        context.source_chunk_id ?? null,
       ]
     );
     const cardId = cardInsert.rows[0].id;
