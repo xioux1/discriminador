@@ -227,10 +227,12 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
     const cardsResult = await dbPool.query(
       `SELECT c.*,
          COUNT(mc.id) FILTER (WHERE mc.status = 'active') AS active_micro_count,
-         COUNT(cv.id) AS variant_count
+         COUNT(cv.id) AS variant_count,
+         MAX(cl.learning_order) AS cluster_learning_order
        FROM cards c
        LEFT JOIN micro_cards mc ON mc.parent_card_id = c.id
        LEFT JOIN card_variants cv ON cv.card_id = c.id
+       LEFT JOIN clusters cl ON cl.id = c.cluster_id
        WHERE c.next_review_at <= now()
          AND c.archived_at IS NULL
          AND c.suspended_at IS NULL
@@ -240,6 +242,7 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
        GROUP BY c.id
        ORDER BY
          CASE WHEN c.review_count = 0 THEN 0 ELSE 1 END ASC,
+         CASE WHEN c.review_count = 0 THEN COALESCE(MAX(cl.learning_order), 999) ELSE 999 END ASC,
          CAST(c.pass_count AS float) / NULLIF(c.review_count, 0) ASC NULLS FIRST,
          c.next_review_at ASC
        LIMIT 30`,

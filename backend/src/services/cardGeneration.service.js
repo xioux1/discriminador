@@ -213,6 +213,16 @@ export async function buildClusterCardContext(clusterId) {
 
   const { structural_path, depth, source_chunk_id } = deriveClusterStructuralPath(conceptRows);
 
+  // Fetch prerequisite clusters (topics the student should already know)
+  const { rows: prereqRows } = await dbPool.query(
+    `SELECT cl.id, cl.name, cl.definition, cl.learning_order
+     FROM cluster_dependencies cd
+     JOIN clusters cl ON cl.id = cd.from_cluster_id
+     WHERE cd.to_cluster_id = $1
+     ORDER BY cl.learning_order ASC NULLS LAST`,
+    [clusterId]
+  );
+
   // Fetch intra-cluster semantic relations
   const conceptIds = conceptRows.map(c => c.id);
   const { rows: relationRows } = await dbPool.query(
@@ -264,6 +274,11 @@ export async function buildClusterCardContext(clusterId) {
     structural_path,
     depth,
     source_chunk_id,
+    prerequisite_clusters: prereqRows.map(r => ({
+      id: r.id,
+      name: r.name,
+      definition: r.definition,
+    })),
   };
 }
 
@@ -296,7 +311,7 @@ export function detectEnumerativeCluster(context) {
 // ==================== buildCardGenerationPrompt ====================
 
 export function buildCardGenerationPrompt(context, options = {}) {
-  const { cluster, concepts, relations = [], source_excerpts } = context;
+  const { cluster, concepts, relations = [], source_excerpts, prerequisite_clusters = [] } = context;
   const maxVariants = options.maxVariants ?? 5;
   const isEnumerative = detectEnumerativeCluster(context);
   const minCoverage = Math.max(
@@ -343,10 +358,14 @@ export function buildCardGenerationPrompt(context, options = {}) {
 
   const targetVariants = Math.max(6, Math.min(7, maxVariants));
 
+  const prereqSection = prerequisite_clusters.length > 0
+    ? `\nConocimiento previo del alumno (temas ya estudiados antes de este):\n${prerequisite_clusters.map(p => `- ${p.name}${p.definition ? ': ' + p.definition : ''}`).join('\n')}\nGenerá preguntas que asuman ese conocimiento previo y construyan sobre él. No repitas preguntas básicas ya cubiertas en esos temas.\n`
+    : '';
+
   return `Sos un asistente experto en diseño de tarjetas de estudio.
 
 Vas a recibir un cluster de conceptos extraídos de un documento de estudio.
-Tu tarea es generar UNA familia de tarjeta y VARIAS variantes de pregunta/respuesta para que un alumno entienda completamente ese cluster.
+Tu tarea es generar UNA familia de tarjeta y VARIAS variantes de pregunta/respuesta para que un alumno entienda completamente ese cluster.${prereqSection}
 
 Objetivo principal:
 El alumno tiene que poder estudiar el cluster respondiendo estas preguntas. Para eso necesitás SUFICIENTES preguntas atómicas, no pocas preguntas amplias. Apuntá a generar entre ${targetVariants} y ${maxVariants} variantes si el material lo permite. Más preguntas atómicas bien específicas son siempre mejor que menos preguntas vagas que abarcan demasiado.
