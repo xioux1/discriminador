@@ -457,11 +457,12 @@ router.post('/api/documents/:id/reset', async (req, res, next) => {
     try {
       await client.query('BEGIN');
 
-      const [conceptsRes, clustersRes, cardsRes, embeddingsRes] = await Promise.all([
-        client.query('DELETE FROM concepts               WHERE document_id = $1', [documentId]),
-        client.query('DELETE FROM clusters               WHERE document_id = $1', [documentId]),
-        client.query('DELETE FROM cards                  WHERE document_id = $1', [documentId]),
+      const [conceptsRes, clustersRes, cardsRes, embeddingsRes, sectionsRes] = await Promise.all([
+        client.query('DELETE FROM concepts                  WHERE document_id = $1', [documentId]),
+        client.query('DELETE FROM clusters                  WHERE document_id = $1', [documentId]),
+        client.query('DELETE FROM cards                     WHERE document_id = $1', [documentId]),
         client.query('DELETE FROM document_chunk_embeddings WHERE document_id = $1', [documentId]),
+        client.query('DELETE FROM document_sections         WHERE document_id = $1', [documentId]),
       ]);
 
       await client.query(
@@ -476,6 +477,7 @@ router.post('/api/documents/:id/reset', async (req, res, next) => {
         clusters:             clustersRes.rowCount,
         cards:                cardsRes.rowCount,
         chunk_embeddings:     embeddingsRes.rowCount,
+        sections:             sectionsRes.rowCount,
       };
     } catch (err) {
       await client.query('ROLLBACK');

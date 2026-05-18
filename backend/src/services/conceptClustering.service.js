@@ -3,6 +3,7 @@ import { dbPool } from '../db/client.js';
 import { logger } from '../utils/logger.js';
 import { withRetry } from '../utils/retry.js';
 import { safeJsonParseArray } from './conceptExtractor.service.js';
+import { sectionsToClusters } from './documentSections.service.js';
 
 // ==================== Lazy client ====================
 
@@ -690,6 +691,49 @@ export async function clusterConceptsForDocument(documentId, outline = null) {
   }
 
   logger.info('[conceptClustering] Concepts loaded', { documentId, count: concepts.length });
+
+  // Step 1b: For process_stages documents with sections, use deterministic clustering.
+  // This replaces geometric + LLM clustering with a direct section → cluster mapping.
+  if (outline?.structure_type === 'process_stages') {
+    const { rows: sectionRows } = await dbPool.query(
+      'SELECT COUNT(*)::int AS count FROM document_sections WHERE document_id = $1',
+      [documentId]
+    );
+    if (sectionRows[0].count > 0) {
+      logger.info('[conceptClustering] process_stages with sections — using deterministic clustering', {
+        documentId, sectionCount: sectionRows[0].count,
+      });
+
+      const parsed = await sectionsToClusters(documentId);
+      if (parsed && parsed.length > 0) {
+        const allConceptIds = concepts.map(c => c.id);
+        const conceptMap    = new Map(concepts.map(c => [c.id, c]));
+        sanitizeClusters(parsed, allConceptIds, conceptMap);
+        validateClusteringResult(parsed, allConceptIds);
+
+        logger.info('[conceptClustering] Deterministic clustering validated', {
+          documentId,
+          clusterCount: parsed.length,
+          clusters: parsed.map(cl => ({ name: cl.cluster_name, concepts: cl.concept_ids.length })),
+        });
+
+        const insertedClusters = await persistClusters(documentId, parsed, conceptMap);
+        logger.info('[conceptClustering] Done (deterministic)', {
+          documentId, clusterCount: insertedClusters.length,
+        });
+        return {
+          status:        'completed',
+          document_id:   documentId,
+          cluster_count: insertedClusters.length,
+          clusters:      insertedClusters,
+        };
+      }
+
+      logger.warn('[conceptClustering] sectionsToClusters returned null — falling back to LLM', {
+        documentId,
+      });
+    }
+  }
 
   // Step 2: Geometric pre-clustering
   const threshold      = Number(process.env.CONCEPT_CLUSTER_SIMILARITY_THRESHOLD || 0.78);
