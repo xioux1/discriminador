@@ -682,13 +682,24 @@ export async function persistGeneratedCardDraft(context, validatedOutput, userId
   try {
     await client.query('BEGIN');
 
+    // Resolve primary concept label from source_concept_ids
+    let sourceConceptLabel = null;
+    const primaryConceptId = primaryVariant.source_concept_ids?.[0];
+    if (primaryConceptId) {
+      const conceptRow = await client.query(
+        `SELECT COALESCE(canonical_label, label) AS label FROM concepts WHERE id = $1 LIMIT 1`,
+        [primaryConceptId]
+      );
+      sourceConceptLabel = conceptRow.rows[0]?.label ?? null;
+    }
+
     // Insert parent card using first variant's question/answer
     const cardInsert = await client.query(
       `INSERT INTO cards
          (user_id, subject, prompt_text, expected_answer_text,
           cluster_id, document_id, card_type, status, grading_rubric,
-          structural_path, depth, source_chunk_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'draft', $8, $9, $10, $11)
+          structural_path, depth, source_chunk_id, source_concept_label)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'draft', $8, $9, $10, $11, $12)
        RETURNING id`,
       [
         userId ?? null,
@@ -702,6 +713,7 @@ export async function persistGeneratedCardDraft(context, validatedOutput, userId
         context.structural_path ?? [],
         context.depth ?? 0,
         context.source_chunk_id ?? null,
+        sourceConceptLabel,
       ]
     );
     const cardId = cardInsert.rows[0].id;
