@@ -10952,8 +10952,12 @@ function initDocumentsTab() {
         .map(lv => ({ block_name: LEVEL_LABEL[lv] || lv, clusters: byLevel[lv] }));
     }
 
+    // Build a map of cluster_id → block index so we can favour cross-block edges
+    const clusterBlock = {};
+    blocks.forEach((b, bi) => b.clusters.forEach(cl => { clusterBlock[cl.id] = bi; }));
+
     // Edges to draw: prefer concept_map.edges; fall back to requires edges from sequence
-    const drawEdges = concept_map?.edges?.length
+    let drawEdges = concept_map?.edges?.length
       ? concept_map.edges
       : sequence.flatMap(cl =>
           (cl.requires || []).map(rid => ({
@@ -10963,6 +10967,15 @@ function initDocumentsTab() {
             label:           null,
           }))
         );
+
+    // Keep only cross-block edges (intra-block connections are implied by grouping)
+    // and cap at 6 to avoid visual noise from too many crossing arrows.
+    const crossBlock = drawEdges.filter(e =>
+      clusterBlock[e.from_cluster_id] !== undefined &&
+      clusterBlock[e.to_cluster_id]   !== undefined &&
+      clusterBlock[e.from_cluster_id] !== clusterBlock[e.to_cluster_id]
+    );
+    drawEdges = (crossBlock.length > 0 ? crossBlock : drawEdges).slice(0, 6);
 
     const blocksHtml = blocks.map(b => `
       <div class="doc-schema-block">
