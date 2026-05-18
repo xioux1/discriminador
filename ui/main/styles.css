@@ -5363,13 +5363,19 @@ textarea.chinese-input {
   border-radius: var(--radius);
 }
 
+.doc-schema-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
 .doc-schema-title {
   font-size: var(--fs-sm);
   font-weight: 600;
   color: #6366f1;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  margin-bottom: 20px;
 }
 
 /* Snake layout (linear chains) */

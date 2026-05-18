@@ -10939,11 +10939,31 @@ function initDocumentsTab() {
 
     container.innerHTML = `
       <div class="doc-schema-wrap">
-        <div class="doc-schema-title">Mapa del documento</div>
+        <div class="doc-schema-title-row">
+          <span class="doc-schema-title">Mapa del documento</span>
+          <button class="btn-ghost doc-schema-regen-btn" style="font-size:var(--fs-sm)" title="Regenerar mapa sin resetear clusters ni preguntas">↺ Regenerar mapa</button>
+        </div>
         ${graphContent}
       </div>`;
 
     requestAnimationFrame(() => drawSchemaArrows(container, sequence));
+
+    // Wire regenerate button
+    const regenBtn = container.querySelector('.doc-schema-regen-btn');
+    if (regenBtn) {
+      regenBtn.addEventListener('click', async () => {
+        const docItem = container.closest('[data-doc-id]');
+        const docId   = docItem?.dataset?.docId;
+        if (!docId) return;
+        regenBtn.disabled    = true;
+        regenBtn.textContent = '↺ Regenerando…';
+        const headers = { 'Content-Type': 'application/json' };
+        if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
+        await fetch(`/api/documents/${docId}/build-learning-graph`, { method: 'POST', headers }).catch(() => {});
+        // Re-poll and re-render both panels
+        pollLearningGraph(docId, docItem);
+      });
+    }
   }
 
   function drawSchemaArrows(container, sequence) {
