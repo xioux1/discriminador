@@ -10757,35 +10757,44 @@ function initDocumentsTab() {
       </div>`;
   }
 
-  async function pollLearningGraph(docId, item, attemptsLeft = 8) {
+  async function pollLearningGraph(docId, item, attemptsLeft = 10) {
     const panel = item.querySelector('.docs-learning-graph-panel');
     if (!panel) return;
 
     panel.innerHTML = '<p class="docs-lg-building">Calculando secuencia de estudio…</p>';
 
-    const attempt = async () => {
+    const headers = {};
+    if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
+
+    const fetchGraph = async () => {
       try {
-        const headers = {};
-        if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
         const res = await fetch(`/api/documents/${docId}/learning-graph`, { headers });
-        if (res.status === 404) return false; // not ready yet
-        if (!res.ok) return null;             // real error
+        if (res.status === 404) return false;
+        if (!res.ok) return null;
         const data = await res.json();
-        return data.sequence || null;
+        return data.sequence?.length > 0 ? data.sequence : null;
       } catch { return null; }
     };
 
+    const triggerBuild = async () => {
+      try {
+        await fetch(`/api/documents/${docId}/build-learning-graph`, {
+          method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
+        });
+      } catch { /* non-fatal */ }
+    };
+
+    let triggered = false;
     const tryOnce = async (remaining) => {
-      if (remaining <= 0) {
-        panel.innerHTML = '';
-        return;
-      }
-      const seq = await attempt();
-      if (seq && seq.length > 0) {
+      if (remaining <= 0) { panel.innerHTML = ''; return; }
+
+      const seq = await fetchGraph();
+      if (seq) {
         renderLearningGraph(panel, seq);
       } else if (seq === false) {
-        // Not ready — retry with backoff (5s, 8s, 11s …)
-        const delay = 5000 + (8 - remaining) * 3000;
+        // Graph not built yet — trigger once for existing clustered docs
+        if (!triggered) { triggered = true; await triggerBuild(); }
+        const delay = 5000 + (10 - remaining) * 2000;
         setTimeout(() => tryOnce(remaining - 1), delay);
       } else {
         panel.innerHTML = '';
@@ -10812,6 +10821,7 @@ function initDocumentsTab() {
       const data = await getJson(`/api/documents/${docId}/clusters`);
       renderClustersInPanel(panel, data);
       updateClusterBadge(item, data.cluster_count);
+      pollLearningGraph(docId, item);
     } catch (err) {
       panel.innerHTML = `<span style="color:var(--fail-fg);font-size:var(--fs-sm)">Error: ${escHtml(err.message)}</span>`;
     }
