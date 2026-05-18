@@ -11024,16 +11024,6 @@ function initDocumentsTab() {
     });
 
     const paths = [];
-    const labels = [];
-
-    // Evaluate a cubic bezier at t (0-1) — returns {x, y}
-    const bezierPt = (p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y, t) => {
-      const u = 1 - t;
-      return {
-        x: u*u*u*p0x + 3*u*u*t*p1x + 3*u*t*t*p2x + t*t*t*p3x,
-        y: u*u*u*p0y + 3*u*u*t*p1y + 3*u*t*t*p2y + t*t*t*p3y,
-      };
-    };
 
     for (const edge of edges) {
       const fromEl = nodeEls[edge.from_cluster_id];
@@ -11067,19 +11057,14 @@ function initDocumentsTab() {
       d = `M${p0x},${p0y} C${p1x},${p1y} ${p2x},${p2y} ${p3x},${p3y}`;
 
       const markerId = `arr-${edge.edge_type || 'req'}`;
-      paths.push(`<path d="${d}" stroke="${color}" stroke-width="2" fill="none" marker-end="url(#${markerId})"/>`);
-
-      if (edge.label) {
-        // Place label at ~30% along the bezier — in the gap just outside the source node
-        const pt = bezierPt(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y, 0.30);
-        const lx = pt.x;
-        const ly = pt.y - 5;
-        const labelId = `lbl-${edge.from_cluster_id.slice(0,4)}-${edge.to_cluster_id.slice(0,4)}`;
-        labels.push(
-          `<rect id="${labelId}" x="${lx - 2}" y="${ly - 11}" rx="3" ry="3" height="14" fill="var(--surface,#fff)" opacity="0.88"/>` +
-          `<text x="${lx}" y="${ly}" class="doc-schema-edge-label" data-bg="${labelId}">${escHtml(edge.label)}</text>`
-        );
-      }
+      const title = edge.label
+        ? `<title>${escHtml(edge.label)}</title>`
+        : '';
+      // Wider invisible stroke for easier hover targeting
+      paths.push(
+        `<path d="${d}" stroke="transparent" stroke-width="10" fill="none" style="pointer-events:stroke" class="doc-schema-edge-hit">${title}</path>` +
+        `<path d="${d}" stroke="${color}" stroke-width="2" fill="none" marker-end="url(#${markerId})" style="pointer-events:none"/>`
+      );
     }
 
     // One marker per edge type
@@ -11091,16 +11076,8 @@ function initDocumentsTab() {
       </marker>`;
     }).join('');
 
-    svg.innerHTML = `<defs>${defs}</defs>${paths.join('')}${labels.join('')}`;
-
-    // After render: resize each label's background rect to match text width
-    svg.querySelectorAll('text[data-bg]').forEach(textEl => {
-      const bgEl = svg.getElementById(textEl.dataset.bg);
-      if (bgEl) {
-        const tw = textEl.getBBox?.()?.width ?? 60;
-        bgEl.setAttribute('width', tw + 4);
-      }
-    });
+    svg.style.pointerEvents = 'all';
+    svg.innerHTML = `<defs>${defs}</defs>${paths.join('')}`;
   }
 
   async function pollLearningGraph(docId, item, attemptsLeft = 10) {
