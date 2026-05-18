@@ -129,9 +129,29 @@ CREATE INDEX IF NOT EXISTS idx_chunks_run_pos ON chunks(run_id, position_in_doc)
 CREATE INDEX IF NOT EXISTS idx_chunks_run_depth ON chunks(run_id, depth);
 CREATE INDEX IF NOT EXISTS idx_chunks_path_gin ON chunks USING GIN (structural_path);
 
-CREATE INDEX IF NOT EXISTS idx_concepts_chunk ON concepts(chunk_id);
-CREATE INDEX IF NOT EXISTS idx_concepts_label_trgm ON concepts USING GIN (canonical_label gin_trgm_ops);
-CREATE INDEX IF NOT EXISTS idx_concepts_path_gin ON concepts USING GIN (structural_path);
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'concepts' AND column_name = 'chunk_id'
+  ) THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_concepts_chunk ON concepts(chunk_id)';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'concepts' AND column_name = 'canonical_label'
+  ) THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_concepts_label_trgm ON concepts USING GIN (canonical_label gin_trgm_ops)';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'concepts' AND column_name = 'structural_path'
+  ) THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_concepts_path_gin ON concepts USING GIN (structural_path)';
+  END IF;
+END$$;
 
 CREATE INDEX IF NOT EXISTS idx_edges_from_type ON chunk_edges(from_chunk_id, edge_type);
 CREATE INDEX IF NOT EXISTS idx_edges_to_type ON chunk_edges(to_chunk_id, edge_type);
