@@ -547,3 +547,19 @@ export async function getDocumentConcepts(documentId) {
   );
   return rows;
 }
+
+export async function extractConceptsFromChunk(chunkText, maxConcepts = 8) {
+  if (!chunkText || chunkText.trim().split(/\s+/).length < 5) return [];
+  const rawString = await callAnthropicConceptExtraction(chunkText, maxConcepts);
+  const parsed = safeJsonParseArray(rawString);
+  if (!Array.isArray(parsed)) return [];
+
+  return parsed
+    .filter((c) => c && (c.label || c.name || c.canonical_label))
+    .map((c) => ({
+      canonical_label: String(c.canonical_label ?? c.label ?? c.name ?? '').trim(),
+      description: c.description ?? c.definition ?? null,
+      confidence: typeof c.confidence === 'number' ? c.confidence : null,
+    }))
+    .filter((c) => c.canonical_label.length > 0);
+}
