@@ -10919,22 +10919,29 @@ function initDocumentsTab() {
   };
 
   function schemaNodeHtml(cl, highlightId, centerClusterId) {
-    const color   = SCHEMA_LEVEL_COLOR[cl.learning_level] || '#6366f1';
-    const isHl    = cl.id === highlightId;
+    const color    = SCHEMA_LEVEL_COLOR[cl.learning_level] || '#6366f1';
+    const isHl     = cl.id === highlightId;
     const isCenter = cl.id === centerClusterId;
-    const badge   = LEVEL_LABEL[cl.learning_level] || cl.learning_level || '';
-    const rawDesc = cl.definition || '';
-    const desc    = rawDesc.length > 100 ? rawDesc.slice(0, 97) + '…' : rawDesc;
-    const classes = ['doc-schema-node',
-      isHl ? 'doc-schema-node--hl' : '',
+    const badge    = LEVEL_LABEL[cl.learning_level] || cl.learning_level || '';
+    const classes  = ['doc-schema-node',
+      isHl     ? 'doc-schema-node--hl'     : '',
       isCenter ? 'doc-schema-node--center' : ''].filter(Boolean).join(' ');
+
+    // Key concepts chips (filtered by LLM to conceptual-only)
+    const concepts = Array.isArray(cl.key_map_concepts) ? cl.key_map_concepts : [];
+    const chipsHtml = concepts.length
+      ? `<div class="doc-schema-node-concepts">
+           ${concepts.map(c => `<span class="doc-schema-concept-chip">${escHtml(c)}</span>`).join('')}
+         </div>`
+      : '';
+
     return `<div class="${classes}" data-id="${escHtml(cl.id)}" style="--node-color:${color}">
       <div class="doc-schema-node-header">
         <span class="doc-schema-node-num">${cl.learning_order}</span>
         <span class="doc-schema-node-badge">${escHtml(badge)}</span>
       </div>
       <div class="doc-schema-node-name">${escHtml(cl.name)}</div>
-      ${desc ? `<div class="doc-schema-node-desc">${escHtml(desc)}</div>` : ''}
+      ${chipsHtml}
     </div>`;
   }
 

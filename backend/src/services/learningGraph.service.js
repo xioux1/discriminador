@@ -21,7 +21,7 @@ function buildPrompt(clusters) {
     id: c.id,
     name: c.name,
     definition: c.definition || '',
-    key_concepts: (c.concepts || []).slice(0, 6).map(x => x.label),
+    available_concepts: (c.concepts || []).slice(0, 10).map(x => x.label),
   }));
 
   return `You are a pedagogy expert analyzing topics from a study document to build both a learning sequence AND a concept map.
@@ -33,7 +33,7 @@ YOUR TASK:
 Produce two complementary outputs:
 
 1. SEQUENCE — a linear study order (which to study first, prerequisites, etc.)
-2. CONCEPT_MAP — a non-linear map showing how topics RELATE to each other conceptually
+2. CONCEPT_MAP — a non-linear map showing how topics RELATE, with key concepts as child nodes under each cluster
 
 Return ONLY valid JSON in this exact shape:
 {
@@ -49,8 +49,14 @@ Return ONLY valid JSON in this exact shape:
     "center_cluster_id": "<id of the single most central/important topic>",
     "blocks": [
       {
-        "block_name": "<conceptual role, e.g. 'Fundamentos', 'Mecanismo central', 'Arquitectura', 'Casos y ejemplos', 'Comparaciones'>",
+        "block_name": "<conceptual role in Spanish, e.g. 'Fundamentos', 'Mecanismo central', 'Arquitectura', 'Comparaciones'>",
         "cluster_ids": ["<id>", "<id>"]
+      }
+    ],
+    "cluster_concepts": [
+      {
+        "cluster_id": "<id>",
+        "key_concepts": ["<concept label>", "<concept label>"]
       }
     ],
     "edges": [
@@ -58,7 +64,7 @@ Return ONLY valid JSON in this exact shape:
         "from_cluster_id": "<id>",
         "to_cluster_id": "<id>",
         "edge_type": "enables",
-        "label": "<short phrase describing the relationship, e.g. 'permite implementar'>"
+        "label": "<short Spanish phrase, e.g. 'permite implementar'>"
       }
     ]
   }
@@ -71,14 +77,16 @@ SEQUENCE RULES:
 - No circular dependencies; every topic appears exactly once
 
 CONCEPT MAP RULES:
-- center_cluster_id: the ONE topic that is the core of this document (most connected / most important)
-- blocks: group topics by conceptual ROLE, not by study order. Use 2–5 blocks with meaningful names in Spanish.
+- center_cluster_id: the ONE topic that is the core of this document
+- blocks: group topics by conceptual ROLE, not by study order. Use 2–5 blocks in Spanish.
   Each cluster_id appears in exactly one block.
-- edges: meaningful relationships between any two topics (not just sequential).
-  edge_type must be one of: "requires" | "produces" | "enables" | "part_of" | "contrasts_with" | "example_of"
-  label: a short 2–5 word Spanish phrase describing the link (e.g. "permite implementar", "es un tipo de", "depende de")
-  Include 3–8 edges total; prioritize non-obvious, high-value relationships.
-  Do NOT add an edge just because one topic comes before another in the sequence.
+- cluster_concepts: for EACH cluster, select 2–4 key concepts from available_concepts that are
+  ESSENTIAL for understanding the topic conceptually.
+  EXCLUDE: procedural steps, code examples, specific parameter values, implementation details.
+  INCLUDE: theoretical constructs, mechanisms, relationships, abstract principles.
+- edges: meaningful relationships between clusters (not just sequential order).
+  edge_type: "requires" | "produces" | "enables" | "part_of" | "contrasts_with" | "example_of"
+  label: 2–5 word Spanish phrase. Include 3–8 edges total.
 
 Return ONLY the JSON object, no explanation.`;
 }
@@ -86,8 +94,8 @@ Return ONLY the JSON object, no explanation.`;
 // ── LLM call ─────────────────────────────────────────────────────────────────
 
 async function callLLM(clusters) {
-  // sequence ~200t/cluster + concept_map ~400t/cluster; add headroom
-  const maxTokens = Math.max(3000, clusters.length * 600);
+  // sequence ~200t/cluster + concept_map with cluster_concepts ~700t/cluster
+  const maxTokens = Math.max(3500, clusters.length * 700);
 
   const response = await withRetry(() =>
     getAnthropicClient().messages.create({
@@ -147,10 +155,10 @@ async function persistLearningGraph(documentId, llmResult) {
       [documentId]
     );
 
-    // Reset block/center fields before re-writing
+    // Reset block/center/concept fields before re-writing
     await client.query(
       `UPDATE clusters SET learning_order = NULL, learning_level = NULL,
-         block_name = NULL, is_center = FALSE
+         block_name = NULL, is_center = FALSE, key_map_concepts = '[]'::jsonb
        WHERE document_id = $1`,
       [documentId]
     );
@@ -183,6 +191,18 @@ async function persistLearningGraph(documentId, llmResult) {
         `UPDATE clusters SET is_center = TRUE WHERE id = $1 AND document_id = $2`,
         [concept_map.center_cluster_id, documentId]
       );
+    }
+
+    // Write key_map_concepts per cluster
+    if (Array.isArray(concept_map?.cluster_concepts)) {
+      for (const cc of concept_map.cluster_concepts) {
+        const concepts = (cc.key_concepts ?? []).filter(c => typeof c === 'string').slice(0, 6);
+        if (!concepts.length) continue;
+        await client.query(
+          `UPDATE clusters SET key_map_concepts = $1::jsonb WHERE id = $2 AND document_id = $3`,
+          [JSON.stringify(concepts), cc.cluster_id, documentId]
+        );
+      }
     }
 
     // Insert sequence dependency edges (requires = prerequisite)
@@ -272,7 +292,8 @@ export async function buildLearningGraph(documentId, clusters) {
  */
 export async function getLearningGraph(documentId) {
   const { rows: clusters } = await dbPool.query(
-    `SELECT id, name, definition, learning_order, learning_level, block_name, is_center
+    `SELECT id, name, definition, learning_order, learning_level, block_name, is_center,
+            COALESCE(key_map_concepts, '[]'::jsonb) AS key_map_concepts
      FROM clusters
      WHERE document_id = $1 AND learning_order IS NOT NULL
      ORDER BY learning_order ASC`,

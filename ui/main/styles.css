@@ -5469,6 +5469,38 @@ textarea.chinese-input {
   line-height: 1.45;
 }
 
+/* Key concept chips */
+.doc-schema-node-concepts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(0,0,0,0.07);
+}
+
+.doc-schema-concept-chip {
+  display: inline-block;
+  font-size: 0.62rem;
+  font-weight: 500;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--node-color, #6366f1) 10%, transparent);
+  color: var(--node-color, #6366f1);
+  border: 1px solid color-mix(in srgb, var(--node-color, #6366f1) 25%, transparent);
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+[data-theme="dark"] .doc-schema-node-concepts {
+  border-color: rgba(255,255,255,0.08);
+}
+[data-theme="dark"] .doc-schema-concept-chip {
+  background: color-mix(in srgb, var(--node-color, #6366f1) 18%, transparent);
+}
+
 .doc-schema-svg {
   position: absolute;
   inset: 0;
