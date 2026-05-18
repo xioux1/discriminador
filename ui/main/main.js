@@ -5248,7 +5248,11 @@ const studyState = {
   voicePhase: 'idle',
   audioPlaying: false,
   voiceReviewPaused: false,
-  isAdvancingCard: false
+  isAdvancingCard: false,
+  // Schema interstitial
+  schemaCache: {},       // document_id → sequence[]
+  lastCardClusterId: null,
+  lastCardDocumentId: null,
 };
 
 function maybeSendBreakNudge() {
@@ -5662,6 +5666,12 @@ function showStudyCard() {
   hideExplanationPanel();
   const item = studyState.queue[studyState.index];
   if (!item) { finishStudySession(); return; }
+
+  // Track last main card's cluster for interstitial detection
+  if (item.type === 'card' && item.data?.cluster_id) {
+    studyState.lastCardClusterId  = item.data.cluster_id;
+    studyState.lastCardDocumentId = item.data.document_id ?? null;
+  }
 
   // Pre-generate explanation artifact in background for regular cards.
   // By the time the user answers and gets AGAIN/HARD, it will be cached.
@@ -7270,14 +7280,122 @@ document.querySelector('#study-back-btn')?.addEventListener('click', () => {
   showStudyCard();
 });
 
-function advanceStudyCard() {
+// ── Schema interstitial ───────────────────────────────────────────────────────
+
+async function getDocumentSchema(documentId) {
+  if (studyState.schemaCache[documentId]) return studyState.schemaCache[documentId];
+  try {
+    const headers = {};
+    if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
+    const res = await fetch(`/api/documents/${documentId}/learning-graph`, { headers });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const seq = data.sequence || null;
+    if (seq) studyState.schemaCache[documentId] = seq;
+    return seq;
+  } catch { return null; }
+}
+
+function showSchemaInterstitial(documentId, finishedClusterId, onDone) {
+  const existing = document.getElementById('schema-interstitial');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'schema-interstitial';
+  overlay.className = 'schema-interstitial';
+  overlay.innerHTML = `
+    <div class="schema-interstitial-box">
+      <div class="schema-interstitial-header">
+        <div class="schema-interstitial-label">
+          <span class="schema-interstitial-check">✓</span>
+          Cluster completado
+        </div>
+        <div class="schema-interstitial-timer">
+          <svg class="schema-timer-ring" viewBox="0 0 36 36">
+            <circle class="schema-timer-bg" cx="18" cy="18" r="15.9"/>
+            <circle class="schema-timer-arc" cx="18" cy="18" r="15.9" id="schema-timer-arc"/>
+          </svg>
+          <span class="schema-timer-count" id="schema-timer-count">30</span>
+        </div>
+      </div>
+      <div class="schema-interstitial-schema" id="schema-interstitial-schema">
+        <p class="schema-loading">Cargando mapa…</p>
+      </div>
+      <button class="btn-primary schema-continue-btn" id="schema-continue-btn">
+        Continuar →
+      </button>
+    </div>`;
+
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add('schema-interstitial--visible'));
+
+  // Fetch and render schema
+  getDocumentSchema(documentId).then(sequence => {
+    const schemaContainer = document.getElementById('schema-interstitial-schema');
+    if (!schemaContainer) return;
+    if (sequence) {
+      renderDocumentSchema(schemaContainer, sequence, finishedClusterId);
+    } else {
+      schemaContainer.innerHTML = '<p class="schema-loading">Mapa no disponible.</p>';
+    }
+  });
+
+  // 30-second countdown
+  let secondsLeft = 30;
+  const arcEl    = document.getElementById('schema-timer-arc');
+  const countEl  = document.getElementById('schema-timer-count');
+  const circumf  = 2 * Math.PI * 15.9;
+  if (arcEl) arcEl.style.strokeDasharray = `${circumf} ${circumf}`;
+
+  const tick = () => {
+    if (!document.getElementById('schema-interstitial')) return;
+    const frac = secondsLeft / 30;
+    if (arcEl)   arcEl.style.strokeDashoffset = circumf * (1 - frac);
+    if (countEl) countEl.textContent = secondsLeft;
+    if (secondsLeft <= 0) { done(); return; }
+    secondsLeft--;
+    setTimeout(tick, 1000);
+  };
+  tick();
+
+  const done = () => {
+    const el = document.getElementById('schema-interstitial');
+    if (!el) return;
+    el.classList.remove('schema-interstitial--visible');
+    setTimeout(() => { el.remove(); onDone(); }, 250);
+  };
+
+  document.getElementById('schema-continue-btn').addEventListener('click', done);
+}
+
+async function advanceStudyCard() {
+  const currentItem = studyState.queue[studyState.index];
   studyState.index++;
+
   if (studyState.index >= studyState.queue.length) {
     finishStudySession();
-  } else {
-    persistStudySession();
-    showStudyCard();
+    return;
   }
+
+  // Detect cluster transition: check if next *main card* belongs to a different cluster
+  const nextItem = studyState.queue[studyState.index];
+  const prevClusterId  = studyState.lastCardClusterId;
+  const prevDocumentId = studyState.lastCardDocumentId;
+  const nextClusterId  = nextItem?.type === 'card' ? nextItem.data?.cluster_id : null;
+
+  if (
+    nextClusterId &&
+    prevClusterId &&
+    prevDocumentId &&
+    nextClusterId !== prevClusterId
+  ) {
+    persistStudySession();
+    showSchemaInterstitial(prevDocumentId, prevClusterId, () => showStudyCard());
+    return;
+  }
+
+  persistStudySession();
+  showStudyCard();
 }
 
 function finishStudySession() {
@@ -10463,6 +10581,7 @@ function initDocumentsTab() {
       <div class="docs-concepts-panel"></div>
       <div class="docs-clusters-panel"></div>
       <div class="docs-learning-graph-panel"></div>
+      <div class="docs-schema-panel"></div>
       <div class="docs-ranking-panel"></div>
       <div class="docs-content-panel hidden"></div>
       <div class="docs-exam-load-panel hidden"></div>
@@ -10757,6 +10876,95 @@ function initDocumentsTab() {
       </div>`;
   }
 
+  // ── Document schema visualization ─────────────────────────────────────────
+
+  const SCHEMA_LEVEL_COLOR = {
+    foundational: '#16a34a',
+    intermediate: '#2563eb',
+    advanced:     '#7c3aed',
+  };
+
+  function renderDocumentSchema(container, sequence, highlightId = null) {
+    if (!sequence || sequence.length === 0) { container.innerHTML = ''; return; }
+
+    // Group clusters by learning_order
+    const layers = {};
+    for (const cl of sequence) {
+      const lvl = cl.learning_order ?? 1;
+      (layers[lvl] ??= []).push(cl);
+    }
+    const levelNums = Object.keys(layers).map(Number).sort((a, b) => a - b);
+
+    container.innerHTML = `
+      <div class="doc-schema-wrap">
+        <div class="doc-schema-title">Mapa del documento</div>
+        <div class="doc-schema-graph" id="doc-schema-graph-${Math.random().toString(36).slice(2)}">
+          ${levelNums.map(lvl => `
+            <div class="doc-schema-layer">
+              ${layers[lvl].map(cl => {
+                const color = SCHEMA_LEVEL_COLOR[cl.learning_level] || '#6366f1';
+                const isHighlighted = cl.id === highlightId;
+                return `<div class="doc-schema-node${isHighlighted ? ' doc-schema-node--hl' : ''}"
+                  data-id="${escHtml(cl.id)}"
+                  style="--node-color:${color}"
+                  title="${escHtml(cl.definition || '')}">
+                  <span class="doc-schema-node-order">${lvl}</span>
+                  <span class="doc-schema-node-name">${escHtml(cl.name)}</span>
+                </div>`;
+              }).join('')}
+            </div>`).join('')}
+          <svg class="doc-schema-svg" aria-hidden="true"></svg>
+        </div>
+      </div>`;
+
+    // Draw arrows after layout is computed
+    requestAnimationFrame(() => drawSchemaArrows(container, sequence));
+  }
+
+  function drawSchemaArrows(container, sequence) {
+    const graph   = container.querySelector('.doc-schema-graph');
+    const svg     = container.querySelector('.doc-schema-svg');
+    if (!graph || !svg) return;
+
+    const gRect = graph.getBoundingClientRect();
+    if (gRect.width === 0) return;
+
+    const nodeEls = {};
+    graph.querySelectorAll('.doc-schema-node').forEach(el => {
+      nodeEls[el.dataset.id] = el;
+    });
+
+    const paths = [];
+    for (const cl of sequence) {
+      const toEl = nodeEls[cl.id];
+      if (!toEl) continue;
+      const toR = toEl.getBoundingClientRect();
+      const tx = toR.left - gRect.left + toR.width / 2;
+      const ty = toR.top  - gRect.top;
+
+      for (const reqId of (cl.requires || [])) {
+        const fromEl = nodeEls[reqId];
+        if (!fromEl) continue;
+        const fromR = fromEl.getBoundingClientRect();
+        const fx = fromR.left - gRect.left + fromR.width / 2;
+        const fy = fromR.top  - gRect.top + fromR.height;
+        const mid = (fy + ty) / 2;
+        paths.push(
+          `<path d="M${fx},${fy} C${fx},${mid} ${tx},${mid} ${tx},${ty}" ` +
+          `stroke="rgba(99,102,241,0.35)" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>`
+        );
+      }
+    }
+
+    svg.innerHTML = `
+      <defs>
+        <marker id="arr" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+          <polygon points="0 0,7 2.5,0 5" fill="rgba(99,102,241,0.45)"/>
+        </marker>
+      </defs>
+      ${paths.join('')}`;
+  }
+
   async function pollLearningGraph(docId, item, attemptsLeft = 10) {
     const panel = item.querySelector('.docs-learning-graph-panel');
     if (!panel) return;
@@ -10765,6 +10973,8 @@ function initDocumentsTab() {
 
     const headers = {};
     if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
+
+    const schemaPanel = item.querySelector('.docs-schema-panel');
 
     const fetchGraph = async () => {
       try {
@@ -10791,6 +11001,7 @@ function initDocumentsTab() {
       const seq = await fetchGraph();
       if (seq) {
         renderLearningGraph(panel, seq);
+        if (schemaPanel) renderDocumentSchema(schemaPanel, seq);
       } else if (seq === false) {
         // Graph not built yet — trigger once for existing clustered docs
         if (!triggered) { triggered = true; await triggerBuild(); }
