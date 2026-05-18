@@ -114,12 +114,21 @@ export function preclusterConcepts(concepts, threshold, minClusterSize) {
 
 // ==================== LLM input / prompt ====================
 
-function buildLLMInput(groups, orphans, conceptMap) {
+export function buildLLMInput(groups, orphans, conceptMap, outline = null) {
+  const includeContext = outline?.structure_type === 'process_stages';
+
   function formatConcept(id) {
     const c = conceptMap.get(id);
     const entry = { id: c.id, label: c.label, definition: c.definition };
     if (c.concept_type) entry.concept_type = c.concept_type;
     if (c.importance)   entry.importance   = c.importance;
+    if (includeContext) {
+      // source_chunk tells the LLM which slide/section the concept came from,
+      // critical for assigning concepts to their correct process stage.
+      if (c.source_chunk)       entry.source_chunk       = c.source_chunk.slice(0, 120);
+      if (c.source_chunk_index != null) entry.source_chunk_index = c.source_chunk_index;
+      if (c.evidence)           entry.evidence           = c.evidence.slice(0, 120);
+    }
     return entry;
   }
 
@@ -183,9 +192,8 @@ Reglas adicionales sobre concept_type (cuando el campo está presente en los con
 }
 
 /**
- * Builds the optional structure-guidance section injected into the clustering prompt.
- * Only emits content when the outline describes a process_stages document with at least
- * one named section — the most common case where clustering needs global guidance.
+ * Builds the mandatory structure-guidance section for process_stages documents.
+ * Changes the clustering objective from "semantic similarity" to "stage membership".
  */
 function buildStructureSection(outline) {
   if (
@@ -200,25 +208,47 @@ function buildStructureSection(outline) {
   const sectionList = outline.ordered_sections
     .sort((a, b) => a.order - b.order)
     .map(s => {
-      const aliases = s.aliases?.length ? ` (también: ${s.aliases.join(', ')})` : '';
-      return `  ${s.order}. ${s.name}${aliases}`;
+      const aliases = s.aliases?.length ? ` (también conocida como: ${s.aliases.join(', ')})` : '';
+      const desc    = s.description ? ` — ${s.description}` : '';
+      return `  Etapa ${s.order}: ${s.name}${aliases}${desc}`;
     })
     .join('\n');
 
   return `
-CONTEXTO ESTRUCTURAL DEL DOCUMENTO:
-El documento describe un proceso por etapas. Eje principal: "${outline.primary_axis || 'etapas secuenciales'}".
-Etapas en orden:
+════════════════════════════════════════════
+DOCUMENTO CON ESTRUCTURA POR ETAPAS — REGLAS OBLIGATORIAS
+════════════════════════════════════════════
+Este documento describe un proceso secuencial. Eje principal: "${outline.primary_axis || 'etapas del proceso'}".
+
+Las etapas del proceso son (en orden):
 ${sectionList}
 
-Regla adicional de estructura:
-- Preferí clusters que correspondan a las etapas del proceso en lugar de clusters temáticos transversales.
-- Si un concepto pertenece claramente a una etapa (por su label, definition o el contexto del proceso),
-  asignalo a un cluster cuyo nombre refleje esa etapa.
-- Los conceptos transversales (testing, migración de datos, gestión del cambio) que aplican a múltiples
-  etapas pueden formar su propio cluster solo si tienen suficiente masa (≥ 4 conceptos). De lo contrario,
-  asignalos a la etapa donde tienen mayor peso.
-- El cluster_name debe mencionar el nombre de la etapa cuando el cluster la representa.
+REGLAS DE CLUSTERING OBLIGATORIAS para este documento:
+
+1. DEBÉS crear exactamente un cluster por cada etapa listada arriba, usando el formato:
+   "Etapa N — Nombre de la etapa"
+   Ejemplo: "Etapa 2 — Business Blueprint"
+
+2. Cada concepto debe asignarse a la etapa donde ocurre dentro del proceso.
+   Para determinarlo, usá en orden de prioridad:
+   a) El campo source_chunk (indica de qué slide o sección proviene el concepto).
+   b) El campo evidence (texto literal del documento).
+   c) El label y definition del concepto.
+
+3. NO crees clusters transversales a menos que el concepto sea explícitamente
+   introductorio o metodológico y NO pertenezca a ninguna etapa en particular.
+   Temas como "testing", "migración de datos", "gestión del cambio", "configuración"
+   pertenecen a la etapa donde ocurren, NO son clusters propios.
+
+4. Si un cluster de etapa queda con menos de 2 conceptos, absorbé esos conceptos
+   en la etapa más cercana temáticamente, pero mantené el cluster de la etapa principal.
+   Solo omitís el cluster de etapa si literalmente no hay ningún concepto asignable a ella.
+
+5. Los clusters transversales opcionales (metodología, introducción) van AL FINAL,
+   después de todos los clusters de etapas.
+
+6. El cluster_name DEBE seguir el formato "Etapa N — Nombre" para cada etapa del proceso.
+════════════════════════════════════════════
 
 `;
 }
@@ -303,7 +333,7 @@ async function callAnthropicOrphanAssignment(namedClusters, orphanBatch) {
 
 // Phase 1: LLM names/merges pre-grouped items.
 // Phase 2: LLM assigns remaining orphans in batches to the named clusters.
-async function clusterInPhases(groups, orphans, conceptMap) {
+async function clusterInPhases(groups, orphans, conceptMap, outline = null) {
   // Phase 1 — cap how many group concepts we send at once.
   // Overflow groups are demoted to Phase 2 orphans so the LLM payload stays bounded.
   const phase1Groups = [];
@@ -333,8 +363,8 @@ async function clusterInPhases(groups, orphans, conceptMap) {
     remainingOrphans = orphans.slice(ORPHAN_BATCH_SIZE);
   }
 
-  const phase1Input = buildLLMInput(phase1Groups, phase1Orphans, conceptMap);
-  const phase1Raw   = await callAnthropicClustering(phase1Input);
+  const phase1Input = buildLLMInput(phase1Groups, phase1Orphans, conceptMap, outline);
+  const phase1Raw   = await callAnthropicClustering(phase1Input, outline);
   const namedClusters = safeJsonParseArray(phase1Raw);
   if (!namedClusters.length) {
     throw new Error('Phase 1 LLM returned invalid or empty JSON for clustering.');
@@ -642,7 +672,8 @@ export async function clusterConceptsForDocument(documentId, outline = null) {
 
   // Step 1: Fetch concepts with embeddings
   const { rows } = await dbPool.query(
-    `SELECT id, label, definition, embedding, cluster_id, concept_type, importance
+    `SELECT id, label, definition, embedding, cluster_id, concept_type, importance,
+            source_chunk, source_chunk_index, evidence
      FROM concepts
      WHERE document_id = $1
      ORDER BY created_at ASC`,
@@ -673,6 +704,36 @@ export async function clusterConceptsForDocument(documentId, outline = null) {
   // Steps 3-5: LLM clustering (single pass or multi-phase)
   const conceptMap = new Map(concepts.map(c => [c.id, c]));
 
+  // Log structure outline and, for process_stages, estimate concept distribution per section
+  if (outline) {
+    logger.info('[conceptClustering] Using document structure outline', {
+      documentId,
+      structure_type:   outline.structure_type,
+      primary_axis:     outline.primary_axis,
+      section_count:    outline.ordered_sections?.length ?? 0,
+      sections:         outline.ordered_sections?.map(s => s.name) ?? [],
+    });
+
+    if (outline.structure_type === 'process_stages' && outline.ordered_sections?.length) {
+      const sectionHits = {};
+      for (const s of outline.ordered_sections) sectionHits[s.name] = 0;
+
+      for (const c of concepts) {
+        const text = `${c.source_chunk || ''} ${c.label} ${c.definition} ${c.evidence || ''}`.toLowerCase();
+        for (const s of outline.ordered_sections) {
+          const needles = [s.name, ...(s.aliases || [])].map(n => n.toLowerCase());
+          if (needles.some(n => text.includes(n))) {
+            sectionHits[s.name]++;
+            break;
+          }
+        }
+      }
+      logger.info('[conceptClustering] Estimated concept distribution by section', {
+        documentId, sectionHits,
+      });
+    }
+  }
+
   const totalGroupConcepts = groups.reduce((sum, g) => sum + g.concept_ids.length, 0);
   const useMultiPhase = orphans.length > MAX_ORPHANS_SINGLE_PASS
     || totalGroupConcepts > MAX_GROUP_CONCEPTS_PHASE1;
@@ -682,9 +743,9 @@ export async function clusterConceptsForDocument(documentId, outline = null) {
     logger.info('[conceptClustering] Large document: using multi-phase LLM', {
       documentId, groups: groups.length, orphans: orphans.length, totalGroupConcepts,
     });
-    parsed = await clusterInPhases(groups, orphans, conceptMap);
+    parsed = await clusterInPhases(groups, orphans, conceptMap, outline);
   } else {
-    const llmInput    = buildLLMInput(groups, orphans, conceptMap);
+    const llmInput    = buildLLMInput(groups, orphans, conceptMap, outline);
     const rawResponse = await callAnthropicClustering(llmInput, outline);
     parsed = safeJsonParseArray(rawResponse);
     if (!parsed.length) {
@@ -698,7 +759,9 @@ export async function clusterConceptsForDocument(documentId, outline = null) {
   validateClusteringResult(parsed, allConceptIds);
 
   logger.info('[conceptClustering] Validation passed', {
-    documentId, clusterCount: parsed.length,
+    documentId,
+    clusterCount: parsed.length,
+    clusters: parsed.map(cl => ({ name: cl.cluster_name, concepts: cl.concept_ids.length })),
   });
 
   // Step 7: Transactional persistence

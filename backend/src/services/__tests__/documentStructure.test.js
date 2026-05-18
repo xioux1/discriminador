@@ -169,7 +169,7 @@ test('buildClusteringPrompt includes ordered_sections for process_stages', () =>
   const prompt = buildClusteringPrompt(SAMPLE_INPUT_JSON, outline);
   assert.ok(prompt.includes('Preparación del Proyecto'), 'should contain first stage name');
   assert.ok(prompt.includes('Business Blueprint'),        'should contain second stage name');
-  assert.ok(prompt.includes('CONTEXTO ESTRUCTURAL'),      'should have structure context header');
+  assert.ok(prompt.includes('DOCUMENTO CON ESTRUCTURA POR ETAPAS'), 'should have structure context header');
 });
 
 test('buildClusteringPrompt omits structure section when structure_type is mixed', () => {
@@ -182,12 +182,12 @@ test('buildClusteringPrompt omits structure section when structure_type is mixed
   };
 
   const prompt = buildClusteringPrompt(SAMPLE_INPUT_JSON, outline);
-  assert.ok(!prompt.includes('CONTEXTO ESTRUCTURAL'), 'should not inject structure for mixed');
+  assert.ok(!prompt.includes('DOCUMENTO CON ESTRUCTURA POR ETAPAS'), 'should not inject structure for mixed');
 });
 
 test('buildClusteringPrompt omits structure section when outline is null', () => {
   const prompt = buildClusteringPrompt(SAMPLE_INPUT_JSON, null);
-  assert.ok(!prompt.includes('CONTEXTO ESTRUCTURAL'), 'should not inject structure when null');
+  assert.ok(!prompt.includes('DOCUMENTO CON ESTRUCTURA POR ETAPAS'), 'should not inject structure when null');
 });
 
 test('buildClusteringPrompt omits structure section when ordered_sections is empty for process_stages', () => {
@@ -200,7 +200,7 @@ test('buildClusteringPrompt omits structure section when ordered_sections is emp
   };
 
   const prompt = buildClusteringPrompt(SAMPLE_INPUT_JSON, outline);
-  assert.ok(!prompt.includes('CONTEXTO ESTRUCTURAL'), 'should not inject structure with empty sections');
+  assert.ok(!prompt.includes('DOCUMENTO CON ESTRUCTURA POR ETAPAS'), 'should not inject structure with empty sections');
 });
 
 test('buildClusteringPrompt omits structure for taxonomy with sections', () => {
@@ -213,7 +213,7 @@ test('buildClusteringPrompt omits structure for taxonomy with sections', () => {
   };
 
   const prompt = buildClusteringPrompt(SAMPLE_INPUT_JSON, outline);
-  assert.ok(!prompt.includes('CONTEXTO ESTRUCTURAL'), 'should not inject structure for taxonomy');
+  assert.ok(!prompt.includes('DOCUMENTO CON ESTRUCTURA POR ETAPAS'), 'should not inject structure for taxonomy');
 });
 
 test('buildClusteringPrompt sections appear in sorted order', () => {
@@ -251,4 +251,143 @@ test('buildClusteringPrompt aliases appear in structure section', () => {
   const prompt = buildClusteringPrompt(SAMPLE_INPUT_JSON, outline);
   assert.ok(prompt.includes('GoLive'), 'should include alias');
   assert.ok(prompt.includes('Fase 5'), 'should include second alias');
+});
+
+test('buildClusteringPrompt includes mandatory cluster-per-section language', () => {
+  const outline = {
+    structure_type: 'process_stages',
+    main_topic: 'ASAP',
+    primary_axis: 'etapas cronológicas',
+    ordered_sections: [
+      { name: 'Preparación del Proyecto', order: 1, aliases: [], description: 'Inicio.' },
+      { name: 'Business Blueprint',        order: 2, aliases: [],  description: 'Diseño.' },
+    ],
+    secondary_axes: [],
+  };
+
+  const prompt = buildClusteringPrompt(SAMPLE_INPUT_JSON, outline);
+  assert.ok(
+    prompt.includes('DEBÉS crear exactamente un cluster por cada etapa'),
+    'must contain mandatory cluster-per-section instruction'
+  );
+  assert.ok(
+    prompt.includes('Etapa N — Nombre'),
+    'must include the required cluster_name format'
+  );
+  assert.ok(
+    prompt.includes('source_chunk'),
+    'must mention source_chunk as priority signal for stage assignment'
+  );
+});
+
+test('buildClusteringPrompt forbids transversal clusters explicitly', () => {
+  const outline = {
+    structure_type: 'process_stages',
+    main_topic: 'ASAP',
+    primary_axis: 'etapas',
+    ordered_sections: [
+      { name: 'Realización', order: 3, aliases: [], description: 'Configuración.' },
+    ],
+    secondary_axes: [],
+  };
+
+  const prompt = buildClusteringPrompt(SAMPLE_INPUT_JSON, outline);
+  assert.ok(
+    prompt.includes('NO crees clusters transversales'),
+    'must explicitly forbid transversal clusters'
+  );
+  assert.ok(
+    prompt.includes('migración de datos'),
+    'must name common transversal anti-patterns'
+  );
+});
+
+// ---- buildLLMInput with outline ----
+
+const { buildLLMInput } = await import('../conceptClustering.service.js');
+
+function makeConcept(overrides = {}) {
+  return {
+    id:                  overrides.id          || 'uuid-1',
+    label:               overrides.label        || 'Concepto A',
+    definition:          overrides.definition   || 'Definición A',
+    concept_type:        overrides.concept_type || null,
+    importance:          overrides.importance   || null,
+    source_chunk:        overrides.source_chunk || null,
+    source_chunk_index:  overrides.source_chunk_index ?? null,
+    evidence:            overrides.evidence     || null,
+    embedding:           [],
+    cluster_id:          null,
+  };
+}
+
+test('buildLLMInput includes source_chunk and evidence when outline is process_stages', () => {
+  const c = makeConcept({
+    id: 'uuid-a',
+    source_chunk: '## Slide 11 — Business Blueprint\nContenido de la etapa',
+    evidence: 'El Blueprint define la solución',
+  });
+  const conceptMap = new Map([['uuid-a', c]]);
+  const outline = {
+    structure_type: 'process_stages',
+    ordered_sections: [{ name: 'Business Blueprint', order: 2, aliases: [], description: '' }],
+  };
+
+  const result = buildLLMInput([], ['uuid-a'], conceptMap, outline);
+  const concept = result.orphans[0];
+
+  assert.ok('source_chunk' in concept, 'should include source_chunk');
+  assert.ok('evidence' in concept, 'should include evidence');
+  assert.ok(concept.source_chunk.includes('Business Blueprint'), 'source_chunk content preserved');
+});
+
+test('buildLLMInput omits source_chunk and evidence when outline is null', () => {
+  const c = makeConcept({
+    id: 'uuid-b',
+    source_chunk: '## Slide 5 — Realización',
+    evidence: 'Configuración del sistema',
+  });
+  const conceptMap = new Map([['uuid-b', c]]);
+
+  const result = buildLLMInput([], ['uuid-b'], conceptMap, null);
+  const concept = result.orphans[0];
+
+  assert.ok(!('source_chunk' in concept), 'should NOT include source_chunk when outline is null');
+  assert.ok(!('evidence' in concept), 'should NOT include evidence when outline is null');
+});
+
+test('buildLLMInput omits source_chunk and evidence when outline is mixed', () => {
+  const c = makeConcept({
+    id: 'uuid-c',
+    source_chunk: '## Slide 3',
+    evidence: 'Algún texto',
+  });
+  const conceptMap = new Map([['uuid-c', c]]);
+  const outline = { structure_type: 'mixed', ordered_sections: [] };
+
+  const result = buildLLMInput([], ['uuid-c'], conceptMap, outline);
+  const concept = result.orphans[0];
+
+  assert.ok(!('source_chunk' in concept), 'should NOT include source_chunk for mixed');
+});
+
+test('buildLLMInput truncates long source_chunk to 120 chars', () => {
+  const longChunk = 'A'.repeat(200);
+  const c = makeConcept({ id: 'uuid-d', source_chunk: longChunk });
+  const conceptMap = new Map([['uuid-d', c]]);
+  const outline = { structure_type: 'process_stages', ordered_sections: [{ name: 'X', order: 1, aliases: [], description: '' }] };
+
+  const result = buildLLMInput([], ['uuid-d'], conceptMap, outline);
+  assert.ok(result.orphans[0].source_chunk.length <= 120, 'source_chunk should be truncated to 120 chars');
+});
+
+test('buildLLMInput omits source_chunk when concept has none (null)', () => {
+  const c = makeConcept({ id: 'uuid-e', source_chunk: null, evidence: null });
+  const conceptMap = new Map([['uuid-e', c]]);
+  const outline = { structure_type: 'process_stages', ordered_sections: [{ name: 'X', order: 1, aliases: [], description: '' }] };
+
+  const result = buildLLMInput([], ['uuid-e'], conceptMap, outline);
+  const concept = result.orphans[0];
+  assert.ok(!('source_chunk' in concept), 'should not include source_chunk key when null');
+  assert.ok(!('evidence' in concept), 'should not include evidence key when null');
 });
