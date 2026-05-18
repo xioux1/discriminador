@@ -3,6 +3,8 @@ import { createEmbedding as voyageEmbed } from '../utils/voyage-embed.js';
 import { dbPool } from '../db/client.js';
 import { logger } from '../utils/logger.js';
 import { withRetry } from '../utils/retry.js';
+import { detectDocumentStructure } from './documentStructure.service.js';
+import { createSectionsFromOutline, assignConceptsToSections } from './documentSections.service.js';
 
 // ==================== Lazy clients ====================
 
@@ -511,6 +513,26 @@ export async function extractConceptsForDocument(documentId) {
   }
 
   logger.info('[conceptExtractor] Done', { documentId, saved: saved.length });
+
+  // For visual process_stages documents: detect structure (if not yet done),
+  // create sections, and assign concepts to their sections.
+  // Non-fatal — section assignment failure does not break the extraction result.
+  if (isVisual) {
+    try {
+      let outline = document.document_structure_json || null;
+      if (!outline) {
+        outline = await detectDocumentStructure(documentId);
+      }
+      if (outline?.structure_type === 'process_stages') {
+        await createSectionsFromOutline(documentId, outline);
+        await assignConceptsToSections(documentId, outline);
+      }
+    } catch (err) {
+      logger.warn('[conceptExtractor] Section assignment failed (non-fatal)', {
+        documentId, error: err.message,
+      });
+    }
+  }
 
   return saved;
 }
