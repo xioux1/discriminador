@@ -5670,7 +5670,13 @@ function showStudyCard() {
   // Track last main card's cluster for interstitial detection
   if (item.type === 'card' && item.data?.cluster_id) {
     studyState.lastCardClusterId  = item.data.cluster_id;
-    studyState.lastCardDocumentId = item.data.document_id ?? null;
+    const docId = item.data.document_id ?? null;
+    studyState.lastCardDocumentId = docId;
+    // Pre-warm schema cache as soon as we see this document, so the
+    // interstitial doesn't have to wait for a cold fetch mid-session
+    if (docId && !studyState.schemaCache[docId]) {
+      getDocumentSchema(docId).catch(() => {});
+    }
   }
 
   // Pre-generate explanation artifact in background for regular cards.
@@ -7287,7 +7293,25 @@ async function getDocumentSchema(documentId) {
   try {
     const headers = {};
     if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
-    const res = await fetch(`/api/documents/${documentId}/learning-graph`, { headers });
+
+    // 5-second timeout so the interstitial doesn't hang on cold server starts
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    let res;
+    try {
+      res = await fetch(`/api/documents/${documentId}/learning-graph`, { headers, signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (res.status === 404) {
+      // Graph not built yet — fire build in background (non-blocking)
+      fetch(`/api/documents/${documentId}/build-learning-graph`, {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+      }).catch(() => {});
+      return null;
+    }
     if (!res.ok) return null;
     const data = await res.json();
     if (!data.sequence?.length) return null;
