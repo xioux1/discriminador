@@ -5357,8 +5357,8 @@ textarea.chinese-input {
 
 .doc-schema-wrap {
   margin-top: 8px;
-  padding: 14px 16px 18px;
-  background: rgba(30, 30, 46, 0.04);
+  padding: 16px 20px 22px;
+  background: rgba(30, 30, 46, 0.03);
   border: 1px solid rgba(99, 102, 241, 0.14);
   border-radius: var(--radius);
 }
@@ -5367,54 +5367,70 @@ textarea.chinese-input {
   font-size: var(--fs-sm);
   font-weight: 600;
   color: #6366f1;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  margin-bottom: 16px;
+  margin-bottom: 20px;
 }
 
-.doc-schema-graph {
+/* Snake layout (linear chains) */
+.doc-schema-snake {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px 24px;
   position: relative;
+}
+
+/* Layer layout (branching) */
+.doc-schema-layered {
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 20px;
+  position: relative;
 }
 
 .doc-schema-layer {
   display: flex;
   justify-content: center;
-  gap: 12px;
+  gap: 16px;
   flex-wrap: wrap;
 }
 
+/* Rich node card */
 .doc-schema-node {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 7px 13px;
-  border: 1.5px solid var(--node-color, #6366f1);
+  background: var(--surface, #fff);
+  border: 1px solid rgba(0,0,0,0.08);
+  border-left: 4px solid var(--node-color, #6366f1);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--node-color, #6366f1) 8%, transparent);
+  padding: 12px 14px;
   cursor: default;
-  transition: background 0.15s, transform 0.15s, box-shadow 0.15s;
-  max-width: 200px;
+  transition: transform 0.15s, box-shadow 0.15s;
+  min-width: 0;
 }
 
 .doc-schema-node:hover {
-  background: color-mix(in srgb, var(--node-color, #6366f1) 16%, transparent);
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--node-color, #6366f1) 20%, transparent);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--node-color, #6366f1) 18%, transparent);
 }
 
 .doc-schema-node--hl {
-  background: color-mix(in srgb, var(--node-color, #6366f1) 22%, transparent);
-  box-shadow: 0 0 0 2px var(--node-color, #6366f1), 0 4px 14px color-mix(in srgb, var(--node-color, #6366f1) 30%, transparent);
-  transform: translateY(-1px);
+  border-color: var(--node-color, #6366f1);
+  background: color-mix(in srgb, var(--node-color, #6366f1) 8%, var(--surface, #fff));
+  box-shadow: 0 0 0 2px var(--node-color, #6366f1),
+              0 6px 20px color-mix(in srgb, var(--node-color, #6366f1) 25%, transparent);
+  transform: translateY(-2px);
 }
 
-.doc-schema-node-order {
+.doc-schema-node-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 7px;
+}
+
+.doc-schema-node-num {
   flex-shrink: 0;
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   background: var(--node-color, #6366f1);
   color: #fff;
@@ -5425,15 +5441,26 @@ textarea.chinese-input {
   justify-content: center;
 }
 
+.doc-schema-node-badge {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--node-color, #6366f1);
+}
+
 .doc-schema-node-name {
-  font-size: 0.78rem;
-  font-weight: 600;
+  font-size: 0.83rem;
+  font-weight: 700;
   color: var(--text);
-  line-height: 1.2;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  line-height: 1.3;
+  margin-bottom: 5px;
+}
+
+.doc-schema-node-desc {
+  font-size: 0.73rem;
+  color: var(--text-muted);
+  line-height: 1.45;
 }
 
 .doc-schema-svg {
@@ -5446,11 +5473,12 @@ textarea.chinese-input {
 }
 
 [data-theme="dark"] .doc-schema-wrap {
-  background: rgba(255,255,255,0.03);
+  background: rgba(255,255,255,0.025);
   border-color: rgba(99,102,241,0.22);
 }
-[data-theme="dark"] .doc-schema-title { color: #818cf8; }
-[data-theme="dark"] .doc-schema-node-name { color: var(--text); }
+[data-theme="dark"] .doc-schema-title  { color: #818cf8; }
+[data-theme="dark"] .doc-schema-node   { background: var(--surface); border-color: rgba(255,255,255,0.08); }
+[data-theme="dark"] .doc-schema-node--hl { background: color-mix(in srgb, var(--node-color, #6366f1) 15%, var(--surface)); }
 
 /* ── Schema interstitial ─────────────────────────────────────────────────── */
 

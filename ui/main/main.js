@@ -10884,46 +10884,71 @@ function initDocumentsTab() {
     advanced:     '#7c3aed',
   };
 
+  function schemaNodeHtml(cl, highlightId) {
+    const color   = SCHEMA_LEVEL_COLOR[cl.learning_level] || '#6366f1';
+    const isHl    = cl.id === highlightId;
+    const badge   = LEVEL_LABEL[cl.learning_level] || cl.learning_level || '';
+    const rawDesc = cl.definition || '';
+    const desc    = rawDesc.length > 110 ? rawDesc.slice(0, 107) + '…' : rawDesc;
+    return `<div class="doc-schema-node${isHl ? ' doc-schema-node--hl' : ''}"
+      data-id="${escHtml(cl.id)}" style="--node-color:${color}">
+      <div class="doc-schema-node-header">
+        <span class="doc-schema-node-num">${cl.learning_order}</span>
+        <span class="doc-schema-node-badge">${escHtml(badge)}</span>
+      </div>
+      <div class="doc-schema-node-name">${escHtml(cl.name)}</div>
+      ${desc ? `<div class="doc-schema-node-desc">${escHtml(desc)}</div>` : ''}
+    </div>`;
+  }
+
   function renderDocumentSchema(container, sequence, highlightId = null) {
     if (!sequence || sequence.length === 0) { container.innerHTML = ''; return; }
 
-    // Group clusters by learning_order
-    const layers = {};
-    for (const cl of sequence) {
-      const lvl = cl.learning_order ?? 1;
-      (layers[lvl] ??= []).push(cl);
+    const sorted = [...sequence].sort((a, b) => (a.learning_order ?? 1) - (b.learning_order ?? 1));
+
+    // Detect pure linear chain: each node requires exactly the previous one
+    const isPureLinear = sorted.length > 3 && sorted.every((cl, i) =>
+      i === 0 || (cl.requires?.length === 1 && cl.requires[0] === sorted[i - 1].id)
+    );
+
+    let graphContent;
+
+    if (isPureLinear) {
+      // 2-column snake grid: odd indices → col 1, even indices → col 2
+      graphContent = `<div class="doc-schema-snake">
+        ${sorted.map((cl, i) => {
+          const col = (i % 2) + 1;
+          const row = Math.floor(i / 2) + 1;
+          return `<div style="grid-column:${col};grid-row:${row}">${schemaNodeHtml(cl, highlightId)}</div>`;
+        }).join('')}
+        <svg class="doc-schema-svg" aria-hidden="true"></svg>
+      </div>`;
+    } else {
+      // Layer-based layout
+      const layers = {};
+      for (const cl of sorted) { (layers[cl.learning_order ?? 1] ??= []).push(cl); }
+      const levelNums = Object.keys(layers).map(Number).sort((a, b) => a - b);
+      graphContent = `<div class="doc-schema-layered">
+        ${levelNums.map(lvl => `
+          <div class="doc-schema-layer">
+            ${layers[lvl].map(cl => schemaNodeHtml(cl, highlightId)).join('')}
+          </div>`).join('')}
+        <svg class="doc-schema-svg" aria-hidden="true"></svg>
+      </div>`;
     }
-    const levelNums = Object.keys(layers).map(Number).sort((a, b) => a - b);
 
     container.innerHTML = `
       <div class="doc-schema-wrap">
         <div class="doc-schema-title">Mapa del documento</div>
-        <div class="doc-schema-graph" id="doc-schema-graph-${Math.random().toString(36).slice(2)}">
-          ${levelNums.map(lvl => `
-            <div class="doc-schema-layer">
-              ${layers[lvl].map(cl => {
-                const color = SCHEMA_LEVEL_COLOR[cl.learning_level] || '#6366f1';
-                const isHighlighted = cl.id === highlightId;
-                return `<div class="doc-schema-node${isHighlighted ? ' doc-schema-node--hl' : ''}"
-                  data-id="${escHtml(cl.id)}"
-                  style="--node-color:${color}"
-                  title="${escHtml(cl.definition || '')}">
-                  <span class="doc-schema-node-order">${lvl}</span>
-                  <span class="doc-schema-node-name">${escHtml(cl.name)}</span>
-                </div>`;
-              }).join('')}
-            </div>`).join('')}
-          <svg class="doc-schema-svg" aria-hidden="true"></svg>
-        </div>
+        ${graphContent}
       </div>`;
 
-    // Draw arrows after layout is computed
     requestAnimationFrame(() => drawSchemaArrows(container, sequence));
   }
 
   function drawSchemaArrows(container, sequence) {
-    const graph   = container.querySelector('.doc-schema-graph');
-    const svg     = container.querySelector('.doc-schema-svg');
+    const graph = container.querySelector('.doc-schema-snake, .doc-schema-layered');
+    const svg   = container.querySelector('.doc-schema-svg');
     if (!graph || !svg) return;
 
     const gRect = graph.getBoundingClientRect();
@@ -10939,27 +10964,43 @@ function initDocumentsTab() {
       const toEl = nodeEls[cl.id];
       if (!toEl) continue;
       const toR = toEl.getBoundingClientRect();
-      const tx = toR.left - gRect.left + toR.width / 2;
-      const ty = toR.top  - gRect.top;
 
       for (const reqId of (cl.requires || [])) {
         const fromEl = nodeEls[reqId];
         if (!fromEl) continue;
         const fromR = fromEl.getBoundingClientRect();
-        const fx = fromR.left - gRect.left + fromR.width / 2;
-        const fy = fromR.top  - gRect.top + fromR.height;
-        const mid = (fy + ty) / 2;
-        paths.push(
-          `<path d="M${fx},${fy} C${fx},${mid} ${tx},${mid} ${tx},${ty}" ` +
-          `stroke="rgba(99,102,241,0.35)" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>`
-        );
+
+        // Detect same-row (horizontal) vs different-row (vertical/diagonal)
+        const vertOverlap = Math.min(fromR.bottom, toR.bottom) - Math.max(fromR.top, toR.top);
+        const isSameRow   = vertOverlap > fromR.height * 0.4;
+
+        let path;
+        if (isSameRow) {
+          // Horizontal arrow: right-center → left-center (or reverse)
+          const goRight = fromR.left < toR.left;
+          const fx = (goRight ? fromR.right : fromR.left) - gRect.left;
+          const fy = fromR.top - gRect.top + fromR.height / 2;
+          const tx = (goRight ? toR.left   : toR.right)  - gRect.left;
+          const ty = toR.top  - gRect.top + toR.height / 2;
+          const mx = (fx + tx) / 2;
+          path = `<path d="M${fx},${fy} C${mx},${fy} ${mx},${ty} ${tx},${ty}"`;
+        } else {
+          // Vertical/diagonal: bottom-center → top-center
+          const fx  = fromR.left - gRect.left + fromR.width / 2;
+          const fy  = fromR.bottom - gRect.top;
+          const tx  = toR.left  - gRect.left + toR.width  / 2;
+          const ty  = toR.top   - gRect.top;
+          const mid = (fy + ty) / 2;
+          path = `<path d="M${fx},${fy} C${fx},${mid} ${tx},${mid} ${tx},${ty}"`;
+        }
+        paths.push(path + ` stroke="rgba(99,102,241,0.4)" stroke-width="2" fill="none" marker-end="url(#arr)"/>`);
       }
     }
 
     svg.innerHTML = `
       <defs>
-        <marker id="arr" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
-          <polygon points="0 0,7 2.5,0 5" fill="rgba(99,102,241,0.45)"/>
+        <marker id="arr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+          <polygon points="0 0,8 3,0 6" fill="rgba(99,102,241,0.5)"/>
         </marker>
       </defs>
       ${paths.join('')}`;
