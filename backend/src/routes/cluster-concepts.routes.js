@@ -113,6 +113,32 @@ router.post('/api/documents/:id/cluster-concepts', async (req, res, next) => {
   }
 });
 
+// POST /api/documents/:id/build-learning-graph  (trigger for existing clustered docs)
+router.post('/api/documents/:id/build-learning-graph', async (req, res, next) => {
+  const documentId = req.params.id;
+  if (!UUID_RE.test(documentId)) {
+    return res.status(400).json({ error: 'invalid_id', message: 'Document ID must be a valid UUID.' });
+  }
+  try {
+    const { rows: clusterRows } = await dbPool.query(
+      `SELECT id, name, definition FROM clusters WHERE document_id = $1 ORDER BY created_at`,
+      [documentId]
+    );
+    if (!clusterRows.length) {
+      return res.status(400).json({ error: 'no_clusters', message: 'Document has no clusters yet.' });
+    }
+    // Fire and forget — client will poll GET endpoint
+    setImmediate(() => {
+      buildLearningGraph(documentId, clusterRows).catch(err =>
+        logger.warn('[buildLearningGraph] Background build failed', { documentId, error: err.message })
+      );
+    });
+    return res.json({ status: 'building', cluster_count: clusterRows.length });
+  } catch (err) {
+    return next(err);
+  }
+});
+
 // GET /api/documents/:id/learning-graph
 router.get('/api/documents/:id/learning-graph', async (req, res, next) => {
   const documentId = req.params.id;
