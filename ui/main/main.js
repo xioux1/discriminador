@@ -11036,6 +11036,7 @@ function initDocumentsTab() {
     if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
 
     const schemaPanel = item.querySelector('.docs-schema-panel');
+    if (schemaPanel) schemaPanel.innerHTML = '<p class="docs-lg-building" style="padding:0 16px">Generando mapa conceptual…</p>';
 
     const fetchGraph = async () => {
       try {

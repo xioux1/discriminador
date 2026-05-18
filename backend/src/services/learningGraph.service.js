@@ -62,10 +62,13 @@ RULES:
 // ── LLM call ─────────────────────────────────────────────────────────────────
 
 async function callLLM(clusters) {
+  // ~250 tokens per cluster item in the JSON response; add headroom
+  const maxTokens = Math.max(2048, clusters.length * 300);
+
   const response = await withRetry(() =>
     getAnthropicClient().messages.create({
       model: MODEL,
-      max_tokens: 1024,
+      max_tokens: maxTokens,
       messages: [{ role: 'user', content: buildPrompt(clusters) }],
     })
   );
