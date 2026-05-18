@@ -5253,6 +5253,7 @@ const studyState = {
   schemaCache: {},       // document_id → sequence[]
   lastCardClusterId: null,
   lastCardDocumentId: null,
+  lastCardConceptLabel: null,
 };
 
 function maybeSendBreakNudge() {
@@ -5669,7 +5670,8 @@ function showStudyCard() {
 
   // Track last main card's cluster for interstitial detection
   if (item.type === 'card' && item.data?.cluster_id) {
-    studyState.lastCardClusterId  = item.data.cluster_id;
+    studyState.lastCardClusterId    = item.data.cluster_id;
+    studyState.lastCardConceptLabel = item.data.source_concept_label ?? null;
     const docId = item.data.document_id ?? null;
     studyState.lastCardDocumentId = docId;
     // Pre-warm schema cache as soon as we see this document, so the
@@ -7321,7 +7323,7 @@ async function getDocumentSchema(documentId) {
   } catch { return null; }
 }
 
-function showSchemaInterstitial(documentId, finishedClusterId, onDone) {
+function showSchemaInterstitial(documentId, finishedClusterId, finishedConceptLabel, onDone) {
   const existing = document.getElementById('schema-interstitial');
   if (existing) existing.remove();
 
@@ -7359,7 +7361,7 @@ function showSchemaInterstitial(documentId, finishedClusterId, onDone) {
     const schemaContainer = document.getElementById('schema-interstitial-schema');
     if (!schemaContainer) return;
     if (graphData) {
-      renderDocumentSchema(schemaContainer, graphData, finishedClusterId);
+      renderDocumentSchema(schemaContainer, graphData, finishedClusterId, finishedConceptLabel);
     } else {
       schemaContainer.innerHTML = '<p class="schema-loading">Mapa no disponible.</p>';
     }
@@ -7415,7 +7417,7 @@ async function advanceStudyCard() {
     nextClusterId !== prevClusterId
   ) {
     persistStudySession();
-    showSchemaInterstitial(prevDocumentId, prevClusterId, () => showStudyCard());
+    showSchemaInterstitial(prevDocumentId, prevClusterId, studyState.lastCardConceptLabel, () => showStudyCard());
     return;
   }
 
@@ -10918,7 +10920,7 @@ function initDocumentsTab() {
     example_of:    'rgba(124,58,237,0.55)',
   };
 
-  function schemaNodeHtml(cl, highlightId, centerClusterId) {
+  function schemaNodeHtml(cl, highlightId, centerClusterId, highlightConceptLabel = null) {
     const color    = SCHEMA_LEVEL_COLOR[cl.learning_level] || '#6366f1';
     const isHl     = cl.id === highlightId;
     const isCenter = cl.id === centerClusterId;
@@ -10927,11 +10929,17 @@ function initDocumentsTab() {
       isHl     ? 'doc-schema-node--hl'     : '',
       isCenter ? 'doc-schema-node--center' : ''].filter(Boolean).join(' ');
 
-    // Key concepts chips (filtered by LLM to conceptual-only)
+    // Key concepts chips; highlight the one matching the last card's source concept
     const concepts = Array.isArray(cl.key_map_concepts) ? cl.key_map_concepts : [];
+    const hlLabel  = isHl && highlightConceptLabel
+      ? highlightConceptLabel.toLowerCase()
+      : null;
     const chipsHtml = concepts.length
       ? `<div class="doc-schema-node-concepts">
-           ${concepts.map(c => `<span class="doc-schema-concept-chip">${escHtml(c)}</span>`).join('')}
+           ${concepts.map(c => {
+             const isHlChip = hlLabel && c.toLowerCase().includes(hlLabel);
+             return `<span class="doc-schema-concept-chip${isHlChip ? ' doc-schema-concept-chip--hl' : ''}">${escHtml(c)}</span>`;
+           }).join('')}
          </div>`
       : '';
 
@@ -10946,7 +10954,8 @@ function initDocumentsTab() {
   }
 
   // graphData: { sequence, concept_map } or array (legacy)
-  function renderDocumentSchema(container, graphData, highlightId = null) {
+  // highlightConceptLabel: if set, the matching concept chip inside highlightId's node gets extra highlight
+  function renderDocumentSchema(container, graphData, highlightId = null, highlightConceptLabel = null) {
     // Normalise: accept both the new object shape and the old plain array
     let sequence, concept_map;
     if (Array.isArray(graphData)) {
@@ -11012,7 +11021,7 @@ function initDocumentsTab() {
       <div class="doc-schema-block">
         <div class="doc-schema-block-label">${escHtml(b.block_name)}</div>
         <div class="doc-schema-block-nodes">
-          ${b.clusters.map(cl => schemaNodeHtml(cl, highlightId, centerClusterId)).join('')}
+          ${b.clusters.map(cl => schemaNodeHtml(cl, highlightId, centerClusterId, highlightConceptLabel)).join('')}
         </div>
       </div>`).join('');
 

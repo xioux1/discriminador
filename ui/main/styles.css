@@ -5501,6 +5501,15 @@ textarea.chinese-input {
   background: color-mix(in srgb, var(--node-color, #6366f1) 18%, transparent);
 }
 
+/* Highlighted concept chip — the specific concept from the last card */
+.doc-schema-concept-chip--hl {
+  background: var(--node-color, #6366f1);
+  color: #fff;
+  border-color: var(--node-color, #6366f1);
+  font-weight: 700;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--node-color, #6366f1) 35%, transparent);
+}
+
 .doc-schema-svg {
   position: absolute;
   inset: 0;
