@@ -4,6 +4,7 @@ import { clusterConceptsForDocument, getClustersForDocument } from '../services/
 import { clusterConceptsForChineseDocument } from '../services/chineseClassParser.service.js';
 import { assignRolesForDocument } from '../services/conceptRoles.service.js';
 import { assignRelationsForDocument } from '../services/conceptRelations.service.js';
+import { buildLearningGraph } from '../services/learningGraph.service.js';
 import { detectDocumentStructure } from '../services/documentStructure.service.js';
 import { logger } from '../utils/logger.js';
 
@@ -93,11 +94,11 @@ router.post('/api/documents/:id/cluster-concepts', async (req, res, next) => {
   try {
     const result = await clusterConceptsForDocument(documentId, outline);
 
-    // Assign roles async — does not block the clustering response.
-    // If it fails, roles stay NULL and the pipeline continues unaffected.
+    // Post-clustering pipeline — runs async, does not block the response.
     setImmediate(() => {
       assignRolesForDocument(documentId)
         .then(() => assignRelationsForDocument(documentId))
+        .then(() => buildLearningGraph(documentId, result.clusters))
         .catch(err =>
           logger.warn('[clusterConcepts] Post-clustering pipeline failed (non-fatal)', {
             documentId, error: err.message,
@@ -108,6 +109,24 @@ router.post('/api/documents/:id/cluster-concepts', async (req, res, next) => {
     return res.json(result);
   } catch (err) {
     logger.error('[clusterConcepts] Pipeline failed', { documentId, error: err.message });
+    return next(err);
+  }
+});
+
+// GET /api/documents/:id/learning-graph
+router.get('/api/documents/:id/learning-graph', async (req, res, next) => {
+  const documentId = req.params.id;
+  if (!UUID_RE.test(documentId)) {
+    return res.status(400).json({ error: 'invalid_id', message: 'Document ID must be a valid UUID.' });
+  }
+  try {
+    const { getLearningGraph } = await import('../services/learningGraph.service.js');
+    const graph = await getLearningGraph(documentId);
+    if (!graph) {
+      return res.status(404).json({ error: 'not_found', message: 'Learning graph not yet built for this document.' });
+    }
+    return res.json({ document_id: documentId, sequence: graph });
+  } catch (err) {
     return next(err);
   }
 });
