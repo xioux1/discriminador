@@ -10462,6 +10462,7 @@ function initDocumentsTab() {
       </div>
       <div class="docs-concepts-panel"></div>
       <div class="docs-clusters-panel"></div>
+      <div class="docs-learning-graph-panel"></div>
       <div class="docs-ranking-panel"></div>
       <div class="docs-content-panel hidden"></div>
       <div class="docs-exam-load-panel hidden"></div>
@@ -10688,6 +10689,7 @@ function initDocumentsTab() {
           renderClustersInPanel(panel, existing);
           panel.classList.add('open');
           item.querySelector('.docs-clusters-toggle').classList.add('open');
+          pollLearningGraph(docId, item);
         }
         return;
       }
@@ -10701,12 +10703,96 @@ function initDocumentsTab() {
       renderClustersInPanel(panel, payload);
       panel.classList.add('open');
       item.querySelector('.docs-clusters-toggle').classList.add('open');
+      pollLearningGraph(docId, item);
     } catch (err) {
       statusEl.textContent = err.message;
       statusEl.style.color = 'var(--fail-fg)';
       btn.disabled    = false;
       btn.textContent = 'Clusterizar';
     }
+  }
+
+  // ── Learning graph ────────────────────────────────────────────────────────────
+
+  const LEVEL_LABEL = { foundational: 'Fundamento', intermediate: 'Intermedio', advanced: 'Avanzado' };
+  const LEVEL_CLASS = { foundational: 'lg-level--foundational', intermediate: 'lg-level--intermediate', advanced: 'lg-level--advanced' };
+
+  function renderLearningGraph(panel, sequence) {
+    if (!sequence || sequence.length === 0) {
+      panel.innerHTML = '';
+      return;
+    }
+
+    // Build a name lookup for the "requires" labels
+    const nameById = {};
+    sequence.forEach(cl => { nameById[cl.id] = cl.name; });
+
+    panel.innerHTML = `
+      <div class="docs-learning-graph">
+        <div class="docs-lg-title">Secuencia de estudio</div>
+        <ol class="docs-lg-list">
+          ${sequence.map((cl, idx) => {
+            const level = cl.learning_level || 'foundational';
+            const requires = (cl.requires || [])
+              .map(rid => `<span class="docs-lg-req">${escHtml(nameById[rid] || rid)}</span>`)
+              .join('');
+            const connector = idx < sequence.length - 1
+              ? '<div class="docs-lg-connector">↓</div>' : '';
+            return `
+              <li class="docs-lg-item">
+                <div class="docs-lg-item-inner">
+                  <span class="docs-lg-order">${cl.learning_order}</span>
+                  <div class="docs-lg-content">
+                    <div class="docs-lg-item-head">
+                      <span class="docs-lg-name">${escHtml(cl.name)}</span>
+                      <span class="docs-lg-level ${LEVEL_CLASS[level] || ''}">${LEVEL_LABEL[level] || level}</span>
+                    </div>
+                    ${requires ? `<div class="docs-lg-requires">Requiere: ${requires}</div>` : ''}
+                  </div>
+                </div>
+                ${connector}
+              </li>`;
+          }).join('')}
+        </ol>
+      </div>`;
+  }
+
+  async function pollLearningGraph(docId, item, attemptsLeft = 8) {
+    const panel = item.querySelector('.docs-learning-graph-panel');
+    if (!panel) return;
+
+    panel.innerHTML = '<p class="docs-lg-building">Calculando secuencia de estudio…</p>';
+
+    const attempt = async () => {
+      try {
+        const headers = {};
+        if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
+        const res = await fetch(`/api/documents/${docId}/learning-graph`, { headers });
+        if (res.status === 404) return false; // not ready yet
+        if (!res.ok) return null;             // real error
+        const data = await res.json();
+        return data.sequence || null;
+      } catch { return null; }
+    };
+
+    const tryOnce = async (remaining) => {
+      if (remaining <= 0) {
+        panel.innerHTML = '';
+        return;
+      }
+      const seq = await attempt();
+      if (seq && seq.length > 0) {
+        renderLearningGraph(panel, seq);
+      } else if (seq === false) {
+        // Not ready — retry with backoff (5s, 8s, 11s …)
+        const delay = 5000 + (8 - remaining) * 3000;
+        setTimeout(() => tryOnce(remaining - 1), delay);
+      } else {
+        panel.innerHTML = '';
+      }
+    };
+
+    tryOnce(attemptsLeft);
   }
 
   // ── Toggle inline clusters panel ─────────────────────────────────────────────
