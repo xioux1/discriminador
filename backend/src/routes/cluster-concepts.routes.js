@@ -151,7 +151,7 @@ router.get('/api/documents/:id/learning-graph', async (req, res, next) => {
     if (!graph) {
       return res.status(404).json({ error: 'not_found', message: 'Learning graph not yet built for this document.' });
     }
-    return res.json({ document_id: documentId, sequence: graph });
+    return res.json({ document_id: documentId, sequence: graph.sequence, concept_map: graph.concept_map });
   } catch (err) {
     return next(err);
   }
