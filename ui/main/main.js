@@ -11026,6 +11026,15 @@ function initDocumentsTab() {
     const paths = [];
     const labels = [];
 
+    // Evaluate a cubic bezier at t (0-1) — returns {x, y}
+    const bezierPt = (p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y, t) => {
+      const u = 1 - t;
+      return {
+        x: u*u*u*p0x + 3*u*u*t*p1x + 3*u*t*t*p2x + t*t*t*p3x,
+        y: u*u*u*p0y + 3*u*u*t*p1y + 3*u*t*t*p2y + t*t*t*p3y,
+      };
+    };
+
     for (const edge of edges) {
       const fromEl = nodeEls[edge.from_cluster_id];
       const toEl   = nodeEls[edge.to_cluster_id];
@@ -11038,31 +11047,38 @@ function initDocumentsTab() {
       const vertOverlap = Math.min(fromR.bottom, toR.bottom) - Math.max(fromR.top, toR.top);
       const isSameRow   = vertOverlap > fromR.height * 0.4;
 
-      let d, lx, ly;
+      let d, p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y;
       if (isSameRow) {
         const goRight = fromR.left < toR.left;
-        const fx = (goRight ? fromR.right : fromR.left) - gRect.left;
-        const fy = fromR.top - gRect.top + fromR.height / 2;
-        const tx = (goRight ? toR.left   : toR.right)  - gRect.left;
-        const ty = toR.top  - gRect.top + toR.height / 2;
-        const mx = (fx + tx) / 2;
-        d  = `M${fx},${fy} C${mx},${fy} ${mx},${ty} ${tx},${ty}`;
-        lx = mx; ly = (fy + ty) / 2 - 8;
+        p0x = (goRight ? fromR.right : fromR.left) - gRect.left;
+        p0y = fromR.top - gRect.top + fromR.height / 2;
+        p3x = (goRight ? toR.left   : toR.right)  - gRect.left;
+        p3y = toR.top  - gRect.top + toR.height / 2;
+        const mx = (p0x + p3x) / 2;
+        p1x = mx; p1y = p0y; p2x = mx; p2y = p3y;
       } else {
-        const fx  = fromR.left - gRect.left + fromR.width / 2;
-        const fy  = fromR.bottom - gRect.top;
-        const tx  = toR.left  - gRect.left + toR.width  / 2;
-        const ty  = toR.top   - gRect.top;
-        const mid = (fy + ty) / 2;
-        d  = `M${fx},${fy} C${fx},${mid} ${tx},${mid} ${tx},${ty}`;
-        lx = (fx + tx) / 2 + 4; ly = mid;
+        p0x = fromR.left - gRect.left + fromR.width / 2;
+        p0y = fromR.bottom - gRect.top;
+        p3x = toR.left  - gRect.left + toR.width  / 2;
+        p3y = toR.top   - gRect.top;
+        const mid = (p0y + p3y) / 2;
+        p1x = p0x; p1y = mid; p2x = p3x; p2y = mid;
       }
+      d = `M${p0x},${p0y} C${p1x},${p1y} ${p2x},${p2y} ${p3x},${p3y}`;
 
       const markerId = `arr-${edge.edge_type || 'req'}`;
       paths.push(`<path d="${d}" stroke="${color}" stroke-width="2" fill="none" marker-end="url(#${markerId})"/>`);
 
       if (edge.label) {
-        labels.push(`<text x="${lx}" y="${ly}" class="doc-schema-edge-label">${escHtml(edge.label)}</text>`);
+        // Place label at ~30% along the bezier — in the gap just outside the source node
+        const pt = bezierPt(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y, 0.30);
+        const lx = pt.x;
+        const ly = pt.y - 5;
+        const labelId = `lbl-${edge.from_cluster_id.slice(0,4)}-${edge.to_cluster_id.slice(0,4)}`;
+        labels.push(
+          `<rect id="${labelId}" x="${lx - 2}" y="${ly - 11}" rx="3" ry="3" height="14" fill="var(--surface,#fff)" opacity="0.88"/>` +
+          `<text x="${lx}" y="${ly}" class="doc-schema-edge-label" data-bg="${labelId}">${escHtml(edge.label)}</text>`
+        );
       }
     }
 
@@ -11076,6 +11092,15 @@ function initDocumentsTab() {
     }).join('');
 
     svg.innerHTML = `<defs>${defs}</defs>${paths.join('')}${labels.join('')}`;
+
+    // After render: resize each label's background rect to match text width
+    svg.querySelectorAll('text[data-bg]').forEach(textEl => {
+      const bgEl = svg.getElementById(textEl.dataset.bg);
+      if (bgEl) {
+        const tw = textEl.getBBox?.()?.width ?? 60;
+        bgEl.setAttribute('width', tw + 4);
+      }
+    });
   }
 
   async function pollLearningGraph(docId, item, attemptsLeft = 10) {

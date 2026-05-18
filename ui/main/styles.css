@@ -5486,14 +5486,33 @@ textarea.chinese-input {
 [data-theme="dark"] .doc-schema-node   { background: var(--surface); border-color: rgba(255,255,255,0.08); }
 [data-theme="dark"] .doc-schema-node--hl { background: color-mix(in srgb, var(--node-color, #6366f1) 15%, var(--surface)); }
 
-/* Center cluster node — larger, more prominent */
+/* Center cluster node — clearly more prominent */
 .doc-schema-node--center {
   border-left-width: 5px;
-  background: color-mix(in srgb, var(--node-color, #6366f1) 6%, var(--surface, #fff));
-  box-shadow: 0 2px 12px color-mix(in srgb, var(--node-color, #6366f1) 16%, transparent);
+  background: color-mix(in srgb, var(--node-color, #6366f1) 9%, var(--surface, #fff));
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--node-color, #6366f1) 40%, transparent),
+              0 4px 18px color-mix(in srgb, var(--node-color, #6366f1) 20%, transparent);
 }
 .doc-schema-node--center .doc-schema-node-name {
   font-size: 0.9rem;
+}
+.doc-schema-node--center .doc-schema-node-num {
+  width: 26px;
+  height: 26px;
+  font-size: 0.72rem;
+}
+/* Star badge on center node */
+.doc-schema-node--center::before {
+  content: '★';
+  position: absolute;
+  top: -8px;
+  right: 8px;
+  font-size: 0.7rem;
+  color: var(--node-color, #6366f1);
+  line-height: 1;
+}
+.doc-schema-node {
+  position: relative;
 }
 
 /* ── Block-based concept map layout ──────────────────────────────────────── */
@@ -5534,9 +5553,10 @@ textarea.chinese-input {
 /* Edge labels on SVG */
 .doc-schema-edge-label {
   font-size: 0.58rem;
-  fill: var(--text-muted, #888);
+  fill: var(--text-muted, #666);
   font-family: inherit;
   pointer-events: none;
+  font-style: italic;
 }
 
 /* Legend row */
@@ -5572,7 +5592,9 @@ textarea.chinese-input {
 [data-theme="dark"] .doc-schema-block-label { color: #818cf8; }
 [data-theme="dark"] .doc-schema-block-label { border-color: rgba(99,102,241,0.22); }
 [data-theme="dark"] .doc-schema-node--center {
-  background: color-mix(in srgb, var(--node-color, #6366f1) 12%, var(--surface));
+  background: color-mix(in srgb, var(--node-color, #6366f1) 16%, var(--surface));
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--node-color, #6366f1) 55%, transparent),
+              0 4px 18px color-mix(in srgb, var(--node-color, #6366f1) 28%, transparent);
 }
 [data-theme="dark"] .doc-schema-legend { border-color: rgba(255,255,255,0.07); }
 
