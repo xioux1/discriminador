@@ -5478,6 +5478,10 @@ textarea.chinese-input {
   overflow: visible;
 }
 
+.doc-schema-edge-hit {
+  cursor: default;
+}
+
 [data-theme="dark"] .doc-schema-wrap {
   background: rgba(255,255,255,0.025);
   border-color: rgba(99,102,241,0.22);
