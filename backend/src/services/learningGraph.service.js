@@ -24,46 +24,70 @@ function buildPrompt(clusters) {
     key_concepts: (c.concepts || []).slice(0, 6).map(x => x.label),
   }));
 
-  return `You are a pedagogy expert. Given the following learning topics extracted from a study document, determine the optimal learning sequence for a student.
+  return `You are a pedagogy expert analyzing topics from a study document to build both a learning sequence AND a concept map.
 
 TOPICS:
 ${JSON.stringify(topics, null, 2)}
 
 YOUR TASK:
-Analyze the topics and return a pedagogical ordering — which topic a student should study first, which requires prior knowledge of another, etc.
+Produce two complementary outputs:
+
+1. SEQUENCE — a linear study order (which to study first, prerequisites, etc.)
+2. CONCEPT_MAP — a non-linear map showing how topics RELATE to each other conceptually
 
 Return ONLY valid JSON in this exact shape:
 {
   "sequence": [
     {
-      "cluster_id": "<id from input>",
+      "cluster_id": "<id>",
       "learning_order": 1,
       "learning_level": "foundational",
       "requires": []
-    },
-    {
-      "cluster_id": "<id from input>",
-      "learning_order": 2,
-      "learning_level": "intermediate",
-      "requires": ["<cluster_id that must be mastered first>"]
     }
-  ]
+  ],
+  "concept_map": {
+    "center_cluster_id": "<id of the single most central/important topic>",
+    "blocks": [
+      {
+        "block_name": "<conceptual role, e.g. 'Fundamentos', 'Mecanismo central', 'Arquitectura', 'Casos y ejemplos', 'Comparaciones'>",
+        "cluster_ids": ["<id>", "<id>"]
+      }
+    ],
+    "edges": [
+      {
+        "from_cluster_id": "<id>",
+        "to_cluster_id": "<id>",
+        "edge_type": "enables",
+        "label": "<short phrase describing the relationship, e.g. 'permite implementar'>"
+      }
+    ]
+  }
 }
 
-RULES:
-- learning_order: 1 = study first (most foundational), higher number = study later
-- learning_level: "foundational" (no prerequisites needed), "intermediate" (builds on foundational), "advanced" (builds on intermediate)
-- requires: list of cluster_ids that must be understood before this topic; only reference clusters with lower learning_order
-- No circular dependencies
-- Every topic in the input must appear exactly once in the output
-- Return ONLY the JSON object, no explanation`;
+SEQUENCE RULES:
+- learning_order: 1 = study first, higher = study later
+- learning_level: "foundational" | "intermediate" | "advanced"
+- requires: cluster_ids that must be understood first (only lower learning_order ids)
+- No circular dependencies; every topic appears exactly once
+
+CONCEPT MAP RULES:
+- center_cluster_id: the ONE topic that is the core of this document (most connected / most important)
+- blocks: group topics by conceptual ROLE, not by study order. Use 2–5 blocks with meaningful names in Spanish.
+  Each cluster_id appears in exactly one block.
+- edges: meaningful relationships between any two topics (not just sequential).
+  edge_type must be one of: "requires" | "produces" | "enables" | "part_of" | "contrasts_with" | "example_of"
+  label: a short 2–5 word Spanish phrase describing the link (e.g. "permite implementar", "es un tipo de", "depende de")
+  Include 3–8 edges total; prioritize non-obvious, high-value relationships.
+  Do NOT add an edge just because one topic comes before another in the sequence.
+
+Return ONLY the JSON object, no explanation.`;
 }
 
 // ── LLM call ─────────────────────────────────────────────────────────────────
 
 async function callLLM(clusters) {
-  // ~250 tokens per cluster item in the JSON response; add headroom
-  const maxTokens = Math.max(2048, clusters.length * 300);
+  // sequence ~200t/cluster + concept_map ~400t/cluster; add headroom
+  const maxTokens = Math.max(3000, clusters.length * 600);
 
   const response = await withRetry(() =>
     getAnthropicClient().messages.create({
@@ -81,9 +105,10 @@ async function callLLM(clusters) {
   try {
     const parsed = JSON.parse(jsonText);
     if (!Array.isArray(parsed?.sequence)) throw new Error('Missing sequence array');
-    return parsed.sequence;
+    if (!parsed?.concept_map) throw new Error('Missing concept_map');
+    return parsed;
   } catch {
-    logger.warn('[learningGraph] Failed to parse LLM response', { raw });
+    logger.warn('[learningGraph] Failed to parse LLM response', { raw: raw.slice(0, 500) });
     return null;
   }
 }
@@ -99,10 +124,8 @@ function validateSequence(sequence, clusterIds) {
     if (seen.has(item.cluster_id)) return false;
     seen.add(item.cluster_id);
 
-    const requires = item.requires ?? [];
-    for (const reqId of requires) {
+    for (const reqId of (item.requires ?? [])) {
       if (!idSet.has(reqId)) return false;
-      // Prerequisite must have lower learning_order (already in seen at this point means lower order)
       if (!seen.has(reqId)) return false;
     }
   }
@@ -112,7 +135,8 @@ function validateSequence(sequence, clusterIds) {
 
 // ── Persistence ───────────────────────────────────────────────────────────────
 
-async function persistLearningGraph(documentId, sequence) {
+async function persistLearningGraph(documentId, llmResult) {
+  const { sequence, concept_map } = llmResult;
   const client = await dbPool.connect();
   try {
     await client.query('BEGIN');
@@ -123,7 +147,15 @@ async function persistLearningGraph(documentId, sequence) {
       [documentId]
     );
 
-    // Update learning_order and learning_level on each cluster
+    // Reset block/center fields before re-writing
+    await client.query(
+      `UPDATE clusters SET learning_order = NULL, learning_level = NULL,
+         block_name = NULL, is_center = FALSE
+       WHERE document_id = $1`,
+      [documentId]
+    );
+
+    // Write sequence: learning_order, learning_level
     for (const item of sequence) {
       await client.query(
         `UPDATE clusters
@@ -133,14 +165,52 @@ async function persistLearningGraph(documentId, sequence) {
       );
     }
 
-    // Insert dependency edges: from_cluster_id must be learned before to_cluster_id
+    // Write concept_map blocks: block_name
+    if (Array.isArray(concept_map?.blocks)) {
+      for (const block of concept_map.blocks) {
+        for (const cid of (block.cluster_ids ?? [])) {
+          await client.query(
+            `UPDATE clusters SET block_name = $1 WHERE id = $2 AND document_id = $3`,
+            [block.block_name, cid, documentId]
+          );
+        }
+      }
+    }
+
+    // Write center cluster
+    if (concept_map?.center_cluster_id) {
+      await client.query(
+        `UPDATE clusters SET is_center = TRUE WHERE id = $1 AND document_id = $2`,
+        [concept_map.center_cluster_id, documentId]
+      );
+    }
+
+    // Insert sequence dependency edges (requires = prerequisite)
     for (const item of sequence) {
       for (const reqId of (item.requires ?? [])) {
         await client.query(
-          `INSERT INTO cluster_dependencies (document_id, from_cluster_id, to_cluster_id)
-           VALUES ($1, $2, $3)
+          `INSERT INTO cluster_dependencies (document_id, from_cluster_id, to_cluster_id, edge_semantic_type)
+           VALUES ($1, $2, $3, 'requires')
            ON CONFLICT ON CONSTRAINT uq_cluster_dependency DO NOTHING`,
           [documentId, reqId, item.cluster_id]
+        );
+      }
+    }
+
+    // Insert concept_map edges with labels and types
+    if (Array.isArray(concept_map?.edges)) {
+      for (const edge of concept_map.edges) {
+        if (!edge.from_cluster_id || !edge.to_cluster_id) continue;
+        if (edge.from_cluster_id === edge.to_cluster_id) continue;
+        await client.query(
+          `INSERT INTO cluster_dependencies
+             (document_id, from_cluster_id, to_cluster_id, edge_label, edge_semantic_type)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT ON CONSTRAINT uq_cluster_dependency DO UPDATE
+             SET edge_label = EXCLUDED.edge_label,
+                 edge_semantic_type = EXCLUDED.edge_semantic_type`,
+          [documentId, edge.from_cluster_id, edge.to_cluster_id,
+           edge.label ?? null, edge.edge_type ?? null]
         );
       }
     }
@@ -157,8 +227,7 @@ async function persistLearningGraph(documentId, sequence) {
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
- * Builds and persists a pedagogical learning graph for the document's clusters.
- * clusters: array of { id, name, definition, concepts[] } from clusterConceptsForDocument
+ * Builds and persists a pedagogical learning graph + concept map for the document's clusters.
  */
 export async function buildLearningGraph(documentId, clusters) {
   if (!clusters || clusters.length < 2) {
@@ -171,39 +240,39 @@ export async function buildLearningGraph(documentId, clusters) {
     clusterCount: clusters.length,
   });
 
-  const sequence = await callLLM(clusters);
+  const llmResult = await callLLM(clusters);
 
-  if (!sequence) {
+  if (!llmResult) {
     logger.warn('[learningGraph] LLM returned unparseable response, skipping', { documentId });
     return;
   }
 
   const clusterIds = clusters.map(c => c.id);
-  if (!validateSequence(sequence, clusterIds)) {
+  if (!validateSequence(llmResult.sequence, clusterIds)) {
     logger.warn('[learningGraph] Sequence validation failed, skipping', {
       documentId,
-      sequenceIds: sequence.map(s => s.cluster_id),
+      sequenceIds: llmResult.sequence.map(s => s.cluster_id),
       clusterIds,
     });
     return;
   }
 
-  await persistLearningGraph(documentId, sequence);
+  await persistLearningGraph(documentId, llmResult);
 
   logger.info('[learningGraph] Learning graph persisted', {
     documentId,
-    sequenceLength: sequence.length,
-    edgeCount: sequence.reduce((n, s) => n + (s.requires?.length ?? 0), 0),
+    sequenceLength: llmResult.sequence.length,
+    blockCount: llmResult.concept_map?.blocks?.length ?? 0,
+    edgeCount: llmResult.concept_map?.edges?.length ?? 0,
   });
 }
 
 /**
- * Returns the learning graph for a document — clusters ordered pedagogically
- * with their prerequisite dependencies.
+ * Returns the learning graph for a document — clusters with sequence, blocks, and typed edges.
  */
 export async function getLearningGraph(documentId) {
   const { rows: clusters } = await dbPool.query(
-    `SELECT id, name, definition, learning_order, learning_level
+    `SELECT id, name, definition, learning_order, learning_level, block_name, is_center
      FROM clusters
      WHERE document_id = $1 AND learning_order IS NOT NULL
      ORDER BY learning_order ASC`,
@@ -213,20 +282,51 @@ export async function getLearningGraph(documentId) {
   if (!clusters.length) return null;
 
   const { rows: deps } = await dbPool.query(
-    `SELECT from_cluster_id, to_cluster_id
+    `SELECT from_cluster_id, to_cluster_id, edge_label, edge_semantic_type
      FROM cluster_dependencies
      WHERE document_id = $1`,
     [documentId]
   );
 
-  // Attach requires[] to each cluster
   const requiresMap = {};
   for (const dep of deps) {
-    (requiresMap[dep.to_cluster_id] ??= []).push(dep.from_cluster_id);
+    if (dep.edge_semantic_type === 'requires' || !dep.edge_semantic_type) {
+      (requiresMap[dep.to_cluster_id] ??= []).push(dep.from_cluster_id);
+    }
   }
 
-  return clusters.map(c => ({
-    ...c,
-    requires: requiresMap[c.id] ?? [],
+  // Group clusters by block_name
+  const blockMap = {};
+  for (const c of clusters) {
+    const key = c.block_name ?? 'Sin clasificar';
+    (blockMap[key] ??= []).push(c.id);
+  }
+  const blocks = Object.entries(blockMap).map(([block_name, cluster_ids]) => ({
+    block_name,
+    cluster_ids,
   }));
+
+  // Concept map edges (non-requires)
+  const edges = deps
+    .filter(d => d.edge_semantic_type && d.edge_semantic_type !== 'requires')
+    .map(d => ({
+      from_cluster_id: d.from_cluster_id,
+      to_cluster_id: d.to_cluster_id,
+      edge_type: d.edge_semantic_type,
+      label: d.edge_label,
+    }));
+
+  const center = clusters.find(c => c.is_center);
+
+  return {
+    sequence: clusters.map(c => ({
+      ...c,
+      requires: requiresMap[c.id] ?? [],
+    })),
+    concept_map: {
+      center_cluster_id: center?.id ?? null,
+      blocks,
+      edges,
+    },
+  };
 }

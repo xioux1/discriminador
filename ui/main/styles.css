@@ -5486,6 +5486,96 @@ textarea.chinese-input {
 [data-theme="dark"] .doc-schema-node   { background: var(--surface); border-color: rgba(255,255,255,0.08); }
 [data-theme="dark"] .doc-schema-node--hl { background: color-mix(in srgb, var(--node-color, #6366f1) 15%, var(--surface)); }
 
+/* Center cluster node — larger, more prominent */
+.doc-schema-node--center {
+  border-left-width: 5px;
+  background: color-mix(in srgb, var(--node-color, #6366f1) 6%, var(--surface, #fff));
+  box-shadow: 0 2px 12px color-mix(in srgb, var(--node-color, #6366f1) 16%, transparent);
+}
+.doc-schema-node--center .doc-schema-node-name {
+  font-size: 0.9rem;
+}
+
+/* ── Block-based concept map layout ──────────────────────────────────────── */
+.doc-schema-blocks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  position: relative;
+  align-items: flex-start;
+}
+
+.doc-schema-block {
+  flex: 1 1 200px;
+  min-width: 180px;
+  border: 1.5px solid rgba(99,102,241,0.18);
+  border-radius: var(--radius);
+  padding: 10px 12px 12px;
+  background: rgba(99,102,241,0.03);
+}
+
+.doc-schema-block-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #6366f1;
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(99,102,241,0.15);
+}
+
+.doc-schema-block-nodes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Edge labels on SVG */
+.doc-schema-edge-label {
+  font-size: 0.58rem;
+  fill: var(--text-muted, #888);
+  font-family: inherit;
+  pointer-events: none;
+}
+
+/* Legend row */
+.doc-schema-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(0,0,0,0.06);
+}
+
+.doc-schema-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  text-transform: capitalize;
+}
+
+.doc-schema-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+[data-theme="dark"] .doc-schema-block {
+  background: rgba(99,102,241,0.06);
+  border-color: rgba(99,102,241,0.25);
+}
+[data-theme="dark"] .doc-schema-block-label { color: #818cf8; }
+[data-theme="dark"] .doc-schema-block-label { border-color: rgba(99,102,241,0.22); }
+[data-theme="dark"] .doc-schema-node--center {
+  background: color-mix(in srgb, var(--node-color, #6366f1) 12%, var(--surface));
+}
+[data-theme="dark"] .doc-schema-legend { border-color: rgba(255,255,255,0.07); }
+
 /* ── Schema interstitial ─────────────────────────────────────────────────── */
 
 .schema-interstitial {
