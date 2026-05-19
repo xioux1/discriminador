@@ -121,7 +121,14 @@ router.post('/api/documents/:id/build-learning-graph', async (req, res, next) =>
   }
   try {
     const { rows: clusterRows } = await dbPool.query(
-      `SELECT id, name, definition FROM clusters WHERE document_id = $1 ORDER BY created_at`,
+      `SELECT c.id, c.name, c.definition,
+              COALESCE(json_agg(json_build_object('label', co.label) ORDER BY co.created_at)
+                       FILTER (WHERE co.id IS NOT NULL), '[]') AS concepts
+       FROM clusters c
+       LEFT JOIN concepts co ON co.cluster_id = c.id AND co.status = 'accepted'
+       WHERE c.document_id = $1
+       GROUP BY c.id
+       ORDER BY c.created_at`,
       [documentId]
     );
     if (!clusterRows.length) {
@@ -154,7 +161,12 @@ router.get('/api/documents/:id/learning-graph', async (req, res, next) => {
     if (!graph) {
       return res.status(404).json({ error: 'not_found', message: 'Learning graph not yet built for this document.' });
     }
-    return res.json({ document_id: documentId, sequence: graph.sequence, concept_map: graph.concept_map });
+    return res.json({
+      document_id: documentId,
+      sequence: graph.sequence,
+      concept_map: graph.concept_map,
+      concept_map_tree: graph.concept_map_tree ?? null,
+    });
   } catch (err) {
     return next(err);
   }
