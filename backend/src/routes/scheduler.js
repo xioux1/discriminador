@@ -228,7 +228,8 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
       `SELECT c.*,
          COUNT(mc.id) FILTER (WHERE mc.status = 'active') AS active_micro_count,
          COUNT(cv.id) AS variant_count,
-         MAX(cl.learning_order) AS cluster_learning_order
+         MAX(cl.learning_order) AS cluster_learning_order,
+         MAX(cl.name) AS cluster_name
        FROM cards c
        LEFT JOIN micro_cards mc ON mc.parent_card_id = c.id
        LEFT JOIN card_variants cv ON cv.card_id = c.id

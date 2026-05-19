@@ -5686,6 +5686,12 @@ textarea.chinese-input {
   font-size: 1rem;
   font-weight: 700;
   color: var(--text);
+  flex-wrap: wrap;
+}
+
+.schema-interstitial-cluster-name {
+  color: #6366f1;
+  font-weight: 700;
 }
 
 .schema-interstitial-check {
