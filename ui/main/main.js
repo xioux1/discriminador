@@ -10498,6 +10498,28 @@ function drawSchemaArrows(container, edges) {
     }
     d = `M${p0x},${p0y} C${p1x},${p1y} ${p2x},${p2y} ${p3x},${p3y}`;
 
+    const markerId = `arr-${edge.edge_type || 'req'}`;
+    const title = edge.label
+      ? `<title>${escHtml(edge.label)}</title>`
+      : '';
+    paths.push(
+      `<path d="${d}" stroke="transparent" stroke-width="10" fill="none" style="pointer-events:stroke" class="doc-schema-edge-hit">${title}</path>` +
+      `<path d="${d}" stroke="${color}" stroke-width="2" fill="none" marker-end="url(#${markerId})" style="pointer-events:none"/>`
+    );
+  }
+
+  const usedTypes = [...new Set(edges.map(e => e.edge_type || 'requires'))];
+  const defs = usedTypes.map(et => {
+    const c = EDGE_COLOR[et] || EDGE_COLOR.requires;
+    return `<marker id="arr-${et}" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0,8 3,0 6" fill="${c}"/>
+    </marker>`;
+  }).join('');
+
+  svg.style.pointerEvents = 'all';
+  svg.innerHTML = `<defs>${defs}</defs>${paths.join('')}`;
+}
+
 function initDocumentsTab() {
   const createBtn     = document.getElementById('doc-create-btn');  const nameInput     = document.getElementById('doc-name-input');
   const textInput     = document.getElementById('doc-text-input');
