@@ -270,6 +270,7 @@ export async function buildLearningGraph(documentId, clusters) {
     return;
   }
 
+  console.log('[learningGraph] building graph', documentId, 'clusters:', clusters.length);
   logger.info('[learningGraph] Building learning graph', {
     documentId,
     clusterCount: clusters.length,
@@ -278,6 +279,7 @@ export async function buildLearningGraph(documentId, clusters) {
   const llmResult = await callLLM(clusters);
 
   if (!llmResult) {
+    console.warn('[learningGraph] LLM unparseable response', documentId);
     logger.warn('[learningGraph] LLM returned unparseable response, skipping', { documentId });
     return;
   }
@@ -296,6 +298,7 @@ export async function buildLearningGraph(documentId, clusters) {
 
   await persistLearningGraph(documentId, { ...llmResult, sequence: normalisedSequence });
 
+  console.log('[learningGraph] graph persisted', documentId);
   logger.info('[learningGraph] Learning graph persisted', {
     documentId,
     sequenceLength: llmResult.sequence.length,
