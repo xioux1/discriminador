@@ -7371,14 +7371,29 @@ function showSchemaInterstitial(documentId, finishedClusterId, finishedClusterNa
   document.body.appendChild(overlay);
   requestAnimationFrame(() => overlay.classList.add('schema-interstitial--visible'));
 
-  // Fetch and render schema — never block the interstitial beyond 3s
+  // Retry while interstitial is open — build takes ~15-20s after first 404
+  const tryRenderSchema = async (retriesLeft) => {
+    if (retriesLeft <= 0) return;
+    await new Promise(r => setTimeout(r, 5000));
+    if (!document.getElementById('schema-interstitial')) return;
+    const data = await getDocumentSchema(documentId);
+    const c = document.getElementById('schema-interstitial-schema');
+    if (!c) return;
+    if (data) {
+      renderDocumentSchema(c, data, finishedClusterId, finishedConceptLabel);
+    } else {
+      tryRenderSchema(retriesLeft - 1);
+    }
+  };
+
   getDocumentSchema(documentId).then(graphData => {
     const schemaContainer = document.getElementById('schema-interstitial-schema');
     if (!schemaContainer) return;
     if (graphData) {
       renderDocumentSchema(schemaContainer, graphData, finishedClusterId, finishedConceptLabel);
+    } else {
+      tryRenderSchema(4); // retry at 5s, 10s, 15s, 20s
     }
-    // If null: container stays empty — cluster name in header is already useful
   });
 
   // 30-second countdown
