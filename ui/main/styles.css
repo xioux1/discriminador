@@ -5419,11 +5419,42 @@ textarea.chinese-input {
 }
 
 .doc-schema-node--hl {
-  border-color: var(--node-color, #6366f1);
-  background: color-mix(in srgb, var(--node-color, #6366f1) 8%, var(--surface, #fff));
-  box-shadow: 0 0 0 2px var(--node-color, #6366f1),
-              0 6px 20px color-mix(in srgb, var(--node-color, #6366f1) 25%, transparent);
+  border-color: #16a34a;
+  background: color-mix(in srgb, #16a34a 8%, var(--surface, #fff));
+  box-shadow: 0 0 0 2px #16a34a,
+              0 6px 20px color-mix(in srgb, #16a34a 25%, transparent);
   transform: translateY(-2px);
+}
+
+.doc-schema-node--next {
+  border-color: var(--node-color, #6366f1);
+  background: color-mix(in srgb, var(--node-color, #6366f1) 10%, var(--surface, #fff));
+  box-shadow: 0 0 0 2px var(--node-color, #6366f1),
+              0 6px 20px color-mix(in srgb, var(--node-color, #6366f1) 30%, transparent);
+  transform: translateY(-2px);
+}
+
+.doc-schema-node-status {
+  font-size: 0.6rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 8px;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.doc-schema-node-status--done {
+  background: #16a34a;
+  color: #fff;
+}
+
+.doc-schema-node-status--next {
+  background: var(--node-color, #6366f1);
+  color: #fff;
+}
+
+[data-theme="dark"] .doc-schema-node--next {
+  background: color-mix(in srgb, var(--node-color, #6366f1) 18%, var(--surface));
 }
 
 .doc-schema-node-header {
@@ -5529,7 +5560,7 @@ textarea.chinese-input {
 }
 [data-theme="dark"] .doc-schema-title  { color: #818cf8; }
 [data-theme="dark"] .doc-schema-node   { background: var(--surface); border-color: rgba(255,255,255,0.08); }
-[data-theme="dark"] .doc-schema-node--hl { background: color-mix(in srgb, var(--node-color, #6366f1) 15%, var(--surface)); }
+[data-theme="dark"] .doc-schema-node--hl { background: color-mix(in srgb, #16a34a 15%, var(--surface)); }
 
 /* Center cluster node — clearly more prominent */
 .doc-schema-node--center {
@@ -5664,8 +5695,8 @@ textarea.chinese-input {
   background: var(--surface, #fff);
   border-radius: 16px;
   padding: 28px 32px;
-  width: min(640px, 92vw);
-  max-height: 88vh;
+  width: min(95vw, 1400px);
+  max-height: 94vh;
   overflow-y: auto;
   display: flex;
   flex-direction: column;

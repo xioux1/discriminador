@@ -7336,7 +7336,7 @@ async function getDocumentSchema(documentId) {
   return _schemaFetchInFlight[documentId];
 }
 
-function showSchemaInterstitial(documentId, finishedClusterId, finishedClusterName, finishedConceptLabel, onDone) {
+function showSchemaInterstitial(documentId, finishedClusterId, finishedClusterName, finishedConceptLabel, nextClusterId, onDone) {
   const existing = document.getElementById('schema-interstitial');
   if (existing) existing.remove();
 
@@ -7386,7 +7386,7 @@ function showSchemaInterstitial(documentId, finishedClusterId, finishedClusterNa
     const c = document.getElementById('schema-interstitial-schema');
     if (!c) return;
     if (data) {
-      renderDocumentSchema(c, data, finishedClusterId, finishedConceptLabel);
+      renderDocumentSchema(c, data, finishedClusterId, finishedConceptLabel, nextClusterId);
     } else {
       tryRenderSchema(retriesLeft - 1);
     }
@@ -7396,7 +7396,7 @@ function showSchemaInterstitial(documentId, finishedClusterId, finishedClusterNa
     const schemaContainer = document.getElementById('schema-interstitial-schema');
     if (!schemaContainer) return;
     if (graphData) {
-      renderDocumentSchema(schemaContainer, graphData, finishedClusterId, finishedConceptLabel);
+      renderDocumentSchema(schemaContainer, graphData, finishedClusterId, finishedConceptLabel, nextClusterId);
     } else {
       tryRenderSchema(4); // retry at 5s, 10s, 15s, 20s
     }
@@ -7452,7 +7452,7 @@ async function advanceStudyCard() {
     nextClusterId !== prevClusterId
   ) {
     persistStudySession();
-    showSchemaInterstitial(prevDocumentId, prevClusterId, studyState.lastCardClusterName, studyState.lastCardConceptLabel, () => showStudyCard());
+    showSchemaInterstitial(prevDocumentId, prevClusterId, studyState.lastCardClusterName, studyState.lastCardConceptLabel, nextClusterId, () => showStudyCard());
     return;
   }
 
@@ -10320,13 +10320,15 @@ const EDGE_COLOR = {
 
 const SCHEMA_LEVEL_LABEL = { foundational: 'Fundamento', intermediate: 'Intermedio', advanced: 'Avanzado' };
 
-function schemaNodeHtml(cl, highlightId, centerClusterId, highlightConceptLabel = null) {
+function schemaNodeHtml(cl, highlightId, centerClusterId, highlightConceptLabel = null, nextClusterId = null) {
   const color    = SCHEMA_LEVEL_COLOR[cl.learning_level] || '#6366f1';
   const isHl     = cl.id === highlightId;
+  const isNext   = !isHl && cl.id === nextClusterId;
   const isCenter = cl.id === centerClusterId;
   const badge    = SCHEMA_LEVEL_LABEL[cl.learning_level] || cl.learning_level || '';
   const classes  = ['doc-schema-node',
     isHl     ? 'doc-schema-node--hl'     : '',
+    isNext   ? 'doc-schema-node--next'   : '',
     isCenter ? 'doc-schema-node--center' : ''].filter(Boolean).join(' ');
 
   const concepts = Array.isArray(cl.key_map_concepts) ? cl.key_map_concepts : [];
@@ -10343,10 +10345,15 @@ function schemaNodeHtml(cl, highlightId, centerClusterId, highlightConceptLabel 
   const rawDesc = cl.definition || '';
   const desc    = rawDesc.length > 120 ? rawDesc.slice(0, 117) + '…' : rawDesc;
 
+  const statusBadge = isHl   ? '<span class="doc-schema-node-status doc-schema-node-status--done">✓ Completado</span>'
+                   : isNext ? '<span class="doc-schema-node-status doc-schema-node-status--next">▶ Siguiente</span>'
+                   : '';
+
   return `<div class="${classes}" data-id="${escHtml(cl.id)}" style="--node-color:${color}">
     <div class="doc-schema-node-header">
       <span class="doc-schema-node-num">${cl.learning_order}</span>
       <span class="doc-schema-node-badge">${escHtml(badge)}</span>
+      ${statusBadge}
     </div>
     <div class="doc-schema-node-name">${escHtml(cl.name)}</div>
     ${desc ? `<div class="doc-schema-node-desc">${escHtml(desc)}</div>` : ''}
@@ -10354,7 +10361,7 @@ function schemaNodeHtml(cl, highlightId, centerClusterId, highlightConceptLabel 
   </div>`;
 }
 
-function renderDocumentSchema(container, graphData, highlightId = null, highlightConceptLabel = null) {
+function renderDocumentSchema(container, graphData, highlightId = null, highlightConceptLabel = null, nextClusterId = null) {
   let sequence, concept_map;
   if (Array.isArray(graphData)) {
     sequence    = graphData;
@@ -10410,7 +10417,7 @@ function renderDocumentSchema(container, graphData, highlightId = null, highligh
     <div class="doc-schema-block">
       <div class="doc-schema-block-label">${escHtml(b.block_name)}</div>
       <div class="doc-schema-block-nodes">
-        ${b.clusters.map(cl => schemaNodeHtml(cl, highlightId, centerClusterId, highlightConceptLabel)).join('')}
+        ${b.clusters.map(cl => schemaNodeHtml(cl, highlightId, centerClusterId, highlightConceptLabel, nextClusterId)).join('')}
       </div>
     </div>`).join('');
 
@@ -10433,7 +10440,14 @@ function renderDocumentSchema(container, graphData, highlightId = null, highligh
       }</div>` : ''}
     </div>`;
 
-  requestAnimationFrame(() => drawSchemaArrows(container, drawEdges));
+  requestAnimationFrame(() => {
+    drawSchemaArrows(container, drawEdges);
+    const activeId = nextClusterId || highlightId;
+    if (activeId) {
+      const activeEl = container.querySelector(`[data-id="${CSS.escape(activeId)}"]`);
+      if (activeEl) activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  });
 
   const regenBtn = container.querySelector('.doc-schema-regen-btn');
   if (regenBtn) {
