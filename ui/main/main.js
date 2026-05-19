@@ -10300,9 +10300,206 @@ function formatDocDate(isoStr) {
   return d.toLocaleDateString('es-AR');
 }
 
+// ── Document schema visualization (block-based concept map) ──────────────────
+// Defined at module scope so showSchemaInterstitial can call renderDocumentSchema.
+
+const SCHEMA_LEVEL_COLOR = {
+  foundational: '#16a34a',
+  intermediate: '#2563eb',
+  advanced:     '#7c3aed',
+};
+
+const EDGE_COLOR = {
+  requires:      'rgba(99,102,241,0.45)',
+  produces:      'rgba(22,163,74,0.55)',
+  enables:       'rgba(37,99,235,0.55)',
+  part_of:       'rgba(234,179,8,0.55)',
+  contrasts_with:'rgba(220,38,38,0.55)',
+  example_of:    'rgba(124,58,237,0.55)',
+};
+
+const SCHEMA_LEVEL_LABEL = { foundational: 'Fundamento', intermediate: 'Intermedio', advanced: 'Avanzado' };
+
+function schemaNodeHtml(cl, highlightId, centerClusterId, highlightConceptLabel = null) {
+  const color    = SCHEMA_LEVEL_COLOR[cl.learning_level] || '#6366f1';
+  const isHl     = cl.id === highlightId;
+  const isCenter = cl.id === centerClusterId;
+  const badge    = SCHEMA_LEVEL_LABEL[cl.learning_level] || cl.learning_level || '';
+  const classes  = ['doc-schema-node',
+    isHl     ? 'doc-schema-node--hl'     : '',
+    isCenter ? 'doc-schema-node--center' : ''].filter(Boolean).join(' ');
+
+  const concepts = Array.isArray(cl.key_map_concepts) ? cl.key_map_concepts : [];
+  const hlLabel  = isHl && highlightConceptLabel ? highlightConceptLabel.toLowerCase() : null;
+  const chipsHtml = concepts.length
+    ? `<div class="doc-schema-node-concepts">
+         ${concepts.map(c => {
+           const isHlChip = hlLabel && c.toLowerCase().includes(hlLabel);
+           return `<span class="doc-schema-concept-chip${isHlChip ? ' doc-schema-concept-chip--hl' : ''}">${escHtml(c)}</span>`;
+         }).join('')}
+       </div>`
+    : '';
+
+  const rawDesc = cl.definition || '';
+  const desc    = rawDesc.length > 120 ? rawDesc.slice(0, 117) + '…' : rawDesc;
+
+  return `<div class="${classes}" data-id="${escHtml(cl.id)}" style="--node-color:${color}">
+    <div class="doc-schema-node-header">
+      <span class="doc-schema-node-num">${cl.learning_order}</span>
+      <span class="doc-schema-node-badge">${escHtml(badge)}</span>
+    </div>
+    <div class="doc-schema-node-name">${escHtml(cl.name)}</div>
+    ${desc ? `<div class="doc-schema-node-desc">${escHtml(desc)}</div>` : ''}
+    ${chipsHtml}
+  </div>`;
+}
+
+function renderDocumentSchema(container, graphData, highlightId = null, highlightConceptLabel = null) {
+  let sequence, concept_map;
+  if (Array.isArray(graphData)) {
+    sequence    = graphData;
+    concept_map = null;
+  } else {
+    sequence    = graphData?.sequence ?? [];
+    concept_map = graphData?.concept_map ?? null;
+  }
+
+  if (!sequence || sequence.length === 0) { container.innerHTML = ''; return; }
+
+  const centerClusterId = concept_map?.center_cluster_id ?? null;
+  const clusterById = {};
+  sequence.forEach(cl => { clusterById[cl.id] = cl; });
+
+  let blocks;
+  if (concept_map?.blocks?.length) {
+    blocks = concept_map.blocks.map(b => ({
+      block_name: b.block_name,
+      clusters: (b.cluster_ids || []).map(id => clusterById[id]).filter(Boolean),
+    })).filter(b => b.clusters.length > 0);
+  } else {
+    const byLevel = {};
+    const levelOrder = ['foundational', 'intermediate', 'advanced'];
+    for (const cl of sequence) {
+      const lv = cl.learning_level || 'foundational';
+      (byLevel[lv] ??= []).push(cl);
+    }
+    blocks = levelOrder
+      .filter(lv => byLevel[lv]?.length)
+      .map(lv => ({ block_name: SCHEMA_LEVEL_LABEL[lv] || lv, clusters: byLevel[lv] }));
+  }
+
+  const clusterBlock = {};
+  blocks.forEach((b, bi) => b.clusters.forEach(cl => { clusterBlock[cl.id] = bi; }));
+
+  let drawEdges = concept_map?.edges?.length
+    ? concept_map.edges
+    : sequence.flatMap(cl =>
+        (cl.requires || []).map(rid => ({
+          from_cluster_id: rid,
+          to_cluster_id:   cl.id,
+          edge_type:       'requires',
+          label:           null,
+        }))
+      );
+
+  const crossBlock = drawEdges.filter(e => clusterBlock[e.from_cluster_id] !== clusterBlock[e.to_cluster_id]);
+  const intraBlock = drawEdges.filter(e => clusterBlock[e.from_cluster_id] === clusterBlock[e.to_cluster_id]);
+  drawEdges = [...crossBlock, ...intraBlock].slice(0, 16);
+
+  const blocksHtml = blocks.map(b => `
+    <div class="doc-schema-block">
+      <div class="doc-schema-block-label">${escHtml(b.block_name)}</div>
+      <div class="doc-schema-block-nodes">
+        ${b.clusters.map(cl => schemaNodeHtml(cl, highlightId, centerClusterId, highlightConceptLabel)).join('')}
+      </div>
+    </div>`).join('');
+
+  container.innerHTML = `
+    <div class="doc-schema-wrap">
+      <div class="doc-schema-title-row">
+        <span class="doc-schema-title">Mapa conceptual</span>
+        <button class="btn-ghost doc-schema-regen-btn" style="font-size:var(--fs-sm)" title="Regenerar mapa sin resetear clusters ni preguntas">↺ Regenerar mapa</button>
+      </div>
+      <div class="doc-schema-blocks">
+        ${blocksHtml}
+        <svg class="doc-schema-svg" aria-hidden="true"></svg>
+      </div>
+      ${drawEdges.length ? `<div class="doc-schema-legend">${
+        [...new Set(drawEdges.map(e => e.edge_type).filter(Boolean))].map(et => `
+          <span class="doc-schema-legend-item">
+            <span class="doc-schema-legend-dot" style="background:${EDGE_COLOR[et] || EDGE_COLOR.requires}"></span>
+            ${escHtml(et.replace(/_/g, ' '))}
+          </span>`).join('')
+      }</div>` : ''}
+    </div>`;
+
+  requestAnimationFrame(() => drawSchemaArrows(container, drawEdges));
+
+  const regenBtn = container.querySelector('.doc-schema-regen-btn');
+  if (regenBtn) {
+    regenBtn.addEventListener('click', async () => {
+      const docItem = container.closest('[data-doc-id]');
+      const docId   = docItem?.dataset?.docId;
+      if (!docId) return;
+      regenBtn.disabled    = true;
+      regenBtn.textContent = '↺ Regenerando…';
+      const headers = { 'Content-Type': 'application/json' };
+      if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
+      delete studyState.schemaCache[docId];
+      await fetch(`/api/documents/${docId}/build-learning-graph`, { method: 'POST', headers }).catch(() => {});
+      pollLearningGraph(docId, docItem);
+    });
+  }
+}
+
+function drawSchemaArrows(container, edges) {
+  const graph = container.querySelector('.doc-schema-blocks');
+  const svg   = container.querySelector('.doc-schema-svg');
+  if (!graph || !svg || !edges?.length) return;
+
+  const gRect = graph.getBoundingClientRect();
+  if (gRect.width === 0) return;
+
+  const nodeEls = {};
+  graph.querySelectorAll('.doc-schema-node').forEach(el => {
+    nodeEls[el.dataset.id] = el;
+  });
+
+  const paths = [];
+
+  for (const edge of edges) {
+    const fromEl = nodeEls[edge.from_cluster_id];
+    const toEl   = nodeEls[edge.to_cluster_id];
+    if (!fromEl || !toEl) continue;
+
+    const fromR = fromEl.getBoundingClientRect();
+    const toR   = toEl.getBoundingClientRect();
+    const color = EDGE_COLOR[edge.edge_type] || EDGE_COLOR.requires;
+
+    const vertOverlap = Math.min(fromR.bottom, toR.bottom) - Math.max(fromR.top, toR.top);
+    const isSameRow   = vertOverlap > fromR.height * 0.4;
+
+    let d, p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y;
+    if (isSameRow) {
+      const goRight = fromR.left < toR.left;
+      p0x = (goRight ? fromR.right : fromR.left) - gRect.left;
+      p0y = fromR.top - gRect.top + fromR.height / 2;
+      p3x = (goRight ? toR.left   : toR.right)  - gRect.left;
+      p3y = toR.top  - gRect.top + toR.height / 2;
+      const mx = (p0x + p3x) / 2;
+      p1x = mx; p1y = p0y; p2x = mx; p2y = p3y;
+    } else {
+      p0x = fromR.left - gRect.left + fromR.width / 2;
+      p0y = fromR.bottom - gRect.top;
+      p3x = toR.left  - gRect.left + toR.width  / 2;
+      p3y = toR.top   - gRect.top;
+      const mid = (p0y + p3y) / 2;
+      p1x = p0x; p1y = mid; p2x = p3x; p2y = mid;
+    }
+    d = `M${p0x},${p0y} C${p1x},${p1y} ${p2x},${p2y} ${p3x},${p3y}`;
+
 function initDocumentsTab() {
-  const createBtn     = document.getElementById('doc-create-btn');
-  const nameInput     = document.getElementById('doc-name-input');
+  const createBtn     = document.getElementById('doc-create-btn');  const nameInput     = document.getElementById('doc-name-input');
   const textInput     = document.getElementById('doc-text-input');
   const subjectInput  = document.getElementById('doc-subject-input');
   const feedback      = document.getElementById('doc-create-feedback');
@@ -10935,242 +11132,6 @@ function initDocumentsTab() {
           }).join('')}
         </ol>
       </div>`;
-  }
-
-  // ── Document schema visualization (block-based concept map) ───────────────
-
-  const SCHEMA_LEVEL_COLOR = {
-    foundational: '#16a34a',
-    intermediate: '#2563eb',
-    advanced:     '#7c3aed',
-  };
-
-  // Color per edge semantic type
-  const EDGE_COLOR = {
-    requires:      'rgba(99,102,241,0.45)',
-    produces:      'rgba(22,163,74,0.55)',
-    enables:       'rgba(37,99,235,0.55)',
-    part_of:       'rgba(234,179,8,0.55)',
-    contrasts_with:'rgba(220,38,38,0.55)',
-    example_of:    'rgba(124,58,237,0.55)',
-  };
-
-  function schemaNodeHtml(cl, highlightId, centerClusterId, highlightConceptLabel = null) {
-    const color    = SCHEMA_LEVEL_COLOR[cl.learning_level] || '#6366f1';
-    const isHl     = cl.id === highlightId;
-    const isCenter = cl.id === centerClusterId;
-    const badge    = LEVEL_LABEL[cl.learning_level] || cl.learning_level || '';
-    const classes  = ['doc-schema-node',
-      isHl     ? 'doc-schema-node--hl'     : '',
-      isCenter ? 'doc-schema-node--center' : ''].filter(Boolean).join(' ');
-
-    // Key concepts chips; highlight the one matching the last card's source concept
-    const concepts = Array.isArray(cl.key_map_concepts) ? cl.key_map_concepts : [];
-    const hlLabel  = isHl && highlightConceptLabel
-      ? highlightConceptLabel.toLowerCase()
-      : null;
-    const chipsHtml = concepts.length
-      ? `<div class="doc-schema-node-concepts">
-           ${concepts.map(c => {
-             const isHlChip = hlLabel && c.toLowerCase().includes(hlLabel);
-             return `<span class="doc-schema-concept-chip${isHlChip ? ' doc-schema-concept-chip--hl' : ''}">${escHtml(c)}</span>`;
-           }).join('')}
-         </div>`
-      : '';
-
-    const rawDesc = cl.definition || '';
-    const desc    = rawDesc.length > 120 ? rawDesc.slice(0, 117) + '…' : rawDesc;
-
-    return `<div class="${classes}" data-id="${escHtml(cl.id)}" style="--node-color:${color}">
-      <div class="doc-schema-node-header">
-        <span class="doc-schema-node-num">${cl.learning_order}</span>
-        <span class="doc-schema-node-badge">${escHtml(badge)}</span>
-      </div>
-      <div class="doc-schema-node-name">${escHtml(cl.name)}</div>
-      ${desc ? `<div class="doc-schema-node-desc">${escHtml(desc)}</div>` : ''}
-      ${chipsHtml}
-    </div>`;
-  }
-
-  // graphData: { sequence, concept_map } or array (legacy)
-  // highlightConceptLabel: if set, the matching concept chip inside highlightId's node gets extra highlight
-  function renderDocumentSchema(container, graphData, highlightId = null, highlightConceptLabel = null) {
-    // Normalise: accept both the new object shape and the old plain array
-    let sequence, concept_map;
-    if (Array.isArray(graphData)) {
-      sequence    = graphData;
-      concept_map = null;
-    } else {
-      sequence    = graphData?.sequence ?? [];
-      concept_map = graphData?.concept_map ?? null;
-    }
-
-    if (!sequence || sequence.length === 0) { container.innerHTML = ''; return; }
-
-    const centerClusterId = concept_map?.center_cluster_id ?? null;
-    const clusterById = {};
-    sequence.forEach(cl => { clusterById[cl.id] = cl; });
-
-    // Build block groups: use concept_map.blocks if available, else group by learning_level
-    let blocks;
-    if (concept_map?.blocks?.length) {
-      blocks = concept_map.blocks.map(b => ({
-        block_name: b.block_name,
-        clusters: (b.cluster_ids || []).map(id => clusterById[id]).filter(Boolean),
-      })).filter(b => b.clusters.length > 0);
-    } else {
-      // Fallback: group by level
-      const byLevel = {};
-      const levelOrder = ['foundational', 'intermediate', 'advanced'];
-      for (const cl of sequence) {
-        const lv = cl.learning_level || 'foundational';
-        (byLevel[lv] ??= []).push(cl);
-      }
-      blocks = levelOrder
-        .filter(lv => byLevel[lv]?.length)
-        .map(lv => ({ block_name: LEVEL_LABEL[lv] || lv, clusters: byLevel[lv] }));
-    }
-
-    // Build a map of cluster_id → block index so we can favour cross-block edges
-    const clusterBlock = {};
-    blocks.forEach((b, bi) => b.clusters.forEach(cl => { clusterBlock[cl.id] = bi; }));
-
-    // Edges to draw: prefer concept_map.edges; fall back to requires edges from sequence
-    let drawEdges = concept_map?.edges?.length
-      ? concept_map.edges
-      : sequence.flatMap(cl =>
-          (cl.requires || []).map(rid => ({
-            from_cluster_id: rid,
-            to_cluster_id:   cl.id,
-            edge_type:       'requires',
-            label:           null,
-          }))
-        );
-
-    // Show all edges the LLM produced; only deduplicate exact pairs.
-    // Cross-block first so they render on top when there are many.
-    const crossBlock = drawEdges.filter(e =>
-      clusterBlock[e.from_cluster_id] !== clusterBlock[e.to_cluster_id]
-    );
-    const intraBlock = drawEdges.filter(e =>
-      clusterBlock[e.from_cluster_id] === clusterBlock[e.to_cluster_id]
-    );
-    drawEdges = [...crossBlock, ...intraBlock].slice(0, 16);
-
-    const blocksHtml = blocks.map(b => `
-      <div class="doc-schema-block">
-        <div class="doc-schema-block-label">${escHtml(b.block_name)}</div>
-        <div class="doc-schema-block-nodes">
-          ${b.clusters.map(cl => schemaNodeHtml(cl, highlightId, centerClusterId, highlightConceptLabel)).join('')}
-        </div>
-      </div>`).join('');
-
-    container.innerHTML = `
-      <div class="doc-schema-wrap">
-        <div class="doc-schema-title-row">
-          <span class="doc-schema-title">Mapa conceptual</span>
-          <button class="btn-ghost doc-schema-regen-btn" style="font-size:var(--fs-sm)" title="Regenerar mapa sin resetear clusters ni preguntas">↺ Regenerar mapa</button>
-        </div>
-        <div class="doc-schema-blocks">
-          ${blocksHtml}
-          <svg class="doc-schema-svg" aria-hidden="true"></svg>
-        </div>
-        ${drawEdges.length ? `<div class="doc-schema-legend">${
-          [...new Set(drawEdges.map(e => e.edge_type).filter(Boolean))].map(et => `
-            <span class="doc-schema-legend-item">
-              <span class="doc-schema-legend-dot" style="background:${EDGE_COLOR[et] || EDGE_COLOR.requires}"></span>
-              ${escHtml(et.replace(/_/g, ' '))}
-            </span>`).join('')
-        }</div>` : ''}
-      </div>`;
-
-    requestAnimationFrame(() => drawSchemaArrows(container, drawEdges));
-
-    const regenBtn = container.querySelector('.doc-schema-regen-btn');
-    if (regenBtn) {
-      regenBtn.addEventListener('click', async () => {
-        const docItem = container.closest('[data-doc-id]');
-        const docId   = docItem?.dataset?.docId;
-        if (!docId) return;
-        regenBtn.disabled    = true;
-        regenBtn.textContent = '↺ Regenerando…';
-        const headers = { 'Content-Type': 'application/json' };
-        if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
-        delete studyState.schemaCache[docId];
-        await fetch(`/api/documents/${docId}/build-learning-graph`, { method: 'POST', headers }).catch(() => {});
-        pollLearningGraph(docId, docItem);
-      });
-    }
-  }
-
-  function drawSchemaArrows(container, edges) {
-    const graph = container.querySelector('.doc-schema-blocks');
-    const svg   = container.querySelector('.doc-schema-svg');
-    if (!graph || !svg || !edges?.length) return;
-
-    const gRect = graph.getBoundingClientRect();
-    if (gRect.width === 0) return;
-
-    const nodeEls = {};
-    graph.querySelectorAll('.doc-schema-node').forEach(el => {
-      nodeEls[el.dataset.id] = el;
-    });
-
-    const paths = [];
-
-    for (const edge of edges) {
-      const fromEl = nodeEls[edge.from_cluster_id];
-      const toEl   = nodeEls[edge.to_cluster_id];
-      if (!fromEl || !toEl) continue;
-
-      const fromR = fromEl.getBoundingClientRect();
-      const toR   = toEl.getBoundingClientRect();
-      const color = EDGE_COLOR[edge.edge_type] || EDGE_COLOR.requires;
-
-      const vertOverlap = Math.min(fromR.bottom, toR.bottom) - Math.max(fromR.top, toR.top);
-      const isSameRow   = vertOverlap > fromR.height * 0.4;
-
-      let d, p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y;
-      if (isSameRow) {
-        const goRight = fromR.left < toR.left;
-        p0x = (goRight ? fromR.right : fromR.left) - gRect.left;
-        p0y = fromR.top - gRect.top + fromR.height / 2;
-        p3x = (goRight ? toR.left   : toR.right)  - gRect.left;
-        p3y = toR.top  - gRect.top + toR.height / 2;
-        const mx = (p0x + p3x) / 2;
-        p1x = mx; p1y = p0y; p2x = mx; p2y = p3y;
-      } else {
-        p0x = fromR.left - gRect.left + fromR.width / 2;
-        p0y = fromR.bottom - gRect.top;
-        p3x = toR.left  - gRect.left + toR.width  / 2;
-        p3y = toR.top   - gRect.top;
-        const mid = (p0y + p3y) / 2;
-        p1x = p0x; p1y = mid; p2x = p3x; p2y = mid;
-      }
-      d = `M${p0x},${p0y} C${p1x},${p1y} ${p2x},${p2y} ${p3x},${p3y}`;
-
-      const markerId = `arr-${edge.edge_type || 'req'}`;
-      const title = edge.label
-        ? `<title>${escHtml(edge.label)}</title>`
-        : '';
-      // Wider invisible stroke for easier hover targeting
-      paths.push(
-        `<path d="${d}" stroke="transparent" stroke-width="10" fill="none" style="pointer-events:stroke" class="doc-schema-edge-hit">${title}</path>` +
-        `<path d="${d}" stroke="${color}" stroke-width="2" fill="none" marker-end="url(#${markerId})" style="pointer-events:none"/>`
-      );
-    }
-
-    // One marker per edge type
-    const usedTypes = [...new Set(edges.map(e => e.edge_type || 'requires'))];
-    const defs = usedTypes.map(et => {
-      const c = EDGE_COLOR[et] || EDGE_COLOR.requires;
-      return `<marker id="arr-${et}" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-        <polygon points="0 0,8 3,0 6" fill="${c}"/>
-      </marker>`;
-    }).join('');
-
-    svg.style.pointerEvents = 'all';
-    svg.innerHTML = `<defs>${defs}</defs>${paths.join('')}`;
   }
 
   async function pollLearningGraph(docId, item, attemptsLeft = 10) {
