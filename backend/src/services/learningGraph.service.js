@@ -124,24 +124,36 @@ async function callLLM(clusters) {
   }
 }
 
-// ── Validation ────────────────────────────────────────────────────────────────
+// ── Normalisation ─────────────────────────────────────────────────────────────
+// Cleans the LLM sequence rather than hard-rejecting it:
+//   • strips items with unknown or duplicate cluster_ids
+//   • removes requires-references to IDs not yet seen (avoids forward-ref errors)
+//   • appends any clusters the LLM omitted, re-using the next learning_order value
+// Returns null only when the cleaned sequence ends up completely empty.
 
-function validateSequence(sequence, clusterIds) {
+function normaliseSequence(sequence, clusterIds) {
   const idSet = new Set(clusterIds);
-  const seen = new Set();
+  const seen  = new Set();
+  const clean = [];
 
   for (const item of sequence) {
-    if (!idSet.has(item.cluster_id)) return false;
-    if (seen.has(item.cluster_id)) return false;
+    if (!idSet.has(item.cluster_id)) continue;  // unknown id → skip
+    if (seen.has(item.cluster_id))   continue;  // duplicate  → skip
     seen.add(item.cluster_id);
 
-    for (const reqId of (item.requires ?? [])) {
-      if (!idSet.has(reqId)) return false;
-      if (!seen.has(reqId)) return false;
+    const safeRequires = (item.requires ?? []).filter(r => idSet.has(r) && seen.has(r));
+    clean.push({ ...item, requires: safeRequires });
+  }
+
+  // Supplement clusters the LLM forgot
+  let nextOrder = clean.length ? Math.max(...clean.map(i => i.learning_order ?? 0)) + 1 : 1;
+  for (const id of clusterIds) {
+    if (!seen.has(id)) {
+      clean.push({ cluster_id: id, learning_order: nextOrder++, learning_level: 'advanced', requires: [] });
     }
   }
 
-  return seen.size === clusterIds.length;
+  return clean.length === 0 ? null : clean;
 }
 
 // ── Persistence ───────────────────────────────────────────────────────────────
@@ -271,16 +283,18 @@ export async function buildLearningGraph(documentId, clusters) {
   }
 
   const clusterIds = clusters.map(c => c.id);
-  if (!validateSequence(llmResult.sequence, clusterIds)) {
-    logger.warn('[learningGraph] Sequence validation failed, skipping', {
-      documentId,
-      sequenceIds: llmResult.sequence.map(s => s.cluster_id),
-      clusterIds,
-    });
+  const normalisedSequence = normaliseSequence(llmResult.sequence, clusterIds);
+  if (!normalisedSequence) {
+    logger.warn('[learningGraph] Sequence normalisation produced empty result, skipping', { documentId });
     return;
   }
 
-  await persistLearningGraph(documentId, llmResult);
+  const skipped = clusterIds.length - llmResult.sequence.filter(s => clusterIds.includes(s.cluster_id)).length;
+  if (skipped > 0) {
+    logger.info('[learningGraph] Supplemented missing clusters in sequence', { documentId, skipped });
+  }
+
+  await persistLearningGraph(documentId, { ...llmResult, sequence: normalisedSequence });
 
   logger.info('[learningGraph] Learning graph persisted', {
     documentId,
