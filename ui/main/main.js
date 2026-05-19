@@ -10943,12 +10943,16 @@ function initDocumentsTab() {
          </div>`
       : '';
 
+    const rawDesc = cl.definition || '';
+    const desc    = rawDesc.length > 120 ? rawDesc.slice(0, 117) + '…' : rawDesc;
+
     return `<div class="${classes}" data-id="${escHtml(cl.id)}" style="--node-color:${color}">
       <div class="doc-schema-node-header">
         <span class="doc-schema-node-num">${cl.learning_order}</span>
         <span class="doc-schema-node-badge">${escHtml(badge)}</span>
       </div>
       <div class="doc-schema-node-name">${escHtml(cl.name)}</div>
+      ${desc ? `<div class="doc-schema-node-desc">${escHtml(desc)}</div>` : ''}
       ${chipsHtml}
     </div>`;
   }
@@ -11008,14 +11012,15 @@ function initDocumentsTab() {
           }))
         );
 
-    // Keep only cross-block edges (intra-block connections are implied by grouping)
-    // and cap at 6 to avoid visual noise from too many crossing arrows.
+    // Show all edges the LLM produced; only deduplicate exact pairs.
+    // Cross-block first so they render on top when there are many.
     const crossBlock = drawEdges.filter(e =>
-      clusterBlock[e.from_cluster_id] !== undefined &&
-      clusterBlock[e.to_cluster_id]   !== undefined &&
       clusterBlock[e.from_cluster_id] !== clusterBlock[e.to_cluster_id]
     );
-    drawEdges = (crossBlock.length > 0 ? crossBlock : drawEdges).slice(0, 6);
+    const intraBlock = drawEdges.filter(e =>
+      clusterBlock[e.from_cluster_id] === clusterBlock[e.to_cluster_id]
+    );
+    drawEdges = [...crossBlock, ...intraBlock].slice(0, 16);
 
     const blocksHtml = blocks.map(b => `
       <div class="doc-schema-block">

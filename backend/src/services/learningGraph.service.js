@@ -21,10 +21,10 @@ function buildPrompt(clusters) {
     id: c.id,
     name: c.name,
     definition: c.definition || '',
-    available_concepts: (c.concepts || []).slice(0, 10).map(x => x.label),
+    available_concepts: (c.concepts || []).slice(0, 20).map(x => x.label),
   }));
 
-  return `You are a pedagogy expert analyzing topics from a study document to build both a learning sequence AND a concept map.
+  return `You are a pedagogy expert analyzing topics from a study document to build both a learning sequence AND a rich concept map.
 
 TOPICS:
 ${JSON.stringify(topics, null, 2)}
@@ -33,7 +33,7 @@ YOUR TASK:
 Produce two complementary outputs:
 
 1. SEQUENCE — a linear study order (which to study first, prerequisites, etc.)
-2. CONCEPT_MAP — a non-linear map showing how topics RELATE, with key concepts as child nodes under each cluster
+2. CONCEPT_MAP — a dense, non-linear map showing how topics RELATE, with key concepts as child nodes
 
 Return ONLY valid JSON in this exact shape:
 {
@@ -49,14 +49,14 @@ Return ONLY valid JSON in this exact shape:
     "center_cluster_id": "<id of the single most central/important topic>",
     "blocks": [
       {
-        "block_name": "<conceptual role in Spanish, e.g. 'Fundamentos', 'Mecanismo central', 'Arquitectura', 'Comparaciones'>",
+        "block_name": "<conceptual role in Spanish, e.g. 'Fundamentos', 'Mecanismo central', 'Arquitectura', 'Comparaciones', 'Aplicaciones'>",
         "cluster_ids": ["<id>", "<id>"]
       }
     ],
     "cluster_concepts": [
       {
         "cluster_id": "<id>",
-        "key_concepts": ["<concept label>", "<concept label>"]
+        "key_concepts": ["<concept label>", "<concept label>", "<concept label>"]
       }
     ],
     "edges": [
@@ -78,15 +78,18 @@ SEQUENCE RULES:
 
 CONCEPT MAP RULES:
 - center_cluster_id: the ONE topic that is the core of this document
-- blocks: group topics by conceptual ROLE, not by study order. Use 2–5 blocks in Spanish.
+- blocks: group topics by conceptual ROLE, not by study order. Use 2–6 blocks with meaningful Spanish names.
   Each cluster_id appears in exactly one block.
-- cluster_concepts: for EACH cluster, select 2–4 key concepts from available_concepts that are
-  ESSENTIAL for understanding the topic conceptually.
-  EXCLUDE: procedural steps, code examples, specific parameter values, implementation details.
-  INCLUDE: theoretical constructs, mechanisms, relationships, abstract principles.
-- edges: meaningful relationships between clusters (not just sequential order).
+- cluster_concepts: for EACH cluster, select 3–6 key concepts from available_concepts that are
+  ESSENTIAL for understanding the topic.
+  EXCLUDE: procedural steps, code examples, specific numeric values, implementation minutiae.
+  INCLUDE: theoretical constructs, mechanisms, relationships, abstract principles, key terminology.
+  Be generous — a rich map is better than a sparse one.
+- edges: meaningful relationships between clusters. Be thorough.
   edge_type: "requires" | "produces" | "enables" | "part_of" | "contrasts_with" | "example_of"
-  label: 2–5 word Spanish phrase. Include 3–8 edges total.
+  label: 2–5 word Spanish phrase describing the specific link.
+  Include 6–14 edges total. Connect clusters across AND within blocks if the relationship is meaningful.
+  Prioritize non-obvious, semantically rich relationships over trivial sequential ones.
 
 Return ONLY the JSON object, no explanation.`;
 }
@@ -94,8 +97,8 @@ Return ONLY the JSON object, no explanation.`;
 // ── LLM call ─────────────────────────────────────────────────────────────────
 
 async function callLLM(clusters) {
-  // sequence ~200t/cluster + concept_map with cluster_concepts ~700t/cluster
-  const maxTokens = Math.max(3500, clusters.length * 700);
+  // sequence ~200t/cluster + rich concept_map ~1000t/cluster
+  const maxTokens = Math.max(4096, clusters.length * 1000);
 
   const response = await withRetry(() =>
     getAnthropicClient().messages.create({

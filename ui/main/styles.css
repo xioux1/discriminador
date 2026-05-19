@@ -5570,8 +5570,8 @@ textarea.chinese-input {
 }
 
 .doc-schema-block {
-  flex: 1 1 200px;
-  min-width: 180px;
+  flex: 1 1 210px;
+  min-width: 190px;
   border: 1.5px solid rgba(99,102,241,0.18);
   border-radius: var(--radius);
   padding: 10px 12px 12px;
