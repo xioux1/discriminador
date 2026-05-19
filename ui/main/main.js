@@ -7362,7 +7362,9 @@ function showSchemaInterstitial(documentId, finishedClusterId, finishedClusterNa
           <span class="schema-timer-count" id="schema-timer-count">30</span>
         </div>
       </div>
-      <div class="schema-interstitial-schema" id="schema-interstitial-schema"></div>
+      <div class="schema-interstitial-schema" id="schema-interstitial-schema">
+        <p class="schema-loading">Cargando mapa conceptual…</p>
+      </div>
       <button class="btn-primary schema-continue-btn" id="schema-continue-btn">
         Continuar →
       </button>
@@ -7373,7 +7375,11 @@ function showSchemaInterstitial(documentId, finishedClusterId, finishedClusterNa
 
   // Retry while interstitial is open — build takes ~15-20s after first 404
   const tryRenderSchema = async (retriesLeft) => {
-    if (retriesLeft <= 0) return;
+    if (retriesLeft <= 0) {
+      const c = document.getElementById('schema-interstitial-schema');
+      if (c) c.innerHTML = '<p class="schema-loading">Mapa conceptual no disponible aún.</p>';
+      return;
+    }
     await new Promise(r => setTimeout(r, 5000));
     if (!document.getElementById('schema-interstitial')) return;
     const data = await getDocumentSchema(documentId);
