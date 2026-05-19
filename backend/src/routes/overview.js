@@ -29,6 +29,13 @@ overviewRouter.get('/stats/overview', async (req, res) => {
       WHERE ei.source_system = 'evaluate_api'
         AND ei.user_id = $1
         AND ud.final_grade IS NOT NULL
+        AND EXISTS (
+          SELECT 1 FROM cards c
+          WHERE c.user_id = ei.user_id
+            AND trim(c.prompt_text) = trim(ei.input_payload->>'prompt_text')
+            AND c.archived_at IS NULL
+            AND c.suspended_at IS NULL
+        )
       GROUP BY subject, trim(ei.input_payload->>'prompt_text')
       ORDER BY subject ASC, last_evaluated_at DESC
     `, [userId]);
