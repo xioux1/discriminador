@@ -7336,6 +7336,42 @@ async function getDocumentSchema(documentId) {
   return _schemaFetchInFlight[documentId];
 }
 
+function highlightConceptTerms(rawText, label) {
+  if (!label || !rawText) return escHtml(rawText || '');
+  const terms = label.split(/\s+/).filter(w => w.length > 2);
+  if (!terms.length) return escHtml(rawText);
+  const pattern = terms.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  const re = new RegExp(`(${pattern})`, 'gi');
+  return rawText.split(re).map((part, i) =>
+    i % 2 === 1 ? `<mark class="concept-excerpt-hl">${escHtml(part)}</mark>` : escHtml(part)
+  ).join('');
+}
+
+async function showConceptExcerpt(container, documentId, clusterId, conceptLabel) {
+  container.innerHTML = '<p class="schema-loading">Cargando fragmento…</p>';
+  try {
+    const params = new URLSearchParams({ label: conceptLabel });
+    if (clusterId) params.set('cluster_id', clusterId);
+    const headers = {};
+    if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
+    const res = await fetch(`/api/documents/${documentId}/concept-excerpt?${params}`, { headers });
+    if (!res.ok) {
+      container.innerHTML = '<p class="schema-loading">Fragmento no disponible.</p>';
+      return;
+    }
+    const data = await res.json();
+    const highlightedText = highlightConceptTerms(data.excerpt, data.label);
+    container.innerHTML = `
+      <div class="concept-excerpt">
+        <div class="concept-excerpt-label">${escHtml(data.label)}</div>
+        ${data.definition ? `<div class="concept-excerpt-definition">${escHtml(data.definition)}</div>` : ''}
+        <div class="concept-excerpt-text">${highlightedText}</div>
+      </div>`;
+  } catch {
+    container.innerHTML = '<p class="schema-loading">Fragmento no disponible.</p>';
+  }
+}
+
 function showSchemaInterstitial(documentId, finishedClusterId, finishedClusterName, finishedConceptLabel, nextClusterId, onDone) {
   const existing = document.getElementById('schema-interstitial');
   if (existing) existing.remove();
@@ -7363,7 +7399,7 @@ function showSchemaInterstitial(documentId, finishedClusterId, finishedClusterNa
         </div>
       </div>
       <div class="schema-interstitial-schema" id="schema-interstitial-schema">
-        <p class="schema-loading">Cargando mapa conceptual…</p>
+        <p class="schema-loading">Cargando fragmento…</p>
       </div>
       <button class="btn-primary schema-continue-btn" id="schema-continue-btn">
         Continuar →
@@ -7373,34 +7409,18 @@ function showSchemaInterstitial(documentId, finishedClusterId, finishedClusterNa
   document.body.appendChild(overlay);
   requestAnimationFrame(() => overlay.classList.add('schema-interstitial--visible'));
 
-  // Retry while interstitial is open — build takes ~15-20s after first 404
-  const tryRenderSchema = async (retriesLeft) => {
-    if (retriesLeft <= 0) {
-      const c = document.getElementById('schema-interstitial-schema');
-      if (c) c.innerHTML = '<p class="schema-loading">Mapa conceptual no disponible aún.</p>';
-      return;
-    }
-    await new Promise(r => setTimeout(r, 5000));
-    if (!document.getElementById('schema-interstitial')) return;
-    const data = await getDocumentSchema(documentId);
-    const c = document.getElementById('schema-interstitial-schema');
-    if (!c) return;
-    if (data) {
-      renderDocumentSchema(c, data, finishedClusterId, finishedConceptLabel, nextClusterId);
-    } else {
-      tryRenderSchema(retriesLeft - 1);
-    }
-  };
-
-  getDocumentSchema(documentId).then(graphData => {
+  // Show a ~100-word excerpt from the original document about the concept just reviewed
+  if (finishedConceptLabel) {
     const schemaContainer = document.getElementById('schema-interstitial-schema');
-    if (!schemaContainer) return;
-    if (graphData) {
-      renderDocumentSchema(schemaContainer, graphData, finishedClusterId, finishedConceptLabel, nextClusterId);
-    } else {
-      tryRenderSchema(4); // retry at 5s, 10s, 15s, 20s
-    }
-  });
+    if (schemaContainer) showConceptExcerpt(schemaContainer, documentId, finishedClusterId, finishedConceptLabel);
+  } else {
+    const schemaContainer = document.getElementById('schema-interstitial-schema');
+    if (schemaContainer) schemaContainer.innerHTML = '';
+  }
+
+  // ── Commented: concept map rendering (replaced by document excerpt) ──
+  // const tryRenderSchema = async (retriesLeft) => { ... };
+  // getDocumentSchema(documentId).then(graphData => { ... });
 
   // 30-second countdown
   let secondsLeft = 30;
@@ -11409,7 +11429,7 @@ function initDocumentsTab() {
       if (graphData) {
         studyState.schemaCache[docId] = graphData;
         renderLearningGraph(panel, graphData.sequence);
-        if (schemaPanel) renderDocumentSchema(schemaPanel, graphData);
+        // if (schemaPanel) renderDocumentSchema(schemaPanel, graphData); // replaced by per-concept excerpts
       } else if (graphData === false) {
         if (!triggered) { triggered = true; await triggerBuild(); }
         const delay = 5000 + (10 - remaining) * 2000;
