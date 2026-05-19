@@ -104,9 +104,15 @@ NIVEL 2 — PILARES: 2 a 5 grandes ejes temáticos
   - Los pilares deben reflejar la estructura NARRATIVA del documento, no la dificultad pedagógica
 NIVEL 3 — CLUSTERS: cada cluster asignado a exactamente un pilar
   - TODOS los cluster_ids deben aparecer exactamente una vez
-NIVEL 4 — CONCEPTOS: 3-5 por cluster, elegidos de available_concepts
+NIVEL 4 — CONCEPTOS: 3-6 por cluster, elegidos de available_concepts
   - Incluir: constructos teóricos, mecanismos, relaciones, principios, terminología clave
-  - Excluir: pasos procedimentales, valores numéricos específicos, ejemplos concretos
+  - Excluir: pasos procedimentales, valores numéricos específicos, ejemplos concretos genéricos
+  - Para cada concepto elegido, clasificá su tipo:
+    "fase" (etapa de un proceso) | "actividad" (acción a realizar) | "herramienta" (software, sistema, tecnología)
+    "documento" (entregable formal escrito) | "entregable" (output concreto) | "concepto" (idea abstracta) | "actor" (persona o rol)
+  - Si el cluster tiene 5 o más conceptos, agrupalos en 2-3 sub_groups con nombres cortos (2-3 palabras).
+    Los sub_groups reflejan distinciones reales del contenido (ej: "Preparación / Ejecución / Cierre").
+    Si no hay agrupación natural clara, omití sub_groups (no forzar).
 
 Además, generá una SECUENCIA DE ESTUDIO (orden pedagógico, independiente de la jerarquía visual):
   - learning_order: 1 = estudiar primero, mayor = estudiar después
@@ -129,7 +135,16 @@ Respondé SOLO con JSON válido, sin markdown, sin texto adicional:
       "id": "p1",
       "name": "<nombre del pilar en español>",
       "clusters": [
-        { "cluster_id": "<uuid>", "key_concepts": ["<label>", "<label>", "<label>"] }
+        {
+          "cluster_id": "<uuid>",
+          "key_concepts": ["<label>", "<label>", "<label>"],
+          "concept_types": [
+            { "label": "<label>", "type": "herramienta|fase|actividad|documento|entregable|concepto|actor" }
+          ],
+          "sub_groups": [
+            { "group_name": "<2-3 palabras>", "concepts": ["<label>", "<label>"] }
+          ]
+        }
       ]
     }
   ],

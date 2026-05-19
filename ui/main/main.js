@@ -10390,6 +10390,27 @@ const CMAP_RELATION_LABELS = {
   example_of:    'ejemplo de',
 };
 
+const CMAP_TYPE_CLASS = {
+  fase:       'cmap-chip-fase',
+  actividad:  'cmap-chip-actividad',
+  herramienta:'cmap-chip-herramienta',
+  documento:  'cmap-chip-documento',
+  entregable: 'cmap-chip-entregable',
+  actor:      'cmap-chip-actor',
+};
+
+function cmapTruncate(str, maxWords) {
+  if (!str) return '';
+  const words = str.trim().split(/\s+/);
+  return words.length <= maxWords ? str : words.slice(0, maxWords).join(' ');
+}
+
+function cmapChip(label, type, extraClass) {
+  const typeClass = CMAP_TYPE_CLASS[type] || '';
+  const cls = ['cmap-concept-chip', typeClass, extraClass].filter(Boolean).join(' ');
+  return `<span class="${cls}">${escHtml(cmapTruncate(label, 4))}</span>`;
+}
+
 function renderHierarchicalMap(container, treeData, highlightClusterId, highlightConceptLabel, nextClusterId) {
   if (!treeData || !Array.isArray(treeData.pillars) || treeData.pillars.length === 0) return false;
 
@@ -10403,32 +10424,46 @@ function renderHierarchicalMap(container, treeData, highlightClusterId, highligh
                         : isNext ? '<span class="cmap-cluster-status cmap-cluster-status--next">▶</span>'
                         : '';
 
-      const relations = cl.relations || [];
+      // Build type-by-label lookup
+      const typeByLabel = {};
+      (cl.concept_types || []).forEach(ct => { typeByLabel[ct.label] = ct.type; });
+
+      const hlChip = (label) => isHl && hlLabel && label.toLowerCase().includes(hlLabel) ? 'cmap-concept-chip--hl' : '';
+
       let conceptsHtml;
 
-      if (relations.length > 0) {
+      if (Array.isArray(cl.sub_groups) && cl.sub_groups.length > 0) {
+        // Sub-groups take priority: structured internal hierarchy
+        const sgHtml = cl.sub_groups.map(sg => {
+          const chipsHtml = (sg.concepts || []).map(c =>
+            cmapChip(c, typeByLabel[c], hlChip(c))
+          ).join('');
+          return `<div class="cmap-subgroup">
+            <span class="cmap-subgroup-label">${escHtml(cmapTruncate(sg.group_name, 4))}</span>
+            <div class="cmap-cluster-chips">${chipsHtml}</div>
+          </div>`;
+        }).join('');
+        conceptsHtml = sgHtml;
+
+      } else if ((cl.relations || []).length > 0) {
+        // Micro-relations: semantic chains
+        const relations = cl.relations;
         const inRelation = new Set(relations.flatMap(r => [r.source, r.target]));
         const relHtml = relations.map(r => {
-          const src = r.source.length > 26 ? r.source.slice(0, 23) + '…' : r.source;
-          const tgt = r.target.length > 26 ? r.target.slice(0, 23) + '…' : r.target;
           const lbl = CMAP_RELATION_LABELS[r.type] || r.type.replace(/_/g, ' ');
           return `<div class="cmap-relation">
-            <span class="cmap-rel-node">${escHtml(src)}</span>
-            <span class="cmap-rel-label">${escHtml(lbl)} ▶</span>
-            <span class="cmap-rel-node">${escHtml(tgt)}</span>
+            <span class="cmap-rel-node ${CMAP_TYPE_CLASS[typeByLabel[r.source]] || ''}">${escHtml(cmapTruncate(r.source, 4))}</span>
+            <span class="cmap-rel-label">${escHtml(lbl)}</span>
+            <span class="cmap-rel-node ${CMAP_TYPE_CLASS[typeByLabel[r.target]] || ''}">${escHtml(cmapTruncate(r.target, 4))}</span>
           </div>`;
         }).join('');
         const standalone = (cl.key_concepts || []).filter(c => !inRelation.has(c));
-        const chipsHtml = standalone.map(c => {
-          const isHlChip = isHl && hlLabel && c.toLowerCase().includes(hlLabel);
-          return `<span class="cmap-concept-chip${isHlChip ? ' cmap-concept-chip--hl' : ''}">${escHtml(c)}</span>`;
-        }).join('');
+        const chipsHtml = standalone.map(c => cmapChip(c, typeByLabel[c], hlChip(c))).join('');
         conceptsHtml = `<div class="cmap-relations">${relHtml}</div>${chipsHtml ? `<div class="cmap-cluster-chips">${chipsHtml}</div>` : ''}`;
+
       } else {
-        const chipsHtml = (cl.key_concepts || []).map(c => {
-          const isHlChip = isHl && hlLabel && c.toLowerCase().includes(hlLabel);
-          return `<span class="cmap-concept-chip${isHlChip ? ' cmap-concept-chip--hl' : ''}">${escHtml(c)}</span>`;
-        }).join('');
+        // Flat chips fallback
+        const chipsHtml = (cl.key_concepts || []).map(c => cmapChip(c, typeByLabel[c], hlChip(c))).join('');
         conceptsHtml = chipsHtml ? `<div class="cmap-cluster-chips">${chipsHtml}</div>` : '';
       }
 
