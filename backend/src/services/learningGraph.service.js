@@ -114,6 +114,12 @@ Además, generá una SECUENCIA DE ESTUDIO (orden pedagógico, independiente de l
   - requires: cluster_ids que deben entenderse antes (sin referencias circulares, solo IDs con menor learning_order)
   - Todos los cluster_ids deben aparecer exactamente una vez
 
+Además, generá RELACIONES ENTRE CLUSTERS (cross_cluster_edges): 3-6 conexiones semánticas no triviales entre clusters de distintos pilares.
+  - Solo relaciones que aporten comprensión real, no relaciones puramente secuenciales
+  - edge_type: "enables" | "motivates" | "part_of" | "contrasts_with" | "formula_for"
+  - label: frase corta en español de 2-5 palabras que describe la relación específica (ej: "fundamenta el cálculo de", "motiva el diseño de", "requiere comprender")
+  - Evitá repetir relaciones ya implícitas en la jerarquía (padre-hijo)
+
 Respondé SOLO con JSON válido, sin markdown, sin texto adicional:
 
 {
@@ -129,6 +135,9 @@ Respondé SOLO con JSON válido, sin markdown, sin texto adicional:
   ],
   "sequence": [
     { "cluster_id": "<uuid>", "learning_order": 1, "learning_level": "foundational", "requires": [] }
+  ],
+  "cross_cluster_edges": [
+    { "from_cluster_id": "<uuid>", "to_cluster_id": "<uuid>", "edge_type": "enables", "label": "<frase en español>" }
   ]
 }`;
 }
@@ -364,6 +373,24 @@ async function persistLearningGraph(documentId, llmResult) {
       }
     }
 
+    // Cross-cluster edges (new hierarchical format)
+    if (Array.isArray(pillars) && Array.isArray(llmResult.cross_cluster_edges)) {
+      for (const edge of llmResult.cross_cluster_edges) {
+        if (!edge.from_cluster_id || !edge.to_cluster_id) continue;
+        if (edge.from_cluster_id === edge.to_cluster_id) continue;
+        await client.query(
+          `INSERT INTO cluster_dependencies
+             (document_id, from_cluster_id, to_cluster_id, edge_label, edge_semantic_type)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (from_cluster_id, to_cluster_id) DO UPDATE
+             SET edge_label = EXCLUDED.edge_label,
+                 edge_semantic_type = EXCLUDED.edge_semantic_type`,
+          [documentId, edge.from_cluster_id, edge.to_cluster_id,
+           edge.label ?? null, edge.edge_type ?? null]
+        );
+      }
+    }
+
     // Concept map edges (old format only)
     if (!Array.isArray(pillars) && Array.isArray(concept_map?.edges)) {
       for (const edge of concept_map.edges) {
@@ -503,7 +530,32 @@ export async function getLearningGraph(documentId) {
 
   const center = clusters.find(c => c.is_center);
 
-  // Load hierarchical tree and enrich with cluster names
+  // Fetch high-confidence intra-cluster concept relations
+  const { rows: conceptRels } = await dbPool.query(
+    `SELECT
+       c_src.cluster_id,
+       c_src.label AS source_label,
+       c_tgt.label AS target_label,
+       cr.relation_type,
+       cr.confidence
+     FROM concept_relations cr
+     JOIN concepts c_src ON c_src.id = cr.source_concept_id
+     JOIN concepts c_tgt ON c_tgt.id = cr.target_concept_id
+     WHERE c_src.document_id = $1
+       AND c_src.cluster_id IS NOT NULL
+       AND c_src.cluster_id = c_tgt.cluster_id
+       AND cr.confidence >= 0.65
+     ORDER BY c_src.cluster_id, cr.confidence DESC`,
+    [documentId]
+  );
+
+  const relsByCluster = {};
+  for (const rel of conceptRels) {
+    const arr = (relsByCluster[rel.cluster_id] ??= []);
+    if (arr.length < 3) arr.push({ source: rel.source_label, target: rel.target_label, type: rel.relation_type });
+  }
+
+  // Load hierarchical tree and enrich with cluster names, relations, and cross-cluster edges
   const { rows: docRows } = await dbPool.query(
     `SELECT concept_map_tree_json FROM documents WHERE id = $1`,
     [documentId]
@@ -520,8 +572,10 @@ export async function getLearningGraph(documentId) {
         clusters: (p.clusters ?? []).map(cl => ({
           ...cl,
           cluster_name: clusterById[cl.cluster_id]?.name ?? cl.cluster_id,
+          relations: relsByCluster[cl.cluster_id] ?? [],
         })),
       })),
+      edges,
     };
   }
 
