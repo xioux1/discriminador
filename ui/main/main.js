@@ -5250,8 +5250,9 @@ const studyState = {
   voiceReviewPaused: false,
   isAdvancingCard: false,
   // Schema interstitial
-  schemaCache: {},       // document_id → sequence[]
+  schemaCache: {},       // document_id → graphData
   lastCardClusterId: null,
+  lastCardClusterName: null,
   lastCardDocumentId: null,
   lastCardConceptLabel: null,
 };
@@ -5671,6 +5672,7 @@ function showStudyCard() {
   // Track last main card's cluster for interstitial detection
   if (item.type === 'card' && item.data?.cluster_id) {
     studyState.lastCardClusterId    = item.data.cluster_id;
+    studyState.lastCardClusterName  = item.data.cluster_name ?? item.data.subject ?? null;
     studyState.lastCardConceptLabel = item.data.source_concept_label ?? null;
     const docId = item.data.document_id ?? null;
     studyState.lastCardDocumentId = docId;
@@ -7290,52 +7292,68 @@ document.querySelector('#study-back-btn')?.addEventListener('click', () => {
 
 // ── Schema interstitial ───────────────────────────────────────────────────────
 
+// In-flight fetch promises — shared so pre-warm and interstitial don't duplicate
+const _schemaFetchInFlight = {};
+
 async function getDocumentSchema(documentId) {
   if (studyState.schemaCache[documentId]) return studyState.schemaCache[documentId];
-  try {
-    const headers = {};
-    if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
 
-    // 5-second timeout so the interstitial doesn't hang on cold server starts
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 5000);
-    let res;
+  // Re-use an already in-flight fetch for this document
+  if (_schemaFetchInFlight[documentId]) return _schemaFetchInFlight[documentId];
+
+  const doFetch = async () => {
     try {
-      res = await fetch(`/api/documents/${documentId}/learning-graph`, { headers, signal: controller.signal });
-    } finally {
-      clearTimeout(timer);
-    }
+      const headers = {};
+      if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
 
-    if (res.status === 404) {
-      // Graph not built yet — fire build in background (non-blocking)
-      fetch(`/api/documents/${documentId}/build-learning-graph`, {
-        method: 'POST',
-        headers: { ...headers, 'Content-Type': 'application/json' },
-      }).catch(() => {});
-      return null;
-    }
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (!data.sequence?.length) return null;
-    const graphData = { sequence: data.sequence, concept_map: data.concept_map ?? null };
-    studyState.schemaCache[documentId] = graphData;
-    return graphData;
-  } catch { return null; }
+      // 8-second timeout — enough for a warm Render server, short enough not to hang
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      let res;
+      try {
+        res = await fetch(`/api/documents/${documentId}/learning-graph`, { headers, signal: controller.signal });
+      } finally {
+        clearTimeout(timer);
+      }
+
+      if (res.status === 404) {
+        fetch(`/api/documents/${documentId}/build-learning-graph`, {
+          method: 'POST',
+          headers: { ...headers, 'Content-Type': 'application/json' },
+        }).catch(() => {});
+        return null;
+      }
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (!data.sequence?.length) return null;
+      const graphData = { sequence: data.sequence, concept_map: data.concept_map ?? null };
+      studyState.schemaCache[documentId] = graphData;
+      return graphData;
+    } catch { return null; }
+    finally { delete _schemaFetchInFlight[documentId]; }
+  };
+
+  _schemaFetchInFlight[documentId] = doFetch();
+  return _schemaFetchInFlight[documentId];
 }
 
-function showSchemaInterstitial(documentId, finishedClusterId, finishedConceptLabel, onDone) {
+function showSchemaInterstitial(documentId, finishedClusterId, finishedClusterName, finishedConceptLabel, onDone) {
   const existing = document.getElementById('schema-interstitial');
   if (existing) existing.remove();
 
   const overlay = document.createElement('div');
   overlay.id = 'schema-interstitial';
   overlay.className = 'schema-interstitial';
+  const clusterLabel = finishedClusterName
+    ? `<span class="schema-interstitial-cluster-name">${escHtml(finishedClusterName)}</span>`
+    : '';
   overlay.innerHTML = `
     <div class="schema-interstitial-box">
       <div class="schema-interstitial-header">
         <div class="schema-interstitial-label">
           <span class="schema-interstitial-check">✓</span>
-          Cluster completado
+          <span>Cluster completado${clusterLabel ? ' —' : ''}</span>
+          ${clusterLabel}
         </div>
         <div class="schema-interstitial-timer">
           <svg class="schema-timer-ring" viewBox="0 0 36 36">
@@ -7417,7 +7435,7 @@ async function advanceStudyCard() {
     nextClusterId !== prevClusterId
   ) {
     persistStudySession();
-    showSchemaInterstitial(prevDocumentId, prevClusterId, studyState.lastCardConceptLabel, () => showStudyCard());
+    showSchemaInterstitial(prevDocumentId, prevClusterId, studyState.lastCardClusterName, studyState.lastCardConceptLabel, () => showStudyCard());
     return;
   }
 
