@@ -10380,6 +10380,16 @@ function attachRegenButton(container) {
   });
 }
 
+const CMAP_RELATION_LABELS = {
+  part_of:       'parte de',
+  depends_on:    'requiere',
+  enables:       'permite',
+  motivates:     'motiva',
+  contrasts_with:'contrasta con',
+  formula_for:   'fórmula de',
+  example_of:    'ejemplo de',
+};
+
 function renderHierarchicalMap(container, treeData, highlightClusterId, highlightConceptLabel, nextClusterId) {
   if (!treeData || !Array.isArray(treeData.pillars) || treeData.pillars.length === 0) return false;
 
@@ -10392,13 +10402,39 @@ function renderHierarchicalMap(container, treeData, highlightClusterId, highligh
       const statusBadge = isHl   ? '<span class="cmap-cluster-status cmap-cluster-status--done">✓</span>'
                         : isNext ? '<span class="cmap-cluster-status cmap-cluster-status--next">▶</span>'
                         : '';
-      const chipsHtml = (cl.key_concepts || []).map(c => {
-        const isHlChip = isHl && hlLabel && c.toLowerCase().includes(hlLabel);
-        return `<span class="cmap-concept-chip${isHlChip ? ' cmap-concept-chip--hl' : ''}">${escHtml(c)}</span>`;
-      }).join('');
+
+      const relations = cl.relations || [];
+      let conceptsHtml;
+
+      if (relations.length > 0) {
+        const inRelation = new Set(relations.flatMap(r => [r.source, r.target]));
+        const relHtml = relations.map(r => {
+          const src = r.source.length > 26 ? r.source.slice(0, 23) + '…' : r.source;
+          const tgt = r.target.length > 26 ? r.target.slice(0, 23) + '…' : r.target;
+          const lbl = CMAP_RELATION_LABELS[r.type] || r.type.replace(/_/g, ' ');
+          return `<div class="cmap-relation">
+            <span class="cmap-rel-node">${escHtml(src)}</span>
+            <span class="cmap-rel-label">${escHtml(lbl)} ▶</span>
+            <span class="cmap-rel-node">${escHtml(tgt)}</span>
+          </div>`;
+        }).join('');
+        const standalone = (cl.key_concepts || []).filter(c => !inRelation.has(c));
+        const chipsHtml = standalone.map(c => {
+          const isHlChip = isHl && hlLabel && c.toLowerCase().includes(hlLabel);
+          return `<span class="cmap-concept-chip${isHlChip ? ' cmap-concept-chip--hl' : ''}">${escHtml(c)}</span>`;
+        }).join('');
+        conceptsHtml = `<div class="cmap-relations">${relHtml}</div>${chipsHtml ? `<div class="cmap-cluster-chips">${chipsHtml}</div>` : ''}`;
+      } else {
+        const chipsHtml = (cl.key_concepts || []).map(c => {
+          const isHlChip = isHl && hlLabel && c.toLowerCase().includes(hlLabel);
+          return `<span class="cmap-concept-chip${isHlChip ? ' cmap-concept-chip--hl' : ''}">${escHtml(c)}</span>`;
+        }).join('');
+        conceptsHtml = chipsHtml ? `<div class="cmap-cluster-chips">${chipsHtml}</div>` : '';
+      }
+
       return `<div class="cmap-cluster${isHl ? ' cmap-cluster--hl' : ''}${isNext ? ' cmap-cluster--next' : ''}" data-id="${escHtml(cl.cluster_id)}">
         <div class="cmap-cluster-header">${statusBadge}<span class="cmap-cluster-name">${escHtml(cl.cluster_name || cl.cluster_id)}</span></div>
-        ${chipsHtml ? `<div class="cmap-cluster-chips">${chipsHtml}</div>` : ''}
+        ${conceptsHtml}
       </div>`;
     }).join('');
     return `<div class="cmap-pillar">
@@ -10416,10 +10452,14 @@ function renderHierarchicalMap(container, treeData, highlightClusterId, highligh
       <div class="cmap-tree">
         <div class="cmap-root">${escHtml(treeData.document_topic)}</div>
         <div class="cmap-pillars-row">${pillarsHtml}</div>
+        <svg class="cmap-svg" aria-hidden="true"></svg>
       </div>
     </div>`;
 
   requestAnimationFrame(() => {
+    if (Array.isArray(treeData.edges) && treeData.edges.length) {
+      drawCmapArrows(container, treeData.edges);
+    }
     const activeId = nextClusterId || highlightClusterId;
     if (activeId) {
       const el = container.querySelector(`[data-id="${CSS.escape(activeId)}"]`);
@@ -10428,6 +10468,69 @@ function renderHierarchicalMap(container, treeData, highlightClusterId, highligh
   });
 
   return true;
+}
+
+const CMAP_EDGE_COLORS = {
+  enables:       'rgba(37,99,235,0.55)',
+  motivates:     'rgba(22,163,74,0.55)',
+  part_of:       'rgba(234,179,8,0.6)',
+  contrasts_with:'rgba(220,38,38,0.55)',
+  formula_for:   'rgba(124,58,237,0.55)',
+  requires:      'rgba(99,102,241,0.4)',
+};
+
+function drawCmapArrows(container, edges) {
+  const tree = container.querySelector('.cmap-tree');
+  const svg  = container.querySelector('.cmap-svg');
+  if (!tree || !svg || !edges?.length) return;
+
+  const tRect = tree.getBoundingClientRect();
+  if (tRect.width === 0) return;
+
+  const nodeEls = {};
+  tree.querySelectorAll('.cmap-cluster[data-id]').forEach(el => {
+    nodeEls[el.dataset.id] = el;
+  });
+
+  const paths = [];
+  const usedTypes = new Set();
+
+  for (const edge of edges.slice(0, 6)) {
+    const fromEl = nodeEls[edge.from_cluster_id];
+    const toEl   = nodeEls[edge.to_cluster_id];
+    if (!fromEl || !toEl) continue;
+
+    const fromR = fromEl.getBoundingClientRect();
+    const toR   = toEl.getBoundingClientRect();
+    const color = CMAP_EDGE_COLORS[edge.edge_type] || CMAP_EDGE_COLORS.requires;
+    const label = edge.label || CMAP_RELATION_LABELS[edge.edge_type] || '';
+    const et    = edge.edge_type || 'requires';
+    usedTypes.add(et);
+
+    const goRight = fromR.left < toR.left;
+    const p0x = (goRight ? fromR.right : fromR.left) - tRect.left;
+    const p0y = fromR.top - tRect.top + fromR.height / 2;
+    const p3x = (goRight ? toR.left  : toR.right) - tRect.left;
+    const p3y = toR.top  - tRect.top + toR.height / 2;
+    const mx  = (p0x + p3x) / 2;
+    const d   = `M${p0x},${p0y} C${mx},${p0y} ${mx},${p3y} ${p3x},${p3y}`;
+    const midX = mx;
+    const midY = (p0y + p3y) / 2 - 4;
+
+    paths.push(
+      `<path d="${d}" stroke="${color}" stroke-width="1.5" fill="none" stroke-dasharray="5 3" marker-end="url(#cmap-arr-${et})"/>` +
+      (label ? `<text class="cmap-edge-label" x="${midX}" y="${midY}" text-anchor="middle">${escHtml(label)}</text>` : '')
+    );
+  }
+
+  const defs = [...usedTypes].map(et => {
+    const c = CMAP_EDGE_COLORS[et] || CMAP_EDGE_COLORS.requires;
+    return `<marker id="cmap-arr-${et}" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+      <polygon points="0 0,7 2.5,0 5" fill="${c}"/>
+    </marker>`;
+  }).join('');
+
+  svg.innerHTML = `<defs>${defs}</defs>${paths.join('')}`;
 }
 
 function renderDocumentSchema(container, graphData, highlightId = null, highlightConceptLabel = null, nextClusterId = null) {

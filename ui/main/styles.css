@@ -5682,6 +5682,7 @@ textarea.chinese-input {
   align-items: center;
   gap: 0;
   width: 100%;
+  position: relative;
 }
 .cmap-root {
   background: linear-gradient(135deg, #6366f1, #818cf8);
@@ -5824,6 +5825,44 @@ textarea.chinese-input {
   border-color: #f59e0b;
   font-weight: 700;
 }
+/* Micro-relations within clusters */
+.cmap-relations { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+.cmap-relation { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; line-height: 1.2; }
+.cmap-rel-node {
+  font-size: .58rem;
+  background: rgba(99,102,241,.08);
+  color: #4338ca;
+  border-radius: 4px;
+  padding: 2px 5px;
+  border: 1px solid rgba(99,102,241,.15);
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cmap-rel-label {
+  font-size: .52rem;
+  color: var(--text-muted, #6b7280);
+  white-space: nowrap;
+  font-style: italic;
+}
+/* SVG overlay for cross-cluster arrows */
+.cmap-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+.cmap-edge-label {
+  font-size: 8px;
+  fill: var(--text-muted, #6b7280);
+  font-style: italic;
+}
+[data-theme="dark"] .cmap-rel-node { background: rgba(99,102,241,.15); color: #a5b4fc; border-color: rgba(99,102,241,.25); }
+[data-theme="dark"] .cmap-edge-label { fill: rgba(255,255,255,.45); }
+
 [data-theme="dark"] .cmap-root { box-shadow: 0 2px 16px rgba(99,102,241,.5); }
 [data-theme="dark"] .cmap-pillar-label { color: #818cf8; background: rgba(99,102,241,.12); border-color: rgba(99,102,241,.3); }
 [data-theme="dark"] .cmap-cluster { background: var(--surface); border-color: rgba(255,255,255,.07); }
