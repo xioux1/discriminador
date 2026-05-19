@@ -5299,6 +5299,19 @@ function startStudyRealtimeScheduler() {
     maybeSendBreakNudge();
   }, 1000);
   maybeSendBreakNudge();
+
+  // Prefetch concept map schemas for every unique document in the queue.
+  // Runs in background — never blocks the session start.
+  const docIds = [...new Set(
+    (studyState.queue || [])
+      .filter(item => item.type === 'card' && item.data?.document_id)
+      .map(item => item.data.document_id)
+  )];
+  for (const docId of docIds) {
+    if (!studyState.schemaCache[docId]) {
+      getDocumentSchema(docId).catch(() => {});
+    }
+  }
 }
 
 function renderStudyBackgroundStatus() {
@@ -5674,13 +5687,7 @@ function showStudyCard() {
     studyState.lastCardClusterId    = item.data.cluster_id;
     studyState.lastCardClusterName  = item.data.cluster_name ?? item.data.subject ?? null;
     studyState.lastCardConceptLabel = item.data.source_concept_label ?? null;
-    const docId = item.data.document_id ?? null;
-    studyState.lastCardDocumentId = docId;
-    // Pre-warm schema cache as soon as we see this document, so the
-    // interstitial doesn't have to wait for a cold fetch mid-session
-    if (docId && !studyState.schemaCache[docId]) {
-      getDocumentSchema(docId).catch(() => {});
-    }
+    studyState.lastCardDocumentId   = item.data.document_id ?? null;
   }
 
   // Pre-generate explanation artifact in background for regular cards.
