@@ -7306,29 +7306,28 @@ async function getDocumentSchema(documentId) {
       const headers = {};
       if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
 
-      // 8-second timeout — enough for a warm Render server, short enough not to hang
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 8000);
-      let res;
-      try {
-        res = await fetch(`/api/documents/${documentId}/learning-graph`, { headers, signal: controller.signal });
-      } finally {
-        clearTimeout(timer);
-      }
+      // Hard 3-second wall-clock limit covering both fetch AND res.json()
+      const timeout = new Promise(resolve => setTimeout(() => resolve(null), 3000));
 
-      if (res.status === 404) {
-        fetch(`/api/documents/${documentId}/build-learning-graph`, {
-          method: 'POST',
-          headers: { ...headers, 'Content-Type': 'application/json' },
-        }).catch(() => {});
-        return null;
-      }
-      if (!res.ok) return null;
-      const data = await res.json();
-      if (!data.sequence?.length) return null;
-      const graphData = { sequence: data.sequence, concept_map: data.concept_map ?? null };
-      studyState.schemaCache[documentId] = graphData;
-      return graphData;
+      const fetched = fetch(`/api/documents/${documentId}/learning-graph`, { headers })
+        .then(async res => {
+          if (res.status === 404) {
+            fetch(`/api/documents/${documentId}/build-learning-graph`, {
+              method: 'POST',
+              headers: { ...headers, 'Content-Type': 'application/json' },
+            }).catch(() => {});
+            return null;
+          }
+          if (!res.ok) return null;
+          const data = await res.json();
+          if (!data.sequence?.length) return null;
+          const graphData = { sequence: data.sequence, concept_map: data.concept_map ?? null };
+          studyState.schemaCache[documentId] = graphData;
+          return graphData;
+        })
+        .catch(() => null);
+
+      return await Promise.race([fetched, timeout]);
     } catch { return null; }
     finally { delete _schemaFetchInFlight[documentId]; }
   };
@@ -7363,9 +7362,7 @@ function showSchemaInterstitial(documentId, finishedClusterId, finishedClusterNa
           <span class="schema-timer-count" id="schema-timer-count">30</span>
         </div>
       </div>
-      <div class="schema-interstitial-schema" id="schema-interstitial-schema">
-        <p class="schema-loading">Cargando mapa…</p>
-      </div>
+      <div class="schema-interstitial-schema" id="schema-interstitial-schema"></div>
       <button class="btn-primary schema-continue-btn" id="schema-continue-btn">
         Continuar →
       </button>
@@ -7374,15 +7371,14 @@ function showSchemaInterstitial(documentId, finishedClusterId, finishedClusterNa
   document.body.appendChild(overlay);
   requestAnimationFrame(() => overlay.classList.add('schema-interstitial--visible'));
 
-  // Fetch and render schema
+  // Fetch and render schema — never block the interstitial beyond 3s
   getDocumentSchema(documentId).then(graphData => {
     const schemaContainer = document.getElementById('schema-interstitial-schema');
     if (!schemaContainer) return;
     if (graphData) {
       renderDocumentSchema(schemaContainer, graphData, finishedClusterId, finishedConceptLabel);
-    } else {
-      schemaContainer.innerHTML = '<p class="schema-loading">Mapa no disponible.</p>';
     }
+    // If null: container stays empty — cluster name in header is already useful
   });
 
   // 30-second countdown
