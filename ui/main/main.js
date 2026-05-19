@@ -7314,6 +7314,7 @@ async function getDocumentSchema(documentId) {
       if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
 
       const res = await fetch(`/api/documents/${documentId}/learning-graph`, { headers });
+      console.log('[schema] GET learning-graph', documentId, res.status);
 
       const triggerBuild = () => fetch(`/api/documents/${documentId}/build-learning-graph`, {
         method: 'POST',
@@ -7322,6 +7323,7 @@ async function getDocumentSchema(documentId) {
 
       if (!res.ok) { triggerBuild(); return null; }
       const data = await res.json();
+      console.log('[schema] sequence length', data.sequence?.length, 'concept_map', !!data.concept_map);
       if (!data.sequence?.length) { triggerBuild(); return null; }
       const graphData = { sequence: data.sequence, concept_map: data.concept_map ?? null };
       studyState.schemaCache[documentId] = graphData;
