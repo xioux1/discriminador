@@ -10361,6 +10361,8 @@ function schemaNodeHtml(cl, highlightId, centerClusterId, highlightConceptLabel 
   </div>`;
 }
 
+let _pollLearningGraph = null;
+
 function attachRegenButton(container) {
   const regenBtn = container.querySelector('.doc-schema-regen-btn');
   if (!regenBtn) return;
@@ -10374,7 +10376,7 @@ function attachRegenButton(container) {
     if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
     delete studyState.schemaCache[docId];
     await fetch(`/api/documents/${docId}/build-learning-graph`, { method: 'POST', headers }).catch(() => {});
-    pollLearningGraph(docId, docItem);
+    if (_pollLearningGraph) _pollLearningGraph(docId, docItem);
   });
 }
 
@@ -11230,6 +11232,7 @@ function initDocumentsTab() {
   }
 
   async function pollLearningGraph(docId, item, attemptsLeft = 10) {
+    _pollLearningGraph = pollLearningGraph;
     const panel = item.querySelector?.('.docs-learning-graph-panel');
     if (!panel) return;
 
