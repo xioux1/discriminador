@@ -7323,9 +7323,9 @@ async function getDocumentSchema(documentId) {
 
       if (!res.ok) { triggerBuild(); return null; }
       const data = await res.json();
-      console.log('[schema] sequence length', data.sequence?.length, 'concept_map', !!data.concept_map);
+      console.log('[schema] sequence length', data.sequence?.length, 'concept_map', !!data.concept_map, 'tree', !!data.concept_map_tree);
       if (!data.sequence?.length) { triggerBuild(); return null; }
-      const graphData = { sequence: data.sequence, concept_map: data.concept_map ?? null };
+      const graphData = { sequence: data.sequence, concept_map: data.concept_map ?? null, concept_map_tree: data.concept_map_tree ?? null };
       studyState.schemaCache[documentId] = graphData;
       return graphData;
     } catch { return null; }
@@ -10361,7 +10361,80 @@ function schemaNodeHtml(cl, highlightId, centerClusterId, highlightConceptLabel 
   </div>`;
 }
 
+function attachRegenButton(container) {
+  const regenBtn = container.querySelector('.doc-schema-regen-btn');
+  if (!regenBtn) return;
+  regenBtn.addEventListener('click', async () => {
+    const docItem = container.closest('[data-doc-id]');
+    const docId   = docItem?.dataset?.docId;
+    if (!docId) return;
+    regenBtn.disabled    = true;
+    regenBtn.textContent = '↺ Regenerando…';
+    const headers = { 'Content-Type': 'application/json' };
+    if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
+    delete studyState.schemaCache[docId];
+    await fetch(`/api/documents/${docId}/build-learning-graph`, { method: 'POST', headers }).catch(() => {});
+    pollLearningGraph(docId, docItem);
+  });
+}
+
+function renderHierarchicalMap(container, treeData, highlightClusterId, highlightConceptLabel, nextClusterId) {
+  if (!treeData || !Array.isArray(treeData.pillars) || treeData.pillars.length === 0) return false;
+
+  const hlLabel = highlightClusterId && highlightConceptLabel ? highlightConceptLabel.toLowerCase() : null;
+
+  const pillarsHtml = treeData.pillars.map(pillar => {
+    const clustersHtml = (pillar.clusters || []).map(cl => {
+      const isHl   = cl.cluster_id === highlightClusterId;
+      const isNext = !isHl && cl.cluster_id === nextClusterId;
+      const statusBadge = isHl   ? '<span class="cmap-cluster-status cmap-cluster-status--done">✓</span>'
+                        : isNext ? '<span class="cmap-cluster-status cmap-cluster-status--next">▶</span>'
+                        : '';
+      const chipsHtml = (cl.key_concepts || []).map(c => {
+        const isHlChip = isHl && hlLabel && c.toLowerCase().includes(hlLabel);
+        return `<span class="cmap-concept-chip${isHlChip ? ' cmap-concept-chip--hl' : ''}">${escHtml(c)}</span>`;
+      }).join('');
+      return `<div class="cmap-cluster${isHl ? ' cmap-cluster--hl' : ''}${isNext ? ' cmap-cluster--next' : ''}" data-id="${escHtml(cl.cluster_id)}">
+        <div class="cmap-cluster-header">${statusBadge}<span class="cmap-cluster-name">${escHtml(cl.cluster_name || cl.cluster_id)}</span></div>
+        ${chipsHtml ? `<div class="cmap-cluster-chips">${chipsHtml}</div>` : ''}
+      </div>`;
+    }).join('');
+    return `<div class="cmap-pillar">
+      <div class="cmap-pillar-label">${escHtml(pillar.name)}</div>
+      <div class="cmap-pillar-clusters">${clustersHtml}</div>
+    </div>`;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="doc-schema-wrap">
+      <div class="doc-schema-title-row">
+        <span class="doc-schema-title">Mapa conceptual</span>
+        <button class="btn-ghost doc-schema-regen-btn" style="font-size:var(--fs-sm)" title="Regenerar mapa sin resetear clusters ni preguntas">↺ Regenerar mapa</button>
+      </div>
+      <div class="cmap-tree">
+        <div class="cmap-root">${escHtml(treeData.document_topic)}</div>
+        <div class="cmap-pillars-row">${pillarsHtml}</div>
+      </div>
+    </div>`;
+
+  requestAnimationFrame(() => {
+    const activeId = nextClusterId || highlightClusterId;
+    if (activeId) {
+      const el = container.querySelector(`[data-id="${CSS.escape(activeId)}"]`);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  });
+
+  return true;
+}
+
 function renderDocumentSchema(container, graphData, highlightId = null, highlightConceptLabel = null, nextClusterId = null) {
+  // Use hierarchical tree if available
+  if (graphData?.concept_map_tree) {
+    const rendered = renderHierarchicalMap(container, graphData.concept_map_tree, highlightId, highlightConceptLabel, nextClusterId);
+    if (rendered) { attachRegenButton(container); return; }
+  }
+
   let sequence, concept_map;
   if (Array.isArray(graphData)) {
     sequence    = graphData;
@@ -10449,21 +10522,7 @@ function renderDocumentSchema(container, graphData, highlightId = null, highligh
     }
   });
 
-  const regenBtn = container.querySelector('.doc-schema-regen-btn');
-  if (regenBtn) {
-    regenBtn.addEventListener('click', async () => {
-      const docItem = container.closest('[data-doc-id]');
-      const docId   = docItem?.dataset?.docId;
-      if (!docId) return;
-      regenBtn.disabled    = true;
-      regenBtn.textContent = '↺ Regenerando…';
-      const headers = { 'Content-Type': 'application/json' };
-      if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
-      delete studyState.schemaCache[docId];
-      await fetch(`/api/documents/${docId}/build-learning-graph`, { method: 'POST', headers }).catch(() => {});
-      pollLearningGraph(docId, docItem);
-    });
-  }
+  attachRegenButton(container);
 }
 
 function drawSchemaArrows(container, edges) {
@@ -11189,7 +11248,7 @@ function initDocumentsTab() {
         if (!res.ok) return null;
         const data = await res.json();
         if (!data.sequence?.length) return null;
-        return { sequence: data.sequence, concept_map: data.concept_map ?? null };
+        return { sequence: data.sequence, concept_map: data.concept_map ?? null, concept_map_tree: data.concept_map_tree ?? null };
       } catch { return null; }
     };
 
@@ -11207,7 +11266,6 @@ function initDocumentsTab() {
 
       const graphData = await fetchGraph();
       if (graphData) {
-        // Update cache with full object
         studyState.schemaCache[docId] = graphData;
         renderLearningGraph(panel, graphData.sequence);
         if (schemaPanel) renderDocumentSchema(schemaPanel, graphData);

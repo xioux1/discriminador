@@ -1,0 +1,2 @@
+ALTER TABLE documents
+  ADD COLUMN IF NOT EXISTS concept_map_tree_json JSONB DEFAULT NULL;

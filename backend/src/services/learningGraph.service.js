@@ -7,14 +7,131 @@ let _anthropic = null;
 function getAnthropicClient() {
   if (!_anthropic) _anthropic = new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY,
-    timeout: Number(process.env.LEARNING_GRAPH_LLM_TIMEOUT_MS || 60_000),
+    timeout: Number(process.env.LEARNING_GRAPH_LLM_TIMEOUT_MS || 90_000),
   });
   return _anthropic;
 }
 
-const MODEL = process.env.LEARNING_GRAPH_MODEL || 'claude-haiku-4-5-20251001';
+const MODEL = process.env.LEARNING_GRAPH_MODEL || 'claude-sonnet-4-20250514';
 
-// ── Prompt ────────────────────────────────────────────────────────────────────
+// ── Document context fetch ────────────────────────────────────────────────────
+
+async function fetchDocumentContext(documentId) {
+  const { rows: docRows } = await dbPool.query(
+    `SELECT document_structure_json, generated_markdown, text
+     FROM documents WHERE id = $1`,
+    [documentId]
+  );
+  if (!docRows.length) return null;
+  const doc = docRows[0];
+
+  const { rows: sections } = await dbPool.query(
+    `SELECT title, order_index, section_type, summary
+     FROM document_sections WHERE document_id = $1
+     ORDER BY order_index ASC`,
+    [documentId]
+  );
+
+  const rawText = doc.generated_markdown || doc.text || '';
+  const textSnippet = rawText.split(/\s+/).slice(0, 2000).join(' ');
+
+  return {
+    structure: doc.document_structure_json || null,
+    sections,
+    textSnippet,
+  };
+}
+
+// ── Prompts ───────────────────────────────────────────────────────────────────
+
+function buildDocumentMapPrompt(clusters, docContext) {
+  const { structure, sections, textSnippet } = docContext;
+
+  const topics = clusters.map(c => ({
+    id: c.id,
+    name: c.name,
+    definition: c.definition || '',
+    available_concepts: (c.concepts || []).slice(0, 20).map(x => x.label),
+  }));
+
+  const mainTopic    = structure?.main_topic    || 'Tema del documento';
+  const structType   = structure?.structure_type || 'mixed';
+  const primaryAxis  = structure?.primary_axis   || '';
+
+  const sectionsBlock = sections.length
+    ? `Secciones/etapas del documento:\n${sections.map(s =>
+        `${s.order_index}. ${s.title}${s.summary ? ' — ' + s.summary.slice(0, 100) : ''}`
+      ).join('\n')}`
+    : '';
+
+  const textBlock = textSnippet
+    ? `Fragmento del documento (primeras 2000 palabras):\n---\n${textSnippet}\n---`
+    : '';
+
+  const structureGuide = {
+    process_stages: 'los pilares son las fases principales del proceso',
+    taxonomy:       'los pilares son las categorías o dimensiones de clasificación',
+    comparison:     'los pilares son los criterios de comparación entre elementos',
+    concept_lesson: 'los pilares son los subtemas conceptuales principales',
+    case_study:     'los pilares son las dimensiones del caso (contexto, problema, solución, resultado)',
+    mixed:          'los pilares son los grandes ejes temáticos del contenido',
+  }[structType] || 'los pilares son los grandes ejes temáticos del contenido';
+
+  return `Sos un experto en pedagogía y cartografía conceptual. Tu tarea es generar un mapa conceptual jerárquico top-down para un material de estudio.
+
+## DOCUMENTO
+
+Tema principal: ${mainTopic}
+Tipo de estructura: ${structType}
+Eje organizativo: ${primaryAxis}
+
+${sectionsBlock}
+
+${textBlock}
+
+## CLUSTERS IDENTIFICADOS
+
+${JSON.stringify(topics, null, 2)}
+
+## INSTRUCCIONES
+
+Generá una jerarquía de 4 niveles que refleje la estructura NARRATIVA del documento:
+
+NIVEL 1 — RAÍZ: el tema central del documento (1 nodo, extraído del contenido)
+NIVEL 2 — PILARES: 2 a 5 grandes ejes temáticos
+  - Para este documento (${structType}): ${structureGuide}
+  - Nombres en español, 2-4 palabras, frases nominales
+  - Los pilares deben reflejar la estructura NARRATIVA del documento, no la dificultad pedagógica
+NIVEL 3 — CLUSTERS: cada cluster asignado a exactamente un pilar
+  - TODOS los cluster_ids deben aparecer exactamente una vez
+NIVEL 4 — CONCEPTOS: 3-5 por cluster, elegidos de available_concepts
+  - Incluir: constructos teóricos, mecanismos, relaciones, principios, terminología clave
+  - Excluir: pasos procedimentales, valores numéricos específicos, ejemplos concretos
+
+Además, generá una SECUENCIA DE ESTUDIO (orden pedagógico, independiente de la jerarquía visual):
+  - learning_order: 1 = estudiar primero, mayor = estudiar después
+  - learning_level: "foundational" | "intermediate" | "advanced"
+  - requires: cluster_ids que deben entenderse antes (sin referencias circulares, solo IDs con menor learning_order)
+  - Todos los cluster_ids deben aparecer exactamente una vez
+
+Respondé SOLO con JSON válido, sin markdown, sin texto adicional:
+
+{
+  "document_topic": "<tema en 4-8 palabras>",
+  "pillars": [
+    {
+      "id": "p1",
+      "name": "<nombre del pilar en español>",
+      "clusters": [
+        { "cluster_id": "<uuid>", "key_concepts": ["<label>", "<label>", "<label>"] }
+      ]
+    }
+  ],
+  "sequence": [
+    { "cluster_id": "<uuid>", "learning_order": 1, "learning_level": "foundational", "requires": [] }
+  ]
+}`;
+}
 
 function buildPrompt(clusters) {
   const topics = clusters.map(c => ({
@@ -96,28 +213,34 @@ Return ONLY the JSON object, no explanation.`;
 
 // ── LLM call ─────────────────────────────────────────────────────────────────
 
-async function callLLM(clusters) {
-  // sequence ~200t/cluster + rich concept_map ~1000t/cluster
-  const maxTokens = Math.max(4096, clusters.length * 1000);
+async function callLLM(clusters, docContext) {
+  const maxTokens = Math.max(4096, clusters.length * 1200);
+  const prompt = docContext
+    ? buildDocumentMapPrompt(clusters, docContext)
+    : buildPrompt(clusters);
 
   const response = await withRetry(() =>
     getAnthropicClient().messages.create({
       model: MODEL,
       max_tokens: maxTokens,
-      messages: [{ role: 'user', content: buildPrompt(clusters) }],
+      messages: [{ role: 'user', content: prompt }],
     })
   );
 
   const raw = response.content?.[0]?.text?.trim() ?? '';
-
-  // Strip markdown code fences if present
   const jsonText = raw.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim();
 
   try {
     const parsed = JSON.parse(jsonText);
     if (!Array.isArray(parsed?.sequence)) throw new Error('Missing sequence array');
-    if (!parsed?.concept_map) throw new Error('Missing concept_map');
-    return parsed;
+
+    // New hierarchical format
+    if (Array.isArray(parsed?.pillars)) return parsed;
+
+    // Old flat format fallback
+    if (parsed?.concept_map) return parsed;
+
+    throw new Error('Missing pillars and concept_map');
   } catch {
     logger.warn('[learningGraph] Failed to parse LLM response', { raw: raw.slice(0, 500) });
     return null;
@@ -125,11 +248,6 @@ async function callLLM(clusters) {
 }
 
 // ── Normalisation ─────────────────────────────────────────────────────────────
-// Cleans the LLM sequence rather than hard-rejecting it:
-//   • strips items with unknown or duplicate cluster_ids
-//   • removes requires-references to IDs not yet seen (avoids forward-ref errors)
-//   • appends any clusters the LLM omitted, re-using the next learning_order value
-// Returns null only when the cleaned sequence ends up completely empty.
 
 function normaliseSequence(sequence, clusterIds) {
   const idSet = new Set(clusterIds);
@@ -137,15 +255,14 @@ function normaliseSequence(sequence, clusterIds) {
   const clean = [];
 
   for (const item of sequence) {
-    if (!idSet.has(item.cluster_id)) continue;  // unknown id → skip
-    if (seen.has(item.cluster_id))   continue;  // duplicate  → skip
+    if (!idSet.has(item.cluster_id)) continue;
+    if (seen.has(item.cluster_id))   continue;
     seen.add(item.cluster_id);
 
     const safeRequires = (item.requires ?? []).filter(r => idSet.has(r) && seen.has(r));
     clean.push({ ...item, requires: safeRequires });
   }
 
-  // Supplement clusters the LLM forgot
   let nextOrder = clean.length ? Math.max(...clean.map(i => i.learning_order ?? 0)) + 1 : 1;
   for (const id of clusterIds) {
     if (!seen.has(id)) {
@@ -159,18 +276,16 @@ function normaliseSequence(sequence, clusterIds) {
 // ── Persistence ───────────────────────────────────────────────────────────────
 
 async function persistLearningGraph(documentId, llmResult) {
-  const { sequence, concept_map } = llmResult;
+  const { sequence, concept_map, pillars } = llmResult;
   const client = await dbPool.connect();
   try {
     await client.query('BEGIN');
 
-    // Clear existing graph for this document (idempotent re-run)
     await client.query(
       'DELETE FROM cluster_dependencies WHERE document_id = $1',
       [documentId]
     );
 
-    // Reset block/center/concept fields before re-writing
     await client.query(
       `UPDATE clusters SET learning_order = NULL, learning_level = NULL,
          block_name = NULL, is_center = FALSE, key_map_concepts = '[]'::jsonb
@@ -178,7 +293,7 @@ async function persistLearningGraph(documentId, llmResult) {
       [documentId]
     );
 
-    // Write sequence: learning_order, learning_level
+    // Write sequence
     for (const item of sequence) {
       await client.query(
         `UPDATE clusters
@@ -188,39 +303,56 @@ async function persistLearningGraph(documentId, llmResult) {
       );
     }
 
-    // Write concept_map blocks: block_name
-    if (Array.isArray(concept_map?.blocks)) {
-      for (const block of concept_map.blocks) {
-        for (const cid of (block.cluster_ids ?? [])) {
+    if (Array.isArray(pillars)) {
+      // New hierarchical format: derive block_name and key_map_concepts from pillars
+      for (const pillar of pillars) {
+        for (const cl of (pillar.clusters ?? [])) {
           await client.query(
             `UPDATE clusters SET block_name = $1 WHERE id = $2 AND document_id = $3`,
-            [block.block_name, cid, documentId]
+            [pillar.name, cl.cluster_id, documentId]
+          );
+          const concepts = (cl.key_concepts ?? []).filter(c => typeof c === 'string').slice(0, 6);
+          if (concepts.length) {
+            await client.query(
+              `UPDATE clusters SET key_map_concepts = $1::jsonb WHERE id = $2 AND document_id = $3`,
+              [JSON.stringify(concepts), cl.cluster_id, documentId]
+            );
+          }
+        }
+      }
+    } else {
+      // Old flat format
+      if (Array.isArray(concept_map?.blocks)) {
+        for (const block of concept_map.blocks) {
+          for (const cid of (block.cluster_ids ?? [])) {
+            await client.query(
+              `UPDATE clusters SET block_name = $1 WHERE id = $2 AND document_id = $3`,
+              [block.block_name, cid, documentId]
+            );
+          }
+        }
+      }
+
+      if (concept_map?.center_cluster_id) {
+        await client.query(
+          `UPDATE clusters SET is_center = TRUE WHERE id = $1 AND document_id = $2`,
+          [concept_map.center_cluster_id, documentId]
+        );
+      }
+
+      if (Array.isArray(concept_map?.cluster_concepts)) {
+        for (const cc of concept_map.cluster_concepts) {
+          const concepts = (cc.key_concepts ?? []).filter(c => typeof c === 'string').slice(0, 6);
+          if (!concepts.length) continue;
+          await client.query(
+            `UPDATE clusters SET key_map_concepts = $1::jsonb WHERE id = $2 AND document_id = $3`,
+            [JSON.stringify(concepts), cc.cluster_id, documentId]
           );
         }
       }
     }
 
-    // Write center cluster
-    if (concept_map?.center_cluster_id) {
-      await client.query(
-        `UPDATE clusters SET is_center = TRUE WHERE id = $1 AND document_id = $2`,
-        [concept_map.center_cluster_id, documentId]
-      );
-    }
-
-    // Write key_map_concepts per cluster
-    if (Array.isArray(concept_map?.cluster_concepts)) {
-      for (const cc of concept_map.cluster_concepts) {
-        const concepts = (cc.key_concepts ?? []).filter(c => typeof c === 'string').slice(0, 6);
-        if (!concepts.length) continue;
-        await client.query(
-          `UPDATE clusters SET key_map_concepts = $1::jsonb WHERE id = $2 AND document_id = $3`,
-          [JSON.stringify(concepts), cc.cluster_id, documentId]
-        );
-      }
-    }
-
-    // Insert sequence dependency edges (requires = prerequisite)
+    // Sequence dependency edges
     for (const item of sequence) {
       for (const reqId of (item.requires ?? [])) {
         await client.query(
@@ -232,8 +364,8 @@ async function persistLearningGraph(documentId, llmResult) {
       }
     }
 
-    // Insert concept_map edges with labels and types
-    if (Array.isArray(concept_map?.edges)) {
+    // Concept map edges (old format only)
+    if (!Array.isArray(pillars) && Array.isArray(concept_map?.edges)) {
       for (const edge of concept_map.edges) {
         if (!edge.from_cluster_id || !edge.to_cluster_id) continue;
         if (edge.from_cluster_id === edge.to_cluster_id) continue;
@@ -259,10 +391,25 @@ async function persistLearningGraph(documentId, llmResult) {
   }
 }
 
+async function persistConceptMapTree(documentId, llmResult) {
+  if (!Array.isArray(llmResult.pillars) || !llmResult.document_topic) return;
+
+  const tree = {
+    document_topic: llmResult.document_topic,
+    pillars: llmResult.pillars,
+    generated_at: new Date().toISOString(),
+  };
+
+  await dbPool.query(
+    `UPDATE documents SET concept_map_tree_json = $1 WHERE id = $2`,
+    [JSON.stringify(tree), documentId]
+  );
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
- * Builds and persists a pedagogical learning graph + concept map for the document's clusters.
+ * Builds and persists a pedagogical learning graph + hierarchical concept map tree.
  */
 export async function buildLearningGraph(documentId, clusters) {
   if (!clusters || clusters.length < 2) {
@@ -270,16 +417,18 @@ export async function buildLearningGraph(documentId, clusters) {
     return;
   }
 
-  console.log('[learningGraph] building graph', documentId, 'clusters:', clusters.length);
-  logger.info('[learningGraph] Building learning graph', {
-    documentId,
-    clusterCount: clusters.length,
+  logger.info('[learningGraph] Building learning graph', { documentId, clusterCount: clusters.length });
+
+  const docContext = await fetchDocumentContext(documentId).catch(err => {
+    logger.warn('[learningGraph] Could not fetch doc context (non-fatal)', {
+      documentId, error: err.message,
+    });
+    return null;
   });
 
-  const llmResult = await callLLM(clusters);
+  const llmResult = await callLLM(clusters, docContext);
 
   if (!llmResult) {
-    console.warn('[learningGraph] LLM unparseable response', documentId);
     logger.warn('[learningGraph] LLM returned unparseable response, skipping', { documentId });
     return;
   }
@@ -291,24 +440,21 @@ export async function buildLearningGraph(documentId, clusters) {
     return;
   }
 
-  const skipped = clusterIds.length - llmResult.sequence.filter(s => clusterIds.includes(s.cluster_id)).length;
-  if (skipped > 0) {
-    logger.info('[learningGraph] Supplemented missing clusters in sequence', { documentId, skipped });
-  }
+  await Promise.all([
+    persistLearningGraph(documentId, { ...llmResult, sequence: normalisedSequence }),
+    persistConceptMapTree(documentId, llmResult),
+  ]);
 
-  await persistLearningGraph(documentId, { ...llmResult, sequence: normalisedSequence });
-
-  console.log('[learningGraph] graph persisted', documentId);
   logger.info('[learningGraph] Learning graph persisted', {
     documentId,
-    sequenceLength: llmResult.sequence.length,
-    blockCount: llmResult.concept_map?.blocks?.length ?? 0,
-    edgeCount: llmResult.concept_map?.edges?.length ?? 0,
+    sequenceLength: normalisedSequence.length,
+    hasPillars: Array.isArray(llmResult.pillars),
+    pillarCount: llmResult.pillars?.length ?? 0,
   });
 }
 
 /**
- * Returns the learning graph for a document — clusters with sequence, blocks, and typed edges.
+ * Returns the learning graph for a document, including the hierarchical tree if available.
  */
 export async function getLearningGraph(documentId) {
   const { rows: clusters } = await dbPool.query(
@@ -336,7 +482,6 @@ export async function getLearningGraph(documentId) {
     }
   }
 
-  // Group clusters by block_name
   const blockMap = {};
   for (const c of clusters) {
     const key = c.block_name ?? 'Sin clasificar';
@@ -347,7 +492,6 @@ export async function getLearningGraph(documentId) {
     cluster_ids,
   }));
 
-  // Concept map edges (non-requires)
   const edges = deps
     .filter(d => d.edge_semantic_type && d.edge_semantic_type !== 'requires')
     .map(d => ({
@@ -359,6 +503,28 @@ export async function getLearningGraph(documentId) {
 
   const center = clusters.find(c => c.is_center);
 
+  // Load hierarchical tree and enrich with cluster names
+  const { rows: docRows } = await dbPool.query(
+    `SELECT concept_map_tree_json FROM documents WHERE id = $1`,
+    [documentId]
+  );
+  let treeJson = docRows[0]?.concept_map_tree_json ?? null;
+
+  if (treeJson?.pillars) {
+    const clusterById = {};
+    clusters.forEach(c => { clusterById[c.id] = c; });
+    treeJson = {
+      ...treeJson,
+      pillars: treeJson.pillars.map(p => ({
+        ...p,
+        clusters: (p.clusters ?? []).map(cl => ({
+          ...cl,
+          cluster_name: clusterById[cl.cluster_id]?.name ?? cl.cluster_id,
+        })),
+      })),
+    };
+  }
+
   return {
     sequence: clusters.map(c => ({
       ...c,
@@ -369,5 +535,6 @@ export async function getLearningGraph(documentId) {
       blocks,
       edges,
     },
+    concept_map_tree: treeJson,
   };
 }
