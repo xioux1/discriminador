@@ -196,4 +196,80 @@ router.get('/api/documents/:id/clusters', async (req, res, next) => {
   }
 });
 
+// GET /api/documents/:id/concept-excerpt?label=...&cluster_id=...
+router.get('/api/documents/:id/concept-excerpt', async (req, res, next) => {
+  const documentId = req.params.id;
+  if (!UUID_RE.test(documentId)) {
+    return res.status(400).json({ error: 'invalid_id', message: 'Document ID must be a valid UUID.' });
+  }
+
+  const { label, cluster_id } = req.query;
+  if (!label) {
+    return res.status(400).json({ error: 'missing_label', message: 'label query parameter required.' });
+  }
+
+  try {
+    let rows = [];
+
+    // Prefer the concept from the specific cluster
+    if (cluster_id && UUID_RE.test(cluster_id)) {
+      const result = await dbPool.query(
+        `SELECT label, definition, source_chunk, evidence
+         FROM concepts
+         WHERE document_id = $1 AND cluster_id = $2 AND LOWER(label) = LOWER($3)
+           AND status = 'accepted'
+         ORDER BY created_at ASC LIMIT 1`,
+        [documentId, cluster_id, label]
+      );
+      rows = result.rows;
+    }
+
+    // Fallback: any accepted concept in this document with matching label
+    if (!rows.length) {
+      const result = await dbPool.query(
+        `SELECT label, definition, source_chunk, evidence
+         FROM concepts
+         WHERE document_id = $1 AND LOWER(label) = LOWER($2)
+           AND status = 'accepted'
+         ORDER BY created_at ASC LIMIT 1`,
+        [documentId, label]
+      );
+      rows = result.rows;
+    }
+
+    if (!rows.length) {
+      return res.status(404).json({ error: 'not_found', message: 'Concept not found.' });
+    }
+
+    const concept = rows[0];
+    const excerpt = extractExcerpt(concept.source_chunk, concept.evidence);
+
+    return res.json({
+      label:      concept.label,
+      definition: concept.definition || null,
+      excerpt,
+    });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+function extractExcerpt(sourceChunk, evidence, wordRadius = 55) {
+  if (!sourceChunk) return '';
+  const words = sourceChunk.split(/\s+/).filter(Boolean);
+  if (words.length <= wordRadius * 2) return words.join(' ');
+
+  let centerWord = 0;
+  if (evidence) {
+    const evidenceStart = sourceChunk.indexOf(evidence.slice(0, 40));
+    if (evidenceStart >= 0) {
+      centerWord = sourceChunk.slice(0, evidenceStart).split(/\s+/).filter(Boolean).length;
+    }
+  }
+
+  const start = Math.max(0, centerWord - wordRadius);
+  const end   = Math.min(words.length, centerWord + wordRadius);
+  return words.slice(start, end).join(' ');
+}
+
 export default router;
