@@ -7315,15 +7315,14 @@ async function getDocumentSchema(documentId) {
 
       const res = await fetch(`/api/documents/${documentId}/learning-graph`, { headers });
 
-      if (!res.ok) {
-        fetch(`/api/documents/${documentId}/build-learning-graph`, {
-          method: 'POST',
-          headers: { ...headers, 'Content-Type': 'application/json' },
-        }).catch(() => {});
-        return null;
-      }
+      const triggerBuild = () => fetch(`/api/documents/${documentId}/build-learning-graph`, {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+      }).catch(() => {});
+
+      if (!res.ok) { triggerBuild(); return null; }
       const data = await res.json();
-      if (!data.sequence?.length) return null;
+      if (!data.sequence?.length) { triggerBuild(); return null; }
       const graphData = { sequence: data.sequence, concept_map: data.concept_map ?? null };
       studyState.schemaCache[documentId] = graphData;
       return graphData;

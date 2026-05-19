@@ -125,13 +125,16 @@ router.post('/api/documents/:id/build-learning-graph', async (req, res, next) =>
       [documentId]
     );
     if (!clusterRows.length) {
+      console.warn('[build-learning-graph] no clusters for document', documentId);
       return res.status(400).json({ error: 'no_clusters', message: 'Document has no clusters yet.' });
     }
+    console.log('[build-learning-graph] starting build for', documentId, 'clusters:', clusterRows.length);
     // Fire and forget — client will poll GET endpoint
     setImmediate(() => {
-      buildLearningGraph(documentId, clusterRows).catch(err =>
-        logger.warn('[buildLearningGraph] Background build failed', { documentId, error: err.message })
-      );
+      buildLearningGraph(documentId, clusterRows).catch(err => {
+        console.error('[build-learning-graph] build failed', documentId, err.message);
+        logger.warn('[buildLearningGraph] Background build failed', { documentId, error: err.message });
+      });
     });
     return res.json({ status: 'building', cluster_count: clusterRows.length });
   } catch (err) {
