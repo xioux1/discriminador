@@ -226,7 +226,7 @@ async function persistLearningGraph(documentId, llmResult) {
         await client.query(
           `INSERT INTO cluster_dependencies (document_id, from_cluster_id, to_cluster_id, edge_semantic_type)
            VALUES ($1, $2, $3, 'requires')
-           ON CONFLICT ON CONSTRAINT uq_cluster_dependency DO NOTHING`,
+           ON CONFLICT (from_cluster_id, to_cluster_id) DO NOTHING`,
           [documentId, reqId, item.cluster_id]
         );
       }
@@ -241,7 +241,7 @@ async function persistLearningGraph(documentId, llmResult) {
           `INSERT INTO cluster_dependencies
              (document_id, from_cluster_id, to_cluster_id, edge_label, edge_semantic_type)
            VALUES ($1, $2, $3, $4, $5)
-           ON CONFLICT ON CONSTRAINT uq_cluster_dependency DO UPDATE
+           ON CONFLICT (from_cluster_id, to_cluster_id) DO UPDATE
              SET edge_label = EXCLUDED.edge_label,
                  edge_semantic_type = EXCLUDED.edge_semantic_type`,
           [documentId, edge.from_cluster_id, edge.to_cluster_id,
