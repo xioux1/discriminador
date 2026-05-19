@@ -7306,28 +7306,21 @@ async function getDocumentSchema(documentId) {
       const headers = {};
       if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
 
-      // Hard 3-second wall-clock limit covering both fetch AND res.json()
-      const timeout = new Promise(resolve => setTimeout(() => resolve(null), 3000));
+      const res = await fetch(`/api/documents/${documentId}/learning-graph`, { headers });
 
-      const fetched = fetch(`/api/documents/${documentId}/learning-graph`, { headers })
-        .then(async res => {
-          if (res.status === 404) {
-            fetch(`/api/documents/${documentId}/build-learning-graph`, {
-              method: 'POST',
-              headers: { ...headers, 'Content-Type': 'application/json' },
-            }).catch(() => {});
-            return null;
-          }
-          if (!res.ok) return null;
-          const data = await res.json();
-          if (!data.sequence?.length) return null;
-          const graphData = { sequence: data.sequence, concept_map: data.concept_map ?? null };
-          studyState.schemaCache[documentId] = graphData;
-          return graphData;
-        })
-        .catch(() => null);
-
-      return await Promise.race([fetched, timeout]);
+      if (res.status === 404) {
+        fetch(`/api/documents/${documentId}/build-learning-graph`, {
+          method: 'POST',
+          headers: { ...headers, 'Content-Type': 'application/json' },
+        }).catch(() => {});
+        return null;
+      }
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (!data.sequence?.length) return null;
+      const graphData = { sequence: data.sequence, concept_map: data.concept_map ?? null };
+      studyState.schemaCache[documentId] = graphData;
+      return graphData;
     } catch { return null; }
     finally { delete _schemaFetchInFlight[documentId]; }
   };
