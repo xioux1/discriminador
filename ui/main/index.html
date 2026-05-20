@@ -172,6 +172,36 @@
 
               <hr style="margin:16px 0">
 
+              <!-- ── Auto Advance ─────────────────────────────────────────── -->
+              <hr style="margin:16px 0">
+              <h4 class="curriculum-section-title">Auto Advance</h4>
+              <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 10px">Avanza automáticamente a la siguiente tarjeta luego de un tiempo, igual que Anki.</p>
+              <label class="toggle-row">
+                <input type="checkbox" id="curriculum-autoadvance-enabled">
+                <span class="toggle-label">Activar Auto Advance</span>
+              </label>
+              <div id="autoadvance-settings-row" style="margin-top:12px;display:none">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:12px">
+                  <div>
+                    <label for="curriculum-autoadvance-question-secs" style="display:block;font-size:0.82rem;color:var(--text-muted);margin-bottom:4px">Segundos para mostrar pregunta</label>
+                    <input type="number" id="curriculum-autoadvance-question-secs" min="0" step="0.5" placeholder="Ej: 35" style="width:100%;box-sizing:border-box">
+                  </div>
+                  <div>
+                    <label for="curriculum-autoadvance-answer-secs" style="display:block;font-size:0.82rem;color:var(--text-muted);margin-bottom:4px">Segundos para mostrar respuesta</label>
+                    <input type="number" id="curriculum-autoadvance-answer-secs" min="0" step="0.5" placeholder="Ej: 200" style="width:100%;box-sizing:border-box">
+                  </div>
+                </div>
+                <div>
+                  <label for="curriculum-autoadvance-action" style="display:block;font-size:0.82rem;color:var(--text-muted);margin-bottom:4px">Accion automatica</label>
+                  <select id="curriculum-autoadvance-action" style="max-width:200px">
+                    <option value="again">Again</option>
+                    <option value="hard">Hard</option>
+                    <option value="good">Good</option>
+                    <option value="easy">Easy</option>
+                  </select>
+                </div>
+              </div>
+
               <!-- ── Exigencia de corrección ─────────────────────────────────── -->
               <h4 class="curriculum-section-title">Exigencia de corrección</h4>
               <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 10px">Define qué tan estricta es la IA al evaluar tus respuestas.</p>
@@ -521,6 +551,10 @@
               </div>
               <div id="study-check-error-tags-input" class="study-check-error-tags hidden"></div>
               <button type="button" id="study-eval-btn" class="btn-primary study-eval-btn">Evaluar respuesta</button>
+              <div id="study-autoadvance-question-bar" class="autoadvance-bar hidden">
+                <div class="autoadvance-bar-fill" id="study-autoadvance-question-fill"></div>
+                <span class="autoadvance-bar-label" id="study-autoadvance-question-label"></span>
+              </div>
             </div>
 
             <div id="study-result-block" class="study-result-block hidden">
@@ -550,6 +584,10 @@
                 <div class="study-result-actions">
                   <button type="button" id="study-next-btn" class="btn-primary study-next-btn">Siguiente</button>
                   <button type="button" id="study-advanced-toggle-btn" class="btn-ghost study-advanced-toggle-btn" aria-expanded="false">Ver explicación</button>
+                </div>
+                <div id="study-autoadvance-answer-bar" class="autoadvance-bar hidden">
+                  <div class="autoadvance-bar-fill" id="study-autoadvance-answer-fill"></div>
+                  <span class="autoadvance-bar-label" id="study-autoadvance-answer-label"></span>
                 </div>
               </div>
               <details id="study-advanced-panel" class="study-advanced-panel">
