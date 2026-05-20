@@ -1211,19 +1211,20 @@ textarea:focus, input[type="text"]:focus, select:focus {
   background: #fff;
 }
 
-/* Single Chinese character hero display */
+/* Chinese hero display — font-size set dynamically via JS */
 .study-card-prompt--hanzi-hero {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 9rem;
   font-weight: 900;
-  line-height: 1;
+  line-height: 1.15;
   margin: 0;
-  padding: 32px 0 24px;
-  letter-spacing: 0;
+  padding: 28px 8px 20px;
+  letter-spacing: 0.05em;
   color: var(--text);
   user-select: none;
+  text-align: center;
+  word-break: break-word;
 }
 
 .study-answer-actions {

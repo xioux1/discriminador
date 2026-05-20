@@ -3428,16 +3428,27 @@ function formatPromptForDisplay(text) {
   }).join('');
 }
 
-const SINGLE_HANZI_RE = /^[一-鿿㐀-䶿\u{20000}-\u{2a6df}]$/u;
+const HANZI_RE = /[一-鿿㐀-䶿\u{20000}-\u{2a6df}]/u;
+
+function hanziHeroFontSize(charCount) {
+  if (charCount <= 1)  return '9rem';
+  if (charCount <= 2)  return '7rem';
+  if (charCount <= 4)  return '5rem';
+  if (charCount <= 8)  return '3.5rem';
+  if (charCount <= 16) return '2.5rem';
+  return '1.8rem';
+}
 
 function renderStudyPrompt(promptEl, promptText) {
   if (!promptEl) return;
   const trimmed = (promptText ?? '').trim();
-  if (SINGLE_HANZI_RE.test(trimmed)) {
+  if (HANZI_RE.test(trimmed)) {
     promptEl.classList.add('study-card-prompt--hanzi-hero');
+    promptEl.style.fontSize = hanziHeroFontSize(trimmed.length);
     promptEl.textContent = trimmed;
   } else {
     promptEl.classList.remove('study-card-prompt--hanzi-hero');
+    promptEl.style.fontSize = '';
     promptEl.innerHTML = formatPromptForDisplay(promptText);
   }
 }
