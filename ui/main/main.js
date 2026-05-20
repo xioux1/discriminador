@@ -5958,13 +5958,13 @@ function showStudyCard() {
       if (nextExpected) prefetchVoiceFront(nextExpected);
     }
   }
-  const _isChinesePrompt = hasChinese(getStudyPromptText(item));
-  badgesEl.innerHTML = (studyState.voiceMode || _isChinesePrompt) ? '' : cardBadges.join('');
-  badgesEl.classList.toggle('hidden', studyState.voiceMode || _isChinesePrompt);
+  const _isChineseCard = hasChinese(getStudyPromptText(item)) || hasChinese(getStudyExpectedText(item));
+  badgesEl.innerHTML = (studyState.voiceMode || _isChineseCard) ? '' : cardBadges.join('');
+  badgesEl.classList.toggle('hidden', studyState.voiceMode || _isChineseCard);
 
   if (item.type === 'micro') {
     // Show parent card as context so student knows what topic this stems from
-    if (item.data.parent_prompt && !studyState.voiceMode && !_isChinesePrompt) {
+    if (item.data.parent_prompt && !studyState.voiceMode && !_isChineseCard) {
       parentPromptEl.textContent = item.data.parent_prompt;
       parentContextEl.classList.remove('hidden');
     } else {
@@ -6456,7 +6456,7 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       : undefined;
   }
 
-  if (!answer && !hasChinese(prompt_text)) return;
+  if (!answer && !hasChinese(prompt_text) && !hasChinese(expected_answer_text)) return;
 
   // Stop timer and record response time
   if (studyState.timerInterval) {
@@ -6736,7 +6736,7 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
     document.querySelector('#study-result-block').classList.remove('hidden');
 
     // Chinese simplified result: show grade + expected answer + grade buttons only
-    if (hasChinese(prompt_text)) {
+    if (hasChinese(prompt_text) || hasChinese(expected_answer_text)) {
       showChineseResult(expected_answer_text, result.suggested_grade);
       // Pre-accept LLM grade so study-next-btn (Ctrl+Enter) works as quick advance
       studyState.currentDecision = { finalGrade: normalizeSuggestedGrade(result.suggested_grade).toLowerCase(), source: 'llm_auto' };
