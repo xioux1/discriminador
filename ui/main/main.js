@@ -5986,6 +5986,8 @@ function showStudyCard() {
   _studyInput.classList.toggle('chinese-input', hasChinese(_expectedForFont));
   document.querySelector('#study-answer-block').classList.remove('hidden');
   document.querySelector('#study-result-block').classList.add('hidden');
+  // Auto-focus answer input so the user can type immediately without clicking
+  if (!studyState.voiceMode) _studyInput.focus();
   document.querySelector('#study-doubt-section')?.classList.add('hidden');
   const advancedPanel = document.querySelector('#study-advanced-panel');
   const advancedToggleBtn = document.querySelector('#study-advanced-toggle-btn');
