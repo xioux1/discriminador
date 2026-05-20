@@ -1211,6 +1211,21 @@ textarea:focus, input[type="text"]:focus, select:focus {
   background: #fff;
 }
 
+/* Single Chinese character hero display */
+.study-card-prompt--hanzi-hero {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9rem;
+  font-weight: 900;
+  line-height: 1;
+  margin: 0;
+  padding: 32px 0 24px;
+  letter-spacing: 0;
+  color: var(--text);
+  user-select: none;
+}
+
 .study-answer-actions {
   display: flex;
   align-items: center;
