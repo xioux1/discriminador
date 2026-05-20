@@ -47,7 +47,7 @@ curriculumRouter.get('/curriculum/:subject', async (req, res) => {
 // PUT /curriculum/:subject — upserta subject_configs (solo syllabus ahora)
 curriculumRouter.put('/curriculum/:subject', async (req, res) => {
   const { subject } = req.params;
-  const { syllabus_text, notes_text, daily_new_cards_limit, max_micro_cards_per_card, grading_strictness, micro_cards_enabled, micro_cards_spawn_siblings, auto_variants_enabled, max_variants_per_card, retention_floor, micro_count_again, micro_count_hard, micro_count_good, micro_count_easy, autoadvance_enabled, autoadvance_question_seconds, autoadvance_answer_seconds, autoadvance_answer_action } = req.body || {};
+  const { syllabus_text, notes_text, daily_new_cards_limit, max_micro_cards_per_card, grading_strictness, micro_cards_enabled, micro_cards_spawn_siblings, auto_variants_enabled, max_variants_per_card, retention_floor, micro_count_again, micro_count_hard, micro_count_good, micro_count_easy, autoadvance_enabled, autoadvance_question_seconds, autoadvance_answer_seconds, autoadvance_answer_action, learning_steps, new_card_insertion_order } = req.body || {};
   const userId = req.user.id;
   const parsedDailyLimit = daily_new_cards_limit === null || daily_new_cards_limit === undefined || daily_new_cards_limit === ''
     ? null
@@ -134,10 +134,19 @@ curriculumRouter.put('/curriculum/:subject', async (req, res) => {
     ? autoadvance_answer_action
     : 'again';
 
+  const parsedLearningSteps = (typeof learning_steps === 'string' && learning_steps.trim())
+    ? learning_steps.trim()
+    : '1m 10m';
+
+  const validInsertionOrders = ['sequential', 'random'];
+  const parsedInsertionOrder = validInsertionOrders.includes(new_card_insertion_order)
+    ? new_card_insertion_order
+    : 'sequential';
+
   try {
     const { rows } = await dbPool.query(
-      `INSERT INTO subject_configs (subject, syllabus_text, notes_text, daily_new_cards_limit, max_micro_cards_per_card, grading_strictness, micro_cards_enabled, micro_cards_spawn_siblings, auto_variants_enabled, max_variants_per_card, retention_floor, micro_count_again, micro_count_hard, micro_count_good, micro_count_easy, autoadvance_enabled, autoadvance_question_seconds, autoadvance_answer_seconds, autoadvance_answer_action, updated_at, user_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, now(), $20)
+      `INSERT INTO subject_configs (subject, syllabus_text, notes_text, daily_new_cards_limit, max_micro_cards_per_card, grading_strictness, micro_cards_enabled, micro_cards_spawn_siblings, auto_variants_enabled, max_variants_per_card, retention_floor, micro_count_again, micro_count_hard, micro_count_good, micro_count_easy, autoadvance_enabled, autoadvance_question_seconds, autoadvance_answer_seconds, autoadvance_answer_action, learning_steps, new_card_insertion_order, updated_at, user_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, now(), $22)
        ON CONFLICT (subject, user_id) DO UPDATE SET
          syllabus_text                = EXCLUDED.syllabus_text,
          notes_text                   = EXCLUDED.notes_text,
@@ -157,10 +166,12 @@ curriculumRouter.put('/curriculum/:subject', async (req, res) => {
          autoadvance_question_seconds = EXCLUDED.autoadvance_question_seconds,
          autoadvance_answer_seconds   = EXCLUDED.autoadvance_answer_seconds,
          autoadvance_answer_action    = EXCLUDED.autoadvance_answer_action,
+         learning_steps               = EXCLUDED.learning_steps,
+         new_card_insertion_order     = EXCLUDED.new_card_insertion_order,
          user_id                      = EXCLUDED.user_id,
          updated_at                   = now()
        RETURNING *`,
-      [subject, syllabus_text || null, notes_text || null, parsedDailyLimit, parsedMicroLimit, parsedStrictness, parsedMicroEnabled, parsedSpawnSiblings, parsedAutoVariants, parsedMaxVariants, parsedRetentionFloor, parsedMicroCountAgain, parsedMicroCountHard, parsedMicroCountGood, parsedMicroCountEasy, parsedAutoadvanceEnabled, parsedAutoadvanceQuestionSeconds, parsedAutoadvanceAnswerSeconds, parsedAutoadvanceAnswerAction, userId]
+      [subject, syllabus_text || null, notes_text || null, parsedDailyLimit, parsedMicroLimit, parsedStrictness, parsedMicroEnabled, parsedSpawnSiblings, parsedAutoVariants, parsedMaxVariants, parsedRetentionFloor, parsedMicroCountAgain, parsedMicroCountHard, parsedMicroCountGood, parsedMicroCountEasy, parsedAutoadvanceEnabled, parsedAutoadvanceQuestionSeconds, parsedAutoadvanceAnswerSeconds, parsedAutoadvanceAnswerAction, parsedLearningSteps, parsedInsertionOrder, userId]
     );
     invalidateAdvisorCache(subject, userId);
     return res.json({ config: rows[0] });
