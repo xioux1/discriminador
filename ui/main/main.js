@@ -4943,10 +4943,8 @@ function _doStartPlannedSession() {
 async function startPlannedSession() {
   if (userSettings.time_restriction_enabled && !isAllowedStartTime()) { showTimeRestrictionModal(); return; }
   const gateEl = document.querySelector('#briefing-planner-gate');
-  if (userSettings.planner_gate_enabled) {
-    const status = await checkPlannerDayStatus();
-    if (!status.is_full) { renderPlannerGate(gateEl, status.filled ?? 0, status.total ?? 32); return; }
-  }
+  const status = await checkPlannerDayStatus();
+  if (!status.is_full) { renderPlannerGate(gateEl, status.filled ?? 0, status.total ?? 32); return; }
   gateEl?.classList.add('hidden');
   showGratitudeModal(() => _doStartPlannedSession());
 }
@@ -5799,10 +5797,8 @@ function renderPlannerGate(gateEl, filled, total) {
 async function startStudySession() {
   if (userSettings.time_restriction_enabled && !isAllowedStartTime()) { showTimeRestrictionModal(); return; }
   const gateEl = document.querySelector('#overview-planner-gate');
-  if (userSettings.planner_gate_enabled) {
-    const status = await checkPlannerDayStatus();
-    if (!status.is_full) { renderPlannerGate(gateEl, status.filled ?? 0, status.total ?? 32); return; }
-  }
+  const status = await checkPlannerDayStatus();
+  if (!status.is_full) { renderPlannerGate(gateEl, status.filled ?? 0, status.total ?? 32); return; }
   gateEl?.classList.add('hidden');
   showGratitudeModal(() => _doStartStudySession());
 }
@@ -10581,7 +10577,6 @@ function initSettingsTab() {
   const planningEl         = document.querySelector('#setting-session-planning');
   const gratitudeEl        = document.querySelector('#setting-gratitude');
   const timeRestrictEl     = document.querySelector('#setting-time-restriction');
-  const plannerGateEl      = document.querySelector('#setting-planner-gate');
   const realtimeBreakEl    = document.querySelector('#setting-realtime-break-notifications');
   const ttsEl              = document.querySelector('#setting-tts-enabled');
   const defTimeEl          = document.querySelector('#setting-default-time');
@@ -10596,7 +10591,6 @@ function initSettingsTab() {
   planningEl.checked      = userSettings.session_planning_enabled;
   gratitudeEl.checked     = userSettings.gratitude_enabled;
   timeRestrictEl.checked  = userSettings.time_restriction_enabled;
-  plannerGateEl.checked   = userSettings.planner_gate_enabled;
   realtimeBreakEl.checked = userSettings.realtime_break_notifications_enabled;
   ttsEl.checked           = getTTSEnabled();
   defTimeEl.value         = getDefaultBriefingTime();
@@ -10618,7 +10612,7 @@ function initSettingsTab() {
       session_planning_enabled:   planningEl.checked,
       gratitude_enabled:          gratitudeEl.checked,
       time_restriction_enabled:   timeRestrictEl.checked,
-      planner_gate_enabled:       plannerGateEl.checked,
+      planner_gate_enabled:       true,
       realtime_break_notifications_enabled: realtimeBreakEl.checked,
       default_retention_floor:    defRetentionEl.value    !== '' ? parseInt(defRetentionEl.value)    : null,
       default_grading_strictness: defStrictnessEl.value   !== '' ? parseInt(defStrictnessEl.value)   : null,
@@ -10641,7 +10635,6 @@ function initSettingsTab() {
   planningEl.addEventListener('change',     scheduleServerSave);
   gratitudeEl.addEventListener('change',    scheduleServerSave);
   timeRestrictEl.addEventListener('change', scheduleServerSave);
-  plannerGateEl.addEventListener('change',  scheduleServerSave);
   realtimeBreakEl.addEventListener('change', scheduleServerSave);
   defRetentionEl.addEventListener('change', scheduleServerSave);
   defStrictnessEl.addEventListener('change', scheduleServerSave);
