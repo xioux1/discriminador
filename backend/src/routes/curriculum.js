@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { dbPool } from '../db/client.js';
 import { invalidateAdvisorCache } from './advisor.js';
 import { processTranscript } from '../services/transcript-processor.js';
+import { extractAndPersistCourseMetadata } from '../services/courseMetadataExtractor.service.js';
+import { logger } from '../utils/logger.js';
 
 const curriculumRouter = Router();
 
@@ -393,7 +395,11 @@ curriculumRouter.post('/curriculum/:subject/class-notes/:id/process-transcript',
 
     // Fire and forget — stale guard in GET endpoint
     processTranscript({ noteId: id, transcriptText: transcript_text, subject, pool: dbPool, userId })
-      .catch(err => console.error('processTranscript fire-and-forget error', err.message));
+      .then(() => extractAndPersistCourseMetadata(transcript_text, {
+        subject, userId, noteId: id, pool: dbPool,
+      }))
+      .catch(err => logger.error('[curriculum] transcript pipeline error (non-fatal)',
+        { noteId: id, subject, err: err.message }));
 
     return res.status(202).json({ status: 'processing' });
   } catch (err) {
@@ -431,6 +437,142 @@ curriculumRouter.get('/curriculum/:subject/class-notes/:id/structured', async (r
     return res.json({ structured_data: note.structured_data, processing_status: note.processing_status });
   } catch (err) {
     console.error('GET /curriculum/:subject/class-notes/:id/structured', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+// ── Lineamientos ───────────────────────────────────────────────────────────────
+
+const VALID_LINEAMIENTO_TYPES = new Set(['trabajo_practico', 'metodologia', 'evaluacion', 'aviso', 'general']);
+
+// GET /curriculum/:subject/lineamientos
+curriculumRouter.get('/curriculum/:subject/lineamientos', async (req, res) => {
+  const { subject } = req.params;
+  const userId = req.user.id;
+  const { type } = req.query;
+  try {
+    const params = [userId, subject];
+    let where = 'WHERE user_id = $1 AND subject = $2';
+    if (type && VALID_LINEAMIENTO_TYPES.has(type)) {
+      params.push(type);
+      where += ` AND lineamiento_type = $${params.length}`;
+    }
+    const { rows } = await dbPool.query(
+      `SELECT id, title, content, lineamiento_type, due_date,
+              source_document_id, source_note_id, created_at, updated_at
+       FROM subject_lineamientos
+       ${where}
+       ORDER BY created_at DESC`,
+      params
+    );
+    return res.json({ lineamientos: rows });
+  } catch (err) {
+    logger.error('GET /curriculum/:subject/lineamientos error', { subject, err: err.message });
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+// POST /curriculum/:subject/lineamientos
+curriculumRouter.post('/curriculum/:subject/lineamientos', async (req, res) => {
+  const { subject } = req.params;
+  const userId = req.user.id;
+  const { title, content, lineamiento_type, due_date } = req.body || {};
+  if (!title?.trim()) {
+    return res.status(422).json({ error: 'validation_error', message: 'title es obligatorio.' });
+  }
+  const ltype = VALID_LINEAMIENTO_TYPES.has(lineamiento_type) ? lineamiento_type : 'general';
+  const dueDate = /^\d{4}-\d{2}-\d{2}$/.test(due_date) ? due_date : null;
+  try {
+    const { rows } = await dbPool.query(
+      `INSERT INTO subject_lineamientos (user_id, subject, title, content, lineamiento_type, due_date)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [userId, subject, title.trim(), (content ?? '').trim(), ltype, dueDate]
+    );
+    return res.status(201).json({ lineamiento: rows[0] });
+  } catch (err) {
+    logger.error('POST /curriculum/:subject/lineamientos error', { subject, err: err.message });
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+// PATCH /curriculum/:subject/lineamientos/:id
+curriculumRouter.patch('/curriculum/:subject/lineamientos/:id', async (req, res) => {
+  const { subject } = req.params;
+  const id = Number(req.params.id);
+  const userId = req.user.id;
+  if (!Number.isFinite(id)) {
+    return res.status(422).json({ error: 'validation_error', message: 'invalid id.' });
+  }
+  const { title, content, lineamiento_type, due_date } = req.body || {};
+  try {
+    const sets = ['updated_at = now()'];
+    const params = [id, userId, subject];
+    if (typeof title === 'string') {
+      params.push(title.trim()); sets.push(`title = $${params.length}`);
+    }
+    if (typeof content === 'string') {
+      params.push(content.trim()); sets.push(`content = $${params.length}`);
+    }
+    if (VALID_LINEAMIENTO_TYPES.has(lineamiento_type)) {
+      params.push(lineamiento_type); sets.push(`lineamiento_type = $${params.length}`);
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(due_date)) {
+      params.push(due_date); sets.push(`due_date = $${params.length}`);
+    } else if (due_date === null) {
+      sets.push('due_date = NULL');
+    }
+    const { rows } = await dbPool.query(
+      `UPDATE subject_lineamientos SET ${sets.join(', ')}
+       WHERE id = $1 AND user_id = $2 AND subject = $3 RETURNING *`,
+      params
+    );
+    if (!rows.length) return res.status(404).json({ error: 'not_found' });
+    return res.json({ lineamiento: rows[0] });
+  } catch (err) {
+    logger.error('PATCH /curriculum/:subject/lineamientos/:id error', { subject, id, err: err.message });
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+// DELETE /curriculum/:subject/lineamientos/:id
+curriculumRouter.delete('/curriculum/:subject/lineamientos/:id', async (req, res) => {
+  const { subject } = req.params;
+  const id = Number(req.params.id);
+  const userId = req.user.id;
+  if (!Number.isFinite(id)) {
+    return res.status(422).json({ error: 'validation_error', message: 'invalid id.' });
+  }
+  try {
+    const { rowCount } = await dbPool.query(
+      'DELETE FROM subject_lineamientos WHERE id = $1 AND user_id = $2 AND subject = $3',
+      [id, userId, subject]
+    );
+    if (!rowCount) return res.status(404).json({ error: 'not_found' });
+    return res.json({ ok: true });
+  } catch (err) {
+    logger.error('DELETE /curriculum/:subject/lineamientos/:id error', { subject, id, err: err.message });
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+// GET /curriculum/:subject/metadata-extractions
+curriculumRouter.get('/curriculum/:subject/metadata-extractions', async (req, res) => {
+  const { subject } = req.params;
+  const userId = req.user.id;
+  try {
+    const { rows } = await dbPool.query(
+      `SELECT id, source_document_id, source_note_id, extracted_at,
+              exam_dates_found, exam_dates_inserted,
+              lineamientos_found, lineamientos_inserted, status
+       FROM course_metadata_extraction_log
+       WHERE user_id = $1 AND subject = $2
+       ORDER BY extracted_at DESC
+       LIMIT 50`,
+      [userId, subject]
+    );
+    return res.json({ extractions: rows });
+  } catch (err) {
+    logger.error('GET /curriculum/:subject/metadata-extractions error', { subject, err: err.message });
     return res.status(500).json({ error: 'server_error', message: err.message });
   }
 });
