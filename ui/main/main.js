@@ -7350,7 +7350,8 @@ function highlightConceptTerms(rawText, label) {
 async function showConceptExcerpt(container, documentId, clusterId, conceptLabel) {
   container.innerHTML = '<p class="schema-loading">Cargando fragmento…</p>';
   try {
-    const params = new URLSearchParams({ label: conceptLabel });
+    const params = new URLSearchParams();
+    if (conceptLabel) params.set('label', conceptLabel);
     if (clusterId) params.set('cluster_id', clusterId);
     const headers = {};
     if (Auth.getToken()) headers['Authorization'] = 'Bearer ' + Auth.getToken();
@@ -7409,14 +7410,10 @@ function showSchemaInterstitial(documentId, finishedClusterId, finishedClusterNa
   document.body.appendChild(overlay);
   requestAnimationFrame(() => overlay.classList.add('schema-interstitial--visible'));
 
-  // Show a ~100-word excerpt from the original document about the concept just reviewed
-  if (finishedConceptLabel) {
-    const schemaContainer = document.getElementById('schema-interstitial-schema');
-    if (schemaContainer) showConceptExcerpt(schemaContainer, documentId, finishedClusterId, finishedConceptLabel);
-  } else {
-    const schemaContainer = document.getElementById('schema-interstitial-schema');
-    if (schemaContainer) schemaContainer.innerHTML = '';
-  }
+  // Show a ~100-word excerpt from the original document about the concept just reviewed.
+  // finishedConceptLabel may be null for old cards — backend falls back to a random concept from the cluster.
+  const schemaContainer = document.getElementById('schema-interstitial-schema');
+  if (schemaContainer) showConceptExcerpt(schemaContainer, documentId, finishedClusterId, finishedConceptLabel);
 
   // ── Commented: concept map rendering (replaced by document excerpt) ──
   // const tryRenderSchema = async (retriesLeft) => { ... };
