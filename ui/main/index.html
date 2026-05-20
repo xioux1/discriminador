@@ -172,6 +172,22 @@
 
               <hr style="margin:16px 0">
 
+              <!-- ── Tarjetas nuevas ───────────────────────────────────────── -->
+              <hr style="margin:16px 0">
+              <h4 class="curriculum-section-title">Tarjetas nuevas</h4>
+              <div style="margin-bottom:14px">
+                <label for="curriculum-learning-steps" style="display:block;font-size:0.82rem;color:var(--text-muted);margin-bottom:4px">Pasos de aprendizaje</label>
+                <input type="text" id="curriculum-learning-steps" placeholder="Ej: 1m 10m" style="width:100%;box-sizing:border-box">
+                <p style="font-size:0.78rem;color:var(--text-muted);margin:4px 0 0">Tiempos separados por espacio (s, m, h, d). Ej: <code>1m 10m</code>. Las tarjetas nuevas o falladas vuelven a aparecer en la sesión según estos pasos.</p>
+              </div>
+              <div>
+                <label for="curriculum-insertion-order" style="display:block;font-size:0.82rem;color:var(--text-muted);margin-bottom:4px">Orden de inserción</label>
+                <select id="curriculum-insertion-order" style="max-width:280px">
+                  <option value="sequential">Secuencial (tarjetas más antiguas primero)</option>
+                  <option value="random">Aleatorio</option>
+                </select>
+              </div>
+
               <!-- ── Auto Advance ─────────────────────────────────────────── -->
               <hr style="margin:16px 0">
               <h4 class="curriculum-section-title">Auto Advance</h4>

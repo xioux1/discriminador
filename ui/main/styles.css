@@ -1164,6 +1164,12 @@ textarea:focus, input[type="text"]:focus, select:focus {
   border-color: rgba(100, 155, 125, 0.45);
 }
 
+.study-card-badge--learning {
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+  border-color: rgba(245, 158, 11, 0.40);
+}
+
 .study-card-parent-context {
   background: var(--bg);
   border-left: 3px solid var(--border);

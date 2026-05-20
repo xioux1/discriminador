@@ -358,7 +358,7 @@ schedulerRouter.get('/scheduler/session', async (req, res) => {
 // check_fail_ids: IDs from binary_check_log for negative in-session checks.
 //   When non-empty and final grade is negative, an extra ease penalty applies.
 schedulerRouter.post('/scheduler/review', async (req, res) => {
-  const { card_id, micro_card_id, grade, concept_gaps = [], response_time_ms, review_time_ms, user_answer = '', check_fail_ids = [], variant_prompt_text, variant_expected_answer_text, variant_type, variant_id, skip_archive } = req.body || {};
+  const { card_id, micro_card_id, grade, concept_gaps = [], response_time_ms, review_time_ms, user_answer = '', check_fail_ids = [], variant_prompt_text, variant_expected_answer_text, variant_type, variant_id, skip_archive, in_learning, learning_step_seconds } = req.body || {};
   const userId = req.user.id;
 
   const VALID_GRADES = new Set(['pass', 'fail', 'review', 'again', 'hard', 'good', 'easy']);
@@ -382,7 +382,8 @@ schedulerRouter.post('/scheduler/review', async (req, res) => {
     } else if (card_id) {
       const checkFailIds = Array.isArray(check_fail_ids) ? check_fail_ids.map(Number).filter(Boolean) : [];
       const parsedVariantId = Number(variant_id) || null;
-      return await reviewCard(res, Number(card_id), effectiveGrade, concept_gaps, rtMs, rvtMs, userId, user_answer, checkFailIds, variant_prompt_text, variant_expected_answer_text, variant_type, parsedVariantId);
+      const stepSecs = in_learning && Number.isFinite(Number(learning_step_seconds)) ? Number(learning_step_seconds) : null;
+      return await reviewCard(res, Number(card_id), effectiveGrade, concept_gaps, rtMs, rvtMs, userId, user_answer, checkFailIds, variant_prompt_text, variant_expected_answer_text, variant_type, parsedVariantId, stepSecs);
     }
     return res.status(422).json({
       error: 'validation_error',
@@ -459,7 +460,7 @@ async function autoGenerateVariant(cardId, card, userId) {
 }
 
 // ─── Internal: review a full card ────────────────────────────────────────────
-async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, reviewTimeMs, userId, userAnswer = '', checkFailIds = [], variantPromptText, variantExpectedAnswerText, variantType, variantId = null) {
+async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, reviewTimeMs, userId, userAnswer = '', checkFailIds = [], variantPromptText, variantExpectedAnswerText, variantType, variantId = null, learningStepSeconds = null) {
   const checkFailCount = checkFailIds.length;
   const { rows } = await dbPool.query(
     'SELECT * FROM cards WHERE id = $1 AND user_id = $2 AND archived_at IS NULL AND suspended_at IS NULL',
@@ -482,6 +483,16 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
     grade,
     isNew: card.review_count === 0
   });
+
+  // Learning step override: card stays in the learning queue, not full FSRS interval.
+  if (learningStepSeconds !== null) {
+    const stepMs = learningStepSeconds * 1000;
+    schedule = {
+      ...schedule,
+      interval_days: learningStepSeconds / 86400,
+      next_review_at: new Date(Date.now() + stepMs)
+    };
+  }
 
   // Penalty when the student got binary-check errors during this card.
   // Applied regardless of final grade: a "good" with multiple Verificar errors

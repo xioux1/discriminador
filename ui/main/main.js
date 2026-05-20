@@ -5298,6 +5298,17 @@ async function getAutoadvanceConfig(subject) {
   }
 }
 
+function parseLearningSteps(text) {
+  if (!text || typeof text !== 'string') return [60, 600];
+  const units = { s: 1, m: 60, h: 3600, d: 86400 };
+  const steps = [];
+  for (const token of text.trim().split(/\s+/)) {
+    const m = token.match(/^(\d+(?:\.\d+)?)(s|m|h|d)?$/i);
+    if (m) steps.push(parseFloat(m[1]) * (units[(m[2] || 'm').toLowerCase()] ?? 60));
+  }
+  return steps.length ? steps : [60, 600];
+}
+
 function clearAutoadvanceTimers() {
   if (studyState.autoadvanceQuestionTimeout) {
     clearTimeout(studyState.autoadvanceQuestionTimeout);
@@ -5644,21 +5655,42 @@ async function _doStartStudySession() {
   const micros = (data.micro_cards ?? []).map((m) => ({ type: 'micro', data: m }));
   const cards  = (data.cards ?? []).map((c) => ({ type: 'card', data: c }));
 
-  const sortByPerformance = (items) => items.slice().sort((a, b) => {
-    const da = a.data, db = b.data;
-    if (studyState.voiceMode) {
-      const aTime = da.avg_review_time_ms ?? Infinity;
-      const bTime = db.avg_review_time_ms ?? Infinity;
-      return aTime - bTime;
+  const subjectForConfig = briefingState.selectedSubject ?? null;
+  const subjectCfg = await getAutoadvanceConfig(subjectForConfig);
+  const insertionOrder = subjectCfg?.new_card_insertion_order ?? 'sequential';
+
+  const shuffleArray = (arr) => {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
     }
-    const aNew = (da.review_count ?? 0) === 0;
-    const bNew = (db.review_count ?? 0) === 0;
-    if (aNew !== bNew) return aNew ? -1 : 1;
-    const scoreOf = (d) => d.pass_count != null && d.review_count
-      ? d.pass_count / d.review_count
-      : (d.ease_factor ?? 2.5);
-    return scoreOf(da) - scoreOf(db);
-  });
+    return a;
+  };
+
+  const sortByPerformance = (items) => {
+    const sorted = items.slice().sort((a, b) => {
+      const da = a.data, db = b.data;
+      if (studyState.voiceMode) {
+        const aTime = da.avg_review_time_ms ?? Infinity;
+        const bTime = db.avg_review_time_ms ?? Infinity;
+        return aTime - bTime;
+      }
+      const aNew = (da.review_count ?? 0) === 0;
+      const bNew = (db.review_count ?? 0) === 0;
+      if (aNew !== bNew) return aNew ? -1 : 1;
+      const scoreOf = (d) => d.pass_count != null && d.review_count
+        ? d.pass_count / d.review_count
+        : (d.ease_factor ?? 2.5);
+      return scoreOf(da) - scoreOf(db);
+    });
+    if (insertionOrder === 'random') {
+      const newCards = sorted.filter(i => (i.data.review_count ?? 0) === 0);
+      const reviewCards = sorted.filter(i => (i.data.review_count ?? 0) > 0);
+      return [...shuffleArray(newCards), ...reviewCards];
+    }
+    return sorted;
+  };
   // Group micros by parent card so each card is immediately followed by its micros.
   const microsByParent = {};
   for (const m of micros) {
@@ -5880,11 +5912,19 @@ function showStudyCard() {
   if (item.type === 'micro') {
     cardBadges.push('<span class="study-card-badge study-card-badge--micro">Micro-concepto</span>');
   } else {
-    if (Number(item.data.review_count) === 0) {
-      cardBadges.push('<span class="study-card-badge study-card-badge--cluster-new">Cluster nuevo</span>');
-    }
-    if (item.data.variant_id != null && Number(item.data.variant_review_count ?? 0) === 0) {
-      cardBadges.push('<span class="study-card-badge study-card-badge--variant-new">Variante nueva</span>');
+    if (item.data._learningStep !== undefined) {
+      const cfg = autoadvanceConfigCache[item.data.subject ?? null] ?? null;
+      const steps = parseLearningSteps(cfg?.learning_steps ?? '1m 10m');
+      const stepNum = item.data._learningStep + 1;
+      const totalSteps = steps.length;
+      cardBadges.push(`<span class="study-card-badge study-card-badge--learning">Aprendiendo (${stepNum}/${totalSteps})</span>`);
+    } else {
+      if (Number(item.data.review_count) === 0) {
+        cardBadges.push('<span class="study-card-badge study-card-badge--cluster-new">Cluster nuevo</span>');
+      }
+      if (item.data.variant_id != null && Number(item.data.variant_review_count ?? 0) === 0) {
+        cardBadges.push('<span class="study-card-badge study-card-badge--variant-new">Variante nueva</span>');
+      }
     }
   }
   if (studyState.voiceMode) {
@@ -7416,6 +7456,55 @@ async function handleStudyNextCard() {
       ];
     }
   }
+
+  // ── Learning steps (Anki-style new-card re-queue) ──────────────────────────
+  if (grade && item.type === 'card') {
+    const isNewCard  = (item.data.review_count ?? 0) === 0;
+    const inLearning = item.data._learningStep !== undefined;
+    if (isNewCard || inLearning) {
+      const subjectKey  = item.data.subject ?? null;
+      const cfg         = autoadvanceConfigCache[subjectKey] ?? null;
+      const steps       = parseLearningSteps(cfg?.learning_steps ?? '1m 10m');
+      const g           = normalizeSuggestedGrade(grade);
+      const curStep     = item.data._learningStep ?? 0;
+      let nextStep      = curStep;
+      let graduate      = false;
+      if (g === 'EASY') {
+        graduate = true;
+      } else if (g === 'GOOD') {
+        nextStep = curStep + 1;
+        if (nextStep >= steps.length) graduate = true;
+      }
+      const stepSeconds = graduate ? null : steps[nextStep];
+      postJson('/scheduler/review', {
+        card_id:          item.data.id,
+        grade,
+        concept_gaps:     gaps,
+        check_fail_ids:   studyState.checkFails,
+        response_time_ms: studyState.responseTimeMs || undefined,
+        review_time_ms:   studyState.reviewTimeMs   || undefined,
+        user_answer:      studyState.currentEvalContext?.user_answer_text || '',
+        variant_id:       item.data.variant_id || undefined,
+        ...(stepSeconds !== null ? { in_learning: true, learning_step_seconds: stepSeconds } : {})
+      }).then(() => loadAgenda()).catch((err) => console.warn('Learning step review failed:', err.message));
+      if (!graduate) {
+        studyState.queue.push({ type: 'card', data: { ...item.data, _learningStep: nextStep } });
+        persistStudySession();
+      }
+      studyState.results.push({
+        grade: grade || 'uncertain', type: item.type, concept: null,
+        prompt_text: item.data.prompt_text || '',
+        expected_answer_text: item.data.expected_answer_text || '',
+        subject: item.data.subject || '',
+        user_answer: studyState.currentEvalContext?.user_answer_text || '',
+        concept_gaps: gaps || [],
+      });
+      persistStudySession();
+      advanceStudyCard();
+      return;
+    }
+  }
+  // ── End learning steps ────────────────────────────────────────────────────
 
   // In exam mode: skip all micro-card generation (evaluation only).
   const shouldGenerateMicros = Boolean(grade && item.type === 'card' && !studyState.examMode);
@@ -9363,6 +9452,8 @@ async function openCurriculumModal(subject) {
     document.querySelector('#curriculum-micro-count-hard').value  = data.config?.micro_count_hard  ?? '';
     document.querySelector('#curriculum-micro-count-good').value  = data.config?.micro_count_good  ?? '';
     document.querySelector('#curriculum-micro-count-easy').value  = data.config?.micro_count_easy  ?? '';
+    document.querySelector('#curriculum-learning-steps').value    = data.config?.learning_steps           ?? '1m 10m';
+    document.querySelector('#curriculum-insertion-order').value   = data.config?.new_card_insertion_order  ?? 'sequential';
     const aaEnabled = data.config?.autoadvance_enabled ?? false;
     document.querySelector('#curriculum-autoadvance-enabled').checked = aaEnabled;
     document.querySelector('#curriculum-autoadvance-question-secs').value = data.config?.autoadvance_question_seconds ?? '';
@@ -9391,6 +9482,8 @@ async function openCurriculumModal(subject) {
     document.querySelector('#curriculum-micro-count-hard').value  = '';
     document.querySelector('#curriculum-micro-count-good').value  = '';
     document.querySelector('#curriculum-micro-count-easy').value  = '';
+    document.querySelector('#curriculum-learning-steps').value    = '1m 10m';
+    document.querySelector('#curriculum-insertion-order').value   = 'sequential';
     document.querySelector('#curriculum-autoadvance-enabled').checked = false;
     document.querySelector('#curriculum-autoadvance-question-secs').value = '';
     document.querySelector('#curriculum-autoadvance-answer-secs').value   = '';
@@ -9462,6 +9555,8 @@ document.querySelector('#curriculum-save-btn').addEventListener('click', async (
       micro_count_hard:             parseMicroCountInput('#curriculum-micro-count-hard'),
       micro_count_good:             parseMicroCountInput('#curriculum-micro-count-good'),
       micro_count_easy:             parseMicroCountInput('#curriculum-micro-count-easy'),
+      learning_steps:               document.querySelector('#curriculum-learning-steps').value.trim() || '1m 10m',
+      new_card_insertion_order:     document.querySelector('#curriculum-insertion-order').value,
       autoadvance_enabled:          document.querySelector('#curriculum-autoadvance-enabled').checked,
       autoadvance_question_seconds: document.querySelector('#curriculum-autoadvance-question-secs').value.trim() !== ''
         ? parseFloat(document.querySelector('#curriculum-autoadvance-question-secs').value)
