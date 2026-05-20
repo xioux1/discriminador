@@ -204,35 +204,50 @@ router.get('/api/documents/:id/concept-excerpt', async (req, res, next) => {
   }
 
   const { label, cluster_id } = req.query;
-  if (!label) {
-    return res.status(400).json({ error: 'missing_label', message: 'label query parameter required.' });
+  if (!label && (!cluster_id || !UUID_RE.test(cluster_id))) {
+    return res.status(400).json({ error: 'missing_params', message: 'Provide label and/or cluster_id.' });
   }
 
   try {
     let rows = [];
 
-    // Prefer the concept from the specific cluster
-    if (cluster_id && UUID_RE.test(cluster_id)) {
-      const result = await dbPool.query(
-        `SELECT label, definition, source_chunk, evidence
-         FROM concepts
-         WHERE document_id = $1 AND cluster_id = $2 AND LOWER(label) = LOWER($3)
-           AND status = 'accepted'
-         ORDER BY created_at ASC LIMIT 1`,
-        [documentId, cluster_id, label]
-      );
-      rows = result.rows;
+    if (label) {
+      // Prefer the concept from the specific cluster
+      if (cluster_id && UUID_RE.test(cluster_id)) {
+        const result = await dbPool.query(
+          `SELECT label, definition, source_chunk, evidence
+           FROM concepts
+           WHERE document_id = $1 AND cluster_id = $2 AND LOWER(label) = LOWER($3)
+             AND status = 'accepted'
+           ORDER BY created_at ASC LIMIT 1`,
+          [documentId, cluster_id, label]
+        );
+        rows = result.rows;
+      }
+
+      // Fallback: any accepted concept in this document with matching label
+      if (!rows.length) {
+        const result = await dbPool.query(
+          `SELECT label, definition, source_chunk, evidence
+           FROM concepts
+           WHERE document_id = $1 AND LOWER(label) = LOWER($2)
+             AND status = 'accepted'
+           ORDER BY created_at ASC LIMIT 1`,
+          [documentId, label]
+        );
+        rows = result.rows;
+      }
     }
 
-    // Fallback: any accepted concept in this document with matching label
-    if (!rows.length) {
+    // No label (or label not found): pick a random concept from the cluster
+    if (!rows.length && cluster_id && UUID_RE.test(cluster_id)) {
       const result = await dbPool.query(
         `SELECT label, definition, source_chunk, evidence
          FROM concepts
-         WHERE document_id = $1 AND LOWER(label) = LOWER($2)
-           AND status = 'accepted'
-         ORDER BY created_at ASC LIMIT 1`,
-        [documentId, label]
+         WHERE document_id = $1 AND cluster_id = $2 AND status = 'accepted'
+           AND source_chunk IS NOT NULL AND source_chunk <> ''
+         ORDER BY RANDOM() LIMIT 1`,
+        [documentId, cluster_id]
       );
       rows = result.rows;
     }
