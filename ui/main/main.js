@@ -6004,7 +6004,10 @@ function showStudyCard() {
     if (isListeningVariant || isCorruptedChinesePrompt) {
       // Hide the text prompt; show the listening bar and auto-play TTS.
       promptEl.innerHTML = '';
-      _ttsListeningText = item.data.prompt_text;
+      // Use whichever field contains Chinese for TTS (prompt may be Spanish for vocab cards)
+      _ttsListeningText = hasChinese(item.data.prompt_text || '')
+        ? item.data.prompt_text
+        : (item.data.expected_answer_text || '');
       if (listeningBar) listeningBar.classList.remove('hidden');
       if (getTTSEnabled()) playChineseTTS(_ttsListeningText, '#study-listening-replay-btn');
     } else {
