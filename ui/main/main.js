@@ -4669,13 +4669,20 @@ function bindStudyKeyboardShortcuts() {
       if (!sessionVisible) return;
 
       if (event.key === 'Enter') {
-        // Stage 2: result is visible → accept suggestion.
+        // Stage 2: result is visible → accept suggestion or advance (Chinese).
         const resultVisible = document.querySelector('#study-result-block')?.offsetParent !== null;
         if (resultVisible) {
           const acceptBtn = document.querySelector('#study-decision-block [data-study-action="accept"]');
           if (acceptBtn && !acceptBtn.disabled && acceptBtn.offsetParent !== null) {
             event.preventDefault();
             acceptBtn.click();
+            return;
+          }
+          // Chinese result: decision-block is hidden but currentDecision is pre-set → advance.
+          const nextBtn = document.querySelector('#study-next-btn');
+          if (nextBtn && !nextBtn.disabled && nextBtn.offsetParent !== null && studyState.currentDecision) {
+            event.preventDefault();
+            nextBtn.click();
             return;
           }
         }
