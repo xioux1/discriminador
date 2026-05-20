@@ -5255,7 +5255,129 @@ const studyState = {
   lastCardClusterName: null,
   lastCardDocumentId: null,
   lastCardConceptLabel: null,
+  // Auto Advance
+  autoadvanceQuestionTimeout: null,
+  autoadvanceAnswerTimeout: null,
+  autoadvanceTickInterval: null,
 };
+
+// Cache de configs de autoadvance por materia para evitar fetches repetidos
+const autoadvanceConfigCache = {};
+
+async function getAutoadvanceConfig(subject) {
+  if (!subject) return null;
+  if (autoadvanceConfigCache[subject] !== undefined) return autoadvanceConfigCache[subject];
+  try {
+    const data = await getJson(`/curriculum/${encodeURIComponent(subject)}`);
+    const cfg = data?.config ?? null;
+    autoadvanceConfigCache[subject] = cfg;
+    return cfg;
+  } catch (_) {
+    autoadvanceConfigCache[subject] = null;
+    return null;
+  }
+}
+
+function clearAutoadvanceTimers() {
+  if (studyState.autoadvanceQuestionTimeout) {
+    clearTimeout(studyState.autoadvanceQuestionTimeout);
+    studyState.autoadvanceQuestionTimeout = null;
+  }
+  if (studyState.autoadvanceAnswerTimeout) {
+    clearTimeout(studyState.autoadvanceAnswerTimeout);
+    studyState.autoadvanceAnswerTimeout = null;
+  }
+  if (studyState.autoadvanceTickInterval) {
+    clearInterval(studyState.autoadvanceTickInterval);
+    studyState.autoadvanceTickInterval = null;
+  }
+  document.querySelector('#study-autoadvance-question-bar')?.classList.add('hidden');
+  document.querySelector('#study-autoadvance-answer-bar')?.classList.add('hidden');
+}
+
+function startAutoadvanceCountdown(barId, fillId, labelId, seconds, onExpire) {
+  const bar   = document.querySelector(`#${barId}`);
+  const fill  = document.querySelector(`#${fillId}`);
+  const label = document.querySelector(`#${labelId}`);
+  if (!bar || !fill || !label) return null;
+
+  let remaining = seconds;
+  fill.style.transition = 'none';
+  fill.style.width = '100%';
+  label.textContent = `${Math.ceil(remaining)}s`;
+  bar.classList.remove('hidden');
+
+  // Trigger reflow so the CSS transition picks up from 100%
+  void fill.offsetWidth;
+  fill.style.transition = `width ${seconds}s linear`;
+  fill.style.width = '0%';
+
+  const tick = setInterval(() => {
+    remaining -= 1;
+    if (remaining <= 0) {
+      label.textContent = '0s';
+    } else {
+      label.textContent = `${Math.ceil(remaining)}s`;
+    }
+  }, 1000);
+
+  const timeout = setTimeout(() => {
+    clearInterval(tick);
+    bar.classList.add('hidden');
+    onExpire();
+  }, seconds * 1000);
+
+  return { timeout, tick };
+}
+
+function startQuestionAutoadvance(seconds, cardEpoch) {
+  const handles = startAutoadvanceCountdown(
+    'study-autoadvance-question-bar',
+    'study-autoadvance-question-fill',
+    'study-autoadvance-question-label',
+    seconds,
+    () => {
+      if (studyState.isPaused) return;
+      // Guard: only fire if still on the same card
+      const currentItem = studyState.queue[studyState.index];
+      if (!currentItem || (currentItem._epoch ?? studyState.index) !== cardEpoch) return;
+      const evalBtn = document.querySelector('#study-eval-btn');
+      if (evalBtn && !evalBtn.disabled && evalBtn.offsetParent !== null) evalBtn.click();
+    }
+  );
+  if (handles) {
+    studyState.autoadvanceQuestionTimeout = handles.timeout;
+    studyState.autoadvanceTickInterval    = handles.tick;
+  }
+}
+
+function startAnswerAutoadvance(seconds, action, cardEpoch) {
+  const handles = startAutoadvanceCountdown(
+    'study-autoadvance-answer-bar',
+    'study-autoadvance-answer-fill',
+    'study-autoadvance-answer-label',
+    seconds,
+    () => {
+      if (studyState.isPaused) return;
+      const currentItem = studyState.queue[studyState.index];
+      if (!currentItem || (currentItem._epoch ?? studyState.index) !== cardEpoch) return;
+      // Override decision with the configured action grade then advance
+      const validGrades = ['again', 'hard', 'good', 'easy'];
+      const grade = validGrades.includes(action) ? action : 'again';
+      if (!studyState.currentDecision) {
+        studyState.currentDecision = { finalGrade: grade, source: 'autoadvance' };
+      }
+      const nextBtn = document.querySelector('#study-next-btn');
+      if (nextBtn && !nextBtn.disabled && nextBtn.offsetParent !== null) nextBtn.click();
+    }
+  );
+  if (handles) {
+    studyState.autoadvanceAnswerTimeout = handles.timeout;
+    // Store tick in a separate slot so it doesn't overwrite question tick
+    if (studyState.autoadvanceTickInterval) clearInterval(studyState.autoadvanceTickInterval);
+    studyState.autoadvanceTickInterval = handles.tick;
+  }
+}
 
 function maybeSendBreakNudge() {
   if (!userSettings.realtime_break_notifications_enabled) return;
@@ -5894,6 +6016,9 @@ function showStudyCard() {
   const studyCompilerOut   = document.querySelector('#study-compiler-output');
   if (studyCompilerOut) { studyCompilerOut.className = 'sql-compiler-output hidden'; studyCompilerOut.textContent = ''; }
 
+  // Clear any autoadvance timers from the previous card
+  clearAutoadvanceTimers();
+
   // Start timer (reset pause state for new card)
   if (studyState.timerInterval) clearInterval(studyState.timerInterval);
   if (studyState.isPaused) {
@@ -5916,6 +6041,17 @@ function showStudyCard() {
   if (_pauseBtn) { _pauseBtn.textContent = 'Pausar'; _pauseBtn.classList.remove('study-pause-btn--active'); }
   document.querySelector('#study-pause-overlay')?.classList.add('hidden');
   document.querySelector('#study-answer-input').disabled = false;
+
+  // Auto Advance — question phase
+  const _aaCardEpoch = studyState.index;
+  getAutoadvanceConfig(subject).then((cfg) => {
+    if (!cfg?.autoadvance_enabled) return;
+    const qSecs = parseFloat(cfg.autoadvance_question_seconds);
+    if (!Number.isFinite(qSecs) || qSecs <= 0) return;
+    // Only start if we're still on the same card
+    if (studyState.index !== _aaCardEpoch) return;
+    startQuestionAutoadvance(qSecs, _aaCardEpoch);
+  });
 
   // Update subject for dictation (attached once in initStudyTab)
   document.querySelector('#study-dictation-btn').dataset.subject = subject || '';
@@ -6483,6 +6619,27 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
 
     document.querySelector('#study-answer-block').classList.add('hidden');
     document.querySelector('#study-result-block').classList.remove('hidden');
+
+    // Auto Advance — answer phase (question timer is done, start answer timer)
+    {
+      const _aaIdx = studyState.index;
+      const _aaSubject = studyState.queue[_aaIdx]?.data?.subject
+        ?? studyState.queue[_aaIdx]?.data?.parent_subject
+        ?? null;
+      getAutoadvanceConfig(_aaSubject).then((cfg) => {
+        if (!cfg?.autoadvance_enabled) return;
+        const aSecs = parseFloat(cfg.autoadvance_answer_seconds);
+        if (!Number.isFinite(aSecs) || aSecs <= 0) return;
+        if (studyState.index !== _aaIdx) return;
+        // Cancel question timer in case eval was triggered manually before it fired
+        if (studyState.autoadvanceQuestionTimeout) {
+          clearTimeout(studyState.autoadvanceQuestionTimeout);
+          studyState.autoadvanceQuestionTimeout = null;
+        }
+        document.querySelector('#study-autoadvance-question-bar')?.classList.add('hidden');
+        startAnswerAutoadvance(aSecs, cfg.autoadvance_answer_action ?? 'again', _aaIdx);
+      });
+    }
 
     // Show accumulated conceptual error tags from Verificar clicks
     if (studyState.checkErrorLabels.length > 0) {
@@ -7448,6 +7605,7 @@ function showSchemaInterstitial(documentId, finishedClusterId, finishedClusterNa
 }
 
 async function advanceStudyCard() {
+  clearAutoadvanceTimers();
   const currentItem = studyState.queue[studyState.index];
   studyState.index++;
 
@@ -9092,6 +9250,10 @@ document.querySelector('#curriculum-auto-variants-enabled')?.addEventListener('c
   document.querySelector('#auto-variants-limit-row').style.display = e.target.checked ? '' : 'none';
 });
 
+document.querySelector('#curriculum-autoadvance-enabled')?.addEventListener('change', (e) => {
+  document.querySelector('#autoadvance-settings-row').style.display = e.target.checked ? '' : 'none';
+});
+
 async function openCurriculumModal(subject) {
   document.querySelector('#curriculum-modal-title').textContent = `Configurar: ${subject}`;
   document.querySelector('#curriculum-modal').classList.remove('hidden');
@@ -9126,6 +9288,12 @@ async function openCurriculumModal(subject) {
     document.querySelector('#curriculum-micro-count-hard').value  = data.config?.micro_count_hard  ?? '';
     document.querySelector('#curriculum-micro-count-good').value  = data.config?.micro_count_good  ?? '';
     document.querySelector('#curriculum-micro-count-easy').value  = data.config?.micro_count_easy  ?? '';
+    const aaEnabled = data.config?.autoadvance_enabled ?? false;
+    document.querySelector('#curriculum-autoadvance-enabled').checked = aaEnabled;
+    document.querySelector('#curriculum-autoadvance-question-secs').value = data.config?.autoadvance_question_seconds ?? '';
+    document.querySelector('#curriculum-autoadvance-answer-secs').value   = data.config?.autoadvance_answer_seconds   ?? '';
+    document.querySelector('#curriculum-autoadvance-action').value        = data.config?.autoadvance_answer_action    ?? 'again';
+    document.querySelector('#autoadvance-settings-row').style.display     = aaEnabled ? '' : 'none';
     renderExamDatesList(data.exam_dates || [], subject);
     renderExamsList(data.exams || [], subject);
     renderClassNotesList(classNotesData.class_notes || [], subject);
@@ -9148,6 +9316,11 @@ async function openCurriculumModal(subject) {
     document.querySelector('#curriculum-micro-count-hard').value  = '';
     document.querySelector('#curriculum-micro-count-good').value  = '';
     document.querySelector('#curriculum-micro-count-easy').value  = '';
+    document.querySelector('#curriculum-autoadvance-enabled').checked = false;
+    document.querySelector('#curriculum-autoadvance-question-secs').value = '';
+    document.querySelector('#curriculum-autoadvance-answer-secs').value   = '';
+    document.querySelector('#curriculum-autoadvance-action').value        = 'again';
+    document.querySelector('#autoadvance-settings-row').style.display     = 'none';
     renderClassNotesList([], subject);
   }
 
@@ -9213,8 +9386,18 @@ document.querySelector('#curriculum-save-btn').addEventListener('click', async (
       micro_count_again:            parseMicroCountInput('#curriculum-micro-count-again'),
       micro_count_hard:             parseMicroCountInput('#curriculum-micro-count-hard'),
       micro_count_good:             parseMicroCountInput('#curriculum-micro-count-good'),
-      micro_count_easy:             parseMicroCountInput('#curriculum-micro-count-easy')
+      micro_count_easy:             parseMicroCountInput('#curriculum-micro-count-easy'),
+      autoadvance_enabled:          document.querySelector('#curriculum-autoadvance-enabled').checked,
+      autoadvance_question_seconds: document.querySelector('#curriculum-autoadvance-question-secs').value.trim() !== ''
+        ? parseFloat(document.querySelector('#curriculum-autoadvance-question-secs').value)
+        : null,
+      autoadvance_answer_seconds:   document.querySelector('#curriculum-autoadvance-answer-secs').value.trim() !== ''
+        ? parseFloat(document.querySelector('#curriculum-autoadvance-answer-secs').value)
+        : null,
+      autoadvance_answer_action:    document.querySelector('#curriculum-autoadvance-action').value
     }, 'PUT');
+    // Invalidate autoadvance cache for this subject so next card fetch is fresh
+    delete autoadvanceConfigCache[subject];
     showToast('Configuración guardada.', 'success');
   } catch (err) {
     showToast(`Error: ${err.message}`, 'error');

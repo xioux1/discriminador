@@ -1226,6 +1226,30 @@ textarea:focus, input[type="text"]:focus, select:focus {
 
 .study-eval-btn { margin-top: 10px; width: 100%; }
 
+.autoadvance-bar {
+  position: relative;
+  height: 6px;
+  background: var(--surface-2, #2a2a2a);
+  border-radius: 3px;
+  margin-top: 8px;
+  overflow: hidden;
+}
+.autoadvance-bar-fill {
+  position: absolute;
+  top: 0; left: 0; bottom: 0;
+  background: var(--accent, #7c6af7);
+  border-radius: 3px;
+  transition: width 1s linear;
+}
+.autoadvance-bar-label {
+  position: absolute;
+  right: 0;
+  top: -18px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .study-card-actions { display: flex; gap: 8px; margin-bottom: 6px; }
 .study-edit-prompt-btn,
 .study-clarify-prompt-btn { font-size: 0.78rem; padding: 2px 8px; }
