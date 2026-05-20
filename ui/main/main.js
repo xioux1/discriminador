@@ -4678,11 +4678,11 @@ function bindStudyKeyboardShortcuts() {
             acceptBtn.click();
             return;
           }
-          // Chinese result: decision-block is hidden but currentDecision is pre-set → advance.
-          const nextBtn = document.querySelector('#study-next-btn');
-          if (nextBtn && !nextBtn.disabled && nextBtn.offsetParent !== null && studyState.currentDecision) {
+          // Chinese result: study-result-quick (and next-btn inside it) is hidden,
+          // but currentDecision is pre-set by the API grade → call handler directly.
+          if (studyState.currentDecision) {
             event.preventDefault();
-            nextBtn.click();
+            handleStudyNextCard();
             return;
           }
         }
