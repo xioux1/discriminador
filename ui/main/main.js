@@ -5964,7 +5964,7 @@ function showStudyCard() {
 
   if (item.type === 'micro') {
     // Show parent card as context so student knows what topic this stems from
-    if (item.data.parent_prompt && !studyState.voiceMode) {
+    if (item.data.parent_prompt && !studyState.voiceMode && !_isChinesePrompt) {
       parentPromptEl.textContent = item.data.parent_prompt;
       parentContextEl.classList.remove('hidden');
     } else {
