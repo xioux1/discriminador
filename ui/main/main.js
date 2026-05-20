@@ -3428,9 +3428,18 @@ function formatPromptForDisplay(text) {
   }).join('');
 }
 
+const SINGLE_HANZI_RE = /^[一-鿿㐀-䶿\u{20000}-\u{2a6df}]$/u;
+
 function renderStudyPrompt(promptEl, promptText) {
   if (!promptEl) return;
-  promptEl.innerHTML = formatPromptForDisplay(promptText);
+  const trimmed = (promptText ?? '').trim();
+  if (SINGLE_HANZI_RE.test(trimmed)) {
+    promptEl.classList.add('study-card-prompt--hanzi-hero');
+    promptEl.textContent = trimmed;
+  } else {
+    promptEl.classList.remove('study-card-prompt--hanzi-hero');
+    promptEl.innerHTML = formatPromptForDisplay(promptText);
+  }
 }
 
 function looksLikeCodeBlock(text = '') {
