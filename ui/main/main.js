@@ -5911,8 +5911,9 @@ function showStudyCard() {
       if (nextExpected) prefetchVoiceFront(nextExpected);
     }
   }
-  badgesEl.innerHTML = studyState.voiceMode ? '' : cardBadges.join('');
-  badgesEl.classList.toggle('hidden', studyState.voiceMode);
+  const _isChinesePrompt = hasChinese(getStudyPromptText(item));
+  badgesEl.innerHTML = (studyState.voiceMode || _isChinesePrompt) ? '' : cardBadges.join('');
+  badgesEl.classList.toggle('hidden', studyState.voiceMode || _isChinesePrompt);
 
   if (item.type === 'micro') {
     // Show parent card as context so student knows what topic this stems from
@@ -5986,9 +5987,12 @@ function showStudyCard() {
   _studyInput.classList.toggle('chinese-input', hasChinese(_expectedForFont));
   document.querySelector('#study-answer-block').classList.remove('hidden');
   document.querySelector('#study-result-block').classList.add('hidden');
+  document.querySelector('#study-chinese-result')?.classList.add('hidden');
   // Auto-focus answer input so the user can type immediately without clicking
   if (!studyState.voiceMode) _studyInput.focus();
   document.querySelector('#study-doubt-section')?.classList.add('hidden');
+  // Restore standard result UI hidden during Chinese mode
+  document.querySelector('.study-result-quick')?.classList.remove('hidden');
   const advancedPanel = document.querySelector('#study-advanced-panel');
   const advancedToggleBtn = document.querySelector('#study-advanced-toggle-btn');
   if (advancedPanel) { advancedPanel.open = false; advancedPanel.classList.remove('hidden'); }
@@ -6340,25 +6344,54 @@ if (_studyVerifyBtn) {
   });
 }
 
+function showChineseResult(expected_answer_text, suggestedGrade) {
+  const chineseResult = document.querySelector('#study-chinese-result');
+  const gradeEl       = document.querySelector('#study-chinese-grade');
+  const expectedEl    = document.querySelector('#study-chinese-expected');
+  if (!chineseResult || !expectedEl) return;
+
+  // Show API grade prominently
+  if (gradeEl && suggestedGrade) {
+    const normalized = normalizeSuggestedGrade(suggestedGrade);
+    gradeEl.textContent = getSuggestedGradeLabel(suggestedGrade);
+    gradeEl.className   = `study-grade-inline study-chinese-grade ${normalized.toLowerCase()}`;
+  }
+
+  const hasCh = hasChinese(expected_answer_text);
+  expectedEl.innerHTML = `
+    ${escHtml(expected_answer_text)}
+    ${hasCh ? '<details class="study-pinyin-details"><summary>Pinyin</summary><p class="study-pinyin-text">…</p></details>' : ''}
+  `;
+
+  if (hasCh) {
+    fetchPinyin(expected_answer_text).then((py) => {
+      const pEl = expectedEl.querySelector('.study-pinyin-text');
+      if (pEl) pEl.textContent = py || '—';
+    }).catch(() => {});
+  }
+
+  chineseResult.classList.remove('hidden');
+  // Hide the standard result UI so only the Chinese block is visible
+  document.querySelector('.study-result-quick')?.classList.add('hidden');
+  document.querySelector('#study-advanced-panel')?.classList.add('hidden');
+}
+
+document.querySelector('#study-result-block').addEventListener('click', async (e) => {
+  const grade = e.target.closest('[data-chinese-grade]')?.dataset?.chineseGrade;
+  if (!grade) return;
+  studyState.currentDecision = { finalGrade: grade.toUpperCase(), source: 'self_grade' };
+  if (studyState.reviewStartTime) {
+    studyState.reviewTimeMs = Date.now() - studyState.reviewStartTime;
+  }
+  await handleStudyNextCard();
+});
+
 document.querySelector('#study-eval-btn').addEventListener('click', async () => {
   const item     = studyState.queue[studyState.index];
   const answer   = MathPreview.serialize(document.querySelector('#study-answer-input')).trim();
   const evalBtn  = document.querySelector('#study-eval-btn');
   // Capture epoch so we can detect card navigation/deletion while the eval fetch is in-flight.
   const evalEpoch = _voiceEpoch;
-
-  if (!answer) return;
-
-  // Stop timer and record response time
-  if (studyState.timerInterval) {
-    clearInterval(studyState.timerInterval);
-    studyState.timerInterval = null;
-  }
-  studyState.responseTimeMs = Date.now() - studyState.cardStartTime - studyState.cardPausedMs;
-
-  evalBtn.disabled = true;
-  evalBtn.textContent = 'Evaluando...';
-  setStudyPromptFeedback('');
 
   let prompt_text, expected_answer_text, subject, grading_rubric;
 
@@ -6375,6 +6408,19 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       ? item.data.grading_rubric
       : undefined;
   }
+
+  if (!answer && !hasChinese(prompt_text)) return;
+
+  // Stop timer and record response time
+  if (studyState.timerInterval) {
+    clearInterval(studyState.timerInterval);
+    studyState.timerInterval = null;
+  }
+  studyState.responseTimeMs = Date.now() - studyState.cardStartTime - studyState.cardPausedMs;
+
+  evalBtn.disabled = true;
+  evalBtn.textContent = 'Evaluando...';
+  setStudyPromptFeedback('');
 
   const normalizedPrompt = normalize(prompt_text || '');
   const normalizedExpected = normalize(expected_answer_text || '');
@@ -6641,6 +6687,13 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
 
     document.querySelector('#study-answer-block').classList.add('hidden');
     document.querySelector('#study-result-block').classList.remove('hidden');
+
+    // Chinese simplified result: show grade + expected answer + grade buttons only
+    if (hasChinese(prompt_text)) {
+      showChineseResult(expected_answer_text, result.suggested_grade);
+      // Pre-accept LLM grade so study-next-btn (Ctrl+Enter) works as quick advance
+      studyState.currentDecision = { finalGrade: normalizeSuggestedGrade(result.suggested_grade).toLowerCase(), source: 'llm_auto' };
+    }
 
     // Auto Advance — answer phase (question timer is done, start answer timer)
     {
