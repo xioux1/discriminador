@@ -1227,6 +1227,50 @@ textarea:focus, input[type="text"]:focus, select:focus {
   word-break: break-word;
 }
 
+/* ── Chinese simplified result ─────────────────────────────────────── */
+.study-chinese-result {
+  padding: 28px 8px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+.study-chinese-grade {
+  font-size: 2rem;
+  font-weight: 900;
+  padding: 6px 24px;
+  border-radius: 999px;
+}
+.study-chinese-expected {
+  font-size: 2.2rem;
+  font-weight: 700;
+  line-height: 1.3;
+  text-align: center;
+  color: var(--text);
+  word-break: break-word;
+}
+.study-chinese-expected .study-pinyin-details {
+  font-size: 0.95rem;
+  font-weight: 400;
+  margin-top: 10px;
+  text-align: center;
+}
+.study-chinese-expected .study-pinyin-text {
+  font-size: 1rem;
+  color: var(--text-muted);
+  margin: 4px 0 0;
+}
+.study-chinese-grade-bar {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.study-chinese-grade-bar .study-grade-btn {
+  padding: 10px 24px;
+  font-size: 1rem;
+}
+
 .study-answer-actions {
   display: flex;
   align-items: center;

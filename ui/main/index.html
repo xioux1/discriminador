@@ -558,6 +558,19 @@
             </div>
 
             <div id="study-result-block" class="study-result-block hidden">
+
+              <!-- ── Resultado chino (UI simplificada) ─────────────────────── -->
+              <div id="study-chinese-result" class="study-chinese-result hidden">
+                <span id="study-chinese-grade" class="study-grade-inline study-chinese-grade"></span>
+                <div id="study-chinese-expected" class="study-chinese-expected"></div>
+                <div class="study-chinese-grade-bar">
+                  <button type="button" class="study-grade-btn grade-again" data-chinese-grade="again">Again</button>
+                  <button type="button" class="study-grade-btn grade-hard"  data-chinese-grade="hard">Hard</button>
+                  <button type="button" class="study-grade-btn grade-good"  data-chinese-grade="good">Good</button>
+                  <button type="button" class="study-grade-btn grade-easy"  data-chinese-grade="easy">Easy</button>
+                </div>
+              </div>
+
               <!-- Explanation Layer — shown after AGAIN/HARD/incorrect answers -->
               <div id="study-explanation-panel" class="study-explanation-panel hidden">
                 <button type="button" id="explanation-close-btn" class="explanation-close-btn" aria-label="Cerrar">✕</button>
