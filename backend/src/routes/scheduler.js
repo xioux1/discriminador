@@ -447,16 +447,16 @@ async function autoGenerateVariant(cardId, card, userId) {
     }
   }
 
-  // For Chinese cards, generate exactly one listening variant (audio-only front).
-  if (isChineseCard(card) && !variantCounts['listening']) {
-    const lv = buildChineseListeningVariant(card);
-    await dbPool.query(
-      `INSERT INTO card_variants (card_id, prompt_text, expected_answer_text, user_id, variant_type)
-       VALUES ($1, $2, $3, $4, 'listening')`,
-      [cardId, lv.prompt_text, lv.expected_answer_text, userId]
-    );
-    console.info('[auto-variant] generated listening', { cardId, subject: card.subject });
-  }
+  // Listening variant generation disabled — Chinese cards use simplified result UI instead.
+  // if (isChineseCard(card) && !variantCounts['listening']) {
+  //   const lv = buildChineseListeningVariant(card);
+  //   await dbPool.query(
+  //     `INSERT INTO card_variants (card_id, prompt_text, expected_answer_text, user_id, variant_type)
+  //      VALUES ($1, $2, $3, $4, 'listening')`,
+  //     [cardId, lv.prompt_text, lv.expected_answer_text, userId]
+  //   );
+  //   console.info('[auto-variant] generated listening', { cardId, subject: card.subject });
+  // }
 }
 
 // ─── Internal: review a full card ────────────────────────────────────────────
