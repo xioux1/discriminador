@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import routes from './routes/index.js';
 import authRouter from './routes/auth.js';
+import commitmentMetricsRouter from './routes/commitment-metrics.js';
 import { requireAuth } from './middleware/auth.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
 
@@ -32,6 +33,7 @@ export function createApp() {
 
   // Public routes (no auth)
   app.use(authRouter);
+  app.use(commitmentMetricsRouter);
   app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
   // All other routes require authentication
