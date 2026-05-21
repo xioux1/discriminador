@@ -100,6 +100,30 @@
                 <p id="exam-date-feedback" style="font-size:0.82rem;margin-top:4px"></p>
               </div>
 
+              <!-- ── Lineamientos de la materia ─────────────────────────────── -->
+              <hr style="margin:16px 0">
+              <div style="display:flex;align-items:baseline;gap:10px">
+                <h4 class="curriculum-section-title" style="margin:0">Lineamientos</h4>
+                <span style="font-size:0.75rem;color:var(--text-muted)">(extraídos automáticamente o agregados a mano)</span>
+              </div>
+              <p style="font-size:0.8rem;color:var(--text-muted);margin:4px 0 8px">TPs, reglas de evaluación, metodología y avisos de la cátedra.</p>
+              <div id="lineamientos-list"></div>
+              <div class="exam-date-form" style="margin-top:8px">
+                <div class="exam-date-row" style="flex-wrap:wrap;gap:6px">
+                  <input type="text" id="new-lineamiento-title" placeholder="Título (ej: TP N°1)" style="flex:2;min-width:140px">
+                  <select id="new-lineamiento-type" style="flex:1;min-width:120px">
+                    <option value="trabajo_practico">Trabajo Práctico</option>
+                    <option value="evaluacion">Evaluación</option>
+                    <option value="metodologia">Metodología</option>
+                    <option value="aviso">Aviso</option>
+                    <option value="general">General</option>
+                  </select>
+                  <input type="date" id="new-lineamiento-due-date" title="Fecha de entrega (opcional)" style="flex:1;min-width:130px">
+                </div>
+                <textarea id="new-lineamiento-content" rows="2" placeholder="Descripción..." style="width:100%;box-sizing:border-box;margin-top:6px;font-size:0.83rem"></textarea>
+                <button type="button" id="lineamiento-add-btn" class="btn-secondary" style="margin-top:6px">+ Agregar lineamiento</button>
+              </div>
+
               <hr style="margin:16px 0">
 
               <!-- ── Ritmo de tarjetas nuevas ───────────────────────────────── -->

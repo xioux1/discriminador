@@ -9428,11 +9428,12 @@ async function openCurriculumModal(subject) {
   document.querySelector('#curriculum-modal-title').textContent = `Configurar: ${subject}`;
   document.querySelector('#curriculum-modal').classList.remove('hidden');
 
-  // Load existing config + class notes + sql standard
+  // Load existing config + class notes + lineamientos + sql standard
   try {
-    const [data, classNotesData] = await Promise.all([
+    const [data, classNotesData, lineamientosData] = await Promise.all([
       getJson(`/curriculum/${encodeURIComponent(subject)}`),
-      getJson(`/curriculum/${encodeURIComponent(subject)}/class-notes`)
+      getJson(`/curriculum/${encodeURIComponent(subject)}/class-notes`),
+      getJson(`/curriculum/${encodeURIComponent(subject)}/lineamientos`),
     ]);
     loadSqlStandard(subject);
     document.querySelector('#curriculum-syllabus').value = data.config?.syllabus_text || '';
@@ -9469,6 +9470,7 @@ async function openCurriculumModal(subject) {
     renderExamDatesList(data.exam_dates || [], subject);
     renderExamsList(data.exams || [], subject);
     renderClassNotesList(classNotesData.class_notes || [], subject);
+    renderLineamientosList(lineamientosData.lineamientos || [], subject);
   } catch (_e) {
     document.querySelector('#curriculum-daily-new-limit').value = '';
     document.querySelector('#curriculum-max-micro-per-card').value = '';
@@ -9496,6 +9498,7 @@ async function openCurriculumModal(subject) {
     document.querySelector('#curriculum-autoadvance-action').value        = 'again';
     document.querySelector('#autoadvance-settings-row').style.display     = 'none';
     renderClassNotesList([], subject);
+    renderLineamientosList([], subject);
   }
 
   // Store current subject in modal
@@ -9671,6 +9674,86 @@ function renderExamDatesList(examDates, subject) {
     });
   });
 }
+
+// ── Lineamientos ──────────────────────────────────────────────────────────────
+
+const LINEAMIENTO_TYPE_LABELS = {
+  trabajo_practico: 'TP',
+  evaluacion: 'Evaluación',
+  metodologia: 'Metodología',
+  aviso: 'Aviso',
+  general: 'General',
+};
+
+const LINEAMIENTO_TYPE_COLORS = {
+  trabajo_practico: '#d97706',
+  evaluacion: '#2563eb',
+  metodologia: '#7c3aed',
+  aviso: '#dc2626',
+  general: 'var(--text-muted)',
+};
+
+function renderLineamientosList(lineamientos, subject) {
+  const el = document.querySelector('#lineamientos-list');
+  if (!lineamientos.length) {
+    el.innerHTML = '<p style="color:var(--text-muted);font-size:0.82rem;margin:0 0 4px">Sin lineamientos cargados.</p>';
+    return;
+  }
+  el.innerHTML = lineamientos.map(l => {
+    const typeLabel = LINEAMIENTO_TYPE_LABELS[l.lineamiento_type] || l.lineamiento_type;
+    const typeColor = LINEAMIENTO_TYPE_COLORS[l.lineamiento_type] || 'var(--text-muted)';
+    const dueDateStr = l.due_date ? ` · Entrega: ${l.due_date.slice(0, 10)}` : '';
+    const sourceTag = (l.source_document_id || l.source_note_id)
+      ? `<span style="font-size:0.72rem;color:var(--text-muted);margin-left:6px">⚡ automático</span>`
+      : '';
+    return `
+      <div class="exam-date-item" style="flex-direction:column;align-items:flex-start;gap:4px;padding:8px 10px">
+        <div style="display:flex;align-items:center;gap:8px;width:100%">
+          <span style="font-size:0.72rem;font-weight:600;color:${typeColor};border:1px solid ${typeColor};border-radius:3px;padding:1px 6px">${escHtml(typeLabel)}</span>
+          <span style="font-weight:600;font-size:0.88rem;flex:1">${escHtml(l.title)}</span>
+          ${sourceTag}
+          <button type="button" class="btn-ghost lin-delete-btn" data-id="${l.id}" data-subject="${escHtml(subject)}" style="font-size:0.72rem;padding:1px 7px;margin-left:auto">Eliminar</button>
+        </div>
+        ${l.content ? `<p style="margin:0;font-size:0.82rem;color:var(--text-muted);white-space:pre-wrap">${escHtml(l.content.slice(0, 300))}${l.content.length > 300 ? '…' : ''}</p>` : ''}
+        ${dueDateStr ? `<span style="font-size:0.75rem;color:var(--text-muted)">${escHtml(dueDateStr)}</span>` : ''}
+      </div>`;
+  }).join('');
+
+  el.querySelectorAll('.lin-delete-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const subj = btn.dataset.subject;
+      try {
+        await deleteJson(`/curriculum/${encodeURIComponent(subj)}/lineamientos/${btn.dataset.id}`);
+        const data = await getJson(`/curriculum/${encodeURIComponent(subj)}/lineamientos`);
+        renderLineamientosList(data.lineamientos || [], subj);
+      } catch (_e) {}
+    });
+  });
+}
+
+document.querySelector('#lineamiento-add-btn').addEventListener('click', async () => {
+  const subject = document.querySelector('#curriculum-modal').dataset.subject;
+  const title   = document.querySelector('#new-lineamiento-title').value.trim();
+  const content = document.querySelector('#new-lineamiento-content').value.trim();
+  const type    = document.querySelector('#new-lineamiento-type').value;
+  const dueDate = document.querySelector('#new-lineamiento-due-date').value || null;
+
+  if (!title) { showToast('El título es obligatorio.', 'error'); return; }
+
+  try {
+    await postJson(`/curriculum/${encodeURIComponent(subject)}/lineamientos`, {
+      title, content, lineamiento_type: type, due_date: dueDate,
+    });
+    showToast('Lineamiento agregado.', 'success');
+    document.querySelector('#new-lineamiento-title').value    = '';
+    document.querySelector('#new-lineamiento-content').value  = '';
+    document.querySelector('#new-lineamiento-due-date').value = '';
+    const data = await getJson(`/curriculum/${encodeURIComponent(subject)}/lineamientos`);
+    renderLineamientosList(data.lineamientos || [], subject);
+  } catch (err) {
+    showToast(`Error: ${err.message}`, 'error');
+  }
+});
 
 // ── Reference exams (historial) ───────────────────────────────────────────────
 
