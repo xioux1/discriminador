@@ -7,6 +7,8 @@ import { logger } from '../utils/logger.js';
 import { uploadMiddleware, UPLOAD_DIR, resolvedExtension } from '../middleware/upload.js';
 import { runVisualPipeline } from '../services/visualProcessor.service.js';
 import { reconstructMarkdown } from '../services/markdownReconstructor.service.js';
+import { getDocumentText } from '../services/conceptExtractor.service.js';
+import { extractAndPersistCourseMetadata } from '../services/courseMetadataExtractor.service.js';
 
 const router = Router();
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -496,6 +498,68 @@ router.post('/api/documents/:id/reset', async (req, res, next) => {
     });
   } catch (err) {
     return next(err);
+  }
+});
+
+// POST /api/documents/backfill-course-metadata
+// One-shot: runs extractAndPersistCourseMetadata on all already-processed documents
+// that don't yet have an entry in course_metadata_extraction_log. Returns 202 immediately;
+// processing happens in the background sequentially to respect rate limits.
+router.post('/api/documents/backfill-course-metadata', async (req, res) => {
+  const userId = req.user.id;
+  try {
+    const { rows: docs } = await dbPool.query(
+      `SELECT d.id, d.subject, d.user_id, d.processing_mode,
+              d.generated_markdown, d.text, d.content, d.file_path,
+              d.visual_processing_status, d.mime_type
+       FROM documents d
+       WHERE d.user_id = $1
+         AND d.subject IS NOT NULL
+         AND (
+           (d.processing_mode IN ('pdf_visual','pptx_visual') AND d.visual_processing_status = 'done' AND d.generated_markdown IS NOT NULL)
+           OR
+           (d.processing_mode = 'pdf_text')
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM course_metadata_extraction_log l
+           WHERE l.source_document_id = d.id
+         )
+       ORDER BY d.created_at DESC`,
+      [userId]
+    );
+
+    logger.info('[backfill] Course metadata backfill queued', { userId, count: docs.length });
+    res.status(202).json({ queued: docs.length, message: `Procesando ${docs.length} documento(s) en segundo plano.` });
+
+    // Process sequentially in background to avoid hammering the LLM API
+    setImmediate(async () => {
+      for (const doc of docs) {
+        try {
+          let text = doc.generated_markdown || doc.text || doc.content || '';
+          if (!text && doc.file_path) {
+            text = await getDocumentText(doc).catch(() => '');
+          }
+          if (!text) {
+            logger.info('[backfill] Skipping doc — no text available', { documentId: doc.id });
+            continue;
+          }
+          await extractAndPersistCourseMetadata(text, {
+            subject: doc.subject,
+            userId: doc.user_id,
+            documentId: doc.id,
+            pool: dbPool,
+          });
+          // Small delay between docs to respect rate limits
+          await new Promise(r => setTimeout(r, 800));
+        } catch (err) {
+          logger.error('[backfill] Error processing document', { documentId: doc.id, err: err.message });
+        }
+      }
+      logger.info('[backfill] Course metadata backfill complete', { userId, processed: docs.length });
+    });
+  } catch (err) {
+    logger.error('[backfill] Failed to queue backfill', { userId, err: err.message });
+    return res.status(500).json({ error: 'server_error', message: err.message });
   }
 });
 

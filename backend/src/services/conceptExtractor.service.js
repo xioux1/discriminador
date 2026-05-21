@@ -257,7 +257,7 @@ export function deduplicateConcepts(concepts, threshold = 0.86) {
 
 // ==================== I/O helpers ====================
 
-async function getDocumentText(document) {
+export async function getDocumentText(document) {
   const docId = document.id;
   const mode  = document.processing_mode;
 
