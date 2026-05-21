@@ -7,6 +7,7 @@ import { logger } from '../utils/logger.js';
 import { analyzeSlide } from './slideAnalyzer.service.js';
 import { reconstructMarkdown } from './markdownReconstructor.service.js';
 import { UPLOAD_DIR, MAX_SLIDES } from '../middleware/upload.js';
+import { extractAndPersistCourseMetadata } from './courseMetadataExtractor.service.js';
 
 const exec = promisify(execCb);
 
@@ -138,7 +139,7 @@ export async function runVisualPipeline(documentId) {
 
   // ── Fetch document ──────────────────────────────────────────────────────────
   const { rows } = await dbPool.query(
-    'SELECT id, file_path, processing_mode, page_count FROM documents WHERE id = $1',
+    'SELECT id, file_path, processing_mode, page_count, subject, user_id FROM documents WHERE id = $1',
     [documentId]
   );
 
@@ -244,6 +245,24 @@ export async function runVisualPipeline(documentId) {
     });
 
     logger.info('[visualProcessor] Pipeline complete', { documentId });
+
+    // Fire-and-forget: extract course metadata (exam dates, lineamientos) from markdown
+    if (document.subject && document.user_id) {
+      dbPool.query('SELECT generated_markdown FROM documents WHERE id = $1', [documentId])
+        .then(({ rows: mdRows }) => {
+          const markdown = mdRows[0]?.generated_markdown;
+          if (markdown) {
+            return extractAndPersistCourseMetadata(markdown, {
+              subject: document.subject,
+              userId: document.user_id,
+              documentId,
+              pool: dbPool,
+            });
+          }
+        })
+        .catch(err => logger.error('[visualProcessor] Course metadata extraction failed',
+          { documentId, err: err.message }));
+    }
   } catch (err) {
     await setFailed(documentId, err.message);
   } finally {
