@@ -3,6 +3,7 @@ import { createEmbedding as voyageEmbed } from '../utils/voyage-embed.js';
 import { dbPool } from '../db/client.js';
 import { logger } from '../utils/logger.js';
 import { withRetry } from '../utils/retry.js';
+import { extractAndPersistCourseMetadata } from './courseMetadataExtractor.service.js';
 import { detectDocumentStructure } from './documentStructure.service.js';
 import { createSectionsFromOutline, assignConceptsToSections } from './documentSections.service.js';
 
@@ -422,6 +423,18 @@ export async function extractConceptsForDocument(documentId) {
 
   const rawText = await getDocumentText(document);
   const isVisual = document.processing_mode === 'pptx_visual' || document.processing_mode === 'pdf_visual';
+
+  // Fire-and-forget: extract course metadata for text documents.
+  // Visual documents are handled by visualProcessor after pipeline completion.
+  if (!isVisual && document.subject && document.user_id) {
+    extractAndPersistCourseMetadata(rawText, {
+      subject: document.subject,
+      userId: document.user_id,
+      documentId,
+      pool: dbPool,
+    }).catch(err => logger.error('[conceptExtractor] Course metadata extraction failed (non-fatal)',
+      { documentId, err: err.message }));
+  }
 
   let chunks;
   let maxConcepts;
