@@ -170,6 +170,18 @@ export async function runVisualPipeline(documentId) {
           processing_error: null,
         });
         logger.info('[visualProcessor] Pipeline complete (resumed)', { documentId });
+
+        if (document.subject && document.user_id) {
+          dbPool.query('SELECT generated_markdown FROM documents WHERE id = $1', [documentId])
+            .then(({ rows: mdRows }) => {
+              const markdown = mdRows[0]?.generated_markdown;
+              if (markdown) return extractAndPersistCourseMetadata(markdown, {
+                subject: document.subject, userId: document.user_id, documentId, pool: dbPool,
+              });
+            })
+            .catch(err => logger.error('[visualProcessor] Course metadata extraction failed (resume, non-fatal)',
+              { documentId, err: err.message }));
+        }
       } catch (err) {
         await setFailed(documentId, err.message);
       }
