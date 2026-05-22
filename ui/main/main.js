@@ -8438,12 +8438,14 @@ function buildPlannerDailyTotals(table, activitySlots, subjectTotals, manualSlot
   }
 
   // Manual activity minutes per day, aggregated by type+subject
+  // actividad_fisica is excluded — it's tracked separately, not study progress.
   const manualTotals = new Array(7).fill(0);
   const manualBreakdown = {}; // day → { 'type|subject' → {type, subject, minutes} }
   for (const [key, activities] of Object.entries(manualSlots)) {
     const d = parseInt(key.split('_')[0], 10);
     if (d < 0 || d >= 7) continue;
     for (const ma of activities) {
+      if (ma.activity_type === 'actividad_fisica') continue;
       manualTotals[d] += ma.duration_minutes || 0;
       if (!manualBreakdown[d]) manualBreakdown[d] = {};
       const bk = `${ma.activity_type}|${ma.subject || ''}`;
