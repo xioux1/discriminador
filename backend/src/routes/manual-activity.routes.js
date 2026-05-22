@@ -3,7 +3,7 @@ import { dbPool } from '../db/client.js';
 
 const router = Router();
 
-const VALID_TYPES = ['clase', 'contenido', 'estudio_offline', 'reunion', 'otro'];
+const VALID_TYPES = ['clase', 'contenido', 'estudio_offline', 'reunion', 'otro', 'actividad_fisica'];
 
 const CUSTOM_TYPE_COLORS = [
   '#c04040', '#c07040', '#709040', '#408090',

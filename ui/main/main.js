@@ -8237,11 +8237,12 @@ async function getJson(url) {
 // ─── Weekly Planner ───────────────────────────────────────────────────────────
 
 const MANUAL_ACTIVITY_TYPES = {
-  clase:           { label: 'Clase',         color: '#3b6abf' },
-  contenido:       { label: 'Contenido',     color: '#b8600a' },
-  estudio_offline: { label: 'Estudio off',   color: '#2d8c56' },
-  reunion:         { label: 'Reunión',       color: '#6b47a8' },
-  otro:            { label: 'Otro',          color: '#8a6c10' },
+  clase:             { label: 'Clase',             color: '#3b6abf' },
+  contenido:         { label: 'Contenido',         color: '#b8600a' },
+  estudio_offline:   { label: 'Estudio off',       color: '#2d8c56' },
+  reunion:           { label: 'Reunión',           color: '#6b47a8' },
+  actividad_fisica:  { label: 'Actividad física',  color: '#1a8a6a' },
+  otro:              { label: 'Otro',              color: '#8a6c10' },
 };
 const MANUAL_ACTIVITY_PERSIST_KEY = 'planner.manualActivity.v1';
 
