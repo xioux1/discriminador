@@ -6454,18 +6454,70 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       : undefined;
   }
 
-  // Empty answer = immediate "again" — skip LLM, record grade directly and advance
+  // Empty answer = show correct answer as "Again" (no LLM call), then let answer
+  // autoadvance or the user press Siguiente — do NOT jump to next card immediately.
   if (!answer) {
     if (studyState.timerInterval) {
       clearInterval(studyState.timerInterval);
       studyState.timerInterval = null;
     }
-    studyState.responseTimeMs = Date.now() - studyState.cardStartTime - studyState.cardPausedMs;
+    studyState.responseTimeMs    = Date.now() - studyState.cardStartTime - studyState.cardPausedMs;
     clearAutoadvanceTimers();
-    studyState.currentDecision    = { finalGrade: 'again', source: 'empty' };
-    studyState.currentEvalResult  = { suggested_grade: 'again', missing_concepts: [] };
-    studyState.currentEvalContext = { prompt_text: '', user_answer_text: '', expected_answer_text: '' };
-    handleStudyNextCard();
+
+    studyState.currentEvalResult     = { suggested_grade: 'again', missing_concepts: [], dimensions: {} };
+    studyState.currentExpectedAnswer = expected_answer_text;
+    studyState.currentEvalContext    = { prompt_text: prompt_text || '', user_answer_text: '', expected_answer_text: expected_answer_text || '' };
+    studyState.currentDecision       = { finalGrade: 'again', source: 'empty' };
+    studyState.checkFails            = [];
+    studyState.reviewStartTime       = Date.now();
+
+    // Render grade
+    const _gradeEl = document.querySelector('#study-result-grade');
+    if (_gradeEl) { _gradeEl.textContent = 'Again'; _gradeEl.className = 'study-grade-inline again'; }
+
+    const _justEl = document.querySelector('#study-result-justification');
+    if (_justEl) { _justEl.textContent = 'Sin respuesta.'; _justEl.classList.remove('hidden'); }
+
+    document.querySelector('#study-dual-judge')?.classList.add('hidden');
+    document.querySelector('#study-result-dimensions')?.classList.add('hidden');
+
+    const _timeEl = document.querySelector('#study-result-time');
+    if (_timeEl) {
+      const elapsed = Math.round((studyState.responseTimeMs || 0) / 1000);
+      _timeEl.innerHTML = `<span class="time-pill time-pill--active">${elapsed}s activo</span>`;
+    }
+
+    const _expectedEl = document.querySelector('#study-result-expected');
+    if (_expectedEl) {
+      _expectedEl.innerHTML = formatAnswerBlock('Respuesta esperada', expected_answer_text);
+      _expectedEl.classList.remove('hidden');
+    }
+
+    const _nextBtn = document.querySelector('#study-next-btn');
+    if (_nextBtn) _nextBtn.disabled = false;
+    document.querySelector('#study-variant-btn')?.classList.add('hidden');
+    document.querySelector('#study-delete-variant-btn')?.classList.add('hidden');
+    document.querySelector('#study-decision-block')?.classList.add('hidden');
+
+    document.querySelector('#study-answer-block').classList.add('hidden');
+    document.querySelector('#study-result-block').classList.remove('hidden');
+    document.querySelector('#study-chinese-result')?.classList.add('hidden');
+    document.querySelector('.study-result-quick')?.classList.remove('hidden');
+
+    // Start answer-phase autoadvance
+    {
+      const _aaIdx     = studyState.index;
+      const _aaSubject = studyState.queue[_aaIdx]?.data?.subject
+        ?? studyState.queue[_aaIdx]?.data?.parent_subject
+        ?? null;
+      getAutoadvanceConfig(_aaSubject).then((cfg) => {
+        if (!cfg?.autoadvance_enabled) return;
+        const aSecs = parseFloat(cfg.autoadvance_answer_seconds);
+        if (!Number.isFinite(aSecs) || aSecs <= 0) return;
+        if (studyState.index !== _aaIdx) return;
+        startAnswerAutoadvance(aSecs, cfg.autoadvance_answer_action ?? 'again', _aaIdx);
+      });
+    }
     return;
   }
 
