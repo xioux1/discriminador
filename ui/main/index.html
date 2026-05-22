@@ -372,10 +372,9 @@
         <div id="study-overview" class="card hidden">
           <h2>Sesión de estudio</h2>
           <div class="study-queue-summary-row">
-            <div id="study-queue-summary" class="study-queue-summary">
+            <div id="study-queue-summary" class="study-queue-summary study-count-hidden">
               <span style="color:var(--text-muted)">Cargando cola...</span>
             </div>
-            <button type="button" id="toggle-study-count-btn" class="btn-ghost toggle-count-btn" title="Ocultar / mostrar cantidad">Ocultar</button>
           </div>
           <div id="overview-planner-gate" class="planner-gate hidden"></div>
           <div class="study-overview-actions hidden" id="study-overview-actions">
@@ -520,11 +519,10 @@
             <button type="button" id="study-voice-pause-btn" class="btn-ghost study-voice-pause-btn hidden" title="Pausar avance automático del review oral">⏸ Revisar</button>
             <button type="button" id="study-exit-btn" class="btn-ghost">Cerrar sesión</button>
             <span id="exam-mode-badge" class="exam-mode-badge hidden">Simulacro</span>
-            <div id="study-progress-bar" class="study-progress-bar">
+            <div id="study-progress-bar" class="study-progress-bar study-count-hidden">
               <div id="study-progress-fill" class="study-progress-fill"></div>
             </div>
-            <span id="study-progress-text" class="study-progress-label"></span>
-            <button type="button" id="toggle-session-count-btn" class="btn-ghost toggle-count-btn" title="Ocultar / mostrar progreso">Ocultar</button>
+            <span id="study-progress-text" class="study-progress-label study-count-hidden"></span>
           </div>
           <p id="study-background-status" class="study-background-status hidden"></p>
 
@@ -553,7 +551,7 @@
               <button type="button" id="study-edit-prompt-btn" class="btn-ghost study-edit-prompt-btn">Editar</button>
               <button type="button" id="study-clarify-prompt-btn" class="btn-ghost study-clarify-prompt-btn">Aclarar con IA</button>
               <button type="button" id="study-delete-btn" class="btn-ghost study-delete-btn" title="Eliminar tarjeta">Eliminar</button>
-              <button type="button" id="study-flag-btn" class="btn-ghost study-flag-btn" title="Reportar tarjeta como duplicada o con error" hidden>Reportar</button>
+              <button type="button" id="study-delete-variant-btn" class="btn-ghost study-delete-variant-btn" title="Eliminar esta variante" hidden>Eliminar variante</button>
               <button type="button" id="study-reformat-latex-btn" class="btn-ghost" title="Convertir consigna a LaTeX con IA" hidden>LaTeX</button>
               <button type="button" id="study-reformat-code-btn" class="btn-ghost" title="Resaltar entidades de código con IA" hidden>Código</button>
             </div>
@@ -675,7 +673,6 @@
                   <p id="study-decision-feedback" class="feedback" style="margin-top:6px"></p>
                 </div>
                 <button type="button" id="study-variant-btn" class="btn-ghost study-variant-btn hidden">+ Guardar variante</button>
-                <button type="button" id="study-delete-variant-btn" class="btn-ghost study-delete-variant-btn hidden">&#128465; Eliminar esta variante</button>
                 <p id="study-variant-feedback" class="hidden" style="font-size:0.82rem;margin-top:6px"></p>
                 <div id="study-variant-preview" class="hidden" style="margin-top:10px;padding:10px 12px;border:1px solid var(--border-mid);border-radius:6px;font-size:0.84rem;background:var(--bg-subtle)">
                   <div style="font-weight:600;margin-bottom:4px;color:var(--text-muted);font-size:0.78rem;text-transform:uppercase;letter-spacing:.04em">Variante generada</div>

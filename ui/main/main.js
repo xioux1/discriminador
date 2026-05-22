@@ -4605,36 +4605,7 @@ function initStudyTab() {
     document.querySelector('#study-briefing').classList.remove('hidden');
   });
 
-  // ── Toggle card count visibility ─────────────────────────────────────────
-  function applyStudyCountHidden(hidden) {
-    const summaryEl = document.querySelector('#study-queue-summary');
-    const progressBar = document.querySelector('#study-progress-bar');
-    const progressText = document.querySelector('#study-progress-text');
-    const overviewBtn = document.querySelector('#toggle-study-count-btn');
-    const sessionBtn = document.querySelector('#toggle-session-count-btn');
-    if (hidden) {
-      summaryEl?.classList.add('study-count-hidden');
-      progressBar?.classList.add('study-count-hidden');
-      progressText?.classList.add('study-count-hidden');
-      if (overviewBtn) overviewBtn.textContent = 'Mostrar';
-      if (sessionBtn) sessionBtn.textContent = 'Mostrar';
-    } else {
-      summaryEl?.classList.remove('study-count-hidden');
-      progressBar?.classList.remove('study-count-hidden');
-      progressText?.classList.remove('study-count-hidden');
-      if (overviewBtn) overviewBtn.textContent = 'Ocultar';
-      if (sessionBtn) sessionBtn.textContent = 'Ocultar';
-    }
-  }
-  function toggleStudyCount() {
-    const hidden = localStorage.getItem('studyCountHidden') === '1';
-    const next = !hidden;
-    localStorage.setItem('studyCountHidden', next ? '1' : '0');
-    applyStudyCountHidden(next);
-  }
-  applyStudyCountHidden(localStorage.getItem('studyCountHidden') === '1');
-  document.querySelector('#toggle-study-count-btn')?.addEventListener('click', toggleStudyCount);
-  document.querySelector('#toggle-session-count-btn')?.addEventListener('click', toggleStudyCount);
+  // Card count is always hidden — no toggle exposed to the user.
 
   restorePersistedStudySession();
 
@@ -6057,13 +6028,13 @@ function showStudyCard() {
   const easyPanel = document.querySelector('#study-easy-explanation');
   if (easyPanel) { easyPanel.open = false; easyPanel.classList.add('hidden'); }
   // In exam mode hide secondary controls that don't belong in a simulation
-  const studyFlagBtn   = document.querySelector('#study-flag-btn');
+  const studyDeleteVariantBtn = document.querySelector('#study-delete-variant-btn');
   const studyClarify   = document.querySelector('#study-clarify-prompt-btn');
   const studyEditPrompt = document.querySelector('#study-edit-prompt-btn');
   const studyReformatLatexBtn = document.querySelector('#study-reformat-latex-btn');
   const studyReformatCodeBtn  = document.querySelector('#study-reformat-code-btn');
   const hideForSimplified = studyState.examMode || studyState.voiceMode;
-  if (studyFlagBtn)           studyFlagBtn.hidden           = hideForSimplified;
+  if (studyDeleteVariantBtn) studyDeleteVariantBtn.hidden = !(item.type === 'card' && item.data.variant_id != null);
   if (studyClarify)           studyClarify.hidden           = hideForSimplified;
   if (studyEditPrompt)        studyEditPrompt.hidden        = hideForSimplified;
   if (studyReformatLatexBtn)  studyReformatLatexBtn.hidden  = hideForSimplified || item.type !== 'card';
@@ -6191,25 +6162,6 @@ function showStudyCard() {
     modeSelect.onchange = () => applyMode(modeSelect.value);
   }
 
-  // ── Flag / report button ───────────────────────────────────────────────────
-  const flagBtn = document.querySelector('#study-flag-btn');
-  if (flagBtn) {
-    flagBtn.hidden = false;
-    flagBtn.onclick = () => {
-      const note = prompt('Comentario (opcional):') ?? '';
-      const cardId   = item.type === 'card'  ? item.data.id : null;
-      const microId  = item.type === 'micro' ? item.data.id : null;
-      if (cardId || microId) {
-        const path = cardId ? `/cards/${cardId}/flag` : `/micro-cards/${microId}/flag`;
-        postJson(path, { notes: note || 'duplicada' }).catch(() => {});
-      }
-      // Skip this card immediately in the current session
-      studyState.queue.splice(studyState.index, 1);
-      const total = studyState.queue.length;
-      if (studyState.index >= total) studyState.index = Math.max(0, total - 1);
-      showStudyCard();
-    };
-  }
 }
 
 async function toggleStudyPromptEdit() {
@@ -6510,7 +6462,6 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       const _nextBtn = document.querySelector('#study-next-btn');
       if (_nextBtn) _nextBtn.disabled = false;
       document.querySelector('#study-variant-btn')?.classList.add('hidden');
-      document.querySelector('#study-delete-variant-btn')?.classList.add('hidden');
       document.querySelector('#study-decision-block')?.classList.add('hidden');
     }
 
@@ -6744,7 +6695,6 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
 
     // Show "Guardar variante" for any regular card (not micro), regardless of grade
     const variantBtn        = document.querySelector('#study-variant-btn');
-    const deleteVariantBtn  = document.querySelector('#study-delete-variant-btn');
     const variantFeedback = document.querySelector('#study-variant-feedback');
     const nextBtn         = document.querySelector('#study-next-btn');
     const decisionBlock   = document.querySelector('#study-decision-block');
@@ -6755,15 +6705,8 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       variantBtn.classList.remove('hidden');
       variantBtn.disabled = false;
       variantBtn.textContent = '+ Guardar variante';
-      if (currentItem.data.variant_id) {
-        deleteVariantBtn.classList.remove('hidden');
-        deleteVariantBtn.disabled = false;
-      } else {
-        deleteVariantBtn.classList.add('hidden');
-      }
     } else {
       variantBtn.classList.add('hidden');
-      deleteVariantBtn.classList.add('hidden');
     }
     variantFeedback.classList.add('hidden');
     variantFeedback.textContent = '';
