@@ -108,37 +108,40 @@ studySessionsRouter.post('/study/sessions/analysis', async (req, res) => {
 
   const microReviews = reviews.filter(r => r.type === 'micro' && r.grade !== 'uncertain' && r.prompt_text);
 
-  // Failed cards first (need more study), then passed
-  const failed = mainReviews.filter(r => !isPass(r.grade));
-  const passed = mainReviews.filter(r => isPass(r.grade));
-  const ordered = [...failed, ...passed];
+  // Only include items the user got wrong — the analysis is a remedial study note
+  const failedCards = mainReviews.filter(r => !isPass(r.grade));
+  const failedMicro = microReviews.filter(r => !isPass(r.grade));
+
+  if (failedCards.length === 0 && failedMicro.length === 0) {
+    return res.json({ analysis: 'No hubo respuestas incorrectas en esta sesión. ¡Excelente desempeño!' });
+  }
 
   const formatCard = (r) => {
-    let text = `Pregunta: ${r.prompt_text}\nRespuesta: ${r.expected_answer_text}`;
-    if (r.user_answer) text += `\nRespuesta dada: ${r.user_answer}`;
-    if (r.concept_gaps?.length) text += `\nConceptos con fallas: ${r.concept_gaps.join(', ')}`;
-    text += `\nResultado: ${isPass(r.grade) ? 'correcto' : 'incorrecto'}`;
+    let text = `Tema: ${r.prompt_text}\nRespuesta correcta: ${r.expected_answer_text}`;
+    if (r.user_answer) text += `\nLo que respondiste: ${r.user_answer}`;
+    if (r.concept_gaps?.length) text += `\nConceptos involucrados: ${r.concept_gaps.join(', ')}`;
     return text;
   };
 
-  const cardsSection = ordered.map(formatCard).join('\n\n---\n\n');
+  const cardsSection = failedCards.map(formatCard).join('\n\n---\n\n');
 
-  const microSection = microReviews.length > 0
-    ? `\nMICRO-CONCEPTOS:\n${microReviews.map(r => `[${isPass(r.grade) ? '✓' : '✗'}] ${r.concept || r.prompt_text}`).join('\n')}`
+  const microSection = failedMicro.length > 0
+    ? `\nMICRO-CONCEPTOS A REPASAR:\n${failedMicro.map(r => `- ${r.concept || r.prompt_text}`).join('\n')}`
     : '';
 
-  const prompt = `Sos un tutor experto. A partir de los resultados de una sesión de estudio, generá un informe de repaso: una lista de los temas vistos, cada uno con una explicación clara debajo.
+  const prompt = `Sos un tutor experto. A partir de las preguntas que el alumno no respondió correctamente en una sesión de estudio, generá un apunte de repaso.
 
 REGLAS:
-- Para cada tema/pregunta, escribí el enunciado tal como está y luego una explicación que desarrolle el concepto en profundidad.
-- Ordená de mayor a menor importancia: los temas con resultado incorrecto o con fallas de conceptos van primero y reciben explicaciones más extensas y detalladas.
-- Los temas con resultado correcto van al final con explicaciones más breves.
-- No menciones al alumno ni uses frases como "el alumno no entiende". El informe es el material de estudio en sí.
-- Explicá cada concepto como si fuera un apunte de clase: concreto, con ejemplos si clarifican, sin relleno.
+- Para cada ítem, tomá la pregunta y la respuesta correcta como base y generá una explicación clara del concepto subyacente.
+- Escribí como si fuera un apunte de clase: explicá el tema, no describas el error. Nunca uses frases como "te equivocaste en", "error frecuente", "error común", "el alumno falló", "la respuesta fue incorrecta".
+- Cada ítem debe leerse como una sección de apunte: presentá el tema, explicá el concepto en profundidad, usá ejemplos si clarifican.
+- Basate estrictamente en el contenido de cada pregunta y respuesta. No inventes ni amplíes a temas no relacionados.
+- Si hay una respuesta dada por el alumno, usala internamente para entender qué parte del concepto necesita más claridad, pero no la menciones ni hagas referencia a ella en el texto.
+- No menciones al alumno ni uses frases en segunda persona dirigidas a él.
 - Idioma: español.
 
 ---
-TARJETAS DE LA SESIÓN (ordenadas por prioridad de repaso):
+PREGUNTAS A DESARROLLAR:
 
 ${cardsSection}
 ${microSection}`;
