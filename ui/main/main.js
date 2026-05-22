@@ -6454,7 +6454,20 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       : undefined;
   }
 
-  if (!answer && !hasChinese(prompt_text) && !hasChinese(expected_answer_text)) return;
+  // Empty answer = immediate "again" — skip LLM, record grade directly and advance
+  if (!answer) {
+    if (studyState.timerInterval) {
+      clearInterval(studyState.timerInterval);
+      studyState.timerInterval = null;
+    }
+    studyState.responseTimeMs = Date.now() - studyState.cardStartTime - studyState.cardPausedMs;
+    clearAutoadvanceTimers();
+    studyState.currentDecision    = { finalGrade: 'again', source: 'empty' };
+    studyState.currentEvalResult  = { suggested_grade: 'again', missing_concepts: [] };
+    studyState.currentEvalContext = { prompt_text: '', user_answer_text: '', expected_answer_text: '' };
+    handleStudyNextCard();
+    return;
+  }
 
   // Stop timer and record response time
   if (studyState.timerInterval) {
@@ -6473,12 +6486,6 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
     evalBtn.disabled = false;
     evalBtn.textContent = 'Evaluar';
     showToast('No se puede evaluar: la consigna de esta tarjeta es demasiado corta o está vacía.', 'error');
-    return;
-  }
-  if (answer.length < minRules.user_answer_text) {
-    evalBtn.disabled = false;
-    evalBtn.textContent = 'Evaluar';
-    showToast('Escribí tu respuesta antes de evaluar.', 'error');
     return;
   }
   if (normalizedExpected.length < minRules.expected_answer_text) {

@@ -632,32 +632,34 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
 
     const isListeningReview = variantType === 'listening';
 
-    for (const [slotIndex, concept] of targetConcepts.entries()) {
-      try {
-        let micro, presentation;
-        if (isListeningReview) {
-          micro        = await generateChineseListeningMicroCard({ expected_answer_text: microExpectedText, concept });
-          presentation = 'listening';
-        } else {
-          const _microFn = isChineseCard(card) ? generateChineseMicroCard : generateMicroCard;
-          micro        = await _microFn({ prompt_text: microPromptText, expected_answer_text: microExpectedText, subject: card.subject, concept, user_answer: userAnswer, slotIndex });
-          // Tag Chinese vocabulary (Type A / lexical) cards so the frontend can
-          // enforce the two-consecutive-correct rule without fragile heuristics.
-          presentation = (isChineseCard(card) && micro.isLexical) ? 'lexical' : 'text';
-        }
+    // No micro-cards for listening variant reviews (sound front) or Chinese vocabulary cards
+    if (!isListeningReview && !isChineseCard(card)) {
+      for (const [slotIndex, concept] of targetConcepts.entries()) {
+        try {
+          const micro        = await generateMicroCard({ prompt_text: microPromptText, expected_answer_text: microExpectedText, subject: card.subject, concept, user_answer: userAnswer, slotIndex });
+          const presentation = 'text';
 
-        const inserted = await dbPool.query(
-          `INSERT INTO micro_cards (parent_card_id, concept, question, expected_answer, user_id, subject, presentation)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
-           ON CONFLICT DO NOTHING
-           RETURNING *`,
-          [cardId, concept, micro.question, micro.expected_answer, userId, card.subject || null, presentation]
-        );
-        if (inserted.rows.length) newMicroCards.push({ ...inserted.rows[0], parent_subject: card.subject || null, parent_prompt: microPromptText });
-      } catch (microErr) {
-        console.warn(`Failed to generate micro-card for concept "${concept}":`, microErr.message);
+          const inserted = await dbPool.query(
+            `INSERT INTO micro_cards (parent_card_id, concept, question, expected_answer, user_id, subject, presentation)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             ON CONFLICT DO NOTHING
+             RETURNING *`,
+            [cardId, concept, micro.question, micro.expected_answer, userId, card.subject || null, presentation]
+          );
+          if (inserted.rows.length) newMicroCards.push({ ...inserted.rows[0], parent_subject: card.subject || null, parent_prompt: microPromptText });
+        } catch (microErr) {
+          console.warn(`Failed to generate micro-card for concept "${concept}":`, microErr.message);
+        }
       }
     }
+    // Disabled: listening micro-cards (sound front)
+    // if (isListeningReview) {
+    //   micro = await generateChineseListeningMicroCard({ expected_answer_text: microExpectedText, concept });
+    // }
+    // Disabled: Chinese vocabulary micro-cards
+    // if (isChineseCard(card)) {
+    //   micro = await generateChineseMicroCard({ ... });
+    // }
   }
 
   // ── Micro-cards from binary check conceptual errors ───────────────────────
@@ -720,9 +722,12 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
   }
 
   // Auto-variant generation (fire-and-forget, non-blocking).
-  autoGenerateVariant(cardId, card, userId).catch((e) =>
-    console.warn('[auto-variant] failed', { cardId, message: e.message })
-  );
+  // Skip for listening variant reviews — no variants or micros for sound-front cards.
+  if (variantType !== 'listening') {
+    autoGenerateVariant(cardId, card, userId).catch((e) =>
+      console.warn('[auto-variant] failed', { cardId, message: e.message })
+    );
+  }
 
   return res.status(200).json({
     card: updated.rows[0],
@@ -855,28 +860,29 @@ async function reviewMicroCard(res, microCardId, grade, conceptGaps, userAnswer,
         });
         const targetConcepts = dedupedSiblingGaps.slice(0, slotsAvailable);
 
-        for (const [slotIndex, concept] of targetConcepts.entries()) {
-          try {
-            const _siblingFn = isChineseCard(parent) ? generateChineseMicroCard : generateMicroCard;
-            const sibling = await _siblingFn({
-              prompt_text:          parent.prompt_text,
-              expected_answer_text: parent.expected_answer_text,
-              subject:              micro.subject || parent.subject,
-              concept,
-              user_answer:          userAnswer || '',
-              slotIndex,
-            });
-            const siblingPresentation = (isChineseCard(parent) && sibling.isLexical) ? 'lexical' : 'text';
-            const inserted = await dbPool.query(
-              `INSERT INTO micro_cards (parent_card_id, concept, question, expected_answer, user_id, subject, presentation)
-               VALUES ($1, $2, $3, $4, $5, $6, $7)
-               ON CONFLICT DO NOTHING
-               RETURNING *`,
-              [micro.parent_card_id, concept, sibling.question, sibling.expected_answer, userId, micro.subject || parent.subject || null, siblingPresentation]
-            );
-            if (inserted.rows.length) newMicroCards.push({ ...inserted.rows[0], parent_subject: micro.subject || parent.subject || null, parent_prompt: parent.prompt_text });
-          } catch (err) {
-            console.warn(`Failed to generate sibling micro-card for concept "${concept}":`, err.message);
+        // No sibling micro-cards for Chinese vocabulary cards
+        if (!isChineseCard(parent)) {
+          for (const [slotIndex, concept] of targetConcepts.entries()) {
+            try {
+              const sibling = await generateMicroCard({
+                prompt_text:          parent.prompt_text,
+                expected_answer_text: parent.expected_answer_text,
+                subject:              micro.subject || parent.subject,
+                concept,
+                user_answer:          userAnswer || '',
+                slotIndex,
+              });
+              const inserted = await dbPool.query(
+                `INSERT INTO micro_cards (parent_card_id, concept, question, expected_answer, user_id, subject, presentation)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7)
+                 ON CONFLICT DO NOTHING
+                 RETURNING *`,
+                [micro.parent_card_id, concept, sibling.question, sibling.expected_answer, userId, micro.subject || parent.subject || null, 'text']
+              );
+              if (inserted.rows.length) newMicroCards.push({ ...inserted.rows[0], parent_subject: micro.subject || parent.subject || null, parent_prompt: parent.prompt_text });
+            } catch (err) {
+              console.warn(`Failed to generate sibling micro-card for concept "${concept}":`, err.message);
+            }
           }
         }
       }
