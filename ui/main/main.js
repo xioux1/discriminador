@@ -5403,8 +5403,7 @@ function startAnswerAutoadvance(seconds, action, cardEpoch) {
       if (!studyState.currentDecision) {
         studyState.currentDecision = { finalGrade: grade, source: 'autoadvance' };
       }
-      const nextBtn = document.querySelector('#study-next-btn');
-      if (nextBtn && !nextBtn.disabled && nextBtn.offsetParent !== null) nextBtn.click();
+      handleStudyNextCard();
     }
   );
   if (handles) {
