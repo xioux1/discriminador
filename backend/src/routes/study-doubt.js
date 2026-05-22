@@ -12,46 +12,64 @@ function getClient() {
 
 /**
  * POST /study/doubt
- * Single-turn tutor Q&A after the student has seen their result.
+ * Multi-turn tutor Q&A after the student has seen their result.
  * Stateless — no DB writes.
+ *
+ * Body:
+ *   card_prompt, expected_answer, grade, subject  — card context (always required)
+ *   user_answer   — required on first turn; optional on follow-ups when history is provided
+ *   question      — the new user message
+ *   history       — optional array of {role:'user'|'assistant', content:string}
+ *                   representing prior turns (client-managed)
  */
 studyDoubtRouter.post('/study/doubt', async (req, res) => {
-  const { card_prompt, expected_answer, user_answer, grade, question, subject } = req.body || {};
+  const { card_prompt, expected_answer, user_answer, grade, question, subject, history } = req.body || {};
 
-  if (!card_prompt || !expected_answer || !user_answer || !question) {
+  if (!card_prompt || !expected_answer) {
     return res.status(422).json({
       error: 'validation_error',
-      message: 'card_prompt, expected_answer, user_answer y question son obligatorios.'
+      message: 'card_prompt y expected_answer son obligatorios.'
     });
   }
-  if (typeof question !== 'string' || question.trim().length < 3) {
-    return res.status(422).json({ error: 'validation_error', message: 'question debe tener al menos 3 caracteres.' });
+  if (!question || typeof question !== 'string' || question.trim().length < 1) {
+    return res.status(422).json({ error: 'validation_error', message: 'question es obligatorio.' });
   }
-  if (question.trim().length > 600) {
-    return res.status(422).json({ error: 'validation_error', message: 'question no puede superar 600 caracteres.' });
+  if (question.trim().length > 800) {
+    return res.status(422).json({ error: 'validation_error', message: 'question no puede superar 800 caracteres.' });
   }
+
+  const priorTurns = Array.isArray(history)
+    ? history.filter(m => (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+    : [];
 
   try {
     const gradeLabel = ['pass','good','easy'].includes(grade) ? 'APROBÓ'
       : ['fail','again'].includes(grade) ? 'NO APROBÓ'
       : grade === 'hard' ? 'INCOMPLETO' : 'REVISIÓN';
-    const userMessage = `Contexto de la tarjeta:
+
+    const systemPrompt = `Sos un tutor universitario. El estudiante acaba de responder una tarjeta de estudio y está consultando dudas.
+Respondé en español de forma directa y concisa (máximo 5 oraciones). Explicá el concepto sin copiar textualmente la respuesta esperada.
+Si la duda está fuera del contexto de la tarjeta, redirigí amablemente al tema.
+
+Contexto de la tarjeta:
 Consigna: ${String(card_prompt).slice(0, 800)}
 Respuesta esperada: ${String(expected_answer).slice(0, 800)}
-Respuesta del estudiante: ${String(user_answer).slice(0, 600)}
+${user_answer ? `Respuesta del estudiante: ${String(user_answer).slice(0, 600)}` : ''}
 Resultado: ${gradeLabel}
-${subject ? `Materia: ${subject}` : ''}
+${subject ? `Materia: ${subject}` : ''}`;
 
-Duda del estudiante: ${question.trim()}`;
+    // Build messages: prior history + new user turn
+    const messages = [
+      ...priorTurns.map(m => ({ role: m.role, content: String(m.content).slice(0, 1200) })),
+      { role: 'user', content: question.trim() }
+    ];
 
     const response = await getClient().messages.create({
       model: LLM_MODEL,
       max_tokens: 600,
       temperature: 0.3,
-      system: `Sos un tutor universitario. El estudiante acaba de responder una tarjeta de estudio y tiene una duda puntual.
-Respondé en español de forma directa y concisa (máximo 4 oraciones). Explicá el concepto sin copiar textualmente la respuesta esperada.
-Si la duda está fuera del contexto de la tarjeta, redirigí amablemente al tema.`,
-      messages: [{ role: 'user', content: userMessage }]
+      system: systemPrompt,
+      messages
     });
 
     const answer = response.content.find(b => b.type === 'text')?.text?.trim() ?? '';

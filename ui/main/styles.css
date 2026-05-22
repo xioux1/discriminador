@@ -1330,13 +1330,45 @@ textarea:focus, input[type="text"]:focus, select:focus {
 .study-doubt-section { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
 .study-doubt-toggle { font-size: 0.82rem; color: var(--text-muted); padding: 2px 0; }
 .study-doubt-toggle:hover { color: var(--primary); }
-#study-doubt-form textarea { width: 100%; box-sizing: border-box; margin-top: 8px; font-size: 0.9rem; }
-.study-doubt-answer {
-  margin-top: 10px; font-size: 0.9rem; line-height: 1.55;
-  background: var(--surface); border-left: 3px solid var(--primary);
-  padding: 10px 14px; border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  white-space: pre-wrap;
+#study-doubt-form { margin-top: 8px; }
+.study-doubt-answer { display: none; }
+
+/* Chat messages list */
+.study-chat-messages {
+  display: flex; flex-direction: column; gap: 8px;
+  max-height: 320px; overflow-y: auto;
+  margin-bottom: 10px;
+  padding-right: 2px;
 }
+.study-chat-msg {
+  font-size: 0.88rem; line-height: 1.5; padding: 8px 12px;
+  border-radius: var(--radius-sm); max-width: 92%; word-break: break-word;
+}
+.study-chat-msg--user {
+  align-self: flex-end;
+  background: var(--primary); color: #fff;
+  border-bottom-right-radius: 2px;
+}
+.study-chat-msg--assistant {
+  align-self: flex-start;
+  background: var(--surface); border-left: 3px solid var(--primary);
+  color: var(--text); white-space: pre-wrap;
+  border-bottom-left-radius: 2px;
+}
+.study-chat-msg--thinking {
+  align-self: flex-start;
+  background: var(--surface); color: var(--text-muted);
+  font-style: italic; font-size: 0.82rem; padding: 6px 10px;
+}
+
+/* Input row */
+.study-chat-input-row { display: flex; flex-direction: column; gap: 6px; }
+.study-chat-input-row textarea { width: 100%; box-sizing: border-box; font-size: 0.9rem; resize: vertical; }
+.study-chat-input-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.study-chat-input-actions .dictation-btn { flex-shrink: 0; }
+
+/* Continue oral review button */
+.study-chat-continue-btn { width: 100%; margin-top: 10px; font-size: 0.9rem; }
 
 .study-result-block {
   border-top: 1px solid var(--border);
