@@ -6429,6 +6429,9 @@ document.querySelector('#study-result-block').addEventListener('click', async (e
   if (studyState.reviewStartTime) {
     studyState.reviewTimeMs = Date.now() - studyState.reviewStartTime;
   }
+  // In voice mode while audio is playing, just record the grade override — the voice
+  // auto-advance flow will call handleStudyNextCard() once audio finishes.
+  if (studyState.voiceMode && studyState.audioPlaying) return;
   await handleStudyNextCard();
 });
 
@@ -6856,7 +6859,7 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       document.querySelector('#study-doubt-input').value = '';
     }
     if (studyState.voiceMode) {
-      // Voice mode: show only grade badge + explanation diagram. Nothing else.
+      // Voice mode: show only grade badge + explanation diagram + grade buttons. Nothing else.
       document.querySelector('#study-result-time')?.classList.add('hidden');
       document.querySelector('#study-result-justification')?.classList.add('hidden');
       document.querySelector('#study-result-dimensions')?.classList.add('hidden');
@@ -6867,6 +6870,8 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       document.querySelector('#study-doubt-section')?.classList.add('hidden');
       document.querySelector('.study-result-actions')?.classList.add('hidden');
       document.querySelector('#study-easy-explanation')?.classList.add('hidden');
+      // Show grade buttons so user can override grade before auto-advance fires
+      showChineseResult(expected_answer_text, result.suggested_grade);
     }
     if (studyState.voiceMode) {
       // If the card was navigated or deleted while the eval fetch was in-flight, skip
