@@ -1367,6 +1367,9 @@ textarea:focus, input[type="text"]:focus, select:focus {
 .study-chat-input-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .study-chat-input-actions .dictation-btn { flex-shrink: 0; }
 
+/* Continue oral review button */
+.study-chat-continue-btn { width: 100%; margin-top: 10px; font-size: 0.9rem; }
+
 .study-result-block {
   border-top: 1px solid var(--border);
   padding-top: 14px;

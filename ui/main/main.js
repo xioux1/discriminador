@@ -7351,15 +7351,49 @@ document.querySelector('#study-delete-variant-btn').addEventListener('click', as
 
 // ── Tutor chat post-response ──────────────────────────────────────────────────
 {
-  let _chatHistory = [];   // {role:'user'|'assistant', content:string}[]
+  let _chatHistory  = [];   // {role:'user'|'assistant', content:string}[]
+  let _chatTtsAudio = null; // track to cancel on new message or card navigation
+
+  function _stopChatTTS() {
+    if (_chatTtsAudio) {
+      try { _chatTtsAudio.pause(); } catch (_) {}
+      _chatTtsAudio = null;
+    }
+  }
+
+  // Stop all in-flight audio (card answer TTS + Chinese TTS + chat TTS) and mark
+  // studyState.audioPlaying = false so the voice auto-advance guard passes.
+  function _interruptVoiceAudio() {
+    if (_voiceFrontAudio) {
+      _voiceFrontAudio._interrupted = true;
+      try { _voiceFrontAudio.pause(); } catch (_) {}
+      _voiceFrontAudio = null;
+    }
+    if (_ttsAudio) {
+      try { _ttsAudio.pause(); } catch (_) {}
+      _ttsAudio = null;
+    }
+    _stopChatTTS();
+    studyState.audioPlaying = false;
+  }
+
+  // Interrupt audio, pause the voice review, open the chat panel.
+  function _openChatForVoice() {
+    _interruptVoiceAudio();
+    studyState.voiceReviewPaused = true;
+    document.querySelector('#study-doubt-form')?.classList.remove('hidden');
+    document.querySelector('#study-chat-continue-btn')?.classList.remove('hidden');
+  }
 
   // Reset chat when a new card is shown
   function resetStudyChat() {
     _chatHistory = [];
+    _stopChatTTS();
     const messagesEl = document.querySelector('#study-chat-messages');
     if (messagesEl) messagesEl.innerHTML = '';
     const input = document.querySelector('#study-doubt-input');
     if (input) input.value = '';
+    document.querySelector('#study-chat-continue-btn')?.classList.add('hidden');
   }
 
   // Append a bubble to the tutor chat window
@@ -7374,9 +7408,10 @@ document.querySelector('#study-delete-variant-btn').addEventListener('click', as
     return div;
   };
 
-  // Play TTS for the assistant reply (Spanish voice)
+  // Play TTS for the assistant reply — tracks audio so it can be cancelled.
   async function _playChatTTS(text) {
     if (!text) return;
+    _stopChatTTS();
     try {
       let audioB64 = _ttsCache.get(`es::${text}`);
       if (!audioB64) {
@@ -7386,6 +7421,8 @@ document.querySelector('#study-delete-variant-btn').addEventListener('click', as
       }
       if (!audioB64) return;
       const audio = new Audio(`data:audio/mpeg;base64,${audioB64}`);
+      _chatTtsAudio = audio;
+      audio.onended = () => { if (_chatTtsAudio === audio) _chatTtsAudio = null; };
       audio.play().catch(() => {});
     } catch (_) {}
   }
@@ -7407,6 +7444,9 @@ document.querySelector('#study-delete-variant-btn').addEventListener('click', as
     const userAnswer  = studyState.currentEvalContext?.user_answer_text
       ?? MathPreview.serialize(document.querySelector('#study-answer-input')).trim();
     const grade       = evalResult ? String(evalResult.suggested_grade || '').toLowerCase() : '';
+
+    // Stop any playing chat TTS before speaking (user is sending a new message)
+    _stopChatTTS();
 
     // Show user bubble
     _appendBubble('user', question);
@@ -7454,10 +7494,15 @@ document.querySelector('#study-delete-variant-btn').addEventListener('click', as
 
   document.querySelector('#study-doubt-toggle').addEventListener('click', () => {
     const form = document.querySelector('#study-doubt-form');
-    const isHidden = form.classList.toggle('hidden');
-    if (!isHidden) {
-      // Auto-focus input when opening
+    const wasHidden = form.classList.contains('hidden');
+    form.classList.toggle('hidden');
+    if (wasHidden) {
+      // Opening: in voice mode, interrupt audio and pause review
+      if (studyState.voiceMode) _openChatForVoice();
       document.querySelector('#study-doubt-input')?.focus();
+    } else {
+      // Closing the panel (not resuming): hide the continue btn but leave review paused
+      document.querySelector('#study-chat-continue-btn')?.classList.add('hidden');
     }
   });
 
@@ -7475,16 +7520,30 @@ document.querySelector('#study-delete-variant-btn').addEventListener('click', as
     }
   });
 
-  // Attach voice dictation to the mic button
+  // "Continuar review oral" — end chat and advance to next card
+  document.querySelector('#study-chat-continue-btn').addEventListener('click', async () => {
+    _stopChatTTS();
+    document.querySelector('#study-doubt-form')?.classList.add('hidden');
+    document.querySelector('#study-chat-continue-btn')?.classList.add('hidden');
+    // handleStudyNextCard clears voiceReviewPaused and advances in voice mode
+    await handleStudyNextCard();
+  });
+
+  // Attach voice dictation to the mic button.
+  // onRecordingStart: in voice mode, interrupt card audio and pause the review
+  // so the card doesn't auto-advance while the user is speaking.
+  // onTranscribed: auto-send the transcribed text as a chat message.
   attachDictation(
     document.querySelector('#study-chat-mic-btn'),
     document.querySelector('#study-doubt-input'),
     '🎙 Grabar',
     () => studyState.queue[studyState.index]?.data?.subject ?? null,
-    // onTranscribed: auto-send after transcription completes
     () => {
       const q = (document.querySelector('#study-doubt-input')?.value || '').trim();
       if (q) sendChatMessage(q);
+    },
+    () => {
+      if (studyState.voiceMode) _openChatForVoice();
     }
   );
 
