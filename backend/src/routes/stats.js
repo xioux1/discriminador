@@ -232,6 +232,7 @@ statsRouter.get('/stats/weekly', async (req, res) => {
        FROM manual_activity_sessions
        WHERE user_id = $1
          AND ended_at IS NOT NULL
+         AND activity_type != 'actividad_fisica'
          AND (started_at AT TIME ZONE $2)::date >= $3::date
          AND (started_at AT TIME ZONE $2)::date <  $4::date
        GROUP BY activity_type, subject
@@ -251,6 +252,7 @@ statsRouter.get('/stats/weekly', async (req, res) => {
          SELECT (started_at AT TIME ZONE $2)::date
          FROM manual_activity_sessions
          WHERE user_id = $1 AND ended_at IS NOT NULL
+           AND activity_type != 'actividad_fisica'
            AND (started_at AT TIME ZONE $2)::date >= $3::date
            AND (started_at AT TIME ZONE $2)::date <  $4::date
        ) t`,
@@ -293,6 +295,7 @@ statsRouter.get('/stats/weekly', async (req, res) => {
          LEFT JOIN manual_activity_sessions ma
            ON ma.user_id = $1
            AND ma.ended_at IS NOT NULL
+           AND ma.activity_type != 'actividad_fisica'
            AND (ma.started_at AT TIME ZONE $2)::date >= ws.ws
            AND (ma.started_at AT TIME ZONE $2)::date <  ws.we
          GROUP BY ws.w_offset
