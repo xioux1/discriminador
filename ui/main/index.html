@@ -683,11 +683,17 @@
                 <!-- ── Duda post-respuesta ──────────────────────────────────── -->
                 <div id="study-doubt-section" class="study-doubt-section hidden">
                   <button type="button" id="study-doubt-toggle" class="btn-ghost study-doubt-toggle">
-                    ¿Quedaste con una duda? Consultá aquí
+                    💬 Consultar con tutor IA
                   </button>
                   <div id="study-doubt-form" class="hidden">
-                    <textarea id="study-doubt-input" rows="2" placeholder="¿Qué no entendiste? Hacé una pregunta concreta..."></textarea>
-                    <button type="button" id="study-doubt-btn" class="btn-secondary" style="margin-top:6px;font-size:0.85rem">Consultar</button>
+                    <div id="study-chat-messages" class="study-chat-messages"></div>
+                    <div class="study-chat-input-row">
+                      <textarea id="study-doubt-input" rows="2" placeholder="Escribí tu pregunta o grabá tu voz..."></textarea>
+                      <div class="study-chat-input-actions">
+                        <button type="button" id="study-chat-mic-btn" class="dictation-btn" hidden>🎙 Grabar</button>
+                        <button type="button" id="study-doubt-btn" class="btn-secondary">Enviar</button>
+                      </div>
+                    </div>
                     <div id="study-doubt-answer" class="study-doubt-answer hidden"></div>
                   </div>
                 </div>

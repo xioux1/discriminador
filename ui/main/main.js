@@ -6008,6 +6008,8 @@ function showStudyCard() {
   // Auto-focus answer input so the user can type immediately without clicking
   if (!studyState.voiceMode) _studyInput.focus();
   document.querySelector('#study-doubt-section')?.classList.add('hidden');
+  document.querySelector('#study-doubt-form')?.classList.add('hidden');
+  if (typeof window._resetStudyChat === 'function') window._resetStudyChat();
   // Restore standard result UI hidden during Chinese mode
   document.querySelector('.study-result-quick')?.classList.remove('hidden');
   const advancedPanel = document.querySelector('#study-advanced-panel');
@@ -6429,6 +6431,7 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
 
     document.querySelector('#study-answer-block').classList.add('hidden');
     document.querySelector('#study-result-block').classList.remove('hidden');
+    document.querySelector('#study-doubt-section')?.classList.remove('hidden');
 
     if (hasChinese(prompt_text) || hasChinese(expected_answer_text)) {
       // Chinese card: use the same simplified result UI (hanzi + pinyin + grade buttons)
@@ -6793,14 +6796,8 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
     studyState.reviewStartTime = Date.now();
     studyState.reviewTimeMs = 0;
 
-    // Show doubt section, reset it
-    const doubtSection = document.querySelector('#study-doubt-section');
-    if (doubtSection) {
-      doubtSection.classList.remove('hidden');
-      document.querySelector('#study-doubt-form').classList.add('hidden');
-      document.querySelector('#study-doubt-answer').classList.add('hidden');
-      document.querySelector('#study-doubt-input').value = '';
-    }
+    // Show doubt/chat section (reset already handled by showStudyCard on card change)
+    document.querySelector('#study-doubt-section')?.classList.remove('hidden');
     if (studyState.voiceMode) {
       // Voice mode: show only grade badge + explanation diagram + grade buttons. Nothing else.
       document.querySelector('#study-result-time')?.classList.add('hidden');
@@ -6810,11 +6807,12 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       document.querySelector('#study-dual-judge')?.classList.add('hidden');
       document.querySelector('#study-advanced-toggle-btn')?.classList.add('hidden');
       document.querySelector('#study-advanced-panel')?.classList.add('hidden');
-      document.querySelector('#study-doubt-section')?.classList.add('hidden');
       document.querySelector('.study-result-actions')?.classList.add('hidden');
       document.querySelector('#study-easy-explanation')?.classList.add('hidden');
       // Show grade buttons so user can override grade before auto-advance fires
       showChineseResult(expected_answer_text, result.suggested_grade);
+      // Show the tutor chat so the user can ask questions during the pause
+      document.querySelector('#study-doubt-section')?.classList.remove('hidden');
     }
     if (studyState.voiceMode) {
       // If the card was navigated or deleted while the eval fetch was in-flight, skip
@@ -7351,50 +7349,148 @@ document.querySelector('#study-delete-variant-btn').addEventListener('click', as
   }
 });
 
-// ── Doubt chat post-response ──────────────────────────────────────────────────
-document.querySelector('#study-doubt-toggle').addEventListener('click', () => {
-  document.querySelector('#study-doubt-form').classList.toggle('hidden');
-});
+// ── Tutor chat post-response ──────────────────────────────────────────────────
+{
+  let _chatHistory = [];   // {role:'user'|'assistant', content:string}[]
 
-document.querySelector('#study-doubt-btn').addEventListener('click', async () => {
-  const question = (document.querySelector('#study-doubt-input').value || '').trim();
-  if (!question) return;
-
-  const item       = studyState.queue[studyState.index];
-  const evalResult = studyState.currentEvalResult;
-  const btn        = document.querySelector('#study-doubt-btn');
-  const answerEl   = document.querySelector('#study-doubt-answer');
-
-  btn.disabled = true;
-  btn.textContent = 'Consultando...';
-  answerEl.classList.add('hidden');
-
-  const isMicro = item?.type === 'micro';
-  const cardPrompt    = isMicro ? item.data.question    : item.data.prompt_text;
-  const expectedAns   = isMicro ? (item.data.expected_answer || item.data.parent_expected) : item.data.expected_answer_text;
-  const subject       = isMicro ? (item.data.parent_subject ?? item.data.subject) : item.data.subject;
-  const userAnswer    = MathPreview.serialize(document.querySelector('#study-answer-input')).trim();
-  const grade         = evalResult ? String(evalResult.suggested_grade || '').toLowerCase() : '';
-
-  try {
-    const data = await postJson('/study/doubt', {
-      card_prompt:     cardPrompt   || '',
-      expected_answer: expectedAns  || '',
-      user_answer:     userAnswer   || '',
-      grade,
-      question,
-      subject: subject || ''
-    });
-    answerEl.textContent = data?.answer || '(sin respuesta)';
-    answerEl.classList.remove('hidden');
-  } catch (err) {
-    answerEl.textContent = `Error: ${err.message}`;
-    answerEl.classList.remove('hidden');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Consultar';
+  // Reset chat when a new card is shown
+  function resetStudyChat() {
+    _chatHistory = [];
+    const messagesEl = document.querySelector('#study-chat-messages');
+    if (messagesEl) messagesEl.innerHTML = '';
+    const input = document.querySelector('#study-doubt-input');
+    if (input) input.value = '';
   }
-});
+
+  // Append a bubble to the tutor chat window
+  const _appendBubble = (role, text) => {
+    const messagesEl = document.querySelector('#study-chat-messages');
+    if (!messagesEl) return null;
+    const div = document.createElement('div');
+    div.className = `study-chat-msg study-chat-msg--${role}`;
+    div.textContent = text;
+    messagesEl.appendChild(div);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    return div;
+  };
+
+  // Play TTS for the assistant reply (Spanish voice)
+  async function _playChatTTS(text) {
+    if (!text) return;
+    try {
+      let audioB64 = _ttsCache.get(`es::${text}`);
+      if (!audioB64) {
+        const data = await postJson('/tts', { text, lang: 'es' });
+        audioB64 = data?.audio;
+        if (audioB64) _ttsCache.set(`es::${text}`, audioB64);
+      }
+      if (!audioB64) return;
+      const audio = new Audio(`data:audio/mpeg;base64,${audioB64}`);
+      audio.play().catch(() => {});
+    } catch (_) {}
+  }
+
+  async function sendChatMessage(question) {
+    question = question.trim();
+    if (!question) return;
+
+    const item       = studyState.queue[studyState.index];
+    const evalResult = studyState.currentEvalResult;
+    const sendBtn    = document.querySelector('#study-doubt-btn');
+    const micBtn     = document.querySelector('#study-chat-mic-btn');
+    const inputEl    = document.querySelector('#study-doubt-input');
+
+    const isMicro     = item?.type === 'micro';
+    const cardPrompt  = isMicro ? item?.data?.question    : item?.data?.prompt_text;
+    const expectedAns = isMicro ? (item?.data?.expected_answer || item?.data?.parent_expected) : item?.data?.expected_answer_text;
+    const subject     = isMicro ? (item?.data?.parent_subject ?? item?.data?.subject) : item?.data?.subject;
+    const userAnswer  = studyState.currentEvalContext?.user_answer_text
+      ?? MathPreview.serialize(document.querySelector('#study-answer-input')).trim();
+    const grade       = evalResult ? String(evalResult.suggested_grade || '').toLowerCase() : '';
+
+    // Show user bubble
+    _appendBubble('user', question);
+    if (inputEl) inputEl.value = '';
+
+    // Disable inputs while fetching
+    if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = 'Consultando...'; }
+    if (micBtn)  micBtn.disabled = true;
+
+    // Thinking indicator
+    const thinkingEl = _appendBubble('thinking', 'Pensando…');
+
+    try {
+      const data = await postJson('/study/doubt', {
+        card_prompt:     cardPrompt   || '',
+        expected_answer: expectedAns  || '',
+        user_answer:     userAnswer   || '',
+        grade,
+        question,
+        subject:  subject || '',
+        history:  _chatHistory
+      });
+      const answer = data?.answer || '(sin respuesta)';
+
+      // Replace thinking indicator with real reply
+      if (thinkingEl) { thinkingEl.className = 'study-chat-msg study-chat-msg--assistant'; thinkingEl.textContent = answer; }
+      else _appendBubble('assistant', answer);
+
+      const messagesEl = document.querySelector('#study-chat-messages');
+      if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
+
+      // Append to history for next turn
+      _chatHistory.push({ role: 'user', content: question });
+      _chatHistory.push({ role: 'assistant', content: answer });
+
+      // Auto-play TTS response
+      _playChatTTS(answer);
+    } catch (err) {
+      if (thinkingEl) { thinkingEl.className = 'study-chat-msg study-chat-msg--assistant'; thinkingEl.textContent = `Error: ${err.message}`; }
+    } finally {
+      if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = 'Enviar'; }
+      if (micBtn)  micBtn.disabled = false;
+    }
+  }
+
+  document.querySelector('#study-doubt-toggle').addEventListener('click', () => {
+    const form = document.querySelector('#study-doubt-form');
+    const isHidden = form.classList.toggle('hidden');
+    if (!isHidden) {
+      // Auto-focus input when opening
+      document.querySelector('#study-doubt-input')?.focus();
+    }
+  });
+
+  document.querySelector('#study-doubt-btn').addEventListener('click', () => {
+    const q = (document.querySelector('#study-doubt-input')?.value || '').trim();
+    sendChatMessage(q);
+  });
+
+  // Send on Ctrl+Enter / Cmd+Enter in the textarea
+  document.querySelector('#study-doubt-input').addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      const q = (e.target.value || '').trim();
+      sendChatMessage(q);
+    }
+  });
+
+  // Attach voice dictation to the mic button
+  attachDictation(
+    document.querySelector('#study-chat-mic-btn'),
+    document.querySelector('#study-doubt-input'),
+    '🎙 Grabar',
+    () => studyState.queue[studyState.index]?.data?.subject ?? null,
+    // onTranscribed: auto-send after transcription completes
+    () => {
+      const q = (document.querySelector('#study-doubt-input')?.value || '').trim();
+      if (q) sendChatMessage(q);
+    }
+  );
+
+  // Expose reset so showStudyCard can clear history on card change
+  window._resetStudyChat = resetStudyChat;
+}
 
 document.querySelector('#study-next-btn').addEventListener('click', async () => {
   await handleStudyNextCard();
