@@ -7552,7 +7552,8 @@ async function handleStudyNextCard() {
         ...(stepSeconds !== null ? { in_learning: true, learning_step_seconds: stepSeconds } : {})
       }).then(() => loadAgenda()).catch((err) => console.warn('Learning step review failed:', err.message));
       if (!graduate) {
-        studyState.queue.push({ type: 'card', data: { ...item.data, _learningStep: nextStep } });
+        const _dueAt = stepSeconds != null ? Date.now() + stepSeconds * 1000 : undefined;
+        studyState.queue.push({ type: 'card', _dueAt, data: { ...item.data, _learningStep: nextStep } });
         persistStudySession();
       }
       studyState.results.push({
@@ -7840,6 +7841,25 @@ async function advanceStudyCard() {
   if (studyState.index >= studyState.queue.length) {
     finishStudySession();
     return;
+  }
+
+  // Learning step interval: if the next card isn't due yet, find the first due card.
+  // If every remaining card is a not-yet-due learning card, use the soonest one.
+  {
+    const now = Date.now();
+    const next = studyState.queue[studyState.index];
+    if (next?._dueAt && now < next._dueAt) {
+      // Look for a due card after current index
+      const dueIdx = studyState.queue.findIndex(
+        (c, i) => i > studyState.index && (!c._dueAt || now >= c._dueAt)
+      );
+      if (dueIdx !== -1) {
+        // Swap: bring the due card to current position
+        const [dueCard] = studyState.queue.splice(dueIdx, 1);
+        studyState.queue.splice(studyState.index, 0, dueCard);
+      }
+      // else: all remaining cards are learning steps not yet due — show the next one anyway
+    }
   }
 
   // Detect cluster transition: check if next *main card* belongs to a different cluster
