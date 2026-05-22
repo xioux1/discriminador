@@ -5919,7 +5919,8 @@ function showStudyCard() {
       const steps = parseLearningSteps(cfg?.learning_steps ?? '1m 10m');
       const stepNum = item.data._learningStep + 1;
       const totalSteps = steps.length;
-      cardBadges.push(`<span class="study-card-badge study-card-badge--learning">Aprendiendo (${stepNum}/${totalSteps})</span>`);
+      const badgeLabel = (item.data.review_count ?? 0) > 0 ? 'Reaprendiendo' : 'Aprendiendo';
+      cardBadges.push(`<span class="study-card-badge study-card-badge--learning">${badgeLabel} (${stepNum}/${totalSteps})</span>`);
     } else {
       if (Number(item.data.review_count) === 0) {
         cardBadges.push('<span class="study-card-badge study-card-badge--cluster-new">Cluster nuevo</span>');
@@ -6471,38 +6472,44 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
     studyState.checkFails            = [];
     studyState.reviewStartTime       = Date.now();
 
-    // Render grade
-    const _gradeEl = document.querySelector('#study-result-grade');
-    if (_gradeEl) { _gradeEl.textContent = 'Again'; _gradeEl.className = 'study-grade-inline again'; }
-
-    const _justEl = document.querySelector('#study-result-justification');
-    if (_justEl) { _justEl.textContent = 'Sin respuesta.'; _justEl.classList.remove('hidden'); }
-
-    document.querySelector('#study-dual-judge')?.classList.add('hidden');
-    document.querySelector('#study-result-dimensions')?.classList.add('hidden');
-
-    const _timeEl = document.querySelector('#study-result-time');
-    if (_timeEl) {
-      const elapsed = Math.round((studyState.responseTimeMs || 0) / 1000);
-      _timeEl.innerHTML = `<span class="time-pill time-pill--active">${elapsed}s activo</span>`;
-    }
-
-    const _expectedEl = document.querySelector('#study-result-expected');
-    if (_expectedEl) {
-      _expectedEl.innerHTML = formatAnswerBlock('Respuesta esperada', expected_answer_text);
-      _expectedEl.classList.remove('hidden');
-    }
-
-    const _nextBtn = document.querySelector('#study-next-btn');
-    if (_nextBtn) _nextBtn.disabled = false;
-    document.querySelector('#study-variant-btn')?.classList.add('hidden');
-    document.querySelector('#study-delete-variant-btn')?.classList.add('hidden');
-    document.querySelector('#study-decision-block')?.classList.add('hidden');
-
     document.querySelector('#study-answer-block').classList.add('hidden');
     document.querySelector('#study-result-block').classList.remove('hidden');
-    document.querySelector('#study-chinese-result')?.classList.add('hidden');
-    document.querySelector('.study-result-quick')?.classList.remove('hidden');
+
+    if (hasChinese(prompt_text) || hasChinese(expected_answer_text)) {
+      // Chinese card: use the same simplified result UI (hanzi + pinyin + grade buttons)
+      showChineseResult(expected_answer_text, 'again');
+    } else {
+      // Standard card: show expected answer in the normal result block
+      document.querySelector('#study-chinese-result')?.classList.add('hidden');
+      document.querySelector('.study-result-quick')?.classList.remove('hidden');
+
+      const _gradeEl = document.querySelector('#study-result-grade');
+      if (_gradeEl) { _gradeEl.textContent = 'Again'; _gradeEl.className = 'study-grade-inline again'; }
+
+      const _justEl = document.querySelector('#study-result-justification');
+      if (_justEl) { _justEl.textContent = 'Sin respuesta.'; _justEl.classList.remove('hidden'); }
+
+      document.querySelector('#study-dual-judge')?.classList.add('hidden');
+      document.querySelector('#study-result-dimensions')?.classList.add('hidden');
+
+      const _timeEl = document.querySelector('#study-result-time');
+      if (_timeEl) {
+        const elapsed = Math.round((studyState.responseTimeMs || 0) / 1000);
+        _timeEl.innerHTML = `<span class="time-pill time-pill--active">${elapsed}s activo</span>`;
+      }
+
+      const _expectedEl = document.querySelector('#study-result-expected');
+      if (_expectedEl) {
+        _expectedEl.innerHTML = formatAnswerBlock('Respuesta esperada', expected_answer_text);
+        _expectedEl.classList.remove('hidden');
+      }
+
+      const _nextBtn = document.querySelector('#study-next-btn');
+      if (_nextBtn) _nextBtn.disabled = false;
+      document.querySelector('#study-variant-btn')?.classList.add('hidden');
+      document.querySelector('#study-delete-variant-btn')?.classList.add('hidden');
+      document.querySelector('#study-decision-block')?.classList.add('hidden');
+    }
 
     // Start answer-phase autoadvance
     {
@@ -7521,15 +7528,17 @@ async function handleStudyNextCard() {
     }
   }
 
-  // ── Learning steps (Anki-style new-card re-queue) ──────────────────────────
+  // ── Learning / Re-learning steps (Anki-style re-queue) ──────────────────────
   if (grade && item.type === 'card') {
-    const isNewCard  = (item.data.review_count ?? 0) === 0;
-    const inLearning = item.data._learningStep !== undefined;
-    if (isNewCard || inLearning) {
+    const isNewCard    = (item.data.review_count ?? 0) === 0;
+    const inLearning   = item.data._learningStep !== undefined;
+    const g            = normalizeSuggestedGrade(grade);
+    // Re-learning: reviewed card that fails enters the learning steps again
+    const isRelearning = !isNewCard && !inLearning && (g === 'AGAIN' || g === 'HARD');
+    if (isNewCard || inLearning || isRelearning) {
       const subjectKey  = item.data.subject ?? null;
       const cfg         = autoadvanceConfigCache[subjectKey] ?? null;
       const steps       = parseLearningSteps(cfg?.learning_steps ?? '1m 10m');
-      const g           = normalizeSuggestedGrade(grade);
       const curStep     = item.data._learningStep ?? 0;
       let nextStep      = curStep;
       let graduate      = false;
