@@ -6817,10 +6817,13 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       document.querySelector('.study-result-actions')?.classList.add('hidden');
       document.querySelector('#study-easy-explanation')?.classList.add('hidden');
       // Show grade buttons so user can override grade before auto-advance fires.
-      // showChineseResult also renders the written answer; hide it — in voice mode
-      // only the grade chip + diagram (explanation panel) should be visible.
+      // For non-Chinese oral review cards, hide the written answer — only the
+      // grade chip + explanation diagram should be visible. Chinese cards keep
+      // the hanzi/pinyin visible (different flow).
       showChineseResult(expected_answer_text, result.suggested_grade);
-      document.querySelector('#study-chinese-expected')?.classList.add('hidden');
+      if (!hasChinese(prompt_text) && !hasChinese(expected_answer_text)) {
+        document.querySelector('#study-chinese-expected')?.classList.add('hidden');
+      }
       // Show the tutor chat so the user can ask questions during the pause
       document.querySelector('#study-doubt-section')?.classList.remove('hidden');
     }
