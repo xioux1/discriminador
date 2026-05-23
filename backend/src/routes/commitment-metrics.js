@@ -83,13 +83,27 @@ router.get('/api/commitment-metrics', requireServiceKey, async (req, res) => {
       [userId, fromStr, toStr]
     );
 
+    // Manual study minutes (clase, contenido, estudio_offline, etc. — excludes actividad_fisica)
+    const { rows: maRows } = await dbPool.query(
+      `SELECT
+         COALESCE(ROUND(SUM(EXTRACT(EPOCH FROM (ended_at - started_at)) / 60))::int, 0) AS minutes
+       FROM manual_activity_sessions
+       WHERE user_id = $1
+         AND activity_type != 'actividad_fisica'
+         AND ended_at IS NOT NULL
+         AND started_at::date >= $2::date
+         AND started_at::date <= $3::date`,
+      [userId, fromStr, toStr]
+    );
+
     const al = alRows[0] ?? {};
     const pa = paRows[0] ?? {};
+    const manualStudyMinutes = parseInt(maRows[0]?.minutes ?? 0);
 
     return res.json({
       period: { from: fromStr, to: toStr },
       metrics: {
-        study_minutes:               parseInt(al.study_minutes ?? 0),
+        study_minutes:               parseInt(al.study_minutes ?? 0) + manualStudyMinutes,
         study_sessions:              parseInt(al.study_sessions ?? 0),
         physical_activity_sessions:  parseInt(pa.sessions ?? 0),
         physical_activity_minutes:   parseInt(pa.minutes ?? 0),
