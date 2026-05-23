@@ -6025,6 +6025,7 @@ function showStudyCard() {
   if (_expectedElReset && advancedPanel) advancedPanel.appendChild(_expectedElReset);
   document.querySelector('#study-result-time')?.classList.remove('hidden');
   document.querySelector('#study-result-justification')?.classList.remove('hidden');
+  document.querySelector('#study-chinese-expected')?.classList.remove('hidden');
   document.querySelector('#study-dual-judge')?.classList.add('hidden');
   document.querySelector('.study-result-actions')?.classList.remove('hidden');
   const easyPanel = document.querySelector('#study-easy-explanation');
@@ -6382,6 +6383,12 @@ document.querySelector('#study-result-block').addEventListener('click', async (e
   studyState.currentDecision = { finalGrade: grade.toUpperCase(), source: 'self_grade' };
   if (studyState.reviewStartTime) {
     studyState.reviewTimeMs = Date.now() - studyState.reviewStartTime;
+  }
+  // Update grade badge immediately so the user sees their override was registered.
+  const _gradeChip = document.querySelector('#study-chinese-grade');
+  if (_gradeChip) {
+    _gradeChip.textContent = getSuggestedGradeLabel(grade.toUpperCase());
+    _gradeChip.className   = `study-grade-inline study-chinese-grade ${grade.toLowerCase()}`;
   }
   // In voice mode while audio is playing, just record the grade override — the voice
   // auto-advance flow will call handleStudyNextCard() once audio finishes.
@@ -6809,8 +6816,11 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       document.querySelector('#study-advanced-panel')?.classList.add('hidden');
       document.querySelector('.study-result-actions')?.classList.add('hidden');
       document.querySelector('#study-easy-explanation')?.classList.add('hidden');
-      // Show grade buttons so user can override grade before auto-advance fires
+      // Show grade buttons so user can override grade before auto-advance fires.
+      // showChineseResult also renders the written answer; hide it — in voice mode
+      // only the grade chip + diagram (explanation panel) should be visible.
       showChineseResult(expected_answer_text, result.suggested_grade);
+      document.querySelector('#study-chinese-expected')?.classList.add('hidden');
       // Show the tutor chat so the user can ask questions during the pause
       document.querySelector('#study-doubt-section')?.classList.remove('hidden');
     }
