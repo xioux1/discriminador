@@ -7341,8 +7341,13 @@ document.querySelector('#study-delete-variant-btn').addEventListener('click', as
 
   try {
     await deleteJson(`/scheduler/cards/${item.data.id}/variants/${item.data.variant_id}`);
-    btn.classList.add('hidden');
     showToast('Variante eliminada.', 'success');
+    studyState.queue.splice(studyState.index, 1);
+    if (studyState.index >= studyState.queue.length) {
+      studyState.index = Math.max(0, studyState.queue.length - 1);
+    }
+    persistStudySession();
+    showStudyCard();
   } catch (err) {
     btn.disabled = false;
     showToast(`Error al eliminar variante: ${err.message}`, 'error');
