@@ -7970,22 +7970,32 @@ async function advanceStudyCard() {
     return;
   }
 
-  // Learning step interval: if the next card isn't due yet, find the first due card.
-  // If every remaining card is a not-yet-due learning card, use the soonest one.
+  // Learning step interval: show cards at the right time.
+  // Case A: next card is a learning card not yet due → skip it and show a regular due card instead.
+  // Case B: next card is a regular card → check if a learning card elsewhere in the queue is already due; if so, show it first.
+  // Case C (else): all remaining cards are learning steps not yet due — show the soonest one anyway.
   {
     const now = Date.now();
     const next = studyState.queue[studyState.index];
     if (next?._dueAt && now < next._dueAt) {
-      // Look for a due card after current index
+      // Case A: find a due card (regular or learning-step whose time has come)
       const dueIdx = studyState.queue.findIndex(
         (c, i) => i > studyState.index && (!c._dueAt || now >= c._dueAt)
       );
       if (dueIdx !== -1) {
-        // Swap: bring the due card to current position
         const [dueCard] = studyState.queue.splice(dueIdx, 1);
         studyState.queue.splice(studyState.index, 0, dueCard);
       }
-      // else: all remaining cards are learning steps not yet due — show the next one anyway
+      // else Case C: show the not-yet-due learning card as-is
+    } else if (!next?._dueAt) {
+      // Case B: regular card is next — promote any learning card whose interval has expired
+      const dueLearnIdx = studyState.queue.findIndex(
+        (c, i) => i > studyState.index && c._dueAt && now >= c._dueAt
+      );
+      if (dueLearnIdx !== -1) {
+        const [dueLearnCard] = studyState.queue.splice(dueLearnIdx, 1);
+        studyState.queue.splice(studyState.index, 0, dueLearnCard);
+      }
     }
   }
 
