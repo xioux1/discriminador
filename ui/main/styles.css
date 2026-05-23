@@ -1333,6 +1333,43 @@ textarea:focus, input[type="text"]:focus, select:focus {
 #study-doubt-form { margin-top: 8px; }
 .study-doubt-answer { display: none; }
 
+/* Voice mode: make the tutor chat section much more prominent */
+.voice-mode-active .study-doubt-section {
+  margin-top: 20px;
+  padding-top: 16px;
+}
+.voice-mode-active .study-doubt-toggle {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text);
+  padding: 6px 0;
+}
+.voice-mode-active #study-doubt-form { margin-top: 12px; }
+.voice-mode-active .study-chat-messages {
+  max-height: 420px;
+  font-size: 1rem;
+}
+.voice-mode-active .study-chat-msg {
+  font-size: 1rem;
+  padding: 12px 16px;
+  max-width: 96%;
+}
+.voice-mode-active .study-chat-msg--thinking { font-size: 0.95rem; }
+.voice-mode-active .study-chat-input-row textarea {
+  font-size: 1.05rem;
+  min-height: 72px;
+}
+.voice-mode-active .study-chat-input-actions .btn-secondary,
+.voice-mode-active .study-chat-input-actions .dictation-btn {
+  font-size: 1rem;
+  padding: 8px 18px;
+}
+.voice-mode-active .study-chat-continue-btn {
+  font-size: 1.05rem;
+  padding: 12px 0;
+  margin-top: 14px;
+}
+
 /* Chat messages list */
 .study-chat-messages {
   display: flex; flex-direction: column; gap: 8px;
