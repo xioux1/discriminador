@@ -5911,6 +5911,8 @@ function showStudyCard() {
         await new Promise(r => setTimeout(r, 400));
         // Only auto-start dictation if we're still on the same card that launched this audio.
         if (!studyState.voiceMode || _voiceEpoch !== epochAtCardStart) return;
+        // If the user opened the tutor chat (which pauses the review), don't auto-start recording.
+        if (studyState.voiceReviewPaused) return;
         const dictBtn = document.querySelector('#study-dictation-btn');
         if (dictBtn && !dictBtn.disabled && dictBtn.offsetParent !== null) dictBtn.click();
       })
