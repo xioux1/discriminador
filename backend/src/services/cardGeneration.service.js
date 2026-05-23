@@ -538,6 +538,25 @@ export function validateGeneratedCardDraft(output, context, maxVariants) {
     const v = output.variants[i];
     const vErrs = [];
 
+    // Auto-correct swapped fields: LLM sometimes puts bullet-point answer text in
+    // "question" and the actual question in "expected_answer". Detect by strong
+    // structural signals and swap before any per-field validation runs.
+    if (typeof v.question === 'string' && typeof v.expected_answer === 'string') {
+      const qTrim = v.question.trim();
+      const aTrim = v.expected_answer.trim();
+      // Signal 1: expected_answer starts with ¿ → it's the question, not the answer
+      const expectedIsQuestion = /^¿/.test(aTrim);
+      // Signal 2: question field has bullet-point lines → it's the answer, not the question
+      const questionIsAnswer = /^[-*•]\s+\S/m.test(qTrim);
+      if (expectedIsQuestion || questionIsAnswer) {
+        logger.warn(
+          `[cardGen] Variant ${i}: swapped question/expected_answer detected ` +
+          `(expectedIsQuestion=${expectedIsQuestion}, questionIsAnswer=${questionIsAnswer}), auto-correcting`
+        );
+        [v.question, v.expected_answer] = [v.expected_answer, v.question];
+      }
+    }
+
     if (!v.question || typeof v.question !== 'string' || v.question.trim().length === 0) {
       vErrs.push('question is empty');
     } else {
