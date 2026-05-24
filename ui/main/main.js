@@ -5285,6 +5285,7 @@ async function loadSessionHistory() {
           editForm.style.display = 'none';
           showToast('Horario de fin actualizado.', 'success');
           loadSessionHistory();
+          if (plannerState.weekStart) loadPlannerWeek(plannerState.weekStart);
         } catch (err) {
           errSpan.textContent = err.message || 'Error al guardar.';
           errSpan.style.display = '';
