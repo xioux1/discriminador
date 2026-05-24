@@ -5562,23 +5562,21 @@ async function _flipToExpectedAnswerImmediate(item, expectedText, evalEpoch) {
   const nextBtn = document.querySelector('#study-next-btn');
   if (nextBtn) nextBtn.disabled = true;
 
-  // Show explanation panel in loading state and start artifact fetch (card only)
-  if (item.type === 'card' && item.data?.id) {
-    const _epanel = document.querySelector('#study-explanation-panel');
-    if (_epanel) {
-      _epanel.classList.remove('hidden');
-      const _diagramEl = document.querySelector('#explanation-diagram');
-      if (_diagramEl) _diagramEl.innerHTML = '';
-    }
-    studyState._bgArtifactPromise = fetchExplanationArtifact(item.data.id, item.data.variant_id ?? null)
-      .then((artifact) => {
-        if (artifact && _voiceEpoch === evalEpoch) showExplanationDiagramImmediate(artifact);
-        return artifact || null;
-      })
-      .catch(() => null);
-  } else {
-    studyState._bgArtifactPromise = Promise.resolve(null);
+  // Show explanation panel in loading state.
+  // The artifact fetch was already started in showStudyCard — reuse that promise.
+  const _epanel = document.querySelector('#study-explanation-panel');
+  if (_epanel) {
+    _epanel.classList.remove('hidden');
+    const _diagramEl = document.querySelector('#explanation-diagram');
+    if (_diagramEl) _diagramEl.innerHTML = '';
   }
+  // Attach renderer to the in-flight promise (may resolve immediately if already done)
+  studyState._bgArtifactPromise = (studyState._bgArtifactPromise || Promise.resolve(null))
+    .then((artifact) => {
+      if (artifact && _voiceEpoch === evalEpoch) showExplanationDiagramImmediate(artifact);
+      return artifact || null;
+    })
+    .catch(() => null);
 
   studyState.reviewStartTime = Date.now();
   studyState.reviewTimeMs = 0;
@@ -6147,26 +6145,13 @@ function showStudyCard() {
     studyState.lastCardDocumentId   = item.data.document_id ?? null;
   }
 
-  // Pre-generate explanation artifact in background for regular cards.
-  // By the time the user answers and gets AGAIN/HARD, it will be cached.
+  // Fetch explanation artifact as soon as the question shows — by the time the user
+  // finishes speaking the data will likely be ready to render without extra waiting.
   if (item.type === 'card' && item.data?.id) {
-    const _bgCardId   = item.data.id;
-    const _bgVariantId = item.data.variant_id ?? null;
-    const _bgHeaders  = { 'Content-Type': 'application/json' };
-    if (Auth.getToken()) _bgHeaders['Authorization'] = 'Bearer ' + Auth.getToken();
-    const _bgGetUrl = _bgVariantId
-      ? `/api/cards/${_bgCardId}/explanation-artifact?variant_id=${_bgVariantId}`
-      : `/api/cards/${_bgCardId}/explanation-artifact`;
-    fetch(_bgGetUrl, { headers: _bgHeaders })
-      .then((r) => {
-        if (r.status === 404) {
-          fetch(`/api/cards/${_bgCardId}/explanation-artifact/generate`, {
-            method: 'POST', headers: _bgHeaders,
-            body: JSON.stringify(_bgVariantId ? { variant_id: _bgVariantId } : {}),
-          }).catch(() => {});
-        }
-      })
-      .catch(() => {});
+    studyState._bgArtifactPromise = fetchExplanationArtifact(item.data.id, item.data.variant_id ?? null)
+      .catch(() => null);
+  } else {
+    studyState._bgArtifactPromise = Promise.resolve(null);
   }
 
   const total   = studyState.queue.length;
