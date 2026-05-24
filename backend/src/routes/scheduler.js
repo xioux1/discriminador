@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { dbPool } from '../db/client.js';
 import { computeNextReview, isPassGrade, isFailGrade } from '../services/scheduler.js';
-import { generateMicroCard, generateMicroCardFromCheckError, generateChineseMicroCard, generateChineseListeningMicroCard, isChineseCard, rankGaps, filterRedundantGaps } from '../services/micro-generator.js';
-import { generateVariant, buildChineseListeningVariant } from '../services/variant-generator.js';
+import { generateMicroCard, generateMicroCardFromCheckError, isChineseCard, rankGaps, filterRedundantGaps } from '../services/micro-generator.js';
+import { generateVariant } from '../services/variant-generator.js';
 import Anthropic from '@anthropic-ai/sdk';
 
 const LLM_MODEL = 'claude-haiku-4-5-20251001';
@@ -406,19 +406,13 @@ async function autoGenerateVariant(cardId, card, userId) {
 
   const maxVariants = cfgRes.rows[0].max_variants_per_card; // null = unlimited
 
-  // Count regular and listening variants separately.
-  // Listening variants don't count against the regular limit.
   const countRes = await dbPool.query(
-    `SELECT variant_type, COUNT(*) AS cnt
+    `SELECT COUNT(*) AS cnt
      FROM card_variants
-     WHERE card_id = $1 AND (user_id = $2 OR user_id IS NULL)
-     GROUP BY variant_type`,
+     WHERE card_id = $1 AND (user_id = $2 OR user_id IS NULL) AND variant_type = 'regular'`,
     [cardId, userId]
   );
-  const variantCounts = {};
-  for (const row of countRes.rows) variantCounts[row.variant_type] = parseInt(row.cnt, 10);
-
-  const existingRegular = variantCounts['regular'] || 0;
+  const existingRegular = parseInt(countRes.rows[0]?.cnt ?? 0, 10);
 
   if (maxVariants === null || existingRegular < maxVariants) {
     const variant = await generateVariant({
@@ -426,17 +420,15 @@ async function autoGenerateVariant(cardId, card, userId) {
       expected_answer_text: card.expected_answer_text,
       subject:              card.subject
     });
-    // Discard degenerate variants where the question became identical to the expected
-    // answer — this happens when the LLM accidentally writes the prompt in the target
-    // language (e.g. Chinese) making the card unsolvable without copying the prompt.
-    // Also discard regular variants for Chinese cards where the LLM put CJK characters
-    // in the question (should always be Spanish for Chinese study cards).
     const CJK_RE = /[一-鿿㐀-䶿]/u;
     const hasHanziInPrompt = CJK_RE.test(variant.prompt_text);
+    const startsWithAudio = /^audio\b/i.test(variant.prompt_text.trim());
     if (variant.prompt_text.trim() === variant.expected_answer_text.trim()) {
       console.warn('[auto-variant] discarded degenerate regular variant (prompt == answer)', { cardId, subject: card.subject });
     } else if (isChineseCard(card) && hasHanziInPrompt) {
       console.warn('[auto-variant] discarded Chinese regular variant with hanzi in prompt (LLM language error)', { cardId, subject: card.subject });
+    } else if (startsWithAudio) {
+      console.warn('[auto-variant] discarded variant whose prompt starts with "audio"', { cardId, subject: card.subject });
     } else {
       await dbPool.query(
         `INSERT INTO card_variants (card_id, prompt_text, expected_answer_text, user_id, variant_type)
@@ -446,17 +438,6 @@ async function autoGenerateVariant(cardId, card, userId) {
       console.info('[auto-variant] generated regular', { cardId, subject: card.subject });
     }
   }
-
-  // Listening variant generation disabled — Chinese cards use simplified result UI instead.
-  // if (isChineseCard(card) && !variantCounts['listening']) {
-  //   const lv = buildChineseListeningVariant(card);
-  //   await dbPool.query(
-  //     `INSERT INTO card_variants (card_id, prompt_text, expected_answer_text, user_id, variant_type)
-  //      VALUES ($1, $2, $3, $4, 'listening')`,
-  //     [cardId, lv.prompt_text, lv.expected_answer_text, userId]
-  //   );
-  //   console.info('[auto-variant] generated listening', { cardId, subject: card.subject });
-  // }
 }
 
 // ─── Internal: review a full card ────────────────────────────────────────────
@@ -652,14 +633,6 @@ async function reviewCard(res, cardId, grade, conceptGaps, responseTimeMs, revie
         }
       }
     }
-    // Disabled: listening micro-cards (sound front)
-    // if (isListeningReview) {
-    //   micro = await generateChineseListeningMicroCard({ expected_answer_text: microExpectedText, concept });
-    // }
-    // Disabled: Chinese vocabulary micro-cards
-    // if (isChineseCard(card)) {
-    //   micro = await generateChineseMicroCard({ ... });
-    // }
   }
 
   // ── Micro-cards from binary check conceptual errors ───────────────────────

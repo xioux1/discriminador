@@ -406,6 +406,7 @@ Reglas estrictas:
 18. Cada variante debe incluir tag_labels (2 a 5 etiquetas cortas, snake_case) para tagging posterior.
 19. No modifiques los UUIDs.
 20. Respondé sólo con JSON. Sin markdown, sin backticks, sin texto adicional.
+PROHIBIDO: ninguna variante puede tener question que comience con "audio" ni hacer referencia a contenido de audio, escucha o reproducción. No generes micro-tarjetas ni propiedades con prefijo "audio_" en los objetos de variante.
 ${hasNonExampleConcepts
   ? `21. Los conceptos con role_in_cluster "example" o concept_type "calculation_step" son material de soporte, no el foco de estudio. No generes preguntas cuyo único source_concept_id sea uno de esos conceptos. Usálos como evidencia dentro de preguntas sobre conceptos "main" o "support". Si un ejemplo ilustra un mecanismo central, la pregunta debe ser sobre el mecanismo, no sobre los pasos del ejemplo.`
   : `21. Todos los conceptos de este cluster son ejemplos o pasos de cálculo. Generá preguntas que ayuden al alumno a entender el procedimiento o el ejemplo, orientándolas a comprensión del método general, no a memorización de pasos individuales.`
@@ -559,6 +560,8 @@ export function validateGeneratedCardDraft(output, context, maxVariants) {
 
     if (!v.question || typeof v.question !== 'string' || v.question.trim().length === 0) {
       vErrs.push('question is empty');
+    } else if (/^audio\b/i.test(v.question.trim())) {
+      vErrs.push('question starts with "audio" — not permitted');
     } else {
       const normalized = v.question.trim().toLowerCase();
       if (seenQuestions.has(normalized)) {
