@@ -227,7 +227,7 @@ studySessionsRouter.get('/study/sessions/history', async (req, res) => {
     const { rows } = await dbPool.query(
       `SELECT id, started_at, ended_at, actual_minutes, actual_card_count, analysis
        FROM study_sessions
-       WHERE user_id = $1 AND analysis IS NOT NULL
+       WHERE user_id = $1
        ORDER BY started_at DESC
        LIMIT 30`,
       [userId]

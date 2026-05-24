@@ -5285,7 +5285,7 @@ async function loadSessionHistory() {
 
       const pre = document.createElement('pre');
       pre.style.cssText = 'white-space:pre-wrap;font-family:inherit;font-size:0.83rem;color:var(--text-secondary);padding:12px 14px;margin:0;border-top:1px solid var(--border);background:var(--bg-secondary,#fafafa)';
-      pre.textContent = s.analysis;
+      pre.textContent = s.analysis || '(Sin análisis guardado)';
 
       item.appendChild(summary);
       item.appendChild(editForm);
