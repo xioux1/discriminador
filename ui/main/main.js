@@ -7411,13 +7411,39 @@ document.querySelector('#study-delete-variant-btn').addEventListener('click', as
     document.querySelector('#study-chat-continue-btn')?.classList.add('hidden');
   }
 
+  // Renders a tutor assistant reply: markdown bold/italic, inline code, fenced code blocks, line breaks.
+  // User messages stay as plain text (textContent) for safety.
+  function _renderChatMarkdown(text) {
+    const raw = String(text ?? '');
+    // Split on fenced code blocks first to avoid mangling their content.
+    const parts = raw.split(/(```[\s\S]*?```)/g);
+    return parts.map((part, i) => {
+      if (i % 2 === 1) {
+        // Fenced code block
+        const inner = part.slice(3, -3).replace(/^[a-z]*\n/, ''); // strip language tag
+        return `<pre style="white-space:pre-wrap;font-family:monospace;font-size:0.9em;background:var(--bg-subtle);padding:8px 10px;border-radius:4px;margin:6px 0;overflow-x:auto">${escHtml(inner)}</pre>`;
+      }
+      // Regular text: handle inline code, bold, italic, line breaks
+      return part
+        .replace(/`([^`]+)`/g, (_, c) => `<code style="font-family:monospace;font-size:0.9em;background:var(--bg-subtle);padding:1px 4px;border-radius:3px">${escHtml(c)}</code>`)
+        .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        .replace(/\n/g, '<br>');
+    }).join('');
+  }
+
   // Append a bubble to the tutor chat window
   const _appendBubble = (role, text) => {
     const messagesEl = document.querySelector('#study-chat-messages');
     if (!messagesEl) return null;
     const div = document.createElement('div');
     div.className = `study-chat-msg study-chat-msg--${role}`;
-    div.textContent = text;
+    if (role === 'assistant') {
+      div.innerHTML = _renderChatMarkdown(text);
+    } else {
+      div.textContent = text;
+    }
     messagesEl.appendChild(div);
     messagesEl.scrollTop = messagesEl.scrollHeight;
     return div;
@@ -7487,7 +7513,7 @@ document.querySelector('#study-delete-variant-btn').addEventListener('click', as
       const answer = data?.answer || '(sin respuesta)';
 
       // Replace thinking indicator with real reply
-      if (thinkingEl) { thinkingEl.className = 'study-chat-msg study-chat-msg--assistant'; thinkingEl.textContent = answer; }
+      if (thinkingEl) { thinkingEl.className = 'study-chat-msg study-chat-msg--assistant'; thinkingEl.innerHTML = _renderChatMarkdown(answer); }
       else _appendBubble('assistant', answer);
 
       const messagesEl = document.querySelector('#study-chat-messages');
