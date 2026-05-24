@@ -72,6 +72,7 @@ router.get('/planner/manual-activity/recent', async (req, res) => {
 
 // PATCH /planner/manual-activity/:id
 // Edits started_at and/or ended_at of any completed session owned by the user.
+// Trims other sessions that overlap with the new time range to prevent double-counting.
 router.patch('/planner/manual-activity/:id', async (req, res) => {
   const userId    = req.user.id;
   const sessionId = parseInt(req.params.id, 10);
@@ -102,8 +103,43 @@ router.patch('/planner/manual-activity/:id', async (req, res) => {
     return res.status(422).json({ error: 'validation_error', message: 'La duración no puede superar 24 horas.' });
   }
 
+  const client = await dbPool.connect();
   try {
-    const { rows } = await dbPool.query(
+    await client.query('BEGIN');
+
+    // Trim sessions that overlap on the left: started before new range, ended inside it.
+    // Set their ended_at to the new start so they don't bleed into the edited slot.
+    await client.query(
+      `UPDATE manual_activity_sessions
+       SET ended_at = $1
+       WHERE user_id = $2 AND id != $3
+         AND ended_at IS NOT NULL
+         AND started_at < $1
+         AND ended_at > $1`,
+      [start.toISOString(), userId, sessionId]
+    );
+
+    // Delete sessions entirely within the new range.
+    await client.query(
+      `DELETE FROM manual_activity_sessions
+       WHERE user_id = $1 AND id != $2
+         AND started_at >= $3
+         AND ended_at IS NOT NULL AND ended_at <= $4`,
+      [userId, sessionId, start.toISOString(), end.toISOString()]
+    );
+
+    // Trim sessions that overlap on the right: started inside new range, ended after it.
+    // Set their started_at to the new end.
+    await client.query(
+      `UPDATE manual_activity_sessions
+       SET started_at = $1
+       WHERE user_id = $2 AND id != $3
+         AND started_at >= $4 AND started_at < $1
+         AND (ended_at IS NULL OR ended_at > $1)`,
+      [end.toISOString(), userId, sessionId, start.toISOString()]
+    );
+
+    const { rows } = await client.query(
       `UPDATE manual_activity_sessions
        SET started_at = $1, ended_at = $2
        WHERE id = $3 AND user_id = $4
@@ -113,12 +149,17 @@ router.patch('/planner/manual-activity/:id', async (req, res) => {
     );
 
     if (!rows.length) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ error: 'not_found', message: 'Session not found.' });
     }
 
+    await client.query('COMMIT');
     return res.json({ session: rows[0] });
   } catch (err) {
+    await client.query('ROLLBACK');
     return res.status(500).json({ error: 'server_error', message: err.message });
+  } finally {
+    client.release();
   }
 });
 
@@ -149,10 +190,12 @@ router.delete('/planner/manual-activity/:id', async (req, res) => {
 });
 
 // POST /planner/manual-activity
-// Starts a new manual activity. Stops any previous unfinished session first.
+// Starts a new manual activity, or logs a completed past activity when started_at and ended_at
+// are both provided. Stops any previous unfinished session first. When logging a past activity,
+// also trims other sessions that overlap with the given time range.
 router.post('/planner/manual-activity', async (req, res) => {
   const userId = req.user.id;
-  const { activity_type, subject, description } = req.body ?? {};
+  const { activity_type, subject, description, started_at, ended_at } = req.body ?? {};
 
   if (!activity_type || typeof activity_type !== 'string') {
     return res.status(422).json({
@@ -182,6 +225,81 @@ router.post('/planner/manual-activity', async (req, res) => {
   const cleanSubject     = typeof subject     === 'string' ? subject.trim().slice(0, 200)     : null;
   const cleanDescription = typeof description === 'string' ? description.trim().slice(0, 500) : null;
 
+  // Past activity mode: both started_at and ended_at provided.
+  const isPast = started_at && ended_at;
+  if (isPast) {
+    const start = new Date(started_at);
+    const end   = new Date(ended_at);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      return res.status(422).json({ error: 'validation_error', message: 'Invalid date format.' });
+    }
+    if (end <= start) {
+      return res.status(422).json({ error: 'validation_error', message: 'ended_at must be after started_at.' });
+    }
+    const durationHours = (end - start) / 3_600_000;
+    if (durationHours > 24) {
+      return res.status(422).json({ error: 'validation_error', message: 'La duración no puede superar 24 horas.' });
+    }
+
+    const client = await dbPool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Close any currently open session.
+      await client.query(
+        `UPDATE manual_activity_sessions SET ended_at = $1
+         WHERE user_id = $2 AND ended_at IS NULL AND started_at <= $1`,
+        [start.toISOString(), userId]
+      );
+
+      // Trim sessions overlapping on the left.
+      await client.query(
+        `UPDATE manual_activity_sessions
+         SET ended_at = $1
+         WHERE user_id = $2 AND ended_at IS NOT NULL
+           AND started_at < $1 AND ended_at > $1`,
+        [start.toISOString(), userId]
+      );
+
+      // Delete sessions entirely within the new range.
+      await client.query(
+        `DELETE FROM manual_activity_sessions
+         WHERE user_id = $1
+           AND started_at >= $2 AND ended_at IS NOT NULL AND ended_at <= $3`,
+        [userId, start.toISOString(), end.toISOString()]
+      );
+
+      // Trim sessions overlapping on the right.
+      await client.query(
+        `UPDATE manual_activity_sessions
+         SET started_at = $1
+         WHERE user_id = $2
+           AND started_at >= $3 AND started_at < $1
+           AND (ended_at IS NULL OR ended_at > $1)`,
+        [end.toISOString(), userId, start.toISOString()]
+      );
+
+      const { rows } = await client.query(
+        `INSERT INTO manual_activity_sessions
+           (user_id, activity_type, subject, description, started_at, ended_at)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id, activity_type, subject, description, started_at, ended_at,
+                   ROUND(EXTRACT(EPOCH FROM (ended_at - started_at)) / 60)::int AS duration_minutes`,
+        [userId, activity_type, cleanSubject || null, cleanDescription || null,
+         start.toISOString(), end.toISOString()]
+      );
+
+      await client.query('COMMIT');
+      return res.status(201).json({ session: rows[0] });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      return res.status(500).json({ error: 'server_error', message: err.message });
+    } finally {
+      client.release();
+    }
+  }
+
+  // Real-time mode: start a session now.
   try {
     // Close any open session before starting a new one
     await dbPool.query(

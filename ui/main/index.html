@@ -1091,6 +1091,19 @@
               <button type="button" id="pab-start-btn" class="btn-primary pab-start-btn" disabled>Iniciar &#8594;</button>
               <button type="button" id="pab-cancel-btn" class="btn-ghost pab-cancel-btn">&#215;</button>
             </div>
+            <div class="pab-past-row">
+              <label class="pab-past-toggle">
+                <input type="checkbox" id="pab-past-check"> Registrar en horario pasado
+              </label>
+              <div id="pab-past-fields" class="pab-past-fields hidden">
+                <label class="pab-past-label">Inicio
+                  <input type="datetime-local" id="pab-past-start" class="pab-edit-input">
+                </label>
+                <label class="pab-past-label">Fin
+                  <input type="datetime-local" id="pab-past-end" class="pab-edit-input">
+                </label>
+              </div>
+            </div>
             <span id="pab-form-error" class="pab-form-error hidden"></span>
           </div>
         </div>
