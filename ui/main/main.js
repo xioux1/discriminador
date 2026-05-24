@@ -6378,7 +6378,7 @@ function showStudyCard() {
   studyState.bgEvalDone = false;
   studyState.bgTtsDone = false;
   studyState._bgBothDoneRunning = false;
-  studyState._bgArtifactPromise = null;
+  // _bgArtifactPromise is set earlier in showStudyCard — do not reset it here
   const _checkFb = document.querySelector('#study-check-feedback');
   if (_checkFb) { _checkFb.textContent = ''; _checkFb.className = 'study-check-feedback'; }
   clearCheckErrorTags();
