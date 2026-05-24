@@ -4707,6 +4707,15 @@ function bindStudyKeyboardShortcuts() {
             acceptBtn.click();
             return;
           }
+          // Voice mode background eval: GOOD/EASY can skip TTS playback with Ctrl+Enter.
+          if (studyState.voiceMode && studyState._bgFlipEpoch === _voiceEpoch && studyState.currentDecision) {
+            const _skipGrade = normalizeSuggestedGrade(studyState.currentDecision.finalGrade || '');
+            if (['GOOD', 'EASY'].includes(_skipGrade)) {
+              event.preventDefault();
+              _skipBgAudioAndAdvance();
+              return;
+            }
+          }
           // Chinese result: study-result-quick (and next-btn inside it) is hidden,
           // but currentDecision is pre-set by the API grade → call handler directly.
           if (studyState.currentDecision) {
@@ -5689,6 +5698,19 @@ async function _runBackgroundEval(item, answer, expected_answer_text, subject, g
     studyState.bgEvalDone = true;
     _checkBgBothDone(evalEpoch);
   }
+}
+
+// Stop any playing TTS and advance immediately — used by Ctrl+Enter skip for GOOD/EASY.
+function _skipBgAudioAndAdvance() {
+  if (_voiceFrontAudio) {
+    _voiceFrontAudio._interrupted = true;
+    try { _voiceFrontAudio.pause(); } catch (_) {}
+    _voiceFrontAudio = null;
+  }
+  studyState.audioPlaying = false;
+  studyState.voicePhase = 'idle';
+  studyState._bgBothDoneRunning = true; // prevent _checkBgBothDone from double-advancing
+  handleStudyNextCard();
 }
 
 // ── End background eval helpers ──────────────────────────────────────────────
