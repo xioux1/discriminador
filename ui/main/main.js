@@ -5386,6 +5386,8 @@ const studyState = {
   _bgFlipEpoch: -1,
   bgEvalDone: false,
   bgTtsDone: false,
+  _bgBothDoneRunning: false,
+  _bgArtifactPromise: null,
 };
 
 // Cache de configs de autoadvance por materia para evitar fetches repetidos
@@ -5533,33 +5535,25 @@ async function _flipToExpectedAnswerImmediate(item, expectedText, evalEpoch) {
   document.querySelector('#study-result-block').classList.remove('hidden');
   document.querySelector('#study-doubt-section')?.classList.remove('hidden');
 
-  // Grade chip: pending state while eval runs in background
-  const gradeEl = document.querySelector('#study-result-grade');
-  if (gradeEl) {
-    gradeEl.textContent = '…';
-    gradeEl.className = 'study-grade-inline pending';
-  }
+  // Voice mode simplified view: show grade buttons block, hide standard result panels
+  const chineseResult = document.querySelector('#study-chinese-result');
+  if (chineseResult) chineseResult.classList.remove('hidden');
+  document.querySelector('.study-result-quick')?.classList.add('hidden');
+  document.querySelector('#study-advanced-panel')?.classList.add('hidden');
 
-  // Show expected answer immediately so the user can read while waiting
-  const expectedEl = document.querySelector('#study-result-expected');
-  if (expectedEl) {
-    expectedEl.innerHTML = formatAnswerBlock('Respuesta esperada', expectedText);
-    expectedEl.classList.remove('hidden');
-  }
+  // Expected text is read aloud via TTS — diagram is the visual, not the raw text
+  document.querySelector('#study-chinese-expected')?.classList.add('hidden');
+  document.querySelector('#study-result-expected')?.classList.add('hidden');
 
-  // Show simplified Chinese-style result block (grade chip + expected + grade buttons)
-  // Grade buttons are disabled until the verdict arrives
-  showChineseResult(expectedText, null);
+  // Grade chip: pending while eval runs
   const chineseGradeEl = document.querySelector('#study-chinese-grade');
   if (chineseGradeEl) {
     chineseGradeEl.textContent = '…';
     chineseGradeEl.className = 'study-grade-inline study-chinese-grade pending';
   }
-  document.querySelector('#study-chinese-result')?.querySelectorAll('[data-chinese-grade]').forEach((btn) => {
-    btn.disabled = true;
-  });
+  chineseResult?.querySelectorAll('[data-chinese-grade]').forEach((btn) => { btn.disabled = true; });
 
-  // Hide verdict-dependent elements until eval returns
+  // Hide verdict-dependent items
   const justEl = document.querySelector('#study-result-justification');
   if (justEl) { justEl.textContent = ''; justEl.classList.add('hidden'); }
   document.querySelector('#study-result-dimensions')?.classList.add('hidden');
@@ -5568,10 +5562,28 @@ async function _flipToExpectedAnswerImmediate(item, expectedText, evalEpoch) {
   const nextBtn = document.querySelector('#study-next-btn');
   if (nextBtn) nextBtn.disabled = true;
 
+  // Show explanation panel in loading state and start artifact fetch (card only)
+  if (item.type === 'card' && item.data?.id) {
+    const _epanel = document.querySelector('#study-explanation-panel');
+    if (_epanel) {
+      _epanel.classList.remove('hidden');
+      const _diagramEl = document.querySelector('#explanation-diagram');
+      if (_diagramEl) _diagramEl.innerHTML = '';
+    }
+    studyState._bgArtifactPromise = fetchExplanationArtifact(item.data.id, item.data.variant_id ?? null)
+      .then((artifact) => {
+        if (artifact && _voiceEpoch === evalEpoch) showExplanationDiagramImmediate(artifact);
+        return artifact || null;
+      })
+      .catch(() => null);
+  } else {
+    studyState._bgArtifactPromise = Promise.resolve(null);
+  }
+
   studyState.reviewStartTime = Date.now();
   studyState.reviewTimeMs = 0;
 
-  // Play TTS of expected answer — user hears the answer while transcription runs
+  // Play TTS of expected answer — user hears while diagram loads
   await playStudyVoiceFront(expectedText).catch(() => {});
 
   if (_voiceEpoch === evalEpoch) {
@@ -5589,74 +5601,18 @@ function _applyBgEvalVerdict(result, item, answer, expected_answer_text, evalEpo
 
   const grade = normalizeSuggestedGrade(result.suggested_grade);
 
-  // Update main grade chip
-  const gradeEl = document.querySelector('#study-result-grade');
-  if (gradeEl) {
-    gradeEl.textContent = getSuggestedGradeLabel(result.suggested_grade);
-    gradeEl.className = `study-grade-inline ${grade.toLowerCase()}`;
-  }
-
-  // Update Chinese-style grade chip and re-enable grade buttons
+  // Update grade chip
   const chineseGradeEl = document.querySelector('#study-chinese-grade');
   if (chineseGradeEl) {
     chineseGradeEl.textContent = getSuggestedGradeLabel(result.suggested_grade);
     chineseGradeEl.className = `study-grade-inline study-chinese-grade ${grade.toLowerCase()}`;
   }
+  // Re-enable grade buttons so user can override before auto-advance
   document.querySelector('#study-chinese-result')?.querySelectorAll('[data-chinese-grade]').forEach((btn) => {
     btn.disabled = false;
   });
 
-  // Justification (voice mode: simplified)
-  const justEl = document.querySelector('#study-result-justification');
-  if (justEl) {
-    justEl.textContent = ['GOOD', 'EASY'].includes(grade)
-      ? 'Bien.'
-      : (summarizeJustificationLine(result) || 'Revisá esta respuesta.');
-    justEl.classList.remove('hidden');
-  }
-
-  // Dimensions
-  const dimsEl = document.querySelector('#study-result-dimensions');
-  if (dimsEl) {
-    const weakDimensions = Object.entries(result.dimensions || {})
-      .filter(([, value]) => Number(value) < 0.7)
-      .sort((a, b) => Number(a[1]) - Number(b[1]));
-    if (weakDimensions.length > 0) {
-      dimsEl.innerHTML = weakDimensions.map(([dimension, value]) => {
-        const pct = Math.round(Number(value) * 100);
-        const label = DIM_LABELS[dimension] || dimension;
-        return `<span class="study-dimension-chip weak hl-pink">${label}: ${pct}%</span>`;
-      }).join('');
-    } else {
-      dimsEl.innerHTML = '<span class="study-dimension-chip ok hl-green">Buen dominio general en esta respuesta.</span>';
-    }
-    dimsEl.classList.remove('hidden');
-  }
-
-  // Update expected block with user answer comparison now that we have the answer
-  const expectedEl = document.querySelector('#study-result-expected');
-  if (expectedEl) {
-    const weakDimensions = Object.entries(result.dimensions || {})
-      .filter(([, value]) => Number(value) < 0.7)
-      .sort((a, b) => Number(a[1]) - Number(b[1]));
-    const concepts = result.missing_concepts ?? [];
-    const weakTags = weakDimensions.map(([dimension, value]) => {
-      const label = DIM_LABELS[dimension] || dimension;
-      const pct = Math.round(Number(value) * 100);
-      return `<span class="study-dimension-chip weak hl-pink">${label}: ${pct}%</span>`;
-    }).join(' ');
-    const missingTags = concepts.map((c) => `<span class="concept-tag hl-yellow">${escHtml(c)}</span>`).join(' ');
-    const groupedTags = (weakTags || missingTags)
-      ? `<div class="study-answer-compare-block"><strong>Etiquetas:</strong> ${weakTags}${weakTags && missingTags ? ' ' : ''}${missingTags}</div>`
-      : '';
-    expectedEl.innerHTML = `
-      ${groupedTags}
-      ${answer ? formatAnswerBlock('Tu respuesta', answer) : ''}
-      ${formatAnswerBlock('Respuesta esperada', expected_answer_text)}
-    `;
-  }
-
-  // Pre-accept LLM grade so auto-advance and Siguiente work
+  // Pre-accept LLM grade so Siguiente and auto-advance work
   studyState.currentDecision = { finalGrade: grade.toLowerCase(), source: 'llm_auto' };
 
   const nextBtn = document.querySelector('#study-next-btn');
@@ -5667,11 +5623,36 @@ function _applyBgEvalVerdict(result, item, answer, expected_answer_text, evalEpo
 }
 
 // Advance to next card once both TTS and eval are done.
-function _checkBgBothDone(evalEpoch) {
+// For AGAIN/HARD: wait for the explanation artifact and run the reveal audio first.
+// For GOOD/EASY: hide the diagram panel and pause briefly before advancing.
+async function _checkBgBothDone(evalEpoch) {
   if (_voiceEpoch !== evalEpoch) return;
   if (!studyState.bgEvalDone || !studyState.bgTtsDone) return;
   if (studyState.voiceReviewPaused) return;
-  handleStudyNextCard();
+  if (studyState._bgBothDoneRunning) return;
+  studyState._bgBothDoneRunning = true;
+
+  try {
+    const grade = normalizeSuggestedGrade(studyState.currentEvalResult?.suggested_grade || '');
+    const item  = studyState.queue[studyState.index];
+    const needsExplanation = ['AGAIN', 'HARD'].includes(grade) && item?.type === 'card' && item?.data?.id;
+
+    if (needsExplanation) {
+      const artifact = await (studyState._bgArtifactPromise || Promise.resolve(null));
+      if (_voiceEpoch !== evalEpoch) return;
+      await playExplanationThenReveal(artifact, evalEpoch).catch(() => {});
+      if (_voiceEpoch !== evalEpoch) return;
+    } else {
+      hideExplanationPanel();
+      await new Promise(r => setTimeout(r, 1500));
+      if (_voiceEpoch !== evalEpoch) return;
+    }
+
+    if (studyState.voiceReviewPaused) return;
+    await handleStudyNextCard();
+  } finally {
+    studyState._bgBothDoneRunning = false;
+  }
 }
 
 // Run /evaluate in background after the card has already been flipped.
@@ -6388,6 +6369,8 @@ function showStudyCard() {
   studyState._bgFlipEpoch = -1;
   studyState.bgEvalDone = false;
   studyState.bgTtsDone = false;
+  studyState._bgBothDoneRunning = false;
+  studyState._bgArtifactPromise = null;
   const _checkFb = document.querySelector('#study-check-feedback');
   if (_checkFb) { _checkFb.textContent = ''; _checkFb.className = 'study-check-feedback'; }
   clearCheckErrorTags();
