@@ -50,6 +50,55 @@ studySessionsRouter.patch('/study/sessions/:id', async (req, res) => {
   }
 });
 
+// PATCH /study/sessions/:id/end-time — correct ended_at for a session that was left open
+studySessionsRouter.patch('/study/sessions/:id/end-time', async (req, res) => {
+  const userId    = req.user.id;
+  const sessionId = parseInt(req.params.id, 10);
+  const { ended_at } = req.body || {};
+
+  if (!Number.isFinite(sessionId)) {
+    return res.status(400).json({ error: 'invalid_id' });
+  }
+  if (!ended_at) {
+    return res.status(422).json({ error: 'validation_error', message: 'ended_at es obligatorio.' });
+  }
+
+  const endDate = new Date(ended_at);
+  if (isNaN(endDate.getTime())) {
+    return res.status(422).json({ error: 'validation_error', message: 'ended_at no es una fecha válida.' });
+  }
+  if (endDate > new Date()) {
+    return res.status(422).json({ error: 'validation_error', message: 'ended_at no puede ser en el futuro.' });
+  }
+
+  try {
+    const { rows } = await dbPool.query(
+      `SELECT started_at FROM study_sessions WHERE id = $1 AND user_id = $2`,
+      [sessionId, userId]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'not_found', message: 'Sesión no encontrada.' });
+    }
+    const startDate = new Date(rows[0].started_at);
+    if (endDate <= startDate) {
+      return res.status(422).json({ error: 'validation_error', message: 'ended_at debe ser posterior al inicio de la sesión.' });
+    }
+
+    const actualMinutes = (endDate - startDate) / 60000;
+
+    await dbPool.query(
+      `UPDATE study_sessions
+       SET ended_at = $1, actual_minutes = $2
+       WHERE id = $3 AND user_id = $4`,
+      [endDate.toISOString(), actualMinutes, sessionId, userId]
+    );
+    return res.json({ ok: true, actual_minutes: actualMinutes });
+  } catch (err) {
+    console.error('PATCH /study/sessions/:id/end-time error', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
 // GET /study/sessions/calibration — per-user calibration factor from last 10 sessions
 studySessionsRouter.get('/study/sessions/calibration', async (req, res) => {
   const userId = req.user.id;
