@@ -5337,14 +5337,14 @@ async function getAutoadvanceConfig(subject) {
 }
 
 function parseLearningSteps(text) {
-  if (!text || typeof text !== 'string') return [60, 600];
+  if (!text || typeof text !== 'string') return [];
   const units = { s: 1, m: 60, h: 3600, d: 86400 };
   const steps = [];
   for (const token of text.trim().split(/\s+/)) {
     const m = token.match(/^(\d+(?:\.\d+)?)(s|m|h|d)?$/i);
     if (m) steps.push(parseFloat(m[1]) * (units[(m[2] || 'm').toLowerCase()] ?? 60));
   }
-  return steps.length ? steps : [60, 600];
+  return steps;
 }
 
 function clearAutoadvanceTimers() {
@@ -7946,6 +7946,29 @@ async function handleStudyNextCard() {
       const subjectKey  = item.data.subject ?? null;
       const cfg         = autoadvanceConfigCache[subjectKey] ?? null;
       const steps       = parseLearningSteps(cfg?.learning_steps ?? '1m 10m');
+      if (steps.length === 0) {
+        postJson('/scheduler/review', {
+          card_id:          item.data.id,
+          grade,
+          concept_gaps:     gaps,
+          check_fail_ids:   studyState.checkFails,
+          response_time_ms: studyState.responseTimeMs || undefined,
+          review_time_ms:   studyState.reviewTimeMs   || undefined,
+          user_answer:      studyState.currentEvalContext?.user_answer_text || '',
+          variant_id:       item.data.variant_id || undefined,
+        }).then(() => loadAgenda()).catch((err) => console.warn('Learning step review failed:', err.message));
+        studyState.results.push({
+          grade: grade || 'uncertain', type: item.type, concept: null,
+          prompt_text: item.data.prompt_text || '',
+          expected_answer_text: item.data.expected_answer_text || '',
+          subject: item.data.subject || '',
+          user_answer: studyState.currentEvalContext?.user_answer_text || '',
+          concept_gaps: gaps || [],
+        });
+        persistStudySession();
+        advanceStudyCard();
+        return;
+      }
       const curStep     = item.data._learningStep ?? 0;
       let nextStep      = curStep;
       let graduate      = false;
