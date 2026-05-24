@@ -5169,6 +5169,13 @@ async function loadStudyOverview() {
   }
 }
 
+function sessionHistoryToLocalDt(isoStr) {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 async function loadSessionHistory() {
   const list = document.querySelector('#study-history-list');
   if (!list) return;
@@ -5196,10 +5203,20 @@ async function loadSessionHistory() {
       summary.style.cssText = 'padding:12px 14px;cursor:pointer;font-weight:600;font-size:0.92rem;list-style:none;display:flex;justify-content:space-between;align-items:center';
       summary.innerHTML = `<span>${escHtml(meta)}</span>`;
 
+      const btnGroup = document.createElement('span');
+      btnGroup.style.cssText = 'display:flex;align-items:center;gap:6px;flex-shrink:0';
+
+      const editEndBtn = document.createElement('button');
+      editEndBtn.type = 'button';
+      editEndBtn.className = 'btn-ghost';
+      editEndBtn.style.cssText = 'font-size:0.78rem;padding:2px 8px';
+      editEndBtn.textContent = 'Editar fin';
+      editEndBtn.title = 'Corregir el horario de finalización de esta sesión';
+
       const downloadBtn = document.createElement('button');
       downloadBtn.type = 'button';
       downloadBtn.className = 'btn-ghost';
-      downloadBtn.style.cssText = 'font-size:0.78rem;padding:2px 8px;margin-left:10px';
+      downloadBtn.style.cssText = 'font-size:0.78rem;padding:2px 8px';
       downloadBtn.textContent = 'TXT';
       downloadBtn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -5213,13 +5230,65 @@ async function loadSessionHistory() {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
       });
-      summary.appendChild(downloadBtn);
+
+      btnGroup.appendChild(editEndBtn);
+      btnGroup.appendChild(downloadBtn);
+      summary.appendChild(btnGroup);
+
+      // Inline end-time editor (hidden by default)
+      const editForm = document.createElement('div');
+      editForm.style.cssText = 'display:none;padding:10px 14px;border-top:1px solid var(--border);background:var(--bg-secondary,#fafafa);gap:8px;align-items:center;flex-wrap:wrap';
+      editForm.innerHTML = `
+        <label style="font-size:0.82rem;font-weight:600">Hora de finalización:</label>
+        <input type="datetime-local" style="font-size:0.82rem;padding:3px 6px;border:1px solid var(--border);border-radius:4px" />
+        <button type="button" class="btn-ghost" style="font-size:0.78rem;padding:3px 10px" data-action="save">Guardar</button>
+        <button type="button" class="btn-ghost" style="font-size:0.78rem;padding:3px 10px" data-action="cancel">Cancelar</button>
+        <span style="font-size:0.8rem;color:#c00;display:none" data-role="err"></span>
+      `;
+      const dtInput  = editForm.querySelector('input[type="datetime-local"]');
+      const saveBtn  = editForm.querySelector('[data-action="save"]');
+      const cancelBtn = editForm.querySelector('[data-action="cancel"]');
+      const errSpan  = editForm.querySelector('[data-role="err"]');
+
+      editEndBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        dtInput.value = sessionHistoryToLocalDt(s.ended_at);
+        errSpan.style.display = 'none';
+        editForm.style.display = editForm.style.display === 'none' ? 'flex' : 'none';
+      });
+
+      cancelBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        editForm.style.display = 'none';
+      });
+
+      saveBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const val = dtInput.value;
+        if (!val) { errSpan.textContent = 'Seleccioná una fecha y hora.'; errSpan.style.display = ''; return; }
+        const endDate = new Date(val);
+        if (isNaN(endDate.getTime())) { errSpan.textContent = 'Fecha inválida.'; errSpan.style.display = ''; return; }
+        saveBtn.disabled = true;
+        errSpan.style.display = 'none';
+        try {
+          const res = await postJson(`/study/sessions/${s.id}/end-time`, { ended_at: endDate.toISOString() }, 'PATCH');
+          if (!res) throw new Error('Sin respuesta del servidor.');
+          editForm.style.display = 'none';
+          showToast('Horario de fin actualizado.', 'success');
+          loadSessionHistory();
+        } catch (err) {
+          errSpan.textContent = err.message || 'Error al guardar.';
+          errSpan.style.display = '';
+          saveBtn.disabled = false;
+        }
+      });
 
       const pre = document.createElement('pre');
       pre.style.cssText = 'white-space:pre-wrap;font-family:inherit;font-size:0.83rem;color:var(--text-secondary);padding:12px 14px;margin:0;border-top:1px solid var(--border);background:var(--bg-secondary,#fafafa)';
-      pre.textContent = s.analysis;
+      pre.textContent = s.analysis || '(Sin análisis guardado)';
 
       item.appendChild(summary);
+      item.appendChild(editForm);
       item.appendChild(pre);
       list.appendChild(item);
     }
