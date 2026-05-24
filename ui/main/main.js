@@ -6145,6 +6145,8 @@ function showStudyCard() {
     try { _ttsAudio.pause(); } catch (_) {}
     _ttsAudio = null;
   }
+  // Stop chat TTS immediately so it can't overlap with the new card's audio.
+  if (typeof window._stopChatTTS === 'function') window._stopChatTTS();
   // Cancel any active dictation recording so it doesn't transcribe into the next card.
   const _dictBtn = document.querySelector('#study-dictation-btn');
   if (_dictBtn?._recorder?.state === 'recording') {
@@ -7691,8 +7693,10 @@ document.querySelector('#study-delete-variant-btn').addEventListener('click', as
 {
   let _chatHistory  = [];   // {role:'user'|'assistant', content:string}[]
   let _chatTtsAudio = null; // track to cancel on new message or card navigation
+  let _chatTtsEpoch = 0;    // incremented on every stop to cancel in-flight fetches
 
   function _stopChatTTS() {
+    _chatTtsEpoch++;
     if (_chatTtsAudio) {
       try { _chatTtsAudio.pause(); } catch (_) {}
       _chatTtsAudio = null;
@@ -7776,6 +7780,7 @@ document.querySelector('#study-delete-variant-btn').addEventListener('click', as
   async function _playChatTTS(text) {
     if (!text) return;
     _stopChatTTS();
+    const myEpoch = _chatTtsEpoch;
     try {
       let audioB64 = _ttsCache.get(`es::${text}`);
       if (!audioB64) {
@@ -7783,7 +7788,7 @@ document.querySelector('#study-delete-variant-btn').addEventListener('click', as
         audioB64 = data?.audio;
         if (audioB64) _ttsCache.set(`es::${text}`, audioB64);
       }
-      if (!audioB64) return;
+      if (!audioB64 || myEpoch !== _chatTtsEpoch) return;
       const audio = new Audio(`data:audio/mpeg;base64,${audioB64}`);
       _chatTtsAudio = audio;
       audio.onended = () => { if (_chatTtsAudio === audio) _chatTtsAudio = null; };
@@ -7911,11 +7916,13 @@ document.querySelector('#study-delete-variant-btn').addEventListener('click', as
     }
   );
 
-  // Expose reset so showStudyCard can clear history on card change
+  // Expose reset and stop so showStudyCard can cancel TTS on card change
   window._resetStudyChat = resetStudyChat;
+  window._stopChatTTS    = _stopChatTTS;
 }
 
 document.querySelector('#study-next-btn').addEventListener('click', async () => {
+  if (typeof window._stopChatTTS === 'function') window._stopChatTTS();
   await handleStudyNextCard();
 });
 
