@@ -3985,7 +3985,7 @@ function _stripKeyPhrase(text) {
  * textarea: the target textarea element
  * labelIdle: button text when idle
  */
-function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = null, onTranscribed = null, onRecordingStart = null) {
+function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = null, onTranscribed = null, onRecordingStart = null, onSilenceDetected = null) {
   if (!window.MediaRecorder || !navigator.mediaDevices) return;
 
   btn.hidden = false;
@@ -4083,6 +4083,7 @@ function attachDictation(btn, textarea, labelIdle = 'Dictar', subjectOverride = 
           } else if (hadSpeech) {
             if (!silenceStart) silenceStart = Date.now();
             else if (Date.now() - silenceStart >= VAD_SILENCE_MS) {
+              if (typeof onSilenceDetected === 'function') onSilenceDetected();
               mediaRecorder.stop();
               return; // don't reschedule
             }
@@ -4504,14 +4505,71 @@ function initStudyTab() {
     document.querySelector('#study-answer-input'),
     'Dictar',
     () => studyDictBtn.dataset.subject || '',
-    (keyphraseDetected) => {
+    // onTranscribed: after transcription completes
+    async (keyphraseDetected) => {
       if (!studyState.voiceMode && !keyphraseDetected) return;
-      // Guard against stale transcription completing after card navigation/deletion.
       if (studyDictBtn._dictEpoch !== _voiceEpoch) return;
+
+      // Voice mode with immediate flip: card was already shown — run eval in background
+      if (studyState.voiceMode && studyState._bgFlipEpoch === _voiceEpoch) {
+        const item = studyState.queue[studyState.index];
+        if (!item) return;
+        const answer = MathPreview.serialize(document.querySelector('#study-answer-input')).trim();
+        let expected_answer_text, subject, grading_rubric;
+        if (item.type === 'micro') {
+          expected_answer_text = item.data.expected_answer || item.data.parent_expected || '';
+          subject = item.data.parent_subject ?? item.data.subject;
+        } else {
+          expected_answer_text = item.data.expected_answer_text || '';
+          subject = item.data.subject;
+          grading_rubric = Array.isArray(item.data.grading_rubric) && item.data.grading_rubric.length > 0
+            ? item.data.grading_rubric : undefined;
+        }
+        if (!answer) {
+          // Empty answer: grade as Again, signal eval done
+          studyState.currentEvalResult = { suggested_grade: 'again', missing_concepts: [], dimensions: {} };
+          studyState.currentDecision   = { finalGrade: 'again', source: 'empty' };
+          const _gradeEl = document.querySelector('#study-result-grade');
+          if (_gradeEl) { _gradeEl.textContent = 'Again'; _gradeEl.className = 'study-grade-inline again'; }
+          const _cgEl = document.querySelector('#study-chinese-grade');
+          if (_cgEl) { _cgEl.textContent = 'Again'; _cgEl.className = 'study-grade-inline study-chinese-grade again'; }
+          document.querySelector('#study-chinese-result')?.querySelectorAll('[data-chinese-grade]').forEach((b) => { b.disabled = false; });
+          const _nextBtn = document.querySelector('#study-next-btn');
+          if (_nextBtn) _nextBtn.disabled = false;
+          studyState.bgEvalDone = true;
+          _checkBgBothDone(_voiceEpoch);
+          return;
+        }
+        await _runBackgroundEval(item, answer, expected_answer_text, subject, grading_rubric, _voiceEpoch);
+        return;
+      }
+
+      // No flip yet (non-voice mode or keyphrase flow): fall back to eval button
       const evalBtn = document.querySelector('#study-eval-btn');
       if (evalBtn && !evalBtn.disabled && evalBtn.offsetParent !== null) evalBtn.click();
     },
-    () => { studyDictBtn._dictEpoch = _voiceEpoch; }
+    // onRecordingStart
+    () => { studyDictBtn._dictEpoch = _voiceEpoch; },
+    // onSilenceDetected: flip card immediately in voice mode
+    () => {
+      if (!studyState.voiceMode) return;
+      const epochAtSilence = _voiceEpoch;
+      if (studyDictBtn._dictEpoch !== epochAtSilence) return;
+
+      const item = studyState.queue[studyState.index];
+      if (!item) return;
+
+      const expected_answer_text = item.type === 'micro'
+        ? (item.data.expected_answer || item.data.parent_expected || '')
+        : (item.data.expected_answer_text || '');
+
+      studyState._bgFlipEpoch = epochAtSilence;
+      studyState.bgEvalDone   = false;
+      studyState.bgTtsDone    = false;
+
+      // Flip immediately and start TTS concurrently with transcription
+      _flipToExpectedAnswerImmediate(item, expected_answer_text, epochAtSilence).catch(() => {});
+    }
   );
   attachMathTabInsertion(
     document.querySelector('#study-answer-input'),
@@ -5255,6 +5313,10 @@ const studyState = {
   autoadvanceQuestionTimeout: null,
   autoadvanceAnswerTimeout: null,
   autoadvanceTickInterval: null,
+  // Background eval state (voice mode immediate flip on silence)
+  _bgFlipEpoch: -1,
+  bgEvalDone: false,
+  bgTtsDone: false,
 };
 
 // Cache de configs de autoadvance por materia para evitar fetches repetidos
@@ -5384,6 +5446,204 @@ function startAnswerAutoadvance(seconds, action, cardEpoch) {
     studyState.autoadvanceTickInterval = handles.tick;
   }
 }
+
+// ── Background eval helpers (voice mode: flip on silence, eval behind TTS) ────
+
+// Show expected answer immediately when VAD detects silence, before transcription.
+// Plays TTS of expected answer; resolves when audio finishes.
+async function _flipToExpectedAnswerImmediate(item, expectedText, evalEpoch) {
+  if (studyState.timerInterval) {
+    clearInterval(studyState.timerInterval);
+    studyState.timerInterval = null;
+  }
+  studyState.responseTimeMs = Date.now() - studyState.cardStartTime - studyState.cardPausedMs;
+  clearAutoadvanceTimers();
+  studyState.currentDecision = null;
+
+  document.querySelector('#study-answer-block').classList.add('hidden');
+  document.querySelector('#study-result-block').classList.remove('hidden');
+  document.querySelector('#study-doubt-section')?.classList.remove('hidden');
+
+  // Grade chip: pending state while eval runs in background
+  const gradeEl = document.querySelector('#study-result-grade');
+  if (gradeEl) {
+    gradeEl.textContent = '…';
+    gradeEl.className = 'study-grade-inline pending';
+  }
+
+  // Show expected answer immediately so the user can read while waiting
+  const expectedEl = document.querySelector('#study-result-expected');
+  if (expectedEl) {
+    expectedEl.innerHTML = formatAnswerBlock('Respuesta esperada', expectedText);
+    expectedEl.classList.remove('hidden');
+  }
+
+  // Show simplified Chinese-style result block (grade chip + expected + grade buttons)
+  // Grade buttons are disabled until the verdict arrives
+  showChineseResult(expectedText, null);
+  const chineseGradeEl = document.querySelector('#study-chinese-grade');
+  if (chineseGradeEl) {
+    chineseGradeEl.textContent = '…';
+    chineseGradeEl.className = 'study-grade-inline study-chinese-grade pending';
+  }
+  document.querySelector('#study-chinese-result')?.querySelectorAll('[data-chinese-grade]').forEach((btn) => {
+    btn.disabled = true;
+  });
+
+  // Hide verdict-dependent elements until eval returns
+  const justEl = document.querySelector('#study-result-justification');
+  if (justEl) { justEl.textContent = ''; justEl.classList.add('hidden'); }
+  document.querySelector('#study-result-dimensions')?.classList.add('hidden');
+  document.querySelector('#study-decision-block')?.classList.add('hidden');
+
+  const nextBtn = document.querySelector('#study-next-btn');
+  if (nextBtn) nextBtn.disabled = true;
+
+  studyState.reviewStartTime = Date.now();
+  studyState.reviewTimeMs = 0;
+
+  // Play TTS of expected answer — user hears the answer while transcription runs
+  await playStudyVoiceFront(expectedText).catch(() => {});
+
+  if (_voiceEpoch === evalEpoch) {
+    studyState.bgTtsDone = true;
+    _checkBgBothDone(evalEpoch);
+  }
+}
+
+// Apply eval verdict to the already-visible result block.
+function _applyBgEvalVerdict(result, item, answer, expected_answer_text, evalEpoch) {
+  if (_voiceEpoch !== evalEpoch) return;
+
+  studyState.currentEvalResult = result;
+  studyState.currentExpectedAnswer = expected_answer_text;
+
+  const grade = normalizeSuggestedGrade(result.suggested_grade);
+
+  // Update main grade chip
+  const gradeEl = document.querySelector('#study-result-grade');
+  if (gradeEl) {
+    gradeEl.textContent = getSuggestedGradeLabel(result.suggested_grade);
+    gradeEl.className = `study-grade-inline ${grade.toLowerCase()}`;
+  }
+
+  // Update Chinese-style grade chip and re-enable grade buttons
+  const chineseGradeEl = document.querySelector('#study-chinese-grade');
+  if (chineseGradeEl) {
+    chineseGradeEl.textContent = getSuggestedGradeLabel(result.suggested_grade);
+    chineseGradeEl.className = `study-grade-inline study-chinese-grade ${grade.toLowerCase()}`;
+  }
+  document.querySelector('#study-chinese-result')?.querySelectorAll('[data-chinese-grade]').forEach((btn) => {
+    btn.disabled = false;
+  });
+
+  // Justification (voice mode: simplified)
+  const justEl = document.querySelector('#study-result-justification');
+  if (justEl) {
+    justEl.textContent = ['GOOD', 'EASY'].includes(grade)
+      ? 'Bien.'
+      : (summarizeJustificationLine(result) || 'Revisá esta respuesta.');
+    justEl.classList.remove('hidden');
+  }
+
+  // Dimensions
+  const dimsEl = document.querySelector('#study-result-dimensions');
+  if (dimsEl) {
+    const weakDimensions = Object.entries(result.dimensions || {})
+      .filter(([, value]) => Number(value) < 0.7)
+      .sort((a, b) => Number(a[1]) - Number(b[1]));
+    if (weakDimensions.length > 0) {
+      dimsEl.innerHTML = weakDimensions.map(([dimension, value]) => {
+        const pct = Math.round(Number(value) * 100);
+        const label = DIM_LABELS[dimension] || dimension;
+        return `<span class="study-dimension-chip weak hl-pink">${label}: ${pct}%</span>`;
+      }).join('');
+    } else {
+      dimsEl.innerHTML = '<span class="study-dimension-chip ok hl-green">Buen dominio general en esta respuesta.</span>';
+    }
+    dimsEl.classList.remove('hidden');
+  }
+
+  // Update expected block with user answer comparison now that we have the answer
+  const expectedEl = document.querySelector('#study-result-expected');
+  if (expectedEl) {
+    const weakDimensions = Object.entries(result.dimensions || {})
+      .filter(([, value]) => Number(value) < 0.7)
+      .sort((a, b) => Number(a[1]) - Number(b[1]));
+    const concepts = result.missing_concepts ?? [];
+    const weakTags = weakDimensions.map(([dimension, value]) => {
+      const label = DIM_LABELS[dimension] || dimension;
+      const pct = Math.round(Number(value) * 100);
+      return `<span class="study-dimension-chip weak hl-pink">${label}: ${pct}%</span>`;
+    }).join(' ');
+    const missingTags = concepts.map((c) => `<span class="concept-tag hl-yellow">${escHtml(c)}</span>`).join(' ');
+    const groupedTags = (weakTags || missingTags)
+      ? `<div class="study-answer-compare-block"><strong>Etiquetas:</strong> ${weakTags}${weakTags && missingTags ? ' ' : ''}${missingTags}</div>`
+      : '';
+    expectedEl.innerHTML = `
+      ${groupedTags}
+      ${answer ? formatAnswerBlock('Tu respuesta', answer) : ''}
+      ${formatAnswerBlock('Respuesta esperada', expected_answer_text)}
+    `;
+  }
+
+  // Pre-accept LLM grade so auto-advance and Siguiente work
+  studyState.currentDecision = { finalGrade: grade.toLowerCase(), source: 'llm_auto' };
+
+  const nextBtn = document.querySelector('#study-next-btn');
+  if (nextBtn) nextBtn.disabled = false;
+
+  studyState.bgEvalDone = true;
+  _checkBgBothDone(evalEpoch);
+}
+
+// Advance to next card once both TTS and eval are done.
+function _checkBgBothDone(evalEpoch) {
+  if (_voiceEpoch !== evalEpoch) return;
+  if (!studyState.bgEvalDone || !studyState.bgTtsDone) return;
+  if (studyState.voiceReviewPaused) return;
+  handleStudyNextCard();
+}
+
+// Run /evaluate in background after the card has already been flipped.
+async function _runBackgroundEval(item, answer, expected_answer_text, subject, grading_rubric, evalEpoch) {
+  try {
+    const normalizedPrompt    = normalize(getStudyPromptText(item) || '');
+    const normalizedExpected  = normalize(expected_answer_text || '');
+    const evaluationPayload   = {
+      prompt_text:          normalizedPrompt,
+      user_answer_text:     normalize(answer),
+      expected_answer_text: normalizedExpected,
+      ...(subject && subject.trim() ? { subject: subject.trim() } : {}),
+      ...(grading_rubric ? { grading_rubric } : {})
+    };
+    const result = await postJson(EVALUATE_ENDPOINT, evaluationPayload);
+    if (_voiceEpoch !== evalEpoch) return;
+    studyState.currentEvalContext = {
+      prompt_text:          normalizedPrompt,
+      user_answer_text:     normalize(answer),
+      expected_answer_text: normalizedExpected,
+      ...(subject && subject.trim() ? { subject: subject.trim() } : {})
+    };
+    _applyBgEvalVerdict(result, item, answer, expected_answer_text, evalEpoch);
+  } catch (_err) {
+    if (_voiceEpoch !== evalEpoch) return;
+    // On network/API error: show error state but still allow advance
+    const gradeEl = document.querySelector('#study-result-grade');
+    if (gradeEl) { gradeEl.textContent = 'Error'; gradeEl.className = 'study-grade-inline again'; }
+    const chineseGradeEl = document.querySelector('#study-chinese-grade');
+    if (chineseGradeEl) { chineseGradeEl.textContent = 'Error'; chineseGradeEl.className = 'study-grade-inline study-chinese-grade again'; }
+    document.querySelector('#study-chinese-result')?.querySelectorAll('[data-chinese-grade]').forEach((btn) => { btn.disabled = false; });
+    studyState.currentEvalResult = { suggested_grade: 'again', missing_concepts: [], dimensions: {} };
+    studyState.currentDecision   = { finalGrade: 'again', source: 'error' };
+    const nextBtn = document.querySelector('#study-next-btn');
+    if (nextBtn) nextBtn.disabled = false;
+    studyState.bgEvalDone = true;
+    _checkBgBothDone(evalEpoch);
+  }
+}
+
+// ── End background eval helpers ──────────────────────────────────────────────
 
 function maybeSendBreakNudge() {
   if (!userSettings.realtime_break_notifications_enabled) return;
@@ -6056,6 +6316,9 @@ function showStudyCard() {
   studyState.currentDecision = null;
   studyState.checkFails = [];
   studyState.checkErrorLabels = [];
+  studyState._bgFlipEpoch = -1;
+  studyState.bgEvalDone = false;
+  studyState.bgTtsDone = false;
   const _checkFb = document.querySelector('#study-check-feedback');
   if (_checkFb) { _checkFb.textContent = ''; _checkFb.className = 'study-check-feedback'; }
   clearCheckErrorTags();

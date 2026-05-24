@@ -1525,6 +1525,7 @@ textarea:focus, input[type="text"]:focus, select:focus {
 .study-grade-inline.hard                             { background: var(--hard-bg);   color: var(--hard-fg); }
 .study-grade-inline.easy                             { background: var(--easy-bg);   color: var(--easy-fg); }
 .study-grade-inline.review                           { background: var(--review-bg); color: var(--review-fg); }
+.study-grade-inline.pending                          { background: var(--surface-2, #e8e8e8); color: var(--text-muted); opacity: 0.7; }
 
 .study-queue-summary-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 .study-queue-summary { font-size: 1rem; }
