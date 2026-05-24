@@ -149,10 +149,12 @@ router.delete('/planner/manual-activity/:id', async (req, res) => {
 });
 
 // POST /planner/manual-activity
-// Starts a new manual activity. Stops any previous unfinished session first.
+// Starts a new manual activity, or logs a completed past activity when started_at and ended_at
+// are both provided. Stops any previous unfinished session first. When logging a past activity,
+// also trims other sessions that overlap with the given time range.
 router.post('/planner/manual-activity', async (req, res) => {
   const userId = req.user.id;
-  const { activity_type, subject, description } = req.body ?? {};
+  const { activity_type, subject, description, started_at, ended_at } = req.body ?? {};
 
   if (!activity_type || typeof activity_type !== 'string') {
     return res.status(422).json({
@@ -182,6 +184,39 @@ router.post('/planner/manual-activity', async (req, res) => {
   const cleanSubject     = typeof subject     === 'string' ? subject.trim().slice(0, 200)     : null;
   const cleanDescription = typeof description === 'string' ? description.trim().slice(0, 500) : null;
 
+  // Past activity mode: both started_at and ended_at provided — insert completed session directly.
+  const isPast = started_at && ended_at;
+  if (isPast) {
+    const start = new Date(started_at);
+    const end   = new Date(ended_at);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      return res.status(422).json({ error: 'validation_error', message: 'Invalid date format.' });
+    }
+    if (end <= start) {
+      return res.status(422).json({ error: 'validation_error', message: 'ended_at must be after started_at.' });
+    }
+    const durationHours = (end - start) / 3_600_000;
+    if (durationHours > 24) {
+      return res.status(422).json({ error: 'validation_error', message: 'La duración no puede superar 24 horas.' });
+    }
+
+    try {
+      const { rows } = await dbPool.query(
+        `INSERT INTO manual_activity_sessions
+           (user_id, activity_type, subject, description, started_at, ended_at)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id, activity_type, subject, description, started_at, ended_at,
+                   ROUND(EXTRACT(EPOCH FROM (ended_at - started_at)) / 60)::int AS duration_minutes`,
+        [userId, activity_type, cleanSubject || null, cleanDescription || null,
+         start.toISOString(), end.toISOString()]
+      );
+      return res.status(201).json({ session: rows[0] });
+    } catch (err) {
+      return res.status(500).json({ error: 'server_error', message: err.message });
+    }
+  }
+
+  // Real-time mode: start a session now.
   try {
     // Close any open session before starting a new one
     await dbPool.query(

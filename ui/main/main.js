@@ -8705,22 +8705,23 @@ function buildPlannerGrid(weekStart, cells, activitySlots = {}, manualSlots = {}
       // Manual activity badges (bottom-left, colored per type)
       const manualData = manualSlots[key];
       if (manualData && manualData.length > 0 && !plannerIsFutureSlot(weekStart, d, slot)) {
-        // Aggregate by type for the badge: show dominant type's color, total minutes
+        // One badge per activity type so overlapping activities (e.g. studying while cycling)
+        // each show their own minutes rather than a confusing combined total.
         const byType = {};
         for (const ma of manualData) {
           byType[ma.activity_type] = (byType[ma.activity_type] || 0) + ma.duration_minutes;
         }
-        const totalManualMins = Object.values(byType).reduce((s, m) => s + m, 0);
-        const dominantType = Object.entries(byType).reduce((a, b) => b[1] > a[1] ? b : a)[0];
-        const badge = document.createElement('span');
-        badge.className = `planner-manual-badge planner-manual-badge--${dominantType}`;
-        badge.textContent = `${totalManualMins}m`;
-        const tooltipParts = Object.entries(byType).map(([type, m]) => {
+        const badgeWrap = document.createElement('div');
+        badgeWrap.className = 'planner-manual-badges';
+        for (const [type, mins] of Object.entries(byType)) {
+          const badge = document.createElement('span');
+          badge.className = `planner-manual-badge planner-manual-badge--${type}`;
+          badge.textContent = `${mins}m`;
           const info = MANUAL_ACTIVITY_TYPES[type] || { label: type };
-          return `${info.label}: ${m}m`;
-        });
-        badge.title = tooltipParts.join(' · ');
-        td.appendChild(badge);
+          badge.title = `${info.label}: ${mins}m`;
+          badgeWrap.appendChild(badge);
+        }
+        td.appendChild(badgeWrap);
       }
       tbody.appendChild(tr);
       tr.appendChild(td);
@@ -9179,6 +9180,10 @@ function initManualActivityWidget() {
   const newTypeInput  = document.querySelector('#pab-new-type-input');
   const newTypeSave   = document.querySelector('#pab-new-type-save');
   const newTypeCancel = document.querySelector('#pab-new-type-cancel');
+  const pastCheck     = document.querySelector('#pab-past-check');
+  const pastFields    = document.querySelector('#pab-past-fields');
+  const pastStart     = document.querySelector('#pab-past-start');
+  const pastEnd       = document.querySelector('#pab-past-end');
 
   let selectedType  = null;
   let elapsedTimer  = null;
@@ -9315,6 +9320,11 @@ function initManualActivityWidget() {
     form.classList.remove('hidden');
     document.querySelector('#pab-idle').classList.add('hidden');
     formError.classList.add('hidden');
+    pastCheck.checked = false;
+    pastFields.classList.add('hidden');
+    pastStart.value = '';
+    pastEnd.value = '';
+    startBtn.textContent = 'Iniciar →';
   });
 
   cancelBtn.addEventListener('click', () => {
@@ -9331,6 +9341,23 @@ function initManualActivityWidget() {
     addTypeInline.classList.add('hidden');
     addTypeBtn.classList.remove('hidden');
     newTypeInput.value = '';
+    pastCheck.checked = false;
+    pastFields.classList.add('hidden');
+    pastStart.value = '';
+    pastEnd.value = '';
+    startBtn.textContent = 'Iniciar →';
+  });
+
+  pastCheck.addEventListener('change', () => {
+    if (pastCheck.checked) {
+      pastFields.classList.remove('hidden');
+      startBtn.textContent = 'Guardar';
+    } else {
+      pastFields.classList.add('hidden');
+      pastStart.value = '';
+      pastEnd.value = '';
+      startBtn.textContent = 'Iniciar →';
+    }
   });
 
   // Built-in type selection
@@ -9416,6 +9443,64 @@ function initManualActivityWidget() {
   startBtn.addEventListener('click', async () => {
     if (!selectedType) return;
     const subject = subjectInput.value.trim() || null;
+
+    if (pastCheck.checked) {
+      // Past activity mode: create a completed session with specific times.
+      const startVal = pastStart.value;
+      const endVal   = pastEnd.value;
+      if (!startVal || !endVal) {
+        formError.textContent = 'Completá la hora de inicio y fin.';
+        formError.classList.remove('hidden');
+        return;
+      }
+      const startDate = new Date(startVal);
+      const endDate   = new Date(endVal);
+      if (endDate <= startDate) {
+        formError.textContent = 'El fin debe ser posterior al inicio.';
+        formError.classList.remove('hidden');
+        return;
+      }
+      startBtn.disabled = true;
+      formError.classList.add('hidden');
+      try {
+        const res = await fetch('/planner/manual-activity', {
+          method: 'POST',
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({
+            activity_type: selectedType,
+            subject,
+            started_at: startDate.toISOString(),
+            ended_at:   endDate.toISOString(),
+          }),
+        });
+        Auth.handleRefreshToken(res);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+        selectedType = null;
+        typeBtns.forEach(b => b.classList.remove('pab-type-btn--active'));
+        customRow.querySelectorAll('.pab-custom-type-btn').forEach(b => {
+          b.style.background = '';
+          b.style.borderColor = '';
+          b.style.color = '';
+        });
+        subjectInput.value = '';
+        pastCheck.checked = false;
+        pastFields.classList.add('hidden');
+        pastStart.value = '';
+        pastEnd.value = '';
+        startBtn.textContent = 'Iniciar →';
+        form.classList.add('hidden');
+        document.querySelector('#pab-idle').classList.remove('hidden');
+        if (plannerState.weekStart) loadPlannerWeek(plannerState.weekStart);
+      } catch (err) {
+        formError.textContent = err.message;
+        formError.classList.remove('hidden');
+        startBtn.disabled = false;
+      }
+      return;
+    }
+
+    // Real-time mode: start the session now.
     startBtn.disabled = true;
     formError.classList.add('hidden');
     try {

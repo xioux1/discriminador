@@ -3467,6 +3467,12 @@ textarea:focus, input[type="text"]:focus, select:focus {
 .pab-cancel-btn { font-size: 0.90rem; padding: 2px 6px; }
 .pab-form-error { font-size: 0.75rem; color: var(--fail-fg); }
 .pab-form-error.hidden { display: none; }
+.pab-past-row { margin-top: 6px; font-size: 0.78rem; }
+.pab-past-toggle { display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-muted); }
+.pab-past-toggle input[type="checkbox"] { cursor: pointer; }
+.pab-past-fields { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
+.pab-past-fields.hidden { display: none; }
+.pab-past-label { display: flex; flex-direction: column; gap: 2px; font-size: 0.75rem; color: var(--text-muted); }
 .pab-custom-types-row { margin-top: 0; }
 .pab-add-type-btn {
   background: transparent;
@@ -3546,22 +3552,28 @@ textarea:focus, input[type="text"]:focus, select:focus {
 [data-theme="dark"] .pab-custom-type-btn { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.12); }
 
 /* Cell manual activity badge */
-.planner-manual-badge {
+.planner-manual-badges {
   position: absolute;
   bottom: 2px;
   left: 3px;
+  display: flex;
+  gap: 2px;
+  flex-wrap: wrap;
+  pointer-events: none;
+}
+.planner-manual-badge {
   font-size: 0.58rem;
   line-height: 1;
   font-weight: 700;
-  pointer-events: none;
   border-radius: 2px;
   padding: 0 2px;
 }
-.planner-manual-badge--clase           { color: #3b6abf; }
-.planner-manual-badge--contenido       { color: #b8600a; }
-.planner-manual-badge--estudio_offline { color: #2d8c56; }
-.planner-manual-badge--reunion         { color: #6b47a8; }
-.planner-manual-badge--otro            { color: #8a6c10; }
+.planner-manual-badge--clase            { color: #3b6abf; }
+.planner-manual-badge--contenido        { color: #b8600a; }
+.planner-manual-badge--estudio_offline  { color: #2d8c56; }
+.planner-manual-badge--reunion          { color: #6b47a8; }
+.planner-manual-badge--actividad_fisica { color: #c0392b; }
+.planner-manual-badge--otro             { color: #8a6c10; }
 
 /* Subject panel dot indicator */
 .planner-subject-dot {
