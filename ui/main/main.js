@@ -8393,22 +8393,23 @@ function buildPlannerGrid(weekStart, cells, activitySlots = {}, manualSlots = {}
       // Manual activity badges (bottom-left, colored per type)
       const manualData = manualSlots[key];
       if (manualData && manualData.length > 0 && !plannerIsFutureSlot(weekStart, d, slot)) {
-        // Aggregate by type for the badge: show dominant type's color, total minutes
+        // One badge per activity type so overlapping activities (e.g. studying while cycling)
+        // each show their own minutes rather than a confusing combined total.
         const byType = {};
         for (const ma of manualData) {
           byType[ma.activity_type] = (byType[ma.activity_type] || 0) + ma.duration_minutes;
         }
-        const totalManualMins = Object.values(byType).reduce((s, m) => s + m, 0);
-        const dominantType = Object.entries(byType).reduce((a, b) => b[1] > a[1] ? b : a)[0];
-        const badge = document.createElement('span');
-        badge.className = `planner-manual-badge planner-manual-badge--${dominantType}`;
-        badge.textContent = `${totalManualMins}m`;
-        const tooltipParts = Object.entries(byType).map(([type, m]) => {
+        const badgeWrap = document.createElement('div');
+        badgeWrap.className = 'planner-manual-badges';
+        for (const [type, mins] of Object.entries(byType)) {
+          const badge = document.createElement('span');
+          badge.className = `planner-manual-badge planner-manual-badge--${type}`;
+          badge.textContent = `${mins}m`;
           const info = MANUAL_ACTIVITY_TYPES[type] || { label: type };
-          return `${info.label}: ${m}m`;
-        });
-        badge.title = tooltipParts.join(' · ');
-        td.appendChild(badge);
+          badge.title = `${info.label}: ${mins}m`;
+          badgeWrap.appendChild(badge);
+        }
+        td.appendChild(badgeWrap);
       }
       tbody.appendChild(tr);
       tr.appendChild(td);
