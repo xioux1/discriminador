@@ -1935,17 +1935,6 @@ async function loadDashboard() {
     const totalSubjects = subjectNames.length;
     const totalPendingAll = subjectNames.reduce((sum, n) => sum + (pendingCardsBySubject[n] || 0), 0);
 
-    // ── 1. Headline ──────────────────────────────────────────────────────────
-    {
-      const el = document.createElement('h1');
-      el.className = 'dsh-headline';
-      if (totalDue > 0) {
-        el.textContent = 'Pendientes hoy.';
-      } else {
-        el.textContent = 'Sin pendientes hoy.';
-      }
-      content.appendChild(el);
-    }
 
     // ── 2. Próximos exámenes (top 5, future only) ────────────────────────────
     const topExams = allFutureExams.slice(0, 5);
@@ -4826,19 +4815,6 @@ async function fetchSessionPlan() {
       `;
       startBtn.classList.remove('hidden');
 
-      // Daily quota nudge
-      getJson(`/scheduler/daily-summary?budget_minutes=${getDailyBudget()}`).then((ds) => {
-        if (!ds) return;
-        const done   = ds.reviews_done_today;
-        const target = getDailyTarget();
-        const rem    = Math.max(0, target - done);
-        if (rem > 0) {
-          const nudge = document.createElement('div');
-          nudge.className = 'briefing-daily-nudge';
-          nudge.textContent = `Meta diaria: ${done}/${target} revisiones`;
-          summaryEl.appendChild(nudge);
-        }
-      }).catch(() => {});
 
       // Agent reasoning log
       if (data.plan.agent_log) {
