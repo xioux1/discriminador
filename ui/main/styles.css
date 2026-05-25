@@ -7061,6 +7061,9 @@ textarea.chinese-input {
 .pend-zero             { color: var(--text-light); }
 .name-active  { color: var(--text); font-weight: 500; }
 .name-dim     { color: var(--text-muted); font-weight: 400; }
+.dsh-mat-row--locked { opacity: 0.38; pointer-events: none; }
+.dsh-mat-row--locked .deck-config-btn,
+.dsh-mat-row--locked .deck-rename-btn { pointer-events: auto; opacity: 1; }
 .dsh-mat-event { color: var(--text-muted); font-size: 0.75rem; }
 .dsh-cell-empty { color: var(--text-light); }
 
