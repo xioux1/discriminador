@@ -207,18 +207,64 @@ statsRouter.get('/stats/weekly', async (req, res) => {
     periodEndDate.setUTCDate(todayDate.getUTCDate() + 1);
     const thisWeekEnd = periodEndDate.toISOString().slice(0, 10); // tomorrow (exclusive)
 
-    // Activity log study time + review counts per subject (current week)
+    // Per-subject study time using full session time proportionally distributed by subject,
+    // so time between cards and reviewing answers is included. review_count still comes
+    // directly from activity_log for accuracy.
     const { rows: alRows } = await dbPool.query(
-      `SELECT
-         COALESCE(NULLIF(TRIM(subject), ''), 'Sin materia') AS subject,
-         ROUND(SUM(COALESCE(response_time_ms, 0) + COALESCE(review_time_ms, 0)) / 60000.0)::int AS minutes,
-         COUNT(*)::int AS review_count
-       FROM activity_log
-       WHERE user_id = $1
-         AND activity_type IN ('study', 'evaluate')
-         AND (created_at AT TIME ZONE $2)::date >= $3::date
-         AND (created_at AT TIME ZONE $2)::date <  $4::date
-       GROUP BY subject
+      `WITH card_per_session_subject AS (
+         SELECT
+           ss.id                                                                     AS session_id,
+           COALESCE(
+             ss.actual_minutes,
+             LEAST(EXTRACT(EPOCH FROM (ss.ended_at - ss.started_at)) / 60.0, 180)
+           )                                                                         AS eff_minutes,
+           COALESCE(NULLIF(TRIM(al.subject), ''), 'Sin materia')                     AS subject,
+           SUM(COALESCE(al.response_time_ms, 0) + COALESCE(al.review_time_ms, 0))   AS subject_card_ms
+         FROM study_sessions ss
+         JOIN activity_log al
+           ON  al.user_id        = ss.user_id
+           AND al.activity_type IN ('study', 'evaluate')
+           AND al.created_at    >= ss.started_at
+           AND al.created_at    <= COALESCE(ss.ended_at, ss.started_at + INTERVAL '3 hours')
+         WHERE ss.user_id = $1
+           AND (ss.actual_minutes IS NOT NULL OR ss.ended_at IS NOT NULL)
+           AND (ss.started_at AT TIME ZONE $2)::date >= $3::date
+           AND (ss.started_at AT TIME ZONE $2)::date <  $4::date
+         GROUP BY ss.id, ss.actual_minutes, ss.ended_at, ss.started_at, al.subject
+       ),
+       session_total_card_ms AS (
+         SELECT session_id, SUM(subject_card_ms) AS total_card_ms
+         FROM card_per_session_subject
+         GROUP BY session_id
+       ),
+       subject_minutes AS (
+         SELECT
+           cpss.subject,
+           ROUND(SUM(
+             cpss.eff_minutes * cpss.subject_card_ms / NULLIF(stcm.total_card_ms, 0)
+           ))::int AS minutes
+         FROM card_per_session_subject cpss
+         JOIN session_total_card_ms stcm ON stcm.session_id = cpss.session_id
+         WHERE stcm.total_card_ms > 0
+         GROUP BY cpss.subject
+       ),
+       review_counts AS (
+         SELECT
+           COALESCE(NULLIF(TRIM(subject), ''), 'Sin materia') AS subject,
+           COUNT(*)::int AS review_count
+         FROM activity_log
+         WHERE user_id = $1
+           AND activity_type IN ('study', 'evaluate')
+           AND (created_at AT TIME ZONE $2)::date >= $3::date
+           AND (created_at AT TIME ZONE $2)::date <  $4::date
+         GROUP BY subject
+       )
+       SELECT
+         COALESCE(sm.subject, rc.subject) AS subject,
+         COALESCE(sm.minutes, 0)          AS minutes,
+         COALESCE(rc.review_count, 0)     AS review_count
+       FROM subject_minutes sm
+       FULL OUTER JOIN review_counts rc USING (subject)
        ORDER BY minutes DESC`,
       [userId, TZ, thisWeekStart, thisWeekEnd]
     );
