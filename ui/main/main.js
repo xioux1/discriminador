@@ -5274,6 +5274,14 @@ async function saveNewCard() {
       ? `Tarjeta guardada. Se libera el ${nextReview.toLocaleDateString('es-AR')}.`
       : 'Tarjeta guardada.';
     showToast(msg, 'success');
+    const feedbackEl = document.querySelector('#card-save-feedback');
+    if (feedbackEl) {
+      const trunc = (s, n) => s.length > n ? s.slice(0, n) + '…' : s;
+      feedbackEl.textContent = `✓ Consigna: "${trunc(prompt, 60)}" | Respuesta: "${trunc(expected, 60)}"`;
+      feedbackEl.style.color = 'var(--success, #2a7)';
+      feedbackEl.style.fontSize = '0.82rem';
+      feedbackEl.style.marginTop = '6px';
+    }
     document.querySelector('#card-subject').value = subject;
     document.querySelector('#card-prompt').value = '';
     document.querySelector('#card-expected').value = '';
