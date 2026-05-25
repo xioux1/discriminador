@@ -2035,8 +2035,12 @@ async function loadDashboard() {
 
       card.addEventListener('click', async (e) => {
         if (e.target.classList.contains('deck-study-btn')) {
+          const clickedSubject = e.target.dataset.subject || '';
+          // Planner gate: block before even navigating to the study tab
+          const plannerResult = await checkPlannerGate(clickedSubject);
+          if (plannerResult === false) return;
           const studyTabBtn = document.querySelector('[data-tab="study"]');
-          studyTabBtn.dataset.subjectFromDashboard = e.target.dataset.subject || '';
+          studyTabBtn.dataset.subjectFromDashboard = clickedSubject;
           studyTabBtn.click();
         }
         if (e.target.classList.contains('deck-config-btn')) {
@@ -5884,18 +5888,20 @@ function showTimeRestrictionModal() {
 
 // Returns resolvedPlanner if a session can proceed, null if no planner enforcement,
 // or false (and shows a toast) if the selected subject is blocked by the planner.
-async function checkPlannerGate() {
+// subjectOverride lets callers (e.g. dashboard button) pass the subject before briefingState is set.
+async function checkPlannerGate(subjectOverride) {
   const data = await getJson('/planner/today-schedule').catch(() => ({ slots: [] }));
   const ps = resolvePlannerSession(data.slots ?? []);
   if (!ps) return null;
-  if (briefingState.selectedSubject) {
+  const selectedSubject = subjectOverride ?? briefingState.selectedSubject;
+  if (selectedSubject) {
     const planned  = ps.currentSubject.trim().toLowerCase();
-    const selected = briefingState.selectedSubject.trim().toLowerCase();
+    const selected = selectedSubject.trim().toLowerCase();
     if (planned !== selected) {
       const endDate = new Date(ps.currentSubjectEndMs);
       const hh = String(endDate.getHours()).padStart(2, '0');
       const mm = String(endDate.getMinutes()).padStart(2, '0');
-      showToast(`Ahora toca ${ps.currentSubject} (hasta las ${hh}:${mm}). ${briefingState.selectedSubject} no está planificada en este horario.`, 'error');
+      showToast(`Ahora toca ${ps.currentSubject} (hasta las ${hh}:${mm}). ${selectedSubject} no está planificada en este horario.`, 'error');
       return false;
     }
   }
