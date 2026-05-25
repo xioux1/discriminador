@@ -4842,7 +4842,7 @@ async function fetchSessionPlan() {
   }
 }
 
-function _doStartPlannedSession() {
+function _doStartPlannedSession(resolvedPlanner = null) {
   const plan = briefingState.plan;
   if (!plan || !plan.planned?.length) return;
 
@@ -4890,6 +4890,19 @@ function _doStartPlannedSession() {
   studyState.pausedAt              = 0;
   studyState.lastBreakNudgeMinuteKey = null;
 
+  if (studyState.plannerSlotTimer) { clearTimeout(studyState.plannerSlotTimer); studyState.plannerSlotTimer = null; }
+  studyState.plannerSession     = resolvedPlanner ?? null;
+  studyState.plannerSlotExpired = false;
+  if (resolvedPlanner) {
+    const delay = resolvedPlanner.currentSubjectEndMs - Date.now();
+    if (delay > 0) {
+      studyState.plannerSlotTimer = setTimeout(() => { studyState.plannerSlotExpired = true; }, delay);
+    } else {
+      studyState.plannerSlotExpired = true;
+    }
+  }
+  updatePlannerSlotBanner();
+
   // Record session start for calibration
   postJson('/study/sessions', {
     planned_minutes:    briefingState.selectedTime,
@@ -4924,11 +4937,13 @@ function _doStartPlannedSession() {
 
 async function startPlannedSession() {
   if (userSettings.time_restriction_enabled && !isAllowedStartTime()) { showTimeRestrictionModal(); return; }
+  const plannerResult = await checkPlannerGate();
+  if (plannerResult === false) return;
   const gateEl = document.querySelector('#briefing-planner-gate');
   const status = await checkPlannerDayStatus();
   if (!status.is_full) { renderPlannerGate(gateEl, status.filled ?? 0, status.total ?? 32); return; }
   gateEl?.classList.add('hidden');
-  showGratitudeModal(() => _doStartPlannedSession());
+  showGratitudeModal(() => _doStartPlannedSession(plannerResult));
 }
 
 function recordSessionCompletion(cardCount) {
@@ -5867,6 +5882,26 @@ function showTimeRestrictionModal() {
   backdrop.addEventListener('click', close);
 }
 
+// Returns resolvedPlanner if a session can proceed, null if no planner enforcement,
+// or false (and shows a toast) if the selected subject is blocked by the planner.
+async function checkPlannerGate() {
+  const data = await getJson('/planner/today-schedule').catch(() => ({ slots: [] }));
+  const ps = resolvePlannerSession(data.slots ?? []);
+  if (!ps) return null;
+  if (briefingState.selectedSubject) {
+    const planned  = ps.currentSubject.trim().toLowerCase();
+    const selected = briefingState.selectedSubject.trim().toLowerCase();
+    if (planned !== selected) {
+      const endDate = new Date(ps.currentSubjectEndMs);
+      const hh = String(endDate.getHours()).padStart(2, '0');
+      const mm = String(endDate.getMinutes()).padStart(2, '0');
+      showToast(`Ahora toca ${ps.currentSubject} (hasta las ${hh}:${mm}). ${briefingState.selectedSubject} no está planificada en este horario.`, 'error');
+      return false;
+    }
+  }
+  return ps;
+}
+
 function showGratitudeModal(onConfirm) {
   if (!userSettings.gratitude_enabled) { onConfirm(); return; }
   const modal      = document.querySelector('#gratitude-modal');
@@ -5946,20 +5981,6 @@ async function _doStartStudySession() {
 
   const todayScheduleData = await getJson('/planner/today-schedule').catch(() => ({ slots: [] }));
   const resolvedPlanner = resolvePlannerSession(todayScheduleData.slots ?? []);
-
-  // If planner has an active slot, enforce it: block any other subject
-  if (resolvedPlanner && briefingState.selectedSubject) {
-    const planned  = resolvedPlanner.currentSubject.trim().toLowerCase();
-    const selected = briefingState.selectedSubject.trim().toLowerCase();
-    if (planned !== selected) {
-      const endDate = new Date(resolvedPlanner.currentSubjectEndMs);
-      const hh = String(endDate.getHours()).padStart(2, '0');
-      const mm = String(endDate.getMinutes()).padStart(2, '0');
-      showToast(`Ahora toca ${resolvedPlanner.currentSubject} (hasta las ${hh}:${mm}). ${briefingState.selectedSubject} no está planificada en este horario.`, 'error');
-      return;
-    }
-  }
-
 
   const effectiveSubject = resolvedPlanner
     ? resolvedPlanner.currentSubject
@@ -6120,6 +6141,8 @@ function renderPlannerGate(gateEl, filled, total) {
 
 async function startStudySession() {
   if (userSettings.time_restriction_enabled && !isAllowedStartTime()) { showTimeRestrictionModal(); return; }
+  const plannerResult = await checkPlannerGate();
+  if (plannerResult === false) return;
   const gateEl = document.querySelector('#overview-planner-gate');
   const status = await checkPlannerDayStatus();
   if (!status.is_full) { renderPlannerGate(gateEl, status.filled ?? 0, status.total ?? 32); return; }
