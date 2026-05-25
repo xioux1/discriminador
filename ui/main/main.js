@@ -5342,10 +5342,52 @@ const studyState = {
   bgTtsDone: false,
   _bgBothDoneRunning: false,
   _bgArtifactPromise: null,
+  // Planner enforcement
+  plannerSession: null,      // { currentSubject, currentSubjectEndMs, upcomingSubjects:[{subject,endMs}] }
+  plannerSlotExpired: false,
+  plannerSlotTimer: null,
 };
 
 // Cache de configs de autoadvance por materia para evitar fetches repetidos
 const autoadvanceConfigCache = {};
+
+// Builds a planner session descriptor from today's slot list.
+// Returns null if there's no active slot right now.
+function resolvePlannerSession(slots) {
+  if (!slots || !slots.length) return null;
+  const now = Date.now();
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const base = todayStart.getTime();
+  const schedule = slots.map(s => {
+    const [h, m] = s.slot_time.split(':').map(Number);
+    const startMs = base + (h * 60 + m) * 60000;
+    return { slotTime: s.slot_time, startMs, endMs: startMs + 1800000, subject: s.content };
+  });
+  const curIdx = schedule.findIndex(s => now >= s.startMs && now < s.endMs);
+  if (curIdx === -1) return null;
+  const currentSubject = schedule[curIdx].subject;
+  if (!currentSubject) return null;
+  // Extend to end of consecutive block with same subject
+  let blockEndMs = schedule[curIdx].endMs;
+  let i = curIdx + 1;
+  while (i < schedule.length && schedule[i].subject === currentSubject) {
+    blockEndMs = schedule[i].endMs;
+    i++;
+  }
+  // Remaining distinct subject blocks
+  const upcomingSubjects = [];
+  while (i < schedule.length) {
+    const subj = schedule[i].subject;
+    if (!subj) { i++; continue; }
+    let subjEnd = schedule[i].endMs;
+    let j = i + 1;
+    while (j < schedule.length && schedule[j].subject === subj) { subjEnd = schedule[j].endMs; j++; }
+    upcomingSubjects.push({ subject: subj, endMs: subjEnd });
+    i = j;
+  }
+  return { currentSubject, currentSubjectEndMs: blockEndMs, upcomingSubjects };
+}
 
 async function getAutoadvanceConfig(subject) {
   if (!subject) return null;
@@ -5896,9 +5938,20 @@ function showGratitudeModal(onConfirm) {
 
 async function _doStartStudySession() {
   studyState.voiceMode = Boolean(document.querySelector('#study-voice-mode-toggle')?.checked);
-  const subjectQuery = briefingState.selectedSubject
-    ? `?subject=${encodeURIComponent(briefingState.selectedSubject)}`
-    : '';
+
+  // Resolve planner-enforced subject before fetching cards
+  if (studyState.plannerSlotTimer) { clearTimeout(studyState.plannerSlotTimer); studyState.plannerSlotTimer = null; }
+  studyState.plannerSession    = null;
+  studyState.plannerSlotExpired = false;
+
+  const todayScheduleData = await getJson('/planner/today-schedule').catch(() => ({ slots: [] }));
+  const resolvedPlanner = resolvePlannerSession(todayScheduleData.slots ?? []);
+
+  const effectiveSubject = resolvedPlanner
+    ? resolvedPlanner.currentSubject
+    : (briefingState.selectedSubject ?? null);
+
+  const subjectQuery = effectiveSubject ? `?subject=${encodeURIComponent(effectiveSubject)}` : '';
   const separator = subjectQuery ? '&' : '?';
   const voiceQuery = studyState.voiceMode ? `${separator}mode=voice` : '';
   const data = await getJson(`/scheduler/session${subjectQuery}${voiceQuery}`);
@@ -5968,6 +6021,18 @@ async function _doStartStudySession() {
   studyState.isPaused           = false;
   studyState.pausedAt           = 0;
   studyState.lastBreakNudgeMinuteKey = null;
+
+  // Activate planner enforcement if there's an active slot
+  if (resolvedPlanner) {
+    studyState.plannerSession = resolvedPlanner;
+    const delay = resolvedPlanner.currentSubjectEndMs - Date.now();
+    if (delay > 0) {
+      studyState.plannerSlotTimer = setTimeout(() => { studyState.plannerSlotExpired = true; }, delay);
+    } else {
+      studyState.plannerSlotExpired = true;
+    }
+  }
+  updatePlannerSlotBanner();
   renderStudyBackgroundStatus();
 
   if (studyState.queue.length === 0) {
@@ -8325,7 +8390,18 @@ async function advanceStudyCard() {
   const currentItem = studyState.queue[studyState.index];
   studyState.index++;
 
+  // Planner enforcement: slot expired → end session after completing the card just graded
+  if (studyState.plannerSession && studyState.plannerSlotExpired) {
+    finishStudySession();
+    return;
+  }
+
   if (studyState.index >= studyState.queue.length) {
+    // Queue exhausted — if planner has upcoming subjects, load the next one
+    if (studyState.plannerSession && studyState.plannerSession.upcomingSubjects.length > 0) {
+      await loadNextPlannerSubject();
+      return;
+    }
     finishStudySession();
     return;
   }
@@ -8380,6 +8456,72 @@ async function advanceStudyCard() {
   showStudyCard();
 }
 
+function updatePlannerSlotBanner() {
+  const banner = document.querySelector('#study-planner-slot-banner');
+  if (!banner) return;
+  const ps = studyState.plannerSession;
+  if (!ps) { banner.classList.add('hidden'); return; }
+  const endDate = new Date(ps.currentSubjectEndMs);
+  const hh = String(endDate.getHours()).padStart(2, '0');
+  const mm = String(endDate.getMinutes()).padStart(2, '0');
+  banner.textContent = `${ps.currentSubject} · hasta las ${hh}:${mm}`;
+  banner.classList.remove('hidden');
+}
+
+async function loadNextPlannerSubject() {
+  const ps = studyState.plannerSession;
+  if (!ps || ps.upcomingSubjects.length === 0) { finishStudySession(); return; }
+
+  const next = ps.upcomingSubjects.shift();
+
+  try {
+    const data = await getJson(`/scheduler/session?subject=${encodeURIComponent(next.subject)}`);
+    const newCards  = (data.cards       ?? []).map(c => ({ type: 'card',  data: c }));
+    const newMicros = (data.micro_cards ?? []).map(m => ({ type: 'micro', data: m }));
+
+    if (newCards.length === 0 && newMicros.length === 0) {
+      // No cards for this subject, skip to the next one
+      ps.currentSubject       = next.subject;
+      ps.currentSubjectEndMs  = next.endMs;
+      await loadNextPlannerSubject();
+      return;
+    }
+
+    // Build interleaved queue for the new subject
+    const microsByParent = {};
+    for (const m of newMicros) { (microsByParent[m.data.parent_card_id] ??= []).push(m); }
+    const sorted = newCards.slice().sort((a, b) => {
+      const aNew = (a.data.review_count ?? 0) === 0;
+      const bNew = (b.data.review_count ?? 0) === 0;
+      if (aNew !== bNew) return aNew ? -1 : 1;
+      const score = d => d.pass_count != null && d.review_count ? d.pass_count / d.review_count : (d.ease_factor ?? 2.5);
+      return score(a.data) - score(b.data);
+    });
+    const newQueue = [];
+    for (const card of sorted) {
+      newQueue.push(card);
+      newQueue.push(...(microsByParent[card.data.id] ?? []));
+    }
+    studyState.queue.push(...newQueue);
+
+    // Update planner session state
+    ps.currentSubject      = next.subject;
+    ps.currentSubjectEndMs = next.endMs;
+    studyState.plannerSlotExpired = false;
+    if (studyState.plannerSlotTimer) { clearTimeout(studyState.plannerSlotTimer); studyState.plannerSlotTimer = null; }
+    const delay = next.endMs - Date.now();
+    if (delay > 0) {
+      studyState.plannerSlotTimer = setTimeout(() => { studyState.plannerSlotExpired = true; }, delay);
+    }
+
+    updatePlannerSlotBanner();
+    showStudyCard();
+  } catch (err) {
+    console.error('loadNextPlannerSubject error:', err);
+    finishStudySession();
+  }
+}
+
 function finishStudySession() {
   if (studyState.examMode) { finishExamSession(); return; }
 
@@ -8387,6 +8529,13 @@ function finishStudySession() {
     clearInterval(studyState.timerInterval);
     studyState.timerInterval = null;
   }
+  if (studyState.plannerSlotTimer) {
+    clearTimeout(studyState.plannerSlotTimer);
+    studyState.plannerSlotTimer = null;
+  }
+  studyState.plannerSession     = null;
+  studyState.plannerSlotExpired = false;
+  document.querySelector('#study-planner-slot-banner')?.classList.add('hidden');
   stopStudyRealtimeScheduler();
   // Update progress bar to 100%
   document.querySelector('#study-progress-fill').style.width = '100%';
