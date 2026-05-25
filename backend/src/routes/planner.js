@@ -394,19 +394,21 @@ plannerRouter.get('/planner/today-schedule', async (req, res) => {
       `WITH today_info AS (
          SELECT
            (NOW() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date                     AS today,
-           EXTRACT(DOW FROM (NOW() AT TIME ZONE 'America/Argentina/Buenos_Aires'))::int    AS day_index,
-           DATE_TRUNC('week', (NOW() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date) AS week_start
+           EXTRACT(DOW FROM (NOW() AT TIME ZONE 'America/Argentina/Buenos_Aires'))::int    AS day_index
+       ),
+       bounds AS (
+         SELECT today - day_index::int AS week_start, day_index FROM today_info
        ),
        fixed AS (
          SELECT slot_time, content, color, true AS is_fixed
-         FROM weekly_planner_fixed, today_info
-         WHERE user_id = $1 AND day_index = today_info.day_index
+         FROM weekly_planner_fixed, bounds
+         WHERE user_id = $1 AND day_index = bounds.day_index
            AND content IS NOT NULL AND TRIM(content) != ''
        ),
        week_slots AS (
          SELECT slot_time, content, color, false AS is_fixed
-         FROM weekly_planner, today_info
-         WHERE user_id = $1 AND week_start = today_info.week_start AND day_index = today_info.day_index
+         FROM weekly_planner, bounds
+         WHERE user_id = $1 AND week_start = bounds.week_start AND day_index = bounds.day_index
            AND content IS NOT NULL AND TRIM(content) != ''
        )
        SELECT DISTINCT ON (slot_time) slot_time, content, color

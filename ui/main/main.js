@@ -5947,6 +5947,19 @@ async function _doStartStudySession() {
   const todayScheduleData = await getJson('/planner/today-schedule').catch(() => ({ slots: [] }));
   const resolvedPlanner = resolvePlannerSession(todayScheduleData.slots ?? []);
 
+  // If planner has an active slot, enforce it: block any other subject
+  if (resolvedPlanner && briefingState.selectedSubject) {
+    const planned  = resolvedPlanner.currentSubject.trim().toLowerCase();
+    const selected = briefingState.selectedSubject.trim().toLowerCase();
+    if (planned !== selected) {
+      const endDate = new Date(resolvedPlanner.currentSubjectEndMs);
+      const hh = String(endDate.getHours()).padStart(2, '0');
+      const mm = String(endDate.getMinutes()).padStart(2, '0');
+      showToast(`Ahora toca ${resolvedPlanner.currentSubject} (hasta las ${hh}:${mm}). ${briefingState.selectedSubject} no está planificada en este horario.`, 'error');
+      return;
+    }
+  }
+
   const effectiveSubject = resolvedPlanner
     ? resolvedPlanner.currentSubject
     : (briefingState.selectedSubject ?? null);
