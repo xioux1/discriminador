@@ -1921,16 +1921,12 @@ async function loadDashboard() {
       if (!examBySubject[subj]) examBySubject[subj] = exam;
     }
 
-    // Subject list sorted by pending desc then alpha
+    // Subject list sorted alphabetically
     const subjectNames = [...new Set([
       ...subjects.map((s) => s.subject),
       ...Object.keys(pendingCardsBySubject),
       ...Object.keys(activeMicrosBySubject),
-    ])].sort((a, b) => {
-      const pa = pendingCardsBySubject[a] || 0;
-      const pb = pendingCardsBySubject[b] || 0;
-      return pb - pa || a.localeCompare(b, 'es');
-    });
+    ])].sort((a, b) => a.localeCompare(b, 'es'));
 
     const totalSubjects = subjectNames.length;
     const totalPendingAll = subjectNames.reduce((sum, n) => sum + (pendingCardsBySubject[n] || 0), 0);
