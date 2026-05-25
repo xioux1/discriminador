@@ -34,8 +34,8 @@ studyDoubtRouter.post('/study/doubt', async (req, res) => {
   if (!question || typeof question !== 'string' || question.trim().length < 1) {
     return res.status(422).json({ error: 'validation_error', message: 'question es obligatorio.' });
   }
-  if (question.trim().length > 800) {
-    return res.status(422).json({ error: 'validation_error', message: 'question no puede superar 800 caracteres.' });
+  if (question.trim().length > 2000) {
+    return res.status(422).json({ error: 'validation_error', message: 'question no puede superar 2000 caracteres.' });
   }
 
   const priorTurns = Array.isArray(history)
