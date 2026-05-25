@@ -5300,6 +5300,12 @@ async function saveNewCard() {
     return;
   }
 
+  if (prompt === expected) {
+    showToast('⚠️ La pregunta y la respuesta son idénticas. Revisá los campos antes de guardar.', 'error');
+    document.querySelector('#card-prompt').focus();
+    return;
+  }
+
   try {
     saveNewCard.isSaving = true;
     if (saveBtn) saveBtn.disabled = true;
