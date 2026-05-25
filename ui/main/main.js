@@ -6367,7 +6367,11 @@ function showStudyCard() {
   const studyBackBtn = document.querySelector('#study-back-btn');
   const studyDeleteBtn = document.querySelector('#study-delete-btn');
   if (studyBackBtn)   studyBackBtn.hidden   = studyState.voiceMode;
-  if (studyDeleteBtn) studyDeleteBtn.hidden = !['card', 'micro'].includes(item.type);
+  if (studyDeleteBtn) {
+    studyDeleteBtn.hidden    = !['card', 'micro'].includes(item.type);
+    studyDeleteBtn.disabled  = false;
+    studyDeleteBtn.textContent = 'Eliminar';
+  }
   document.querySelector('#study-card')?.classList.toggle('voice-mode-active', studyState.voiceMode);
   const studyEvalBtn = document.querySelector('#study-eval-btn');
   studyEvalBtn.disabled = false;
@@ -7546,7 +7550,10 @@ async function archiveCurrentStudyCard(reason) {
 }
 
 async function deleteCurrentStudyCardFromFront() {
-  const item = studyState.queue[studyState.index];
+  // Capture index and item before any async so a concurrent oral-review
+  // auto-advance can't shift studyState.index under us.
+  const capturedIndex = studyState.index;
+  const item = studyState.queue[capturedIndex];
   if (!item || !['card', 'micro'].includes(item.type)) return;
 
   const reason = (window.prompt('Motivo para eliminar la tarjeta (mínimo 5 caracteres):', 'Eliminada desde el frente de la tarjeta') || '').trim();
@@ -7563,19 +7570,42 @@ async function deleteCurrentStudyCardFromFront() {
   }
 
   try {
-    await archiveCurrentStudyCard(reason);
-    studyState.queue.splice(studyState.index, 1);
-    if (studyState.index >= studyState.queue.length) {
-      studyState.index = Math.max(0, studyState.queue.length - 1);
+    // Archive via API using the item captured above (index may drift during await).
+    const path = item.type === 'card'
+      ? `/cards/${item.data.id}/archive`
+      : `/micro-cards/${item.data.id}/archive`;
+    await postJson(path, { reason }, 'PATCH');
+
+    // Remove the archived card from the queue.  If oral-review auto-advanced
+    // while the request was in-flight the index may no longer point to this
+    // card, so search by identity instead of trusting capturedIndex blindly.
+    const stillAtSameSlot = studyState.queue[capturedIndex] === item;
+    const removeIdx = stillAtSameSlot
+      ? capturedIndex
+      : studyState.queue.findIndex((q) => q === item || (q.type === item.type && q.data.id === item.data.id));
+
+    if (removeIdx !== -1) {
+      studyState.queue.splice(removeIdx, 1);
+      // Only adjust index / re-render if we're still showing this card.
+      if (stillAtSameSlot) {
+        if (studyState.index >= studyState.queue.length) {
+          studyState.index = Math.max(0, studyState.queue.length - 1);
+        }
+        persistStudySession();
+        showStudyCard();
+        return; // showStudyCard resets the button — no need for finally reset
+      }
+      persistStudySession();
     }
-    persistStudySession();
-    showStudyCard();
   } catch (err) {
     showToast(`No se pudo eliminar la tarjeta: ${err.message}`, 'error');
   } finally {
-    if (deleteBtn) {
-      deleteBtn.disabled = false;
-      deleteBtn.textContent = 'Eliminar';
+    // Only reset the button if we're still showing the card that triggered the
+    // delete (i.e. showStudyCard wasn't called above, which resets it itself).
+    const currentBtn = document.querySelector('#study-delete-btn');
+    if (currentBtn && !currentBtn.hidden) {
+      currentBtn.disabled = false;
+      currentBtn.textContent = 'Eliminar';
     }
   }
 }
@@ -7672,6 +7702,7 @@ document.querySelector('#study-variant-btn').addEventListener('click', async () 
 });
 
 document.querySelector('#study-delete-variant-btn').addEventListener('click', async () => {
+  // Capture item before any async so navigation can't shift the index.
   const item = studyState.queue[studyState.index];
   if (!item || item.type !== 'card' || !item.data.variant_id) return;
   if (!confirm('¿Eliminar esta variante? La tarjeta original no se borra.')) return;
@@ -7681,10 +7712,16 @@ document.querySelector('#study-delete-variant-btn').addEventListener('click', as
 
   try {
     await deleteJson(`/scheduler/cards/${item.data.id}/variants/${item.data.variant_id}`);
-    btn.classList.add('hidden');
     showToast('Variante eliminada.', 'success');
+    // Only touch the button if we're still on the same card; otherwise
+    // showStudyCard() has already reset it for the new card.
+    if (studyState.queue[studyState.index] === item) {
+      btn.classList.add('hidden');
+    }
   } catch (err) {
-    btn.disabled = false;
+    if (studyState.queue[studyState.index] === item) {
+      btn.disabled = false;
+    }
     showToast(`Error al eliminar variante: ${err.message}`, 'error');
   }
 });
