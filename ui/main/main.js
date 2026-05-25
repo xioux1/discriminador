@@ -9227,38 +9227,39 @@ function plannerOnGridMouseOver(e) {
 
 // Lazily cached subjects list for planner autocomplete
 let _plannerSubjectsCache = null;
-async function _getPlannerSubjects() {
-  if (_plannerSubjectsCache) return _plannerSubjectsCache;
-  try {
-    const data = await getJson('/api/cards/subjects');
-    _plannerSubjectsCache = data.subjects ?? [];
-  } catch (_) { _plannerSubjectsCache = []; }
-  return _plannerSubjectsCache;
+function _getPlannerSubjects() {
+  if (_plannerSubjectsCache !== null) return Promise.resolve(_plannerSubjectsCache);
+  return getJson('/api/cards/subjects')
+    .then(data => { _plannerSubjectsCache = data.subjects ?? []; return _plannerSubjectsCache; })
+    .catch(() => { _plannerSubjectsCache = []; return []; });
 }
 
-function _showPlannerAutocomplete(td, subjects) {
+function _normStr(s) {
+  return s.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+function _showPlannerAutocomplete(td) {
   _hidePlannerAutocomplete();
-  const typed = td.textContent.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  if (!_plannerSubjectsCache?.length) return;
+  const typed = _normStr(td.textContent);
   if (!typed) return;
-  const matches = subjects.filter(s =>
-    s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').includes(typed)
-  );
+  const matches = _plannerSubjectsCache.filter(s => _normStr(s).includes(typed));
   if (!matches.length) return;
 
   const rect = td.getBoundingClientRect();
   const dropdown = document.createElement('ul');
   dropdown.id = 'planner-autocomplete';
   dropdown.className = 'planner-autocomplete';
-  dropdown.style.cssText = `position:fixed;top:${rect.bottom}px;left:${rect.left}px;width:${Math.max(rect.width, 180)}px;z-index:9999`;
-  matches.slice(0, 6).forEach(subject => {
+  dropdown.style.cssText = `position:fixed;top:${rect.bottom + 2}px;left:${rect.left}px;min-width:${Math.max(rect.width, 180)}px;z-index:9999`;
+  matches.slice(0, 8).forEach(subject => {
     const li = document.createElement('li');
     li.textContent = subject;
     li.className = 'planner-autocomplete-item';
     li.addEventListener('mousedown', (e) => {
-      e.preventDefault(); // prevent blur
+      e.preventDefault();
       td.textContent = subject;
       _hidePlannerAutocomplete();
-      td.blur(); // triggers save
+      td.blur();
     });
     dropdown.appendChild(li);
   });
@@ -9291,11 +9292,12 @@ function plannerActivateCell(td) {
   const fixedToggle = document.querySelector('#planner-fixed-toggle');
   if (fixedToggle) fixedToggle.checked = td.dataset.fixed === '1';
 
-  // Attach autocomplete
-  _getPlannerSubjects().then(subjects => {
-    if (plannerState.activeCell !== td) return;
-    td.addEventListener('input', () => _showPlannerAutocomplete(td, subjects));
-  });
+  // Pre-warm cache; attach autocomplete listeners synchronously so first keystroke works
+  _getPlannerSubjects();
+  const _acHandler = () => _showPlannerAutocomplete(td);
+  td.addEventListener('input', _acHandler);
+  td.addEventListener('keyup', _acHandler);
+  td._acHandler = _acHandler;
 
   td.addEventListener('blur', plannerOnCellBlur, { once: true });
   td.addEventListener('keydown', plannerOnCellKeydown);
@@ -9305,6 +9307,11 @@ function plannerDeactivateCell(td) {
   td.contentEditable = 'false';
   td.classList.remove('planner-cell-active');
   td.removeEventListener('keydown', plannerOnCellKeydown);
+  if (td._acHandler) {
+    td.removeEventListener('input', td._acHandler);
+    td.removeEventListener('keyup', td._acHandler);
+    delete td._acHandler;
+  }
   _hidePlannerAutocomplete();
 }
 
@@ -9437,6 +9444,7 @@ async function loadPlannerWeek(weekStart) {
 }
 
 function initPlannerTab() {
+  _getPlannerSubjects(); // pre-warm autocomplete cache
   const weekStart = plannerWeekStart(new Date());
   loadPlannerWeek(weekStart);
   plannerState.nowMarkerTimer = setInterval(plannerMarkCurrentSlot, 30000);
