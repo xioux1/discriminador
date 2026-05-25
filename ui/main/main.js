@@ -5895,8 +5895,9 @@ async function checkPlannerGate(subjectOverride) {
   if (!ps) return null;
   const selectedSubject = subjectOverride ?? briefingState.selectedSubject;
   if (selectedSubject) {
-    const planned  = ps.currentSubject.trim().toLowerCase();
-    const selected = selectedSubject.trim().toLowerCase();
+    const normalize = s => s.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const planned  = normalize(ps.currentSubject);
+    const selected = normalize(selectedSubject);
     if (planned !== selected) {
       const endDate = new Date(ps.currentSubjectEndMs);
       const hh = String(endDate.getHours()).padStart(2, '0');
@@ -9216,6 +9217,50 @@ function plannerOnGridMouseOver(e) {
   plannerPaintCell(td, plannerState.fillDrag.source);
 }
 
+// Lazily cached subjects list for planner autocomplete
+let _plannerSubjectsCache = null;
+async function _getPlannerSubjects() {
+  if (_plannerSubjectsCache) return _plannerSubjectsCache;
+  try {
+    const data = await getJson('/api/cards/subjects');
+    _plannerSubjectsCache = data.subjects ?? [];
+  } catch (_) { _plannerSubjectsCache = []; }
+  return _plannerSubjectsCache;
+}
+
+function _showPlannerAutocomplete(td, subjects) {
+  _hidePlannerAutocomplete();
+  const typed = td.textContent.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  if (!typed) return;
+  const matches = subjects.filter(s =>
+    s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').includes(typed)
+  );
+  if (!matches.length) return;
+
+  const rect = td.getBoundingClientRect();
+  const dropdown = document.createElement('ul');
+  dropdown.id = 'planner-autocomplete';
+  dropdown.className = 'planner-autocomplete';
+  dropdown.style.cssText = `position:fixed;top:${rect.bottom}px;left:${rect.left}px;width:${Math.max(rect.width, 180)}px;z-index:9999`;
+  matches.slice(0, 6).forEach(subject => {
+    const li = document.createElement('li');
+    li.textContent = subject;
+    li.className = 'planner-autocomplete-item';
+    li.addEventListener('mousedown', (e) => {
+      e.preventDefault(); // prevent blur
+      td.textContent = subject;
+      _hidePlannerAutocomplete();
+      td.blur(); // triggers save
+    });
+    dropdown.appendChild(li);
+  });
+  document.body.appendChild(dropdown);
+}
+
+function _hidePlannerAutocomplete() {
+  document.getElementById('planner-autocomplete')?.remove();
+}
+
 function plannerActivateCell(td) {
   // Deactivate previous
   if (plannerState.activeCell && plannerState.activeCell !== td) {
@@ -9238,6 +9283,12 @@ function plannerActivateCell(td) {
   const fixedToggle = document.querySelector('#planner-fixed-toggle');
   if (fixedToggle) fixedToggle.checked = td.dataset.fixed === '1';
 
+  // Attach autocomplete
+  _getPlannerSubjects().then(subjects => {
+    if (plannerState.activeCell !== td) return;
+    td.addEventListener('input', () => _showPlannerAutocomplete(td, subjects));
+  });
+
   td.addEventListener('blur', plannerOnCellBlur, { once: true });
   td.addEventListener('keydown', plannerOnCellKeydown);
 }
@@ -9246,6 +9297,7 @@ function plannerDeactivateCell(td) {
   td.contentEditable = 'false';
   td.classList.remove('planner-cell-active');
   td.removeEventListener('keydown', plannerOnCellKeydown);
+  _hidePlannerAutocomplete();
 }
 
 function plannerOnCellBlur(e) {
