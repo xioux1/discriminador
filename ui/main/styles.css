@@ -3860,6 +3860,30 @@ textarea:focus, input[type="text"]:focus, select:focus {
   white-space: pre-wrap;
 }
 
+.planner-autocomplete {
+  background: var(--surface-solid, #fff);
+  border: 1px solid var(--border, #ddd);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 4px 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.planner-autocomplete-item {
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.planner-autocomplete-item:hover { background: var(--surface-hover, #f5f5f5); }
+[data-theme="dark"] .planner-autocomplete { background: #1e2533; border-color: rgba(255,255,255,0.1); }
+[data-theme="dark"] .planner-autocomplete-item:hover { background: rgba(255,255,255,0.07); }
+
 /* ─── Notes FAB + Panel ───────────────────────────────────────────────────── */
 .notes-fab {
   position: fixed; bottom: 24px; right: 24px; z-index: 300;
