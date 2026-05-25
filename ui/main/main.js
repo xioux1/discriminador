@@ -1825,14 +1825,20 @@ async function loadDashboard() {
   if (agendaContainer) agendaContainer.innerHTML = '';
 
   try {
-    const [overview, dueCounts, calendarData, agendaData] = await Promise.all([
+    const [overview, dueCounts, calendarData, agendaData, todayScheduleData] = await Promise.all([
       getJson('/stats/overview').catch(() => ({ subjects: [] })),
       getJson('/scheduler/due-counts').catch(() => ({ cards: {}, micros: {} })),
       getJson('/exam-calendar').catch(() => ({ exams: [] })),
       getJson('/scheduler/agenda').catch(() => null),
+      getJson('/planner/today-schedule').catch(() => ({ slots: [] })),
     ]);
 
     loading.classList.add('hidden');
+
+    // Determine currently planned subject (if any) for row locking
+    const activePlannerSession = resolvePlannerSession(todayScheduleData.slots ?? []);
+    const plannerNormStr = s => s.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const activePlannerSubject = activePlannerSession?.currentSubject ?? null;
 
     const normalizeSubject = (subject) => {
       const normalized = typeof subject === 'string' ? subject.trim() : '';
@@ -1984,6 +1990,9 @@ async function loadDashboard() {
         const rPct    = r !== null ? Math.round(r * 100) : null;
         const rCls    = r !== null ? (r >= 0.4 ? 'good' : r >= 0.2 ? 'amber' : 'bad') : '';
 
+        const isLocked = activePlannerSubject !== null &&
+          plannerNormStr(name) !== plannerNormStr(activePlannerSubject);
+
         const examCell = exam
           ? `${escHtml(exam.label || '')} <span class="dsh-exam-days-sm">en ${exam.days}d</span>`
           : `<span class="dsh-cell-empty">—</span>`;
@@ -1997,13 +2006,17 @@ async function loadDashboard() {
              </div>`
           : `<span class="dsh-cell-empty">—</span>`;
 
+        const studyBtn = isLocked
+          ? ''
+          : `<button type="button" class="${hasPend ? 'dsh-btn-study-primary' : 'dsh-btn-study-secondary'} deck-study-btn" data-subject="${escHtml(name)}">Estudiar</button>`;
+
         return `
-          <div class="dsh-mat-row${i > 0 ? ' dsh-row-border' : ''}">
-            <span class="dsh-mat-name ${hasPend ? 'name-active' : 'name-dim'}">${escHtml(name)}</span>
+          <div class="dsh-mat-row${i > 0 ? ' dsh-row-border' : ''}${isLocked ? ' dsh-mat-row--locked' : ''}">
+            <span class="dsh-mat-name ${hasPend && !isLocked ? 'name-active' : 'name-dim'}">${escHtml(name)}</span>
             <span class="dsh-mat-event">${examCell}</span>
             <span class="dsh-mat-readiness">${readinessCell}</span>
             <div class="dsh-mat-actions">
-              <button type="button" class="${hasPend ? 'dsh-btn-study-primary' : 'dsh-btn-study-secondary'} deck-study-btn" data-subject="${escHtml(name)}">Estudiar</button>
+              ${studyBtn}
               <button type="button" class="dsh-btn-icon deck-config-btn" data-subject="${escHtml(name)}" title="Configurar">⚙</button>
               <button type="button" class="dsh-btn-icon deck-rename-btn" data-subject="${escHtml(name)}" title="Renombrar">✎</button>
             </div>
@@ -2033,14 +2046,10 @@ async function loadDashboard() {
       });
 
 
-      card.addEventListener('click', async (e) => {
+      card.addEventListener('click', (e) => {
         if (e.target.classList.contains('deck-study-btn')) {
-          const clickedSubject = e.target.dataset.subject || '';
-          // Planner gate: block before even navigating to the study tab
-          const plannerResult = await checkPlannerGate(clickedSubject);
-          if (plannerResult === false) return;
           const studyTabBtn = document.querySelector('[data-tab="study"]');
-          studyTabBtn.dataset.subjectFromDashboard = clickedSubject;
+          studyTabBtn.dataset.subjectFromDashboard = e.target.dataset.subject || '';
           studyTabBtn.click();
         }
         if (e.target.classList.contains('deck-config-btn')) {
