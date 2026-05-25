@@ -5960,6 +5960,7 @@ async function _doStartStudySession() {
     }
   }
 
+
   const effectiveSubject = resolvedPlanner
     ? resolvedPlanner.currentSubject
     : (briefingState.selectedSubject ?? null);
