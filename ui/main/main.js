@@ -1921,31 +1921,16 @@ async function loadDashboard() {
       if (!examBySubject[subj]) examBySubject[subj] = exam;
     }
 
-    // Subject list sorted by pending desc then alpha
+    // Subject list sorted alphabetically
     const subjectNames = [...new Set([
       ...subjects.map((s) => s.subject),
       ...Object.keys(pendingCardsBySubject),
       ...Object.keys(activeMicrosBySubject),
-    ])].sort((a, b) => {
-      const pa = pendingCardsBySubject[a] || 0;
-      const pb = pendingCardsBySubject[b] || 0;
-      return pb - pa || a.localeCompare(b, 'es');
-    });
+    ])].sort((a, b) => a.localeCompare(b, 'es'));
 
     const totalSubjects = subjectNames.length;
     const totalPendingAll = subjectNames.reduce((sum, n) => sum + (pendingCardsBySubject[n] || 0), 0);
 
-    // ── 1. Headline ──────────────────────────────────────────────────────────
-    {
-      const el = document.createElement('h1');
-      el.className = 'dsh-headline';
-      if (totalDue > 0) {
-        el.innerHTML = `${totalDue} pendientes hoy <span class="dsh-headline-sub">(${totalPendingCards} tarjetas principales + ${totalActiveMicros} microconsignas).</span>`;
-      } else {
-        el.textContent = 'Sin pendientes hoy.';
-      }
-      content.appendChild(el);
-    }
 
     // ── 2. Próximos exámenes (top 5, future only) ────────────────────────────
     const topExams = allFutureExams.slice(0, 5);
@@ -2014,7 +1999,6 @@ async function loadDashboard() {
 
         return `
           <div class="dsh-mat-row${i > 0 ? ' dsh-row-border' : ''}">
-            <span class="dsh-mat-pend ${hasPend ? 'pend-has' : 'pend-zero'}"${hasPend ? ` data-pend="${pend}"` : ''}>${hasPend ? '••' : '·'}</span>
             <span class="dsh-mat-name ${hasPend ? 'name-active' : 'name-dim'}">${escHtml(name)}</span>
             <span class="dsh-mat-event">${examCell}</span>
             <span class="dsh-mat-readiness">${readinessCell}</span>
@@ -2030,15 +2014,13 @@ async function loadDashboard() {
         <div class="dsh-card-header">
           <span>
             <span class="dsh-card-title">Materias</span>
-            <span class="dsh-card-meta"> (${totalSubjects} · <span class="dsh-total-pend" data-pend="${totalPendingAll}">••</span> pendientes)</span>
+            <span class="dsh-card-meta"> (${totalSubjects})</span>
           </span>
           <div class="dsh-card-header-right">
-            <span class="dsh-card-meta">orden: pendientes ↓</span>
             <span class="dsh-card-link dsh-btn-new-subject">+ nueva</span>
           </div>
         </div>
         <div class="dsh-mat-colhead">
-          <span class="dsh-col-pend">pend. <button type="button" class="dsh-pend-eye" title="Mantener presionado para ver">👁</button></span>
           <span>materia</span>
           <span>próximo evento</span>
           <span>preparación</span>
@@ -2050,31 +2032,6 @@ async function loadDashboard() {
         document.querySelector('[data-tab="browser"]')?.click();
       });
 
-      // Hold-to-reveal pending counts
-      const eyeBtn = card.querySelector('.dsh-pend-eye');
-      function showPendCounts() {
-        card.querySelectorAll('.dsh-mat-pend.pend-has').forEach(s => {
-          s.textContent = s.dataset.pend;
-          s.classList.add('pend-visible');
-        });
-        const tps = card.querySelector('.dsh-total-pend');
-        if (tps) tps.textContent = tps.dataset.pend;
-        eyeBtn.classList.add('active');
-      }
-      function hidePendCounts() {
-        if (!card.isConnected) return;
-        card.querySelectorAll('.dsh-mat-pend.pend-has').forEach(s => {
-          s.textContent = '••';
-          s.classList.remove('pend-visible');
-        });
-        const tps = card.querySelector('.dsh-total-pend');
-        if (tps) tps.textContent = '••';
-        eyeBtn.classList.remove('active');
-      }
-      eyeBtn.addEventListener('mousedown', (e) => { e.preventDefault(); showPendCounts(); });
-      eyeBtn.addEventListener('touchstart', (e) => { e.preventDefault(); showPendCounts(); }, { passive: false });
-      document.addEventListener('mouseup', hidePendCounts);
-      document.addEventListener('touchend', hidePendCounts);
 
       card.addEventListener('click', async (e) => {
         if (e.target.classList.contains('deck-study-btn')) {
@@ -4854,19 +4811,6 @@ async function fetchSessionPlan() {
       `;
       startBtn.classList.remove('hidden');
 
-      // Daily quota nudge
-      getJson(`/scheduler/daily-summary?budget_minutes=${getDailyBudget()}`).then((ds) => {
-        if (!ds) return;
-        const done   = ds.reviews_done_today;
-        const target = getDailyTarget();
-        const rem    = Math.max(0, target - done);
-        if (rem > 0) {
-          const nudge = document.createElement('div');
-          nudge.className = 'briefing-daily-nudge';
-          nudge.textContent = `Meta diaria: ${done}/${target} revisiones · te quedan ${rem}`;
-          summaryEl.appendChild(nudge);
-        }
-      }).catch(() => {});
 
       // Agent reasoning log
       if (data.plan.agent_log) {

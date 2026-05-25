@@ -6984,7 +6984,7 @@ textarea.chinese-input {
 /* ── Materias card ── */
 .dsh-mat-colhead {
   display: grid;
-  grid-template-columns: 44px 1fr 180px 130px 140px;
+  grid-template-columns: 1fr 180px 130px 140px;
   gap: 16px;
   padding: 8px 18px 6px;
   font-size: 0.625rem;
@@ -7015,7 +7015,7 @@ textarea.chinese-input {
 
 .dsh-mat-row {
   display: grid;
-  grid-template-columns: 44px 1fr 180px 130px 140px;
+  grid-template-columns: 1fr 180px 130px 140px;
   align-items: center;
   gap: 16px;
   padding: 12px 18px;
