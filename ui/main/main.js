@@ -1830,7 +1830,7 @@ async function loadDashboard() {
       getJson('/scheduler/due-counts').catch(() => ({ cards: {}, micros: {} })),
       getJson('/exam-calendar').catch(() => ({ exams: [] })),
       getJson('/scheduler/agenda').catch(() => null),
-      getJson('/planner/today-schedule').catch(() => ({ slots: [] })),
+      getJsonWithTimeout('/planner/today-schedule', 3500).catch(() => ({ slots: [] })),
     ]);
 
     loading.classList.add('hidden');
@@ -2046,7 +2046,7 @@ async function loadDashboard() {
       });
 
 
-      card.addEventListener('click', (e) => {
+      card.addEventListener('click', async (e) => {
         if (e.target.classList.contains('deck-study-btn')) {
           const studyTabBtn = document.querySelector('[data-tab="study"]');
           studyTabBtn.dataset.subjectFromDashboard = e.target.dataset.subject || '';
@@ -2155,6 +2155,15 @@ async function loadDashboard() {
     loading.classList.add('hidden');
     content.innerHTML = `<p style="color:var(--fail-fg);padding:16px">Error al cargar: ${err.message}</p>`;
   }
+}
+
+async function getJsonWithTimeout(url, timeoutMs = 5000) {
+  return Promise.race([
+    getJson(url),
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error(`timeout (${timeoutMs}ms)`)), timeoutMs);
+    }),
+  ]);
 }
 
 // --- Dashboard agenda ---
