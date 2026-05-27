@@ -8148,7 +8148,8 @@ async function handleStudyNextCard() {
     if (isNewCard || inLearning || isRelearning) {
       const subjectKey  = item.data.subject ?? null;
       const cfg         = autoadvanceConfigCache[subjectKey] ?? null;
-      const steps       = parseLearningSteps(cfg?.learning_steps ?? '1m 10m');
+      const skipSteps   = cfg?.skip_learning_steps ?? false;
+      const steps       = skipSteps ? [] : parseLearningSteps(cfg?.learning_steps ?? '1m 10m');
       if (steps.length === 0) {
         postJson('/scheduler/review', {
           card_id:          item.data.id,
@@ -10421,6 +10422,7 @@ async function openCurriculumModal(subject) {
     document.querySelector('#curriculum-micro-count-good').value  = data.config?.micro_count_good  ?? '';
     document.querySelector('#curriculum-micro-count-easy').value  = data.config?.micro_count_easy  ?? '';
     document.querySelector('#curriculum-learning-steps').value    = data.config?.learning_steps           ?? '1m 10m';
+    document.querySelector('#curriculum-skip-learning-steps').checked = data.config?.skip_learning_steps ?? false;
     document.querySelector('#curriculum-insertion-order').value   = data.config?.new_card_insertion_order  ?? 'sequential';
     const aaEnabled = data.config?.autoadvance_enabled ?? false;
     document.querySelector('#curriculum-autoadvance-enabled').checked = aaEnabled;
@@ -10452,6 +10454,7 @@ async function openCurriculumModal(subject) {
     document.querySelector('#curriculum-micro-count-good').value  = '';
     document.querySelector('#curriculum-micro-count-easy').value  = '';
     document.querySelector('#curriculum-learning-steps').value    = '1m 10m';
+    document.querySelector('#curriculum-skip-learning-steps').checked = false;
     document.querySelector('#curriculum-insertion-order').value   = 'sequential';
     document.querySelector('#curriculum-autoadvance-enabled').checked = false;
     document.querySelector('#curriculum-autoadvance-question-secs').value = '';
@@ -10526,6 +10529,7 @@ document.querySelector('#curriculum-save-btn').addEventListener('click', async (
       micro_count_good:             parseMicroCountInput('#curriculum-micro-count-good'),
       micro_count_easy:             parseMicroCountInput('#curriculum-micro-count-easy'),
       learning_steps:               document.querySelector('#curriculum-learning-steps').value.trim() || '1m 10m',
+      skip_learning_steps:          document.querySelector('#curriculum-skip-learning-steps').checked,
       new_card_insertion_order:     document.querySelector('#curriculum-insertion-order').value,
       autoadvance_enabled:          document.querySelector('#curriculum-autoadvance-enabled').checked,
       autoadvance_question_seconds: document.querySelector('#curriculum-autoadvance-question-secs').value.trim() !== ''
