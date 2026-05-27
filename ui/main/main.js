@@ -4561,15 +4561,13 @@ function initStudyTab() {
   setMathHighlightColor(getMathHighlightColor());
   bindStudyKeyboardShortcuts();
 
-  // Single TTS replay button listener (registered once; _ttsCurrentText drives which text to play)
-  document.querySelector('#study-tts-btn')?.addEventListener('click', () => {
-    if (_ttsCurrentText) playChineseTTS(_ttsCurrentText);
-  });
-
-  // Listening variant replay button (prompt-side audio for listening cards)
-  document.querySelector('#study-listening-replay-btn')?.addEventListener('click', () => {
-    if (_ttsListeningText) playChineseTTS(_ttsListeningText, '#study-listening-replay-btn');
-  });
+  // TTS replay buttons disabled
+  // document.querySelector('#study-tts-btn')?.addEventListener('click', () => {
+  //   if (_ttsCurrentText) playChineseTTS(_ttsCurrentText);
+  // });
+  // document.querySelector('#study-listening-replay-btn')?.addEventListener('click', () => {
+  //   if (_ttsListeningText) playChineseTTS(_ttsListeningText, '#study-listening-replay-btn');
+  // });
 
   // ── Binary check button ────────────────────────────────────────────────────
   document.querySelector('#study-binary-check-btn')?.addEventListener('click', async () => {
@@ -6358,54 +6356,18 @@ function showStudyCard() {
     } else {
       parentContextEl.classList.add('hidden');
     }
-    // Detect listening microcards: explicit presentation tag OR legacy cards where
-    // the question is pure hanzi (no presentation tag set at creation time).
-    const _microQuestion = item.data.question || '';
-    const _microExpected = item.data.expected_answer || '';
-    const isMicroListening = item.data.presentation === 'listening'
-      || (hasChinese(_microQuestion) && hasChinese(_microExpected)
-          && item.data.presentation !== 'lexical' && item.data.presentation !== 'text');
-
-    if (isMicroListening) {
-      // Listening micro-card: hide question text, play audio of the Hanzi to drill.
-      promptEl.innerHTML = '';
-      // Guard: if question has no CJK (bad legacy data), fall back to parent context.
-      _ttsListeningText = /[一-鿿㐀-䶿]/u.test(_microQuestion) ? _microQuestion : (item.data.parent_prompt || _microQuestion);
-      if (listeningBar) listeningBar.classList.remove('hidden');
-      if (getTTSEnabled()) playChineseTTS(_ttsListeningText, '#study-listening-replay-btn');
-    } else {
-      renderStudyPrompt(promptEl, getStudyPromptText(item));
-      if (listeningBar) listeningBar.classList.add('hidden');
-      _ttsListeningText = null;
-    }
+    // Audio flow disabled — always show text prompt for micro cards
+    renderStudyPrompt(promptEl, getStudyPromptText(item));
+    if (listeningBar) listeningBar.classList.add('hidden');
+    _ttsListeningText = null;
   } else {
     parentContextEl.classList.add('hidden');
 
-    // A corrupted regular variant for a Chinese card may have hanzi in prompt_text
-    // (LLM wrote the question in Chinese instead of Spanish). Treat it the same as
-    // a listening variant so the student isn't shown raw hanzi on the front.
-    // Only applies to chinese_sentence cards — manually created cards may intentionally
-    // have Chinese in the prompt and should not be auto-converted to audio mode.
+    // Audio flow disabled — always show text prompt for regular cards
     const promptForDisplay = getStudyPromptText(item);
-    const isCorruptedChinesePrompt = !isListeningVariant
-      && item.data.card_type === 'chinese_sentence'
-      && hasChinese(promptForDisplay)
-      && hasChinese(item.data.expected_answer_text || '');
-
-    if (isListeningVariant || isCorruptedChinesePrompt) {
-      // Hide the text prompt; show the listening bar and auto-play TTS.
-      promptEl.innerHTML = '';
-      // Use whichever field contains Chinese for TTS (prompt may be Spanish for vocab cards)
-      _ttsListeningText = hasChinese(item.data.prompt_text || '')
-        ? item.data.prompt_text
-        : (item.data.expected_answer_text || '');
-      if (listeningBar) listeningBar.classList.remove('hidden');
-      if (getTTSEnabled()) playChineseTTS(_ttsListeningText, '#study-listening-replay-btn');
-    } else {
-      renderStudyPrompt(promptEl, promptForDisplay);
-      if (listeningBar) listeningBar.classList.add('hidden');
-      _ttsListeningText = null;
-    }
+    renderStudyPrompt(promptEl, promptForDisplay);
+    if (listeningBar) listeningBar.classList.add('hidden');
+    _ttsListeningText = null;
   }
   setStudyPromptFeedback('');
 
@@ -7221,16 +7183,10 @@ document.querySelector('#study-eval-btn').addEventListener('click', async () => 
       studyState.checkErrorLabels.forEach((label) => addCheckErrorTag(label));
     }
 
-    // Chinese TTS: auto-play if expected answer contains Hanzi
+    // Chinese TTS auto-play disabled
     const ttsBar = document.querySelector('#study-tts-bar');
-    if (hasChinese(expected_answer_text)) {
-      _ttsCurrentText = expected_answer_text;
-      if (ttsBar) ttsBar.classList.remove('hidden');
-      if (getTTSEnabled()) playChineseTTS(expected_answer_text);
-    } else {
-      _ttsCurrentText = null;
-      if (ttsBar) ttsBar.classList.add('hidden');
-    }
+    _ttsCurrentText = null;
+    if (ttsBar) ttsBar.classList.add('hidden');
 
     // Start review timer (time spent reading the answer/feedback)
     studyState.reviewStartTime = Date.now();
