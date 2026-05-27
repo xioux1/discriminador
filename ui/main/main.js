@@ -6384,8 +6384,11 @@ function showStudyCard() {
     // A corrupted regular variant for a Chinese card may have hanzi in prompt_text
     // (LLM wrote the question in Chinese instead of Spanish). Treat it the same as
     // a listening variant so the student isn't shown raw hanzi on the front.
+    // Only applies to chinese_sentence cards — manually created cards may intentionally
+    // have Chinese in the prompt and should not be auto-converted to audio mode.
     const promptForDisplay = getStudyPromptText(item);
     const isCorruptedChinesePrompt = !isListeningVariant
+      && item.data.card_type === 'chinese_sentence'
       && hasChinese(promptForDisplay)
       && hasChinese(item.data.expected_answer_text || '');
 
