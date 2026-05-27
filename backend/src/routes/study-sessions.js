@@ -166,9 +166,9 @@ studySessionsRouter.post('/study/sessions/analysis', async (req, res) => {
   }
 
   const formatCard = (r) => {
-    let text = `Tema: ${r.prompt_text}\nRespuesta correcta: ${r.expected_answer_text}`;
-    if (r.user_answer) text += `\nLo que respondiste: ${r.user_answer}`;
-    if (r.concept_gaps?.length) text += `\nConceptos involucrados: ${r.concept_gaps.join(', ')}`;
+    let text = `Pregunta/Ejercicio: ${r.prompt_text}\nRespuesta correcta: ${r.expected_answer_text}`;
+    if (r.user_answer) text += `\nRespuesta dada: ${r.user_answer}`;
+    if (r.concept_gaps?.length) text += `\nConceptos declarados: ${r.concept_gaps.join(', ')}`;
     return text;
   };
 
@@ -178,19 +178,22 @@ studySessionsRouter.post('/study/sessions/analysis', async (req, res) => {
     ? `\nMICRO-CONCEPTOS A REPASAR:\n${failedMicro.map(r => `- ${r.concept || r.prompt_text}`).join('\n')}`
     : '';
 
-  const prompt = `Sos un tutor experto. A partir de las preguntas que el alumno no respondió correctamente en una sesión de estudio, generá un apunte de repaso.
+  const prompt = `Sos un tutor experto. A partir de los ejercicios y preguntas que el alumno no respondió correctamente, vas a generar un apunte de estudio enfocado en el concepto puntual que falló, no en el tema general del ejercicio.
 
-REGLAS:
-- Para cada ítem, tomá la pregunta y la respuesta correcta como base y generá una explicación clara del concepto subyacente.
-- Escribí como si fuera un apunte de clase: explicá el tema, no describas el error. Nunca uses frases como "te equivocaste en", "error frecuente", "error común", "el alumno falló", "la respuesta fue incorrecta".
-- Cada ítem debe leerse como una sección de apunte: presentá el tema, explicá el concepto en profundidad, usá ejemplos si clarifican.
-- Basate estrictamente en el contenido de cada pregunta y respuesta. No inventes ni amplíes a temas no relacionados.
-- Si hay una respuesta dada por el alumno, usala internamente para entender qué parte del concepto necesita más claridad, pero no la menciones ni hagas referencia a ella en el texto.
-- No menciones al alumno ni uses frases en segunda persona dirigidas a él.
+PROCESO PARA CADA ÍTEM:
+1. Analizá la "Respuesta dada" versus la "Respuesta correcta". Identificá el paso, operación, razonamiento o concepto específico donde ocurrió la falla. Esto puede ser distinto al tema general del ejercicio. Por ejemplo: si el ejercicio es de MRUV pero la falla estuvo en despejar una variable de una ecuación cuadrática, el apunte debe ser sobre ese despeje, no sobre MRUV.
+2. Determiná el concepto mínimo que el alumno necesita dominar para no volver a fallar en ese punto específico. Ese concepto es el tema central del apunte, no el ejercicio completo.
+3. Escribí el apunte centrado en ese concepto puntual: presentalo, explicalo en profundidad, usá ejemplos concretos que lo ilustren.
+
+REGLAS DE ESCRITURA:
+- Escribí como si fuera un apunte de clase sobre ese concepto específico. No hagas referencia al ejercicio original ni al contexto donde surgió.
+- Nunca menciones el error, el alumno, ni uses frases como "te equivocaste en", "error frecuente", "error común", "el alumno falló", "la respuesta fue incorrecta".
+- El apunte debe poder leerse de forma autónoma: alguien que lo lea sin haber visto el ejercicio debe entender perfectamente el concepto.
+- No amplíes a temas no relacionados con el concepto puntual identificado.
 - Idioma: español.
 
 ---
-PREGUNTAS A DESARROLLAR:
+ÍTEMS A ANALIZAR:
 
 ${cardsSection}
 ${microSection}`;
