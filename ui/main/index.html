@@ -204,6 +204,13 @@
                 <input type="text" id="curriculum-learning-steps" placeholder="Ej: 1m 10m" style="width:100%;box-sizing:border-box">
                 <p style="font-size:0.78rem;color:var(--text-muted);margin:4px 0 0">Tiempos separados por espacio (s, m, h, d). Ej: <code>1m 10m</code>. Las tarjetas nuevas o falladas vuelven a aparecer en la sesión según estos pasos.</p>
               </div>
+              <div style="margin-top:10px">
+                <label class="toggle-row">
+                  <input type="checkbox" id="curriculum-skip-learning-steps">
+                  <span class="toggle-label">Desactivar pasos de aprendizaje</span>
+                </label>
+                <p style="font-size:0.78rem;color:var(--text-muted);margin:4px 0 0">Las tarjetas van directamente al scheduler graduado sin importar la calificación (again, hard, etc.).</p>
+              </div>
               <div>
                 <label for="curriculum-insertion-order" style="display:block;font-size:0.82rem;color:var(--text-muted);margin-bottom:4px">Orden de inserción</label>
                 <select id="curriculum-insertion-order" style="max-width:280px">
