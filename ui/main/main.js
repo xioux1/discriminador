@@ -9513,7 +9513,7 @@ function buildMonthlyCalendar(year, month, exams, events) {
     const dateStr = String(ex.exam_date).substring(0, 10);
     if (!eventsByDate[dateStr]) eventsByDate[dateStr] = [];
     const chipColor = ex.exam_type === 'final' ? '#f4cccc' : '#fce5cd';
-    eventsByDate[dateStr].push({ type: 'exam', id: ex.id, title: `${ex.label} · ${ex.subject}`, color: chipColor });
+    eventsByDate[dateStr].push({ type: 'exam', id: ex.id, title: `${ex.subject} · ${ex.label}`, color: chipColor });
   }
   for (const ev of events) {
     const dateStr = String(ev.event_date).substring(0, 10);
