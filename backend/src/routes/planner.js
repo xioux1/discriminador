@@ -487,7 +487,41 @@ plannerRouter.get('/planner/calendar-events', async (req, res) => {
        ORDER BY event_date ASC`,
       [userId, monthStart, nextMonthStart]
     );
-    return res.json({ exams, events });
+    const { rows: studyTotals } = await dbPool.query(
+      `WITH session_daily AS (
+         SELECT
+           DATE(started_at AT TIME ZONE 'America/Argentina/Buenos_Aires') AS study_date,
+           SUM(COALESCE(
+             actual_minutes,
+             LEAST(EXTRACT(EPOCH FROM (ended_at - started_at)) / 60.0, 180)
+           )) AS study_minutes
+         FROM study_sessions
+         WHERE user_id = $1
+           AND (actual_minutes IS NOT NULL OR ended_at IS NOT NULL)
+           AND DATE(started_at AT TIME ZONE 'America/Argentina/Buenos_Aires') >= $2
+           AND DATE(started_at AT TIME ZONE 'America/Argentina/Buenos_Aires') < $3
+         GROUP BY study_date
+       ),
+       manual_daily AS (
+         SELECT
+           DATE(started_at AT TIME ZONE 'America/Argentina/Buenos_Aires') AS study_date,
+           SUM(ROUND(EXTRACT(EPOCH FROM (ended_at - started_at)) / 60.0)) AS study_minutes
+         FROM manual_activity_sessions
+         WHERE user_id = $1
+           AND ended_at IS NOT NULL
+           AND DATE(started_at AT TIME ZONE 'America/Argentina/Buenos_Aires') >= $2
+           AND DATE(started_at AT TIME ZONE 'America/Argentina/Buenos_Aires') < $3
+         GROUP BY study_date
+       )
+       SELECT
+         COALESCE(s.study_date, m.study_date) AS study_date,
+         ROUND(COALESCE(s.study_minutes, 0) + COALESCE(m.study_minutes, 0))::int AS study_minutes
+       FROM session_daily s
+       FULL OUTER JOIN manual_daily m USING (study_date)
+       ORDER BY study_date`,
+      [userId, monthStart, nextMonthStart]
+    );
+    return res.json({ exams, events, study_totals: studyTotals });
   } catch (err) {
     console.error('GET /planner/calendar-events error', err.message);
     return res.status(500).json({ error: 'server_error', message: err.message });
