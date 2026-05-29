@@ -580,7 +580,7 @@ async function syncSchedulerCard(pool, {
       const result = await pool.query(
         `INSERT INTO micro_cards (parent_card_id, concept, question, expected_answer, user_id, subject)
          VALUES ($1, $2, $3, $4, $5, $6)
-         ON CONFLICT (parent_card_id, concept) DO NOTHING`,
+         ON CONFLICT (parent_card_id, user_id, concept) WHERE status = 'active' DO NOTHING`,
         [card.id, concept, micro.question, micro.expected_answer, user_id, card.subject || subject || null]
       );
       if (result.rowCount > 0) {
