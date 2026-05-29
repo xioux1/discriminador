@@ -9463,6 +9463,277 @@ function initPlannerTab() {
   initManualActivityWidget();
   initActivityHistoryModal();
   initPlannerTodos();
+
+  document.querySelector('#planner-view-weekly').addEventListener('click', () => plannerSwitchView('weekly'));
+  document.querySelector('#planner-view-monthly').addEventListener('click', () => plannerSwitchView('monthly'));
+  initMonthlyCalendar();
+}
+
+// ─── Monthly Calendar ─────────────────────────────────────────────────────────
+
+const MONTH_NAMES_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+const monthlyCalendarState = {
+  year: null,
+  month: null, // 0-11
+  exams: [],
+  events: [],
+};
+
+async function loadMonthlyCalendar(year, month) {
+  monthlyCalendarState.year = year;
+  monthlyCalendarState.month = month;
+
+  const label = document.querySelector('#planner-month-label');
+  label.textContent = `${MONTH_NAMES_ES[month]} ${year}`;
+
+  const loading = document.querySelector('#planner-loading');
+  loading.classList.remove('hidden');
+
+  try {
+    const data = await getJson(`/planner/calendar-events?year=${year}&month=${month + 1}`);
+    monthlyCalendarState.exams = data.exams || [];
+    monthlyCalendarState.events = data.events || [];
+    loading.classList.add('hidden');
+    buildMonthlyCalendar(year, month, monthlyCalendarState.exams, monthlyCalendarState.events);
+  } catch (err) {
+    loading.textContent = `Error: ${err.message}`;
+  }
+}
+
+function buildMonthlyCalendar(year, month, exams, events) {
+  const grid = document.querySelector('#planner-month-grid');
+  grid.innerHTML = '';
+
+  const today = new Date();
+  const todayStr = plannerDateStr(today);
+
+  const eventsByDate = {};
+  for (const ex of exams) {
+    const dateStr = String(ex.exam_date).substring(0, 10);
+    if (!eventsByDate[dateStr]) eventsByDate[dateStr] = [];
+    const chipColor = ex.exam_type === 'final' ? '#f4cccc' : '#fce5cd';
+    eventsByDate[dateStr].push({ type: 'exam', id: ex.id, title: `${ex.label} · ${ex.subject}`, color: chipColor });
+  }
+  for (const ev of events) {
+    const dateStr = String(ev.event_date).substring(0, 10);
+    if (!eventsByDate[dateStr]) eventsByDate[dateStr] = [];
+    eventsByDate[dateStr].push({ type: 'event', id: ev.id, title: ev.title, color: ev.color });
+  }
+
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+  const startDow = firstDay.getDay();
+  const totalDays = lastDay.getDate();
+
+  const table = document.createElement('table');
+  table.className = 'monthly-cal-table';
+
+  const thead = document.createElement('thead');
+  const headRow = document.createElement('tr');
+  for (const day of PLANNER_DAYS) {
+    const th = document.createElement('th');
+    th.className = 'monthly-cal-th';
+    th.textContent = day;
+    headRow.appendChild(th);
+  }
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  let dayNum = 1;
+
+  for (let row = 0; row < 6; row++) {
+    if (dayNum > totalDays) break;
+    const tr = document.createElement('tr');
+    tr.className = 'monthly-cal-row';
+
+    for (let col = 0; col < 7; col++) {
+      const td = document.createElement('td');
+      td.className = 'monthly-cal-cell';
+      const cellIdx = row * 7 + col;
+
+      if (cellIdx < startDow || dayNum > totalDays) {
+        td.classList.add('monthly-cal-cell--outside');
+      } else {
+        const cellDate = new Date(year, month, dayNum);
+        const dateStr = plannerDateStr(cellDate);
+
+        if (dateStr === todayStr) td.classList.add('monthly-cal-cell--today');
+
+        const numEl = document.createElement('span');
+        numEl.className = 'monthly-cal-daynum';
+        numEl.textContent = dayNum;
+        td.appendChild(numEl);
+
+        for (const ev of (eventsByDate[dateStr] || [])) {
+          const chip = document.createElement('div');
+          chip.className = 'monthly-cal-chip';
+          if (ev.type === 'exam') chip.classList.add('monthly-cal-chip--exam');
+          chip.style.setProperty('--chip-color', ev.color);
+          chip.title = ev.title;
+
+          const chipText = document.createElement('span');
+          chipText.className = 'monthly-cal-chip-text';
+          chipText.textContent = ev.title;
+          chip.appendChild(chipText);
+
+          if (ev.type === 'event') {
+            const delBtn = document.createElement('button');
+            delBtn.type = 'button';
+            delBtn.className = 'monthly-cal-chip-del';
+            delBtn.textContent = '×';
+            delBtn.title = 'Eliminar evento';
+            delBtn.addEventListener('click', async (e) => {
+              e.stopPropagation();
+              await deleteJson(`/planner/calendar-events/${ev.id}`);
+              loadMonthlyCalendar(monthlyCalendarState.year, monthlyCalendarState.month);
+            });
+            chip.appendChild(delBtn);
+          }
+
+          td.appendChild(chip);
+        }
+
+        td.addEventListener('click', () => openCalendarEventModal(dateStr));
+        dayNum++;
+      }
+
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+
+  table.appendChild(tbody);
+  grid.appendChild(table);
+}
+
+function openCalendarEventModal(dateStr) {
+  const modal = document.querySelector('#planner-event-modal');
+  document.querySelector('#pem-date').value = dateStr;
+  document.querySelector('#pem-title').value = '';
+  document.querySelector('#pem-error').classList.add('hidden');
+
+  document.querySelectorAll('.pem-swatch').forEach(s => s.classList.remove('planner-swatch-active'));
+  const firstSwatch = document.querySelector('.pem-swatch');
+  if (firstSwatch) firstSwatch.classList.add('planner-swatch-active');
+
+  modal.classList.remove('hidden');
+  setTimeout(() => document.querySelector('#pem-title').focus(), 50);
+}
+
+function initMonthlyCalendar() {
+  document.querySelector('#planner-month-prev').addEventListener('click', () => {
+    let { year, month } = monthlyCalendarState;
+    month--;
+    if (month < 0) { month = 11; year--; }
+    loadMonthlyCalendar(year, month);
+  });
+
+  document.querySelector('#planner-month-next').addEventListener('click', () => {
+    let { year, month } = monthlyCalendarState;
+    month++;
+    if (month > 11) { month = 0; year++; }
+    loadMonthlyCalendar(year, month);
+  });
+
+  document.querySelector('#planner-month-today').addEventListener('click', () => {
+    const t = new Date();
+    loadMonthlyCalendar(t.getFullYear(), t.getMonth());
+  });
+
+  document.querySelector('#planner-month-add-event').addEventListener('click', () => {
+    openCalendarEventModal(plannerDateStr(new Date()));
+  });
+
+  const modal = document.querySelector('#planner-event-modal');
+
+  document.querySelectorAll('.pem-swatch').forEach(btn => {
+    btn.addEventListener('mousedown', e => e.preventDefault());
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.pem-swatch').forEach(s => s.classList.remove('planner-swatch-active'));
+      btn.classList.add('planner-swatch-active');
+    });
+  });
+
+  document.querySelector('#pem-cancel').addEventListener('click', () => modal.classList.add('hidden'));
+
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) modal.classList.add('hidden');
+  });
+
+  document.querySelector('#pem-title').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.querySelector('#pem-save').click();
+    if (e.key === 'Escape') modal.classList.add('hidden');
+  });
+
+  document.querySelector('#pem-save').addEventListener('click', async () => {
+    const title = document.querySelector('#pem-title').value.trim();
+    const date = document.querySelector('#pem-date').value;
+    const colorBtn = document.querySelector('.pem-swatch.planner-swatch-active');
+    const color = colorBtn ? colorBtn.dataset.color : '#c9daf8';
+    const errEl = document.querySelector('#pem-error');
+
+    if (!title) {
+      errEl.textContent = 'El título no puede estar vacío.';
+      errEl.classList.remove('hidden');
+      document.querySelector('#pem-title').focus();
+      return;
+    }
+
+    const saveBtn = document.querySelector('#pem-save');
+    saveBtn.disabled = true;
+    errEl.classList.add('hidden');
+    try {
+      await postJson('/planner/calendar-events', { title, event_date: date, color });
+      modal.classList.add('hidden');
+      loadMonthlyCalendar(monthlyCalendarState.year, monthlyCalendarState.month);
+    } catch (err) {
+      errEl.textContent = `Error: ${err.message}`;
+      errEl.classList.remove('hidden');
+    } finally {
+      saveBtn.disabled = false;
+    }
+  });
+}
+
+function plannerSwitchView(view) {
+  const weeklyControls = document.querySelector('#planner-weekly-controls');
+  const monthlyControls = document.querySelector('#planner-monthly-controls');
+  const colorBar = document.querySelector('#planner-color-bar');
+  const activityBar = document.querySelector('#planner-activity-bar');
+  const gridWrap = document.querySelector('#planner-grid-wrap');
+  const monthlyWrap = document.querySelector('#planner-monthly-wrap');
+  const todoSection = document.querySelector('.planner-todo-section');
+  const weeklyBtn = document.querySelector('#planner-view-weekly');
+  const monthlyBtn = document.querySelector('#planner-view-monthly');
+
+  if (view === 'monthly') {
+    weeklyControls.classList.add('hidden');
+    colorBar.classList.add('hidden');
+    activityBar.classList.add('hidden');
+    gridWrap.classList.add('hidden');
+    todoSection.classList.add('hidden');
+    monthlyControls.classList.remove('hidden');
+    monthlyWrap.classList.remove('hidden');
+    weeklyBtn.classList.remove('planner-view-btn--active');
+    monthlyBtn.classList.add('planner-view-btn--active');
+
+    if (monthlyCalendarState.year === null) {
+      const t = new Date();
+      loadMonthlyCalendar(t.getFullYear(), t.getMonth());
+    }
+  } else {
+    weeklyControls.classList.remove('hidden');
+    colorBar.classList.remove('hidden');
+    activityBar.classList.remove('hidden');
+    gridWrap.classList.remove('hidden');
+    todoSection.classList.remove('hidden');
+    monthlyControls.classList.add('hidden');
+    monthlyWrap.classList.add('hidden');
+    weeklyBtn.classList.add('planner-view-btn--active');
+    monthlyBtn.classList.remove('planner-view-btn--active');
+  }
 }
 
 // ─── Manual activity timer widget ─────────────────────────────────────────────

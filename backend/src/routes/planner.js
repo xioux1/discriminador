@@ -458,4 +458,84 @@ plannerRouter.get('/planner/today-schedule', async (req, res) => {
   }
 });
 
+// GET /planner/calendar-events?year=YYYY&month=MM
+// Returns exam dates + custom events for a calendar month.
+plannerRouter.get('/planner/calendar-events', async (req, res) => {
+  const userId = req.user.id;
+  const { year, month } = req.query;
+  const y = parseInt(year, 10);
+  const m = parseInt(month, 10); // 1-12
+  if (!year || !month || isNaN(y) || isNaN(m) || m < 1 || m > 12) {
+    return res.status(422).json({ error: 'validation_error', message: 'year y month (1-12) son obligatorios.' });
+  }
+  const monthStart = `${y}-${String(m).padStart(2, '0')}-01`;
+  const nextMonthStart = m === 12
+    ? `${y + 1}-01-01`
+    : `${y}-${String(m + 1).padStart(2, '0')}-01`;
+  try {
+    const { rows: exams } = await dbPool.query(
+      `SELECT id, subject, label, exam_date, exam_type
+       FROM subject_exam_dates
+       WHERE user_id = $1 AND exam_date >= $2 AND exam_date < $3
+       ORDER BY exam_date ASC`,
+      [userId, monthStart, nextMonthStart]
+    );
+    const { rows: events } = await dbPool.query(
+      `SELECT id, title, event_date, color
+       FROM planner_calendar_events
+       WHERE user_id = $1 AND event_date >= $2 AND event_date < $3
+       ORDER BY event_date ASC`,
+      [userId, monthStart, nextMonthStart]
+    );
+    return res.json({ exams, events });
+  } catch (err) {
+    console.error('GET /planner/calendar-events error', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+// POST /planner/calendar-events — create a custom calendar event
+plannerRouter.post('/planner/calendar-events', async (req, res) => {
+  const userId = req.user.id;
+  const { title, event_date, color } = req.body || {};
+  if (!title || !String(title).trim()) {
+    return res.status(422).json({ error: 'validation_error', message: 'title es obligatorio.' });
+  }
+  if (!event_date || !/^\d{4}-\d{2}-\d{2}$/.test(event_date)) {
+    return res.status(422).json({ error: 'validation_error', message: 'event_date (YYYY-MM-DD) es obligatorio.' });
+  }
+  const safeColor = /^#[0-9a-fA-F]{3,6}$/.test(color || '') ? color : '#c9daf8';
+  try {
+    const { rows } = await dbPool.query(
+      `INSERT INTO planner_calendar_events (user_id, title, event_date, color)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, title, event_date, color`,
+      [userId, String(title).trim().substring(0, 200), event_date, safeColor]
+    );
+    return res.json({ event: rows[0] });
+  } catch (err) {
+    console.error('POST /planner/calendar-events error', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+// DELETE /planner/calendar-events/:id
+plannerRouter.delete('/planner/calendar-events/:id', async (req, res) => {
+  const userId = req.user.id;
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) {
+    return res.status(422).json({ error: 'validation_error', message: 'id inválido.' });
+  }
+  try {
+    await dbPool.query(
+      'DELETE FROM planner_calendar_events WHERE id = $1 AND user_id = $2',
+      [id, userId]
+    );
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE /planner/calendar-events error', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
 export default plannerRouter;

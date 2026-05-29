@@ -1042,16 +1042,32 @@
       <!-- ═══ TAB: PLANIFICAR ══════════════════════════════════════════════ -->
       <section id="tab-planner" class="hidden">
         <div class="planner-toolbar">
-          <button type="button" id="planner-prev" class="btn-ghost planner-nav-btn">&#8592;</button>
-          <span id="planner-week-label" class="planner-week-label"></span>
-          <button type="button" id="planner-next" class="btn-ghost planner-nav-btn">&#8594;</button>
-          <button type="button" id="planner-today" class="btn-ghost" style="font-size:0.82rem;margin-left:8px">Hoy</button>
-          <span class="planner-tip">Tip: <kbd>Alt</kbd> + arrastrar para duplicar un bloque</span>
-          <span class="planner-tip">● = hubo actividad real de estudio en ese bloque</span>
-          <label class="planner-fixed-toggle">
-            <input type="checkbox" id="planner-fixed-toggle">
-            <span>Bloque fijo semanal</span>
-          </label>
+          <!-- View toggle: Semana / Mes -->
+          <div class="planner-view-toggle">
+            <button type="button" id="planner-view-weekly" class="planner-view-btn planner-view-btn--active">Semana</button>
+            <button type="button" id="planner-view-monthly" class="planner-view-btn">Mes</button>
+          </div>
+          <!-- Weekly-specific controls -->
+          <div id="planner-weekly-controls" class="planner-weekly-controls">
+            <button type="button" id="planner-prev" class="btn-ghost planner-nav-btn">&#8592;</button>
+            <span id="planner-week-label" class="planner-week-label"></span>
+            <button type="button" id="planner-next" class="btn-ghost planner-nav-btn">&#8594;</button>
+            <button type="button" id="planner-today" class="btn-ghost" style="font-size:0.82rem;margin-left:8px">Hoy</button>
+            <span class="planner-tip">Tip: <kbd>Alt</kbd> + arrastrar para duplicar un bloque</span>
+            <span class="planner-tip">● = hubo actividad real de estudio en ese bloque</span>
+            <label class="planner-fixed-toggle">
+              <input type="checkbox" id="planner-fixed-toggle">
+              <span>Bloque fijo semanal</span>
+            </label>
+          </div>
+          <!-- Monthly-specific controls -->
+          <div id="planner-monthly-controls" class="planner-monthly-nav-controls hidden">
+            <button type="button" id="planner-month-prev" class="btn-ghost planner-nav-btn">&#8592;</button>
+            <span id="planner-month-label" class="planner-month-label"></span>
+            <button type="button" id="planner-month-next" class="btn-ghost planner-nav-btn">&#8594;</button>
+            <button type="button" id="planner-month-today" class="btn-ghost" style="font-size:0.82rem;margin-left:8px">Hoy</button>
+            <button type="button" id="planner-month-add-event" class="btn-secondary" style="font-size:0.82rem;margin-left:16px">&#43; Evento</button>
+          </div>
           <div class="planner-color-bar" id="planner-color-bar">
             <span class="pcb-label">Color:</span>
             <button class="planner-swatch" data-color="" title="Sin color" style="background:#fff;border:1px solid #bbb"></button>
@@ -1119,6 +1135,40 @@
         <div class="planner-wrap">
           <div id="planner-loading" class="loading-hint">Cargando...</div>
           <div id="planner-grid-wrap"></div>
+          <div id="planner-monthly-wrap" class="hidden">
+            <div id="planner-month-grid"></div>
+          </div>
+        </div>
+
+        <!-- Add calendar event modal -->
+        <div id="planner-event-modal" class="planner-event-modal-overlay hidden" role="dialog" aria-modal="true">
+          <div class="planner-event-modal-box">
+            <h3 class="planner-event-modal-title">Nuevo evento</h3>
+            <div class="planner-event-modal-field">
+              <label class="planner-event-modal-label" for="pem-date">Fecha</label>
+              <input type="date" id="pem-date" class="pem-input">
+            </div>
+            <div class="planner-event-modal-field">
+              <label class="planner-event-modal-label" for="pem-title">Título</label>
+              <input type="text" id="pem-title" class="pem-input" maxlength="200" placeholder="Nombre del evento…" autocomplete="off">
+            </div>
+            <div class="planner-event-modal-field">
+              <label class="planner-event-modal-label">Color</label>
+              <div class="pem-colors">
+                <button type="button" class="planner-swatch pem-swatch planner-swatch-active" data-color="#c9daf8" title="Azul" style="background:#c9daf8"></button>
+                <button type="button" class="planner-swatch pem-swatch" data-color="#b7e1cd" title="Verde" style="background:#b7e1cd"></button>
+                <button type="button" class="planner-swatch pem-swatch" data-color="#fce5cd" title="Naranja" style="background:#fce5cd"></button>
+                <button type="button" class="planner-swatch pem-swatch" data-color="#f4cccc" title="Rojo" style="background:#f4cccc"></button>
+                <button type="button" class="planner-swatch pem-swatch" data-color="#fff2cc" title="Amarillo" style="background:#fff2cc"></button>
+                <button type="button" class="planner-swatch pem-swatch" data-color="#d9d2e9" title="Violeta" style="background:#d9d2e9"></button>
+              </div>
+            </div>
+            <span id="pem-error" class="pem-error hidden"></span>
+            <div class="planner-event-modal-actions">
+              <button type="button" id="pem-cancel" class="btn-ghost">Cancelar</button>
+              <button type="button" id="pem-save" class="btn-primary">Guardar</button>
+            </div>
+          </div>
         </div>
 
         <!-- Unscheduled to-do list -->
