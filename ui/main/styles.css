@@ -8022,6 +8022,21 @@ textarea.chinese-input {
 .monthly-cal-chip-del:hover {
   color: #c0392b;
 }
+.monthly-cal-study-badge {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #2d8c56;
+  background: rgba(45, 140, 86, 0.12);
+  border-radius: 3px;
+  padding: 1px 5px;
+  letter-spacing: 0.02em;
+}
+[data-theme="dark"] .monthly-cal-study-badge {
+  color: #5ecb8a;
+  background: rgba(45, 140, 86, 0.18);
+}
 
 /* ── Event add modal ─────────────────────────────────────────────────────── */
 .planner-event-modal-overlay {

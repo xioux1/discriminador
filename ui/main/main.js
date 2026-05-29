@@ -9494,14 +9494,15 @@ async function loadMonthlyCalendar(year, month) {
     const data = await getJson(`/planner/calendar-events?year=${year}&month=${month + 1}`);
     monthlyCalendarState.exams = data.exams || [];
     monthlyCalendarState.events = data.events || [];
+    monthlyCalendarState.studyTotals = data.study_totals || [];
     loading.classList.add('hidden');
-    buildMonthlyCalendar(year, month, monthlyCalendarState.exams, monthlyCalendarState.events);
+    buildMonthlyCalendar(year, month, monthlyCalendarState.exams, monthlyCalendarState.events, monthlyCalendarState.studyTotals);
   } catch (err) {
     loading.textContent = `Error: ${err.message}`;
   }
 }
 
-function buildMonthlyCalendar(year, month, exams, events) {
+function buildMonthlyCalendar(year, month, exams, events, studyTotals = []) {
   const grid = document.querySelector('#planner-month-grid');
   grid.innerHTML = '';
 
@@ -9519,6 +9520,11 @@ function buildMonthlyCalendar(year, month, exams, events) {
     const dateStr = String(ev.event_date).substring(0, 10);
     if (!eventsByDate[dateStr]) eventsByDate[dateStr] = [];
     eventsByDate[dateStr].push({ type: 'event', id: ev.id, title: ev.title, color: ev.color });
+  }
+
+  const studyByDate = {};
+  for (const row of studyTotals) {
+    studyByDate[String(row.study_date).substring(0, 10)] = Number(row.study_minutes) || 0;
   }
 
   const firstDay = new Date(year, month, 1);
@@ -9593,6 +9599,17 @@ function buildMonthlyCalendar(year, month, exams, events) {
           }
 
           td.appendChild(chip);
+        }
+
+        const mins = studyByDate[dateStr] || 0;
+        if (mins > 0) {
+          const badge = document.createElement('div');
+          badge.className = 'monthly-cal-study-badge';
+          const h = Math.floor(mins / 60);
+          const m = mins % 60;
+          badge.textContent = h > 0 ? (m > 0 ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
+          badge.title = `${mins} min estudiados`;
+          td.appendChild(badge);
         }
 
         td.addEventListener('click', () => openCalendarEventModal(dateStr));
