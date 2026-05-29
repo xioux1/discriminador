@@ -433,13 +433,13 @@ plannerRouter.get('/planner/today-schedule', async (req, res) => {
        fixed AS (
          SELECT slot_time, content, color, true AS is_fixed
          FROM weekly_planner_fixed, bounds
-         WHERE user_id = $1 AND day_index = bounds.day_index
+         WHERE user_id = $1 AND weekly_planner_fixed.day_index = bounds.day_index
            AND content IS NOT NULL AND TRIM(content) != ''
        ),
        week_slots AS (
          SELECT slot_time, content, color, false AS is_fixed
          FROM weekly_planner, bounds
-         WHERE user_id = $1 AND week_start = bounds.week_start AND day_index = bounds.day_index
+         WHERE user_id = $1 AND weekly_planner.week_start = bounds.week_start AND weekly_planner.day_index = bounds.day_index
            AND content IS NOT NULL AND TRIM(content) != ''
        )
        SELECT DISTINCT ON (slot_time) slot_time, content, color
