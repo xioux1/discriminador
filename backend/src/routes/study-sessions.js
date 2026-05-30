@@ -7,7 +7,7 @@ const studySessionsRouter = Router();
 // POST /study/sessions — record session start, return session_id
 studySessionsRouter.post('/study/sessions', async (req, res) => {
   const userId = req.user.id;
-  const { planned_minutes, planned_card_count, energy_level } = req.body || {};
+  const { planned_minutes, planned_card_count, energy_level, subject_name } = req.body || {};
 
   if (planned_minutes == null || typeof planned_minutes !== 'number' || planned_minutes < 0) {
     return res.status(422).json({ error: 'validation_error', message: 'planned_minutes es obligatorio.' });
@@ -15,9 +15,9 @@ studySessionsRouter.post('/study/sessions', async (req, res) => {
 
   try {
     const { rows } = await dbPool.query(
-      `INSERT INTO study_sessions (user_id, planned_minutes, planned_card_count, energy_level)
-       VALUES ($1, $2, $3, $4) RETURNING id`,
-      [userId, planned_minutes, planned_card_count || 0, energy_level || null]
+      `INSERT INTO study_sessions (user_id, planned_minutes, planned_card_count, energy_level, subject_name)
+       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      [userId, planned_minutes, planned_card_count || 0, energy_level || null, subject_name || null]
     );
     return res.status(201).json({ session_id: rows[0].id });
   } catch (err) {

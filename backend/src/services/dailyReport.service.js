@@ -8,6 +8,7 @@ async function getYesterdayAnalyses() {
     FROM study_sessions
     WHERE DATE(started_at AT TIME ZONE 'America/Argentina/Buenos_Aires') = CURRENT_DATE - INTERVAL '1 day'
       AND analysis IS NOT NULL AND analysis != ''
+      AND (subject_name IS NULL OR LOWER(subject_name) NOT IN ('chino', 'chino produccion'))
     ORDER BY started_at ASC
   `);
   return result.rows;
