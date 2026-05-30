@@ -15,7 +15,7 @@ async function getYesterdayAnalyses() {
 
 function generatePDF(sessions, reportDate) {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ margin: 50, size: 'A4' });
+    const doc = new PDFDocument({ margin: 50, size: 'A4', bufferPages: true });
     const chunks = [];
     doc.on('data', chunk => chunks.push(chunk));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
@@ -58,13 +58,14 @@ function generatePDF(sessions, reportDate) {
     });
 
     // Page numbers
-    const pageCount = doc.bufferedPageRange ? doc.bufferedPageRange().count : 1;
-    for (let i = 0; i < pageCount; i++) {
-      doc.switchToPage(i);
+    const range = doc.bufferedPageRange();
+    for (let i = 0; i < range.count; i++) {
+      doc.switchToPage(range.start + i);
       doc.fontSize(9).fillColor('#aaaaaa')
-        .text(`Página ${i + 1} de ${pageCount}`, 50, doc.page.height - 40, { align: 'center', width: 495 });
+        .text(`Página ${i + 1} de ${range.count}`, 50, doc.page.height - 40, { align: 'center', width: 495 });
     }
 
+    doc.flushPages();
     doc.end();
   });
 }
