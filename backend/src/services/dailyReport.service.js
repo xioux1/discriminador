@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import katex from 'katex';
+import Anthropic from '@anthropic-ai/sdk';
 import { dbPool } from '../db/client.js';
 
 function renderMath(tex, displayMode = false) {
@@ -212,9 +213,30 @@ function markdownToHtml(mdText) {
   return htmlParts.join('\n');
 }
 
+// ─── READING TIME ESTIMATION ─────────────────────────────────────────────────
+
+async function estimateReadingMinutes(analysisText) {
+  try {
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const msg = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 16,
+      messages: [{
+        role: 'user',
+        content: `Estimá cuántos minutos le tomaría a un estudiante leer Y entender el siguiente apunte de estudio (no solo leerlo como texto, sino procesarlo y comprenderlo). Respondé ÚNICAMENTE con un número entero, sin texto adicional.\n\n${analysisText}`,
+      }],
+    });
+    const raw = msg.content?.[0]?.text?.trim() || '';
+    const mins = parseInt(raw, 10);
+    return Number.isFinite(mins) && mins > 0 ? mins : null;
+  } catch {
+    return null;
+  }
+}
+
 // ─── HTML REPORT ─────────────────────────────────────────────────────────────
 
-function generateHtml(sessions, reportDate) {
+function generateHtml(sessions, reportDate, totalReadingMinutes) {
   const dateStr = reportDate.toLocaleDateString('es-AR', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
     timeZone: 'America/Argentina/Buenos_Aires',
@@ -259,6 +281,7 @@ function generateHtml(sessions, reportDate) {
       &nbsp;·&nbsp; ${Math.round(totalMin)} min
       &nbsp;·&nbsp; ${totalCards} cartas
     </div>
+    ${totalReadingMinutes != null ? `<div style="margin-top:12px;display:inline-block;background:#f0f4ff;border:1px solid #c5d0f0;border-radius:20px;padding:5px 16px;font-size:0.88em;color:#3a4a8a">⏱ ~${totalReadingMinutes} min para leer y entender este reporte</div>` : ''}
   </div>
 
   ${sessionsHtml}
@@ -304,9 +327,19 @@ export async function runDailyReport() {
       console.log('[daily-report] No hay análisis de sesiones para ayer — sin email.');
       return;
     }
-    const html = generateHtml(sessions, yesterday);
+
+    // Estimate reading+comprehension time in parallel for all sessions
+    const readingEstimates = await Promise.all(
+      sessions.map(s => s.analysis ? estimateReadingMinutes(s.analysis) : Promise.resolve(null))
+    );
+    const validEstimates = readingEstimates.filter(m => m != null);
+    const totalReadingMinutes = validEstimates.length > 0
+      ? validEstimates.reduce((a, b) => a + b, 0)
+      : null;
+
+    const html = generateHtml(sessions, yesterday, totalReadingMinutes);
     await sendReportEmail(html, yesterday);
-    console.log(`[daily-report] Email enviado con ${sessions.length} sesión(es).`);
+    console.log(`[daily-report] Email enviado con ${sessions.length} sesión(es). Lectura estimada: ${totalReadingMinutes ?? 'n/a'} min.`);
   } catch (err) {
     console.error('[daily-report] Error al generar o enviar reporte:', err.message);
   }
