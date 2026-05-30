@@ -1,5 +1,14 @@
 import nodemailer from 'nodemailer';
+import katex from 'katex';
 import { dbPool } from '../db/client.js';
+
+function renderMath(tex, displayMode = false) {
+  try {
+    return katex.renderToString(tex, { displayMode, throwOnError: false, output: 'html' });
+  } catch {
+    return `<code>${escapeHtml(tex)}</code>`;
+  }
+}
 
 // ─── DB ──────────────────────────────────────────────────────────────────────
 
@@ -22,17 +31,18 @@ function escapeHtml(s) {
 }
 
 function renderInlineHtml(text) {
-  // Process in order: avoid double-processing
-  let out = escapeHtml(text);
-  // **bold**
-  out = out.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  // `code`
-  out = out.replace(/`(.+?)`/g, '<code style="background:#f0f0f0;padding:1px 4px;border-radius:3px;font-family:monospace;color:#c0392b;font-size:0.9em">$1</code>');
-  // $inline math$
-  out = out.replace(/\$([^$]+)\$/g, '<code style="background:#eaf4fb;padding:1px 4px;border-radius:3px;font-family:monospace;color:#1a5276;font-size:0.9em">$1</code>');
-  // *italic*
-  out = out.replace(/\*(.+?)\*/g, '<em>$1</em>');
-  return out;
+  // Split on inline math $...$ first (before escaping) to preserve LaTeX symbols
+  const parts = text.split(/(\$[^$]+\$)/g);
+  return parts.map(part => {
+    if (part.startsWith('$') && part.endsWith('$') && part.length > 2) {
+      return renderMath(part.slice(1, -1), false);
+    }
+    let out = escapeHtml(part);
+    out = out.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    out = out.replace(/`(.+?)`/g, '<code style="background:#f0f0f0;padding:1px 4px;border-radius:3px;font-family:monospace;color:#c0392b;font-size:0.9em">$1</code>');
+    out = out.replace(/\*(.+?)\*/g, '<em>$1</em>');
+    return out;
+  }).join('');
 }
 
 function markdownToHtml(mdText) {
@@ -60,16 +70,16 @@ function markdownToHtml(mdText) {
       const mathLines = [];
       i++;
       while (i < lines.length && lines[i].trim() !== '$$') {
-        mathLines.push(escapeHtml(lines[i]));
+        mathLines.push(lines[i]);
         i++;
       }
-      htmlParts.push(`<pre style="background:#eaf4fb;border-left:4px solid #3498db;padding:12px 16px;border-radius:4px;overflow-x:auto;font-family:monospace;font-size:0.88em;color:#1a5276;white-space:pre-wrap;word-break:break-word">${mathLines.join('\n')}</pre>`);
+      htmlParts.push(`<div style="overflow-x:auto;margin:12px 0;text-align:center">${renderMath(mathLines.join('\n'), true)}</div>`);
       i++;
       continue;
     }
     if (trimmed.startsWith('$$') && trimmed.endsWith('$$') && trimmed.length > 4) {
       closeList();
-      htmlParts.push(`<pre style="background:#eaf4fb;border-left:4px solid #3498db;padding:12px 16px;border-radius:4px;overflow-x:auto;font-family:monospace;font-size:0.88em;color:#1a5276;white-space:pre-wrap;word-break:break-word">${escapeHtml(trimmed.slice(2, -2).trim())}</pre>`);
+      htmlParts.push(`<div style="overflow-x:auto;margin:12px 0;text-align:center">${renderMath(trimmed.slice(2, -2).trim(), true)}</div>`);
       i++;
       continue;
     }
@@ -237,7 +247,9 @@ function generateHtml(sessions, reportDate) {
 
   return `<!DOCTYPE html>
 <html lang="es">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+</head>
 <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:700px;margin:0 auto;padding:24px 16px;color:#222;background:#fff">
   <div style="text-align:center;margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #222">
     <h1 style="margin:0 0 4px;font-size:1.6em;letter-spacing:0.02em">REPORTE DE ESTUDIO</h1>
