@@ -4,6 +4,7 @@ import { dbPool } from './db/client.js';
 import { runMigrations } from './db/migrate.js';
 // import { startBot } from './services/discord-bot.js';
 import { checkAndNudge } from './services/study-nudge.js';
+import { runDailyReport } from './services/dailyReport.service.js';
 import { logger } from './utils/logger.js';
 import cron from 'node-cron';
 
@@ -24,6 +25,11 @@ cron.schedule('0 12 * * *', async () => {
   } catch (err) {
     console.error('[cron] daily nudge error:', err.message);
   }
+}, { timezone: 'America/Argentina/Buenos_Aires' });
+
+// Daily study report at 6 AM Argentina time — PDF sent by email
+cron.schedule('0 6 * * *', async () => {
+  await runDailyReport();
 }, { timezone: 'America/Argentina/Buenos_Aires' });
 
 const app = createApp();
