@@ -4927,7 +4927,8 @@ function _doStartPlannedSession(resolvedPlanner = null) {
   postJson('/study/sessions', {
     planned_minutes:    briefingState.selectedTime,
     planned_card_count: queue.length,
-    energy_level:       briefingState.selectedEnergy
+    energy_level:       briefingState.selectedEnergy,
+    subject_name:       briefingState.selectedSubject || null
   }).then(d => {
     studyState.sessionId = d?.session_id ?? null;
     if (studyState.pendingCompletion && studyState.sessionId) {
@@ -5872,7 +5873,8 @@ function startExamSession(cards, subject) {
 
   postJson('/study/sessions', {
     planned_minutes:    0,
-    planned_card_count: studyState.queue.length
+    planned_card_count: studyState.queue.length,
+    subject_name:       studyState.examSubject || null
   }).then(d => { studyState.sessionId = d?.session_id ?? null; }).catch(() => {});
 
   document.querySelector('#study-overview').classList.add('hidden');
@@ -6139,7 +6141,8 @@ async function _doStartStudySession() {
   postJson('/study/sessions', {
     planned_minutes:    0,
     planned_card_count: studyState.queue.length,
-    energy_level:       studyState.sessionEnergyLevel
+    energy_level:       studyState.sessionEnergyLevel,
+    subject_name:       briefingState.selectedSubject || null
   }).then(d => { studyState.sessionId = d?.session_id ?? null; }).catch(() => {});
 
   document.querySelector('#study-overview').classList.add('hidden');
