@@ -8131,3 +8131,373 @@ textarea.chinese-input {
 [data-theme="dark"] .planner-view-btn--active {
   background: #4a86e8;
 }
+
+/* ── Annual planification ────────────────────────────────────────────────── */
+.planner-annual-nav-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.planner-year-label {
+  font-weight: 700;
+  font-size: 1.05rem;
+  min-width: 56px;
+  text-align: center;
+  color: var(--text);
+}
+
+#planner-annual-wrap {
+  padding: 16px 16px 32px;
+}
+
+#planner-annual-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+@media (max-width: 1100px) {
+  #planner-annual-grid { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 720px) {
+  #planner-annual-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 480px) {
+  #planner-annual-grid { grid-template-columns: 1fr; }
+}
+
+.annual-month-card {
+  background: var(--bg-card, #fff);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 140px;
+  transition: box-shadow 0.15s;
+}
+.annual-month-card:hover {
+  box-shadow: 0 2px 14px rgba(74, 134, 232, 0.10);
+}
+.annual-month-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.annual-month-name {
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.annual-goal-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+.annual-goal-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: var(--goal-color, #c9daf8);
+  cursor: pointer;
+  transition: filter 0.12s, transform 0.1s;
+  font-size: 0.8rem;
+  color: #222;
+  border: none;
+}
+.annual-goal-chip:hover {
+  filter: brightness(0.94);
+  transform: translateX(2px);
+}
+.annual-goal-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.30);
+}
+.annual-goal-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.annual-goal-task-badge {
+  flex-shrink: 0;
+  font-size: 0.65rem;
+  font-weight: 700;
+  background: rgba(0, 0, 0, 0.12);
+  border-radius: 10px;
+  padding: 1px 6px;
+  white-space: nowrap;
+  color: rgba(0, 0, 0, 0.55);
+}
+.annual-add-goal-btn {
+  margin-top: 4px;
+  background: none;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  padding: 4px 8px;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  transition: border-color 0.12s, color 0.12s;
+}
+.annual-add-goal-btn:hover {
+  border-color: #4a86e8;
+  color: #4a86e8;
+}
+
+/* ── Annual goal detail modal ────────────────────────────────────────────── */
+.annual-goal-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.50);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(3px);
+}
+.annual-goal-modal-box {
+  background: var(--bg-card, #fff);
+  border: var(--bw-divider, 1px) solid var(--border);
+  border-radius: 14px;
+  padding: 24px 28px 20px;
+  width: min(600px, 94vw);
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 16px 56px rgba(0, 0, 0, 0.22);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.agm-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.agm-month-badge {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  flex: 1;
+}
+.agm-color-row {
+  display: flex;
+  gap: 6px;
+}
+.agm-close {
+  background: none;
+  border: none;
+  font-size: 1.3rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background 0.12s;
+  margin-left: 4px;
+}
+.agm-close:hover {
+  background: rgba(0, 0, 0, 0.07);
+  color: var(--text);
+}
+.agm-title-input {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 1.1rem;
+  font-weight: 600;
+  border: none;
+  border-bottom: 2px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  padding: 4px 0 6px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.agm-title-input:focus {
+  border-color: #4a86e8;
+}
+.agm-description-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 100px;
+  resize: vertical;
+  font-size: 0.88rem;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg, #fff);
+  color: var(--text);
+  padding: 10px 12px;
+  outline: none;
+  font-family: inherit;
+  line-height: 1.55;
+  transition: border-color 0.15s;
+}
+.agm-description-input:focus {
+  border-color: #4a86e8;
+  box-shadow: 0 0 0 2px rgba(74, 134, 232, 0.15);
+}
+.agm-tasks-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.agm-tasks-label {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+.agm-task-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.agm-task-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.03);
+  transition: background 0.1s;
+}
+.agm-task-item:hover {
+  background: rgba(74, 134, 232, 0.06);
+}
+.agm-task-check {
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+  accent-color: #4a86e8;
+}
+.agm-task-text {
+  flex: 1;
+  font-size: 0.86rem;
+  color: var(--text);
+}
+.agm-task-item--done .agm-task-text {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+.agm-task-del {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  font-size: 1rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0 2px;
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s;
+  line-height: 1;
+}
+.agm-task-item:hover .agm-task-del {
+  opacity: 1;
+}
+.agm-task-del:hover {
+  color: #c0392b;
+}
+.agm-task-add-row {
+  display: flex;
+  gap: 6px;
+}
+.agm-task-input {
+  flex: 1;
+  padding: 6px 10px;
+  font-size: 0.86rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg, #fff);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.agm-task-input:focus {
+  border-color: #4a86e8;
+  box-shadow: 0 0 0 2px rgba(74, 134, 232, 0.15);
+}
+.agm-task-add-btn {
+  flex-shrink: 0;
+}
+.agm-error {
+  display: block;
+  font-size: 0.78rem;
+  color: #c0392b;
+}
+.agm-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+.agm-footer-right {
+  display: flex;
+  gap: 8px;
+}
+.agm-delete-btn {
+  font-size: 0.8rem;
+}
+
+/* Danger button */
+.btn-danger {
+  background: #e74c3c;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 7px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-danger:hover {
+  background: #c0392b;
+}
+
+/* Dark mode for annual plan */
+[data-theme="dark"] .annual-month-card {
+  background: var(--bg-card, #1a2540);
+  border-color: rgba(38, 55, 85, 0.55);
+}
+[data-theme="dark"] .annual-goal-chip {
+  color: #e0e6f0;
+}
+[data-theme="dark"] .annual-goal-modal-box {
+  background: var(--bg-card, #1a2540);
+}
+[data-theme="dark"] .agm-task-item {
+  background: rgba(255, 255, 255, 0.04);
+}
+[data-theme="dark"] .agm-task-item:hover {
+  background: rgba(74, 134, 232, 0.10);
+}
+[data-theme="dark"] .agm-description-input,
+[data-theme="dark"] .agm-task-input {
+  background: rgba(255, 255, 255, 0.05);
+}

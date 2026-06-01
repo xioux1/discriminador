@@ -9469,7 +9469,9 @@ function initPlannerTab() {
 
   document.querySelector('#planner-view-weekly').addEventListener('click', () => plannerSwitchView('weekly'));
   document.querySelector('#planner-view-monthly').addEventListener('click', () => plannerSwitchView('monthly'));
+  document.querySelector('#planner-view-annual').addEventListener('click', () => plannerSwitchView('annual'));
   initMonthlyCalendar();
+  initAnnualPlan();
 }
 
 // ─── Monthly Calendar ─────────────────────────────────────────────────────────
@@ -9717,31 +9719,357 @@ function initMonthlyCalendar() {
   });
 }
 
+// ─── Annual Plan ──────────────────────────────────────────────────────────────
+
+const annualPlanState = {
+  year: null,
+  goals: [],         // flat array, each goal has .tasks []
+  editingGoalId: null,
+};
+
+async function loadAnnualPlan(year) {
+  annualPlanState.year = year;
+  document.querySelector('#planner-year-label').textContent = String(year);
+  const loading = document.querySelector('#planner-loading');
+  loading.classList.remove('hidden');
+  try {
+    const data = await getJson(`/planner/annual-goals?year=${year}`);
+    annualPlanState.goals = data.goals || [];
+    loading.classList.add('hidden');
+    buildAnnualGrid();
+  } catch (err) {
+    loading.textContent = `Error: ${err.message}`;
+  }
+}
+
+function buildAnnualGrid() {
+  const grid = document.querySelector('#planner-annual-grid');
+  grid.innerHTML = '';
+  const goalsByMonth = {};
+  for (let m = 0; m < 12; m++) goalsByMonth[m] = [];
+  for (const g of annualPlanState.goals) goalsByMonth[g.month].push(g);
+
+  for (let m = 0; m < 12; m++) {
+    const card = document.createElement('div');
+    card.className = 'annual-month-card';
+    card.dataset.month = m;
+
+    const header = document.createElement('div');
+    header.className = 'annual-month-header';
+    const monthTitle = document.createElement('span');
+    monthTitle.className = 'annual-month-name';
+    monthTitle.textContent = MONTH_NAMES_ES[m];
+    header.appendChild(monthTitle);
+    card.appendChild(header);
+
+    const goalList = document.createElement('ul');
+    goalList.className = 'annual-goal-list';
+    for (const g of goalsByMonth[m]) {
+      goalList.appendChild(buildGoalChip(g));
+    }
+    card.appendChild(goalList);
+
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'annual-add-goal-btn';
+    addBtn.textContent = '+ Meta';
+    addBtn.addEventListener('click', () => openGoalModal(null, m));
+    card.appendChild(addBtn);
+
+    grid.appendChild(card);
+  }
+}
+
+function buildGoalChip(goal) {
+  const li = document.createElement('li');
+  li.className = 'annual-goal-chip';
+  li.style.setProperty('--goal-color', goal.color || '#c9daf8');
+  li.dataset.goalId = goal.id;
+
+  const dot = document.createElement('span');
+  dot.className = 'annual-goal-dot';
+  li.appendChild(dot);
+
+  const text = document.createElement('span');
+  text.className = 'annual-goal-text';
+  text.textContent = goal.title;
+  li.appendChild(text);
+
+  const taskCount = goal.tasks ? goal.tasks.filter(t => !t.done).length : 0;
+  if (goal.tasks && goal.tasks.length > 0) {
+    const badge = document.createElement('span');
+    badge.className = 'annual-goal-task-badge';
+    badge.title = `${taskCount} tarea(s) pendiente(s) de ${goal.tasks.length}`;
+    badge.textContent = `${goal.tasks.filter(t => t.done).length}/${goal.tasks.length}`;
+    li.appendChild(badge);
+  }
+
+  li.addEventListener('click', () => openGoalModal(goal, goal.month));
+  return li;
+}
+
+function openGoalModal(goal, month) {
+  annualPlanState.editingGoalId = goal ? goal.id : null;
+
+  const modal = document.querySelector('#annual-goal-modal');
+  document.querySelector('#agm-month-badge').textContent =
+    `${MONTH_NAMES_ES[month]} ${annualPlanState.year}`;
+  modal.dataset.month = month;
+
+  document.querySelector('#agm-title').value = goal ? goal.title : '';
+  document.querySelector('#agm-description').value = goal ? (goal.description || '') : '';
+  document.querySelector('#agm-error').classList.add('hidden');
+
+  // Color swatches
+  const activeColor = goal ? (goal.color || '#c9daf8') : '#c9daf8';
+  document.querySelectorAll('.agm-swatch').forEach(s => {
+    s.classList.toggle('planner-swatch-active', s.dataset.color === activeColor);
+  });
+
+  // Show/hide delete button
+  document.querySelector('#agm-delete').style.display = goal ? '' : 'none';
+
+  // Build task list
+  renderGoalTaskList(goal ? (goal.tasks || []) : []);
+
+  modal.classList.remove('hidden');
+  setTimeout(() => document.querySelector('#agm-title').focus(), 50);
+}
+
+function renderGoalTaskList(tasks) {
+  const ul = document.querySelector('#agm-task-list');
+  ul.innerHTML = '';
+  for (const t of tasks) {
+    ul.appendChild(buildTaskItem(t));
+  }
+}
+
+function buildTaskItem(task) {
+  const li = document.createElement('li');
+  li.className = 'agm-task-item' + (task.done ? ' agm-task-item--done' : '');
+  li.dataset.taskId = task.id;
+
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.checked = task.done;
+  cb.className = 'agm-task-check';
+  cb.addEventListener('change', async () => {
+    const goalId = annualPlanState.editingGoalId;
+    try {
+      await postJson(`/planner/annual-goals/${goalId}/tasks/${task.id}`, { done: cb.checked }, 'PATCH');
+      li.classList.toggle('agm-task-item--done', cb.checked);
+      // Update local state
+      const g = annualPlanState.goals.find(x => x.id === goalId);
+      if (g) {
+        const t = g.tasks.find(x => x.id === task.id);
+        if (t) t.done = cb.checked;
+        // Rebuild chip in grid
+        const chip = document.querySelector(`.annual-goal-chip[data-goal-id="${goalId}"]`);
+        if (chip) chip.replaceWith(buildGoalChip(g));
+      }
+    } catch (err) {
+      cb.checked = !cb.checked; // revert
+    }
+  });
+  li.appendChild(cb);
+
+  const span = document.createElement('span');
+  span.className = 'agm-task-text';
+  span.textContent = task.text;
+  li.appendChild(span);
+
+  const delBtn = document.createElement('button');
+  delBtn.type = 'button';
+  delBtn.className = 'agm-task-del';
+  delBtn.title = 'Eliminar tarea';
+  delBtn.textContent = '×';
+  delBtn.addEventListener('click', async () => {
+    const goalId = annualPlanState.editingGoalId;
+    try {
+      await deleteJson(`/planner/annual-goals/${goalId}/tasks/${task.id}`);
+      li.remove();
+      const g = annualPlanState.goals.find(x => x.id === goalId);
+      if (g) {
+        g.tasks = g.tasks.filter(x => x.id !== task.id);
+        const chip = document.querySelector(`.annual-goal-chip[data-goal-id="${goalId}"]`);
+        if (chip) chip.replaceWith(buildGoalChip(g));
+      }
+    } catch (err) {
+      console.error('delete task error', err);
+    }
+  });
+  li.appendChild(delBtn);
+  return li;
+}
+
+function closeGoalModal() {
+  document.querySelector('#annual-goal-modal').classList.add('hidden');
+  annualPlanState.editingGoalId = null;
+}
+
+function initAnnualPlan() {
+  document.querySelector('#planner-year-prev').addEventListener('click', () => {
+    loadAnnualPlan(annualPlanState.year - 1);
+  });
+  document.querySelector('#planner-year-next').addEventListener('click', () => {
+    loadAnnualPlan(annualPlanState.year + 1);
+  });
+  document.querySelector('#planner-year-today').addEventListener('click', () => {
+    loadAnnualPlan(new Date().getFullYear());
+  });
+
+  const modal = document.querySelector('#annual-goal-modal');
+
+  document.querySelectorAll('.agm-swatch').forEach(btn => {
+    btn.addEventListener('mousedown', e => e.preventDefault());
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.agm-swatch').forEach(s => s.classList.remove('planner-swatch-active'));
+      btn.classList.add('planner-swatch-active');
+    });
+  });
+
+  document.querySelector('#agm-close').addEventListener('click', closeGoalModal);
+  document.querySelector('#agm-cancel').addEventListener('click', closeGoalModal);
+  modal.addEventListener('click', e => { if (e.target === modal) closeGoalModal(); });
+
+  document.querySelector('#agm-title').addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeGoalModal();
+  });
+
+  // Add task inline
+  const taskInput = document.querySelector('#agm-task-input');
+  const addTaskFn = async () => {
+    const text = taskInput.value.trim();
+    if (!text || !annualPlanState.editingGoalId) return;
+    taskInput.disabled = true;
+    try {
+      const data = await postJson(`/planner/annual-goals/${annualPlanState.editingGoalId}/tasks`, { text });
+      taskInput.value = '';
+      const ul = document.querySelector('#agm-task-list');
+      ul.appendChild(buildTaskItem(data.task));
+      // Update local state
+      const g = annualPlanState.goals.find(x => x.id === annualPlanState.editingGoalId);
+      if (g) {
+        g.tasks.push(data.task);
+        const chip = document.querySelector(`.annual-goal-chip[data-goal-id="${annualPlanState.editingGoalId}"]`);
+        if (chip) chip.replaceWith(buildGoalChip(g));
+      }
+    } catch (err) {
+      console.error('add task error', err);
+    } finally {
+      taskInput.disabled = false;
+      taskInput.focus();
+    }
+  };
+  document.querySelector('#agm-task-add-btn').addEventListener('click', addTaskFn);
+  taskInput.addEventListener('keydown', e => { if (e.key === 'Enter') addTaskFn(); });
+
+  // Delete goal
+  document.querySelector('#agm-delete').addEventListener('click', async () => {
+    const goalId = annualPlanState.editingGoalId;
+    if (!goalId) return;
+    if (!confirm('¿Eliminar esta meta y todas sus tareas?')) return;
+    try {
+      await deleteJson(`/planner/annual-goals/${goalId}`);
+      annualPlanState.goals = annualPlanState.goals.filter(g => g.id !== goalId);
+      closeGoalModal();
+      buildAnnualGrid();
+    } catch (err) {
+      document.querySelector('#agm-error').textContent = `Error: ${err.message}`;
+      document.querySelector('#agm-error').classList.remove('hidden');
+    }
+  });
+
+  // Save goal
+  document.querySelector('#agm-save').addEventListener('click', async () => {
+    const title = document.querySelector('#agm-title').value.trim();
+    const description = document.querySelector('#agm-description').value.trim();
+    const colorBtn = document.querySelector('.agm-swatch.planner-swatch-active');
+    const color = colorBtn ? colorBtn.dataset.color : '#c9daf8';
+    const errEl = document.querySelector('#agm-error');
+
+    if (!title) {
+      errEl.textContent = 'El título no puede estar vacío.';
+      errEl.classList.remove('hidden');
+      document.querySelector('#agm-title').focus();
+      return;
+    }
+
+    const saveBtn = document.querySelector('#agm-save');
+    saveBtn.disabled = true;
+    errEl.classList.add('hidden');
+
+    try {
+      if (annualPlanState.editingGoalId) {
+        // Update existing
+        const data = await postJson(`/planner/annual-goals/${annualPlanState.editingGoalId}`, { title, description, color }, 'PUT');
+        const g = annualPlanState.goals.find(x => x.id === annualPlanState.editingGoalId);
+        if (g) {
+          g.title = data.goal.title;
+          g.description = data.goal.description;
+          g.color = data.goal.color;
+          const chip = document.querySelector(`.annual-goal-chip[data-goal-id="${annualPlanState.editingGoalId}"]`);
+          if (chip) chip.replaceWith(buildGoalChip(g));
+        }
+      } else {
+        // Create new
+        const month = parseInt(modal.dataset.month, 10);
+        const data = await postJson('/planner/annual-goals', { year: annualPlanState.year, month, title, description, color });
+        annualPlanState.goals.push(data.goal);
+        buildAnnualGrid();
+      }
+      closeGoalModal();
+    } catch (err) {
+      errEl.textContent = `Error: ${err.message}`;
+      errEl.classList.remove('hidden');
+    } finally {
+      saveBtn.disabled = false;
+    }
+  });
+}
+
 function plannerSwitchView(view) {
   const weeklyControls = document.querySelector('#planner-weekly-controls');
   const monthlyControls = document.querySelector('#planner-monthly-controls');
+  const annualControls = document.querySelector('#planner-annual-controls');
   const colorBar = document.querySelector('#planner-color-bar');
   const activityBar = document.querySelector('#planner-activity-bar');
   const gridWrap = document.querySelector('#planner-grid-wrap');
   const monthlyWrap = document.querySelector('#planner-monthly-wrap');
+  const annualWrap = document.querySelector('#planner-annual-wrap');
   const todoSection = document.querySelector('.planner-todo-section');
   const weeklyBtn = document.querySelector('#planner-view-weekly');
   const monthlyBtn = document.querySelector('#planner-view-monthly');
+  const annualBtn = document.querySelector('#planner-view-annual');
+
+  // Hide everything first
+  weeklyControls.classList.add('hidden');
+  colorBar.classList.add('hidden');
+  activityBar.classList.add('hidden');
+  gridWrap.classList.add('hidden');
+  todoSection.classList.add('hidden');
+  monthlyControls.classList.add('hidden');
+  monthlyWrap.classList.add('hidden');
+  annualControls.classList.add('hidden');
+  annualWrap.classList.add('hidden');
+  weeklyBtn.classList.remove('planner-view-btn--active');
+  monthlyBtn.classList.remove('planner-view-btn--active');
+  annualBtn.classList.remove('planner-view-btn--active');
 
   if (view === 'monthly') {
-    weeklyControls.classList.add('hidden');
-    colorBar.classList.add('hidden');
-    activityBar.classList.add('hidden');
-    gridWrap.classList.add('hidden');
-    todoSection.classList.add('hidden');
     monthlyControls.classList.remove('hidden');
     monthlyWrap.classList.remove('hidden');
-    weeklyBtn.classList.remove('planner-view-btn--active');
     monthlyBtn.classList.add('planner-view-btn--active');
-
     if (monthlyCalendarState.year === null) {
       const t = new Date();
       loadMonthlyCalendar(t.getFullYear(), t.getMonth());
+    }
+  } else if (view === 'annual') {
+    annualControls.classList.remove('hidden');
+    annualWrap.classList.remove('hidden');
+    annualBtn.classList.add('planner-view-btn--active');
+    if (annualPlanState.year === null) {
+      loadAnnualPlan(new Date().getFullYear());
     }
   } else {
     weeklyControls.classList.remove('hidden');
@@ -9749,10 +10077,7 @@ function plannerSwitchView(view) {
     activityBar.classList.remove('hidden');
     gridWrap.classList.remove('hidden');
     todoSection.classList.remove('hidden');
-    monthlyControls.classList.add('hidden');
-    monthlyWrap.classList.add('hidden');
     weeklyBtn.classList.add('planner-view-btn--active');
-    monthlyBtn.classList.remove('planner-view-btn--active');
   }
 }
 
