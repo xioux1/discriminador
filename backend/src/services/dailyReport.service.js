@@ -32,15 +32,36 @@ function escapeHtml(s) {
 }
 
 function renderInlineHtml(text) {
-  // Split on inline math $...$ (non-greedy, excludes $$) before escaping
-  const parts = text.split(/(\$(?!\$).+?(?<!\$)\$)/g);
+  // Extract backtick code spans first so their $ signs don't confuse the math splitter
+  const CODE = '\x00CODE\x00';
+  const codeSpans = [];
+  const withoutCode = text.replace(/`([^`]+)`/g, (_, inner) => {
+    codeSpans.push(inner);
+    return `${CODE}${codeSpans.length - 1}${CODE}`;
+  });
+
+  // Now split on inline math $...$ — only treat as math if content has LaTeX chars
+  const mathRe = /(\$(?!\$)[^$\n]+?\$)/g;
+  const parts = withoutCode.split(mathRe);
+
   return parts.map(part => {
-    if (part.startsWith('$') && part.endsWith('$') && part.length > 2 && !part.startsWith('$$')) {
-      return renderMath(part.slice(1, -1), false);
+    if (part.startsWith('$') && part.endsWith('$') && part.length > 2) {
+      const inner = part.slice(1, -1);
+      // Only render as LaTeX if it looks like math (has \, ^, _, {, }, =, digits+ops)
+      // Plain words like $gt, $ne are NOT math
+      if (/[\\^_{}\d=+\-/<>]/.test(inner) || inner.includes('frac') || inner.includes('sqrt')) {
+        return renderMath(inner, false);
+      }
+      // Not math — treat as plain text
+      return escapeHtml(part);
     }
+    // Restore code spans and apply other inline markers
     let out = escapeHtml(part);
+    out = out.replace(/\x00CODE\x00(\d+)\x00CODE\x00/g, (_, idx) => {
+      const code = escapeHtml(codeSpans[parseInt(idx)]);
+      return `<code style="background:#f0f0f0;padding:1px 4px;border-radius:3px;font-family:monospace;color:#c0392b;font-size:0.9em">${code}</code>`;
+    });
     out = out.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-    out = out.replace(/`(.+?)`/g, '<code style="background:#f0f0f0;padding:1px 4px;border-radius:3px;font-family:monospace;color:#c0392b;font-size:0.9em">$1</code>');
     out = out.replace(/\*(.+?)\*/g, '<em>$1</em>');
     return out;
   }).join('');
