@@ -46,12 +46,23 @@ router.get('/api/commitment-metrics', requireServiceKey, async (req, res) => {
   const toStr   = to.slice(0, 10);
 
   try {
-    // Study minutes and cards reviewed from activity_log
+    // Study minutes from completed sessions (session start→end minus pauses)
+    const { rows: ssRows } = await dbPool.query(
+      `SELECT
+         COALESCE(ROUND(SUM(COALESCE(actual_minutes, LEAST(EXTRACT(EPOCH FROM (ended_at - started_at)) / 60.0, 180))))::int, 0) AS study_minutes,
+         COUNT(*)::int AS study_sessions
+       FROM study_sessions
+       WHERE user_id = $1
+         AND (actual_minutes IS NOT NULL OR ended_at IS NOT NULL)
+         AND DATE(started_at AT TIME ZONE 'America/Argentina/Buenos_Aires') >= $2::date
+         AND DATE(started_at AT TIME ZONE 'America/Argentina/Buenos_Aires') <= $3::date`,
+      [userId, fromStr, toStr]
+    );
+
+    // Cards reviewed from activity_log
     const { rows: alRows } = await dbPool.query(
       `SELECT
-         COALESCE(ROUND(SUM(COALESCE(response_time_ms, 0) + COALESCE(review_time_ms, 0)) / 60000.0)::int, 0) AS study_minutes,
-         COUNT(*) FILTER (WHERE activity_type = 'study') AS cards_reviewed,
-         COUNT(DISTINCT logged_date) AS study_sessions
+         COUNT(*) FILTER (WHERE activity_type = 'study')::int AS cards_reviewed
        FROM activity_log
        WHERE user_id = $1
          AND logged_date >= $2::date
@@ -96,18 +107,18 @@ router.get('/api/commitment-metrics', requireServiceKey, async (req, res) => {
       [userId, fromStr, toStr]
     );
 
-    const al = alRows[0] ?? {};
+    const ss = ssRows[0] ?? {};
     const pa = paRows[0] ?? {};
     const manualStudyMinutes = parseInt(maRows[0]?.minutes ?? 0);
 
     return res.json({
       period: { from: fromStr, to: toStr },
       metrics: {
-        study_minutes:               parseInt(al.study_minutes ?? 0) + manualStudyMinutes,
-        study_sessions:              parseInt(al.study_sessions ?? 0),
+        study_minutes:               parseInt(ss.study_minutes ?? 0) + manualStudyMinutes,
+        study_sessions:              parseInt(ss.study_sessions ?? 0),
         physical_activity_sessions:  parseInt(pa.sessions ?? 0),
         physical_activity_minutes:   parseInt(pa.minutes ?? 0),
-        cards_reviewed:              parseInt(al.cards_reviewed ?? 0),
+        cards_reviewed:              parseInt(alRows[0]?.cards_reviewed ?? 0),
         oral_evaluations:            parseInt(evalRows[0]?.oral_evaluations ?? 0),
       },
     });
