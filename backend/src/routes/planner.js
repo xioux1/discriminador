@@ -571,4 +571,200 @@ plannerRouter.delete('/planner/calendar-events/:id', async (req, res) => {
   }
 });
 
+// ─── Annual goals ─────────────────────────────────────────────────────────────
+
+// GET /planner/annual-goals?year=YYYY
+plannerRouter.get('/planner/annual-goals', async (req, res) => {
+  const userId = req.user.id;
+  const y = parseInt(req.query.year, 10);
+  if (!req.query.year || isNaN(y)) {
+    return res.status(422).json({ error: 'validation_error', message: 'year es obligatorio.' });
+  }
+  try {
+    const { rows: goals } = await dbPool.query(
+      `SELECT id, month, title, description, color, position
+       FROM planner_annual_goals
+       WHERE user_id = $1 AND year = $2
+       ORDER BY month ASC, position ASC, id ASC`,
+      [userId, y]
+    );
+    const goalIds = goals.map(g => g.id);
+    let tasks = [];
+    if (goalIds.length > 0) {
+      const { rows } = await dbPool.query(
+        `SELECT id, goal_id, text, done, position
+         FROM planner_annual_goal_tasks
+         WHERE goal_id = ANY($1)
+         ORDER BY position ASC, id ASC`,
+        [goalIds]
+      );
+      tasks = rows;
+    }
+    const tasksByGoal = {};
+    for (const t of tasks) {
+      if (!tasksByGoal[t.goal_id]) tasksByGoal[t.goal_id] = [];
+      tasksByGoal[t.goal_id].push(t);
+    }
+    const goalsWithTasks = goals.map(g => ({ ...g, tasks: tasksByGoal[g.id] || [] }));
+    return res.json({ goals: goalsWithTasks });
+  } catch (err) {
+    console.error('GET /planner/annual-goals error', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+// POST /planner/annual-goals
+plannerRouter.post('/planner/annual-goals', async (req, res) => {
+  const userId = req.user.id;
+  const { year, month, title, description, color } = req.body || {};
+  const y = parseInt(year, 10);
+  const m = parseInt(month, 10);
+  if (!title || !String(title).trim()) {
+    return res.status(422).json({ error: 'validation_error', message: 'title es obligatorio.' });
+  }
+  if (isNaN(y) || isNaN(m) || m < 0 || m > 11) {
+    return res.status(422).json({ error: 'validation_error', message: 'year y month (0-11) son obligatorios.' });
+  }
+  const safeColor = /^#[0-9a-fA-F]{3,6}$/.test(color || '') ? color : '#c9daf8';
+  try {
+    const { rows: posRows } = await dbPool.query(
+      `SELECT COALESCE(MAX(position), -1) + 1 AS next_pos
+       FROM planner_annual_goals WHERE user_id = $1 AND year = $2 AND month = $3`,
+      [userId, y, m]
+    );
+    const pos = posRows[0].next_pos;
+    const { rows } = await dbPool.query(
+      `INSERT INTO planner_annual_goals (user_id, year, month, title, description, color, position)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, month, title, description, color, position`,
+      [userId, y, m, String(title).trim().substring(0, 300), (description || '').trim().substring(0, 5000), safeColor, pos]
+    );
+    return res.json({ goal: { ...rows[0], tasks: [] } });
+  } catch (err) {
+    console.error('POST /planner/annual-goals error', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+// PUT /planner/annual-goals/:id
+plannerRouter.put('/planner/annual-goals/:id', async (req, res) => {
+  const userId = req.user.id;
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(422).json({ error: 'validation_error', message: 'id inválido.' });
+  const { title, description, color } = req.body || {};
+  if (!title || !String(title).trim()) {
+    return res.status(422).json({ error: 'validation_error', message: 'title es obligatorio.' });
+  }
+  const safeColor = /^#[0-9a-fA-F]{3,6}$/.test(color || '') ? color : '#c9daf8';
+  try {
+    const { rows } = await dbPool.query(
+      `UPDATE planner_annual_goals
+       SET title = $1, description = $2, color = $3, updated_at = now()
+       WHERE id = $4 AND user_id = $5
+       RETURNING id, month, title, description, color, position`,
+      [String(title).trim().substring(0, 300), (description || '').trim().substring(0, 5000), safeColor, id, userId]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'not_found' });
+    return res.json({ goal: rows[0] });
+  } catch (err) {
+    console.error('PUT /planner/annual-goals error', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+// DELETE /planner/annual-goals/:id
+plannerRouter.delete('/planner/annual-goals/:id', async (req, res) => {
+  const userId = req.user.id;
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(422).json({ error: 'validation_error', message: 'id inválido.' });
+  try {
+    await dbPool.query('DELETE FROM planner_annual_goals WHERE id = $1 AND user_id = $2', [id, userId]);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE /planner/annual-goals error', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+// POST /planner/annual-goals/:id/tasks
+plannerRouter.post('/planner/annual-goals/:id/tasks', async (req, res) => {
+  const userId = req.user.id;
+  const goalId = parseInt(req.params.id, 10);
+  if (isNaN(goalId)) return res.status(422).json({ error: 'validation_error', message: 'id inválido.' });
+  const { text } = req.body || {};
+  if (!text || !String(text).trim()) {
+    return res.status(422).json({ error: 'validation_error', message: 'text es obligatorio.' });
+  }
+  try {
+    const { rows: check } = await dbPool.query(
+      'SELECT id FROM planner_annual_goals WHERE id = $1 AND user_id = $2', [goalId, userId]
+    );
+    if (!check.length) return res.status(404).json({ error: 'not_found' });
+    const { rows: posRows } = await dbPool.query(
+      `SELECT COALESCE(MAX(position), -1) + 1 AS next_pos FROM planner_annual_goal_tasks WHERE goal_id = $1`,
+      [goalId]
+    );
+    const pos = posRows[0].next_pos;
+    const { rows } = await dbPool.query(
+      `INSERT INTO planner_annual_goal_tasks (goal_id, user_id, text, position)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, goal_id, text, done, position`,
+      [goalId, userId, String(text).trim().substring(0, 500), pos]
+    );
+    return res.json({ task: rows[0] });
+  } catch (err) {
+    console.error('POST /planner/annual-goals/:id/tasks error', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+// PATCH /planner/annual-goals/:goalId/tasks/:taskId
+plannerRouter.patch('/planner/annual-goals/:goalId/tasks/:taskId', async (req, res) => {
+  const userId = req.user.id;
+  const goalId = parseInt(req.params.goalId, 10);
+  const taskId = parseInt(req.params.taskId, 10);
+  if (isNaN(goalId) || isNaN(taskId)) return res.status(422).json({ error: 'validation_error', message: 'ids inválidos.' });
+  const { done, text } = req.body || {};
+  try {
+    const updates = [];
+    const vals = [taskId, goalId, userId];
+    if (done !== undefined) { updates.push(`done = $${vals.length + 1}`); vals.push(!!done); }
+    if (text !== undefined) { updates.push(`text = $${vals.length + 1}`); vals.push(String(text).trim().substring(0, 500)); }
+    if (!updates.length) return res.status(422).json({ error: 'validation_error', message: 'Nada que actualizar.' });
+    const { rows } = await dbPool.query(
+      `UPDATE planner_annual_goal_tasks t
+       SET ${updates.join(', ')}
+       FROM planner_annual_goals g
+       WHERE t.id = $1 AND t.goal_id = $2 AND g.id = t.goal_id AND g.user_id = $3
+       RETURNING t.id, t.goal_id, t.text, t.done, t.position`,
+      vals
+    );
+    if (!rows.length) return res.status(404).json({ error: 'not_found' });
+    return res.json({ task: rows[0] });
+  } catch (err) {
+    console.error('PATCH /planner/annual-goals/:goalId/tasks/:taskId error', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+// DELETE /planner/annual-goals/:goalId/tasks/:taskId
+plannerRouter.delete('/planner/annual-goals/:goalId/tasks/:taskId', async (req, res) => {
+  const userId = req.user.id;
+  const goalId = parseInt(req.params.goalId, 10);
+  const taskId = parseInt(req.params.taskId, 10);
+  if (isNaN(goalId) || isNaN(taskId)) return res.status(422).json({ error: 'validation_error', message: 'ids inválidos.' });
+  try {
+    await dbPool.query(
+      `DELETE FROM planner_annual_goal_tasks t
+       USING planner_annual_goals g
+       WHERE t.id = $1 AND t.goal_id = $2 AND g.id = t.goal_id AND g.user_id = $3`,
+      [taskId, goalId, userId]
+    );
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE /planner/annual-goals/:goalId/tasks/:taskId error', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
 export default plannerRouter;

@@ -1046,6 +1046,7 @@
           <div class="planner-view-toggle">
             <button type="button" id="planner-view-weekly" class="planner-view-btn planner-view-btn--active">Semana</button>
             <button type="button" id="planner-view-monthly" class="planner-view-btn">Mes</button>
+            <button type="button" id="planner-view-annual" class="planner-view-btn">Año</button>
           </div>
           <!-- Weekly-specific controls -->
           <div id="planner-weekly-controls" class="planner-weekly-controls">
@@ -1059,6 +1060,13 @@
               <input type="checkbox" id="planner-fixed-toggle">
               <span>Bloque fijo semanal</span>
             </label>
+          </div>
+          <!-- Annual-specific controls -->
+          <div id="planner-annual-controls" class="planner-annual-nav-controls hidden">
+            <button type="button" id="planner-year-prev" class="btn-ghost planner-nav-btn">&#8592;</button>
+            <span id="planner-year-label" class="planner-year-label"></span>
+            <button type="button" id="planner-year-next" class="btn-ghost planner-nav-btn">&#8594;</button>
+            <button type="button" id="planner-year-today" class="btn-ghost" style="font-size:0.82rem;margin-left:8px">Este año</button>
           </div>
           <!-- Monthly-specific controls -->
           <div id="planner-monthly-controls" class="planner-monthly-nav-controls hidden">
@@ -1138,6 +1146,9 @@
           <div id="planner-monthly-wrap" class="hidden">
             <div id="planner-month-grid"></div>
           </div>
+          <div id="planner-annual-wrap" class="hidden">
+            <div id="planner-annual-grid"></div>
+          </div>
         </div>
 
         <!-- Add calendar event modal -->
@@ -1167,6 +1178,42 @@
             <div class="planner-event-modal-actions">
               <button type="button" id="pem-cancel" class="btn-ghost">Cancelar</button>
               <button type="button" id="pem-save" class="btn-primary">Guardar</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Annual goal detail modal -->
+        <div id="annual-goal-modal" class="annual-goal-modal-overlay hidden" role="dialog" aria-modal="true">
+          <div class="annual-goal-modal-box">
+            <div class="agm-header">
+              <div class="agm-month-badge" id="agm-month-badge"></div>
+              <div class="agm-color-row">
+                <button type="button" class="planner-swatch agm-swatch agm-swatch-active" data-color="#c9daf8" title="Azul" style="background:#c9daf8"></button>
+                <button type="button" class="planner-swatch agm-swatch" data-color="#b7e1cd" title="Verde" style="background:#b7e1cd"></button>
+                <button type="button" class="planner-swatch agm-swatch" data-color="#fce5cd" title="Naranja" style="background:#fce5cd"></button>
+                <button type="button" class="planner-swatch agm-swatch" data-color="#f4cccc" title="Rojo" style="background:#f4cccc"></button>
+                <button type="button" class="planner-swatch agm-swatch" data-color="#fff2cc" title="Amarillo" style="background:#fff2cc"></button>
+                <button type="button" class="planner-swatch agm-swatch" data-color="#d9d2e9" title="Violeta" style="background:#d9d2e9"></button>
+              </div>
+              <button type="button" class="agm-close" id="agm-close" title="Cerrar">&#215;</button>
+            </div>
+            <input type="text" id="agm-title" class="agm-title-input" maxlength="300" placeholder="Título de la meta…" autocomplete="off">
+            <textarea id="agm-description" class="agm-description-input" maxlength="5000" placeholder="Descripción, contexto o notas… (opcional)"></textarea>
+            <div class="agm-tasks-section">
+              <p class="agm-tasks-label">Tareas / compromisos</p>
+              <ul id="agm-task-list" class="agm-task-list"></ul>
+              <div class="agm-task-add-row">
+                <input type="text" id="agm-task-input" class="agm-task-input" maxlength="500" placeholder="Nueva tarea…" autocomplete="off">
+                <button type="button" id="agm-task-add-btn" class="btn-secondary agm-task-add-btn">Agregar</button>
+              </div>
+            </div>
+            <span id="agm-error" class="agm-error hidden"></span>
+            <div class="agm-footer">
+              <button type="button" id="agm-delete" class="btn-danger agm-delete-btn">Eliminar meta</button>
+              <div class="agm-footer-right">
+                <button type="button" id="agm-cancel" class="btn-ghost">Cancelar</button>
+                <button type="button" id="agm-save" class="btn-primary">Guardar</button>
+              </div>
             </div>
           </div>
         </div>
