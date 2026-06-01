@@ -191,6 +191,7 @@ REGLAS DE ESCRITURA:
 - El apunte debe poder leerse de forma autónoma: alguien que lo lea sin haber visto el ejercicio debe entender perfectamente el concepto.
 - No amplíes a temas no relacionados con el concepto puntual identificado.
 - Idioma: español.
+- FORMATO MATEMÁTICO OBLIGATORIO: toda expresión matemática, sin excepción, debe escribirse en LaTeX. Expresiones inline entre $...$, por ejemplo $x^2 + 1$ o $\frac{a}{b}$. Ecuaciones o expresiones que ocupen su propia línea entre $$...$$. Nunca escribas math como texto plano (no "x^2", no "a_n", no "sqrt(x)"): siempre LaTeX.
 
 ---
 ÍTEMS A ANALIZAR:

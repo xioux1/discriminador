@@ -32,10 +32,10 @@ function escapeHtml(s) {
 }
 
 function renderInlineHtml(text) {
-  // Split on inline math $...$ first (before escaping) to preserve LaTeX symbols
-  const parts = text.split(/(\$[^$]+\$)/g);
+  // Split on inline math $...$ (non-greedy, excludes $$) before escaping
+  const parts = text.split(/(\$(?!\$).+?(?<!\$)\$)/g);
   return parts.map(part => {
-    if (part.startsWith('$') && part.endsWith('$') && part.length > 2) {
+    if (part.startsWith('$') && part.endsWith('$') && part.length > 2 && !part.startsWith('$$')) {
       return renderMath(part.slice(1, -1), false);
     }
     let out = escapeHtml(part);
