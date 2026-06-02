@@ -10041,7 +10041,7 @@ function plannerSwitchView(view) {
   const weeklyBtn = document.querySelector('#planner-view-weekly');
   const monthlyBtn = document.querySelector('#planner-view-monthly');
   const annualBtn = document.querySelector('#planner-view-annual');
-  const mainContainer = document.querySelector('main');
+  const mainContainer = document.querySelector('.app-shell');
 
   // Hide everything first
   weeklyControls.classList.add('hidden');
