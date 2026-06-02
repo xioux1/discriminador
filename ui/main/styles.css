@@ -8146,21 +8146,35 @@ textarea.chinese-input {
   color: var(--text);
 }
 
-/* When annual view is active, expand the app shell to full width */
+/* When annual view is active, expand the app shell and all containers to full width */
 .app-shell.annual-view-active {
-  max-width: 100%;
-  margin: 0;
-  border-radius: 0;
-  border-left: none;
-  border-right: none;
+  max-width: 100% !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
+  border-left: none !important;
+  border-right: none !important;
 }
 .app-shell.annual-view-active main.container {
-  max-width: 100%;
-  padding: 0;
-  display: block;
+  max-width: 100% !important;
+  width: 100% !important;
+  padding: 0 !important;
+  display: block !important;
+  margin: 0 !important;
 }
 .app-shell.annual-view-active #tab-planner {
-  width: 100%;
+  width: 100% !important;
+  flex: 1 !important;
+}
+.app-shell.annual-view-active .planner-wrap {
+  width: 100% !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+.app-shell.annual-view-active #planner-annual-wrap {
+  width: 100% !important;
+}
+.app-shell.annual-view-active #planner-annual-grid {
+  width: 100% !important;
 }
 
 #planner-annual-wrap {
