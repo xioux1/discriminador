@@ -8157,6 +8157,10 @@ textarea.chinese-input {
 .app-shell.annual-view-active main.container {
   max-width: 100%;
   padding: 0;
+  display: block;
+}
+.app-shell.annual-view-active #tab-planner {
+  width: 100%;
 }
 
 #planner-annual-wrap {
