@@ -8540,3 +8540,117 @@ textarea.chinese-input {
 [data-theme="dark"] .agm-task-input {
   background: rgba(255, 255, 255, 0.05);
 }
+
+/* ── Five-year plan view ──────────────────────────────────────────────────── */
+#planner-fiveyear-wrap {
+  padding: 16px 16px 24px;
+  box-sizing: border-box;
+}
+
+#planner-fiveyear-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 16px;
+  width: 100%;
+  min-height: calc(100vh - 160px);
+}
+@media (max-width: 900px) {
+  #planner-fiveyear-grid { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 600px) {
+  #planner-fiveyear-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+.fiveyear-col {
+  background: var(--bg-card, #fff);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 320px;
+}
+.fiveyear-year-header {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--text-muted);
+  letter-spacing: -0.02em;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--border);
+  margin-bottom: 4px;
+}
+.fiveyear-year-header--current {
+  color: #4a86e8;
+}
+.fiveyear-empty {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-style: italic;
+  margin: 0;
+  padding: 8px 0;
+}
+.fiveyear-goal-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.fiveyear-goal-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border-radius: 7px;
+  background: var(--goal-color, #c9daf8);
+  cursor: pointer;
+  transition: filter 0.12s, transform 0.1s;
+}
+.fiveyear-goal-item:hover {
+  filter: brightness(0.93);
+  transform: translateX(3px);
+}
+.fiveyear-goal-month {
+  flex-shrink: 0;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: rgba(0,0,0,0.45);
+  background: rgba(0,0,0,0.09);
+  border-radius: 4px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+.fiveyear-goal-title {
+  flex: 1;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: #222;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fiveyear-goal-badge {
+  flex-shrink: 0;
+  font-size: 0.62rem;
+  font-weight: 700;
+  background: rgba(0,0,0,0.12);
+  border-radius: 10px;
+  padding: 1px 6px;
+  color: rgba(0,0,0,0.5);
+  white-space: nowrap;
+}
+
+/* dark mode */
+[data-theme="dark"] .fiveyear-col {
+  background: var(--bg-card, #1a2540);
+  border-color: rgba(38, 55, 85, 0.55);
+}
+[data-theme="dark"] .fiveyear-goal-title {
+  color: #e0e6f0;
+}
+[data-theme="dark"] .fiveyear-year-header--current {
+  color: #6ea8f5;
+}
