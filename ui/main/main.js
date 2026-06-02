@@ -9470,6 +9470,7 @@ function initPlannerTab() {
   document.querySelector('#planner-view-weekly').addEventListener('click', () => plannerSwitchView('weekly'));
   document.querySelector('#planner-view-monthly').addEventListener('click', () => plannerSwitchView('monthly'));
   document.querySelector('#planner-view-annual').addEventListener('click', () => plannerSwitchView('annual'));
+  document.querySelector('#planner-view-fiveyear').addEventListener('click', () => plannerSwitchView('fiveyear'));
   initMonthlyCalendar();
   initAnnualPlan();
 }
@@ -10028,6 +10029,108 @@ function initAnnualPlan() {
   });
 }
 
+// ─── Five-Year Plan ───────────────────────────────────────────────────────────
+
+const fiveYearPlanState = {
+  loaded: false,
+  goals: [],
+};
+
+async function loadFiveYearPlan() {
+  const currentYear = new Date().getFullYear();
+  const fromYear = currentYear;
+  const toYear = currentYear + 4;
+  const loading = document.querySelector('#planner-loading');
+  loading.classList.remove('hidden');
+  try {
+    const data = await getJson(`/planner/annual-goals-range?from=${fromYear}&to=${toYear}`);
+    fiveYearPlanState.goals = data.goals || [];
+    fiveYearPlanState.loaded = true;
+    loading.classList.add('hidden');
+    buildFiveYearGrid();
+  } catch (err) {
+    loading.textContent = `Error: ${err.message}`;
+  }
+}
+
+function buildFiveYearGrid() {
+  const grid = document.querySelector('#planner-fiveyear-grid');
+  grid.innerHTML = '';
+  const currentYear = new Date().getFullYear();
+
+  for (let y = currentYear; y <= currentYear + 4; y++) {
+    const yearGoals = fiveYearPlanState.goals.filter(g => g.year === y);
+
+    const col = document.createElement('div');
+    col.className = 'fiveyear-col';
+
+    const header = document.createElement('div');
+    header.className = 'fiveyear-year-header';
+    header.textContent = String(y);
+    if (y === currentYear) header.classList.add('fiveyear-year-header--current');
+    col.appendChild(header);
+
+    if (yearGoals.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'fiveyear-empty';
+      empty.textContent = 'Sin metas';
+      col.appendChild(empty);
+    } else {
+      const list = document.createElement('ul');
+      list.className = 'fiveyear-goal-list';
+      for (const g of yearGoals) {
+        list.appendChild(buildFiveYearGoalItem(g));
+      }
+      col.appendChild(list);
+    }
+
+    grid.appendChild(col);
+  }
+}
+
+function buildFiveYearGoalItem(goal) {
+  const li = document.createElement('li');
+  li.className = 'fiveyear-goal-item';
+  li.style.setProperty('--goal-color', goal.color || '#c9daf8');
+
+  const monthTag = document.createElement('span');
+  monthTag.className = 'fiveyear-goal-month';
+  monthTag.textContent = MONTH_NAMES_ES[goal.month].substring(0, 3).toUpperCase();
+  li.appendChild(monthTag);
+
+  const titleEl = document.createElement('span');
+  titleEl.className = 'fiveyear-goal-title';
+  titleEl.textContent = goal.title;
+  li.appendChild(titleEl);
+
+  const doneTasks = (goal.tasks || []).filter(t => t.done).length;
+  const totalTasks = (goal.tasks || []).length;
+  if (totalTasks > 0) {
+    const badge = document.createElement('span');
+    badge.className = 'fiveyear-goal-badge';
+    badge.textContent = `${doneTasks}/${totalTasks}`;
+    badge.title = `${doneTasks} de ${totalTasks} tareas completadas`;
+    li.appendChild(badge);
+  }
+
+  // Clicking opens the existing annual goal modal in edit mode
+  li.addEventListener('click', () => {
+    // Switch to annual view for that year first, then open the modal
+    const wasAnnual = annualPlanState.year === goal.year;
+    if (!wasAnnual) {
+      plannerSwitchView('annual');
+      loadAnnualPlan(goal.year).then(() => openGoalModal(
+        annualPlanState.goals.find(g => g.id === goal.id) || goal, goal.month
+      ));
+    } else {
+      plannerSwitchView('annual');
+      openGoalModal(annualPlanState.goals.find(g => g.id === goal.id) || goal, goal.month);
+    }
+  });
+
+  return li;
+}
+
 function plannerSwitchView(view) {
   const weeklyControls = document.querySelector('#planner-weekly-controls');
   const monthlyControls = document.querySelector('#planner-monthly-controls');
@@ -10037,10 +10140,12 @@ function plannerSwitchView(view) {
   const gridWrap = document.querySelector('#planner-grid-wrap');
   const monthlyWrap = document.querySelector('#planner-monthly-wrap');
   const annualWrap = document.querySelector('#planner-annual-wrap');
+  const fiveyearWrap = document.querySelector('#planner-fiveyear-wrap');
   const todoSection = document.querySelector('.planner-todo-section');
   const weeklyBtn = document.querySelector('#planner-view-weekly');
   const monthlyBtn = document.querySelector('#planner-view-monthly');
   const annualBtn = document.querySelector('#planner-view-annual');
+  const fiveyearBtn = document.querySelector('#planner-view-fiveyear');
   const appShell = document.querySelector('.app-shell');
 
   // Hide everything first
@@ -10053,9 +10158,11 @@ function plannerSwitchView(view) {
   monthlyWrap.classList.add('hidden');
   annualControls.classList.add('hidden');
   annualWrap.classList.add('hidden');
+  fiveyearWrap.classList.add('hidden');
   weeklyBtn.classList.remove('planner-view-btn--active');
   monthlyBtn.classList.remove('planner-view-btn--active');
   annualBtn.classList.remove('planner-view-btn--active');
+  fiveyearBtn.classList.remove('planner-view-btn--active');
   appShell.classList.remove('annual-view-active');
 
   if (view === 'monthly') {
@@ -10073,6 +10180,13 @@ function plannerSwitchView(view) {
     appShell.classList.add('annual-view-active');
     if (annualPlanState.year === null) {
       loadAnnualPlan(new Date().getFullYear());
+    }
+  } else if (view === 'fiveyear') {
+    fiveyearWrap.classList.remove('hidden');
+    fiveyearBtn.classList.add('planner-view-btn--active');
+    appShell.classList.add('annual-view-active');
+    if (!fiveYearPlanState.loaded) {
+      loadFiveYearPlan();
     }
   } else {
     weeklyControls.classList.remove('hidden');

@@ -767,4 +767,46 @@ plannerRouter.delete('/planner/annual-goals/:goalId/tasks/:taskId', async (req, 
   }
 });
 
+// GET /planner/annual-goals-range?from=YYYY&to=YYYY
+// Returns all goals (with tasks) for a range of years.
+plannerRouter.get('/planner/annual-goals-range', async (req, res) => {
+  const userId = req.user.id;
+  const from = parseInt(req.query.from, 10);
+  const to = parseInt(req.query.to, 10);
+  if (isNaN(from) || isNaN(to) || from > to || to - from > 20) {
+    return res.status(422).json({ error: 'validation_error', message: 'from y to (YYYY) son obligatorios y el rango no puede superar 20 años.' });
+  }
+  try {
+    const { rows: goals } = await dbPool.query(
+      `SELECT id, year, month, title, description, color, position
+       FROM planner_annual_goals
+       WHERE user_id = $1 AND year >= $2 AND year <= $3
+       ORDER BY year ASC, month ASC, position ASC, id ASC`,
+      [userId, from, to]
+    );
+    const goalIds = goals.map(g => g.id);
+    let tasks = [];
+    if (goalIds.length > 0) {
+      const { rows } = await dbPool.query(
+        `SELECT id, goal_id, text, done, position
+         FROM planner_annual_goal_tasks
+         WHERE goal_id = ANY($1)
+         ORDER BY position ASC, id ASC`,
+        [goalIds]
+      );
+      tasks = rows;
+    }
+    const tasksByGoal = {};
+    for (const t of tasks) {
+      if (!tasksByGoal[t.goal_id]) tasksByGoal[t.goal_id] = [];
+      tasksByGoal[t.goal_id].push(t);
+    }
+    const goalsWithTasks = goals.map(g => ({ ...g, tasks: tasksByGoal[g.id] || [] }));
+    return res.json({ goals: goalsWithTasks });
+  } catch (err) {
+    console.error('GET /planner/annual-goals-range error', err.message);
+    return res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
 export default plannerRouter;
