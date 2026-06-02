@@ -10041,6 +10041,7 @@ function plannerSwitchView(view) {
   const weeklyBtn = document.querySelector('#planner-view-weekly');
   const monthlyBtn = document.querySelector('#planner-view-monthly');
   const annualBtn = document.querySelector('#planner-view-annual');
+  const mainContainer = document.querySelector('main');
 
   // Hide everything first
   weeklyControls.classList.add('hidden');
@@ -10055,6 +10056,7 @@ function plannerSwitchView(view) {
   weeklyBtn.classList.remove('planner-view-btn--active');
   monthlyBtn.classList.remove('planner-view-btn--active');
   annualBtn.classList.remove('planner-view-btn--active');
+  mainContainer.classList.remove('annual-view-active');
 
   if (view === 'monthly') {
     monthlyControls.classList.remove('hidden');
@@ -10068,6 +10070,7 @@ function plannerSwitchView(view) {
     annualControls.classList.remove('hidden');
     annualWrap.classList.remove('hidden');
     annualBtn.classList.add('planner-view-btn--active');
+    mainContainer.classList.add('annual-view-active');
     if (annualPlanState.year === null) {
       loadAnnualPlan(new Date().getFullYear());
     }
