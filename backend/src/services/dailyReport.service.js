@@ -47,13 +47,7 @@ function renderInlineHtml(text) {
   return parts.map(part => {
     if (part.startsWith('$') && part.endsWith('$') && part.length > 2) {
       const inner = part.slice(1, -1);
-      // Only render as LaTeX if it looks like math (has \, ^, _, {, }, =, digits+ops)
-      // Plain words like $gt, $ne are NOT math
-      if (/[\\^_{}\d=+\-/<>]/.test(inner) || inner.includes('frac') || inner.includes('sqrt')) {
-        return renderMath(inner, false);
-      }
-      // Not math — treat as plain text
-      return escapeHtml(part);
+      return renderMath(inner, false);
     }
     // Restore code spans and apply other inline markers
     let out = escapeHtml(part);
