@@ -10041,10 +10041,6 @@ function plannerSwitchView(view) {
   const weeklyBtn = document.querySelector('#planner-view-weekly');
   const monthlyBtn = document.querySelector('#planner-view-monthly');
   const annualBtn = document.querySelector('#planner-view-annual');
-  const appShell = document.querySelector('.app-shell');
-  const mainEl = document.querySelector('main');
-  const tabPlanner = document.querySelector('#tab-planner');
-
   // Hide everything first
   weeklyControls.classList.add('hidden');
   colorBar.classList.add('hidden');
@@ -10059,10 +10055,9 @@ function plannerSwitchView(view) {
   monthlyBtn.classList.remove('planner-view-btn--active');
   annualBtn.classList.remove('planner-view-btn--active');
 
-  // Reset annual full-bleed inline styles
-  appShell.style.cssText = '';
-  mainEl.style.cssText = '';
-  tabPlanner.style.cssText = '';
+  // Reset annual fixed-overlay inline styles
+  annualWrap.style.cssText = '';
+  document.querySelector('#planner-annual-grid').style.height = '';
 
   if (view === 'monthly') {
     monthlyControls.classList.remove('hidden');
@@ -10076,10 +10071,24 @@ function plannerSwitchView(view) {
     annualControls.classList.remove('hidden');
     annualWrap.classList.remove('hidden');
     annualBtn.classList.add('planner-view-btn--active');
-    // Force full-bleed via inline styles (beats all CSS specificity)
-    appShell.style.cssText = 'max-width:100%!important;margin:0!important;border-radius:0!important;border-left:none!important;border-right:none!important;';
-    mainEl.style.cssText = 'max-width:100%!important;padding:0!important;display:block!important;';
-    tabPlanner.style.cssText = 'width:100%!important;';
+
+    // position:fixed escapes ALL container constraints — covers full viewport below toolbar
+    const toolbarBottom = Math.round(document.querySelector('.planner-toolbar').getBoundingClientRect().bottom);
+    const pad = 12;
+    annualWrap.style.position = 'fixed';
+    annualWrap.style.top = toolbarBottom + 'px';
+    annualWrap.style.left = '0';
+    annualWrap.style.right = '0';
+    annualWrap.style.bottom = '0';
+    annualWrap.style.zIndex = '50';
+    annualWrap.style.overflowY = 'auto';
+    annualWrap.style.background = 'var(--bg, #f0f4fa)';
+    annualWrap.style.padding = pad + 'px 16px';
+    annualWrap.style.boxSizing = 'border-box';
+
+    const gridHeight = window.innerHeight - toolbarBottom - pad * 2;
+    document.querySelector('#planner-annual-grid').style.height = gridHeight + 'px';
+
     if (annualPlanState.year === null) {
       loadAnnualPlan(new Date().getFullYear());
     }
