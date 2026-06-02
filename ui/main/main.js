@@ -10041,7 +10041,9 @@ function plannerSwitchView(view) {
   const weeklyBtn = document.querySelector('#planner-view-weekly');
   const monthlyBtn = document.querySelector('#planner-view-monthly');
   const annualBtn = document.querySelector('#planner-view-annual');
-  const mainContainer = document.querySelector('.app-shell');
+  const appShell = document.querySelector('.app-shell');
+  const mainEl = document.querySelector('main');
+  const tabPlanner = document.querySelector('#tab-planner');
 
   // Hide everything first
   weeklyControls.classList.add('hidden');
@@ -10056,7 +10058,11 @@ function plannerSwitchView(view) {
   weeklyBtn.classList.remove('planner-view-btn--active');
   monthlyBtn.classList.remove('planner-view-btn--active');
   annualBtn.classList.remove('planner-view-btn--active');
-  mainContainer.classList.remove('annual-view-active');
+
+  // Reset annual full-bleed inline styles
+  appShell.style.cssText = '';
+  mainEl.style.cssText = '';
+  tabPlanner.style.cssText = '';
 
   if (view === 'monthly') {
     monthlyControls.classList.remove('hidden');
@@ -10070,7 +10076,10 @@ function plannerSwitchView(view) {
     annualControls.classList.remove('hidden');
     annualWrap.classList.remove('hidden');
     annualBtn.classList.add('planner-view-btn--active');
-    mainContainer.classList.add('annual-view-active');
+    // Force full-bleed via inline styles (beats all CSS specificity)
+    appShell.style.cssText = 'max-width:100%!important;margin:0!important;border-radius:0!important;border-left:none!important;border-right:none!important;';
+    mainEl.style.cssText = 'max-width:100%!important;padding:0!important;display:block!important;';
+    tabPlanner.style.cssText = 'width:100%!important;';
     if (annualPlanState.year === null) {
       loadAnnualPlan(new Date().getFullYear());
     }
