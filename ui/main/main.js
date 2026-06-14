@@ -4469,6 +4469,17 @@ function initStudyTab() {
   document.querySelector('#study-delete-btn').addEventListener('click', deleteCurrentStudyCardFromFront);
   document.querySelector('#study-reformat-latex-btn').addEventListener('click', openStudyReformatLatex);
   document.querySelector('#study-reformat-code-btn').addEventListener('click', openStudyReformatCode);
+  document.querySelector('#study-extra-info-toggle').addEventListener('click', () => {
+    const panel  = document.querySelector('#study-extra-info-panel');
+    const toggle = document.querySelector('#study-extra-info-toggle');
+    const isOpen = !panel.classList.contains('hidden');
+    panel.classList.toggle('hidden', isOpen);
+    const expanded = !isOpen;
+    toggle.setAttribute('aria-expanded', String(expanded));
+    toggle.innerHTML = expanded
+      ? '<span class="study-extra-info-icon">📋</span> Ocultar información extra'
+      : '<span class="study-extra-info-icon">📋</span> Ver información extra';
+  });
 
   // Link to show overview/add-card from briefing
   document.querySelector('#briefing-overview-link').addEventListener('click', () => {
@@ -5289,9 +5300,10 @@ async function loadSessionHistory() {
 
 async function saveNewCard() {
   if (saveNewCard.isSaving) return;
-  const subject  = document.querySelector('#card-subject').value.trim();
-  const prompt   = document.querySelector('#card-prompt').value.trim();
-  const expected = document.querySelector('#card-expected').value.trim();
+  const subject   = document.querySelector('#card-subject').value.trim();
+  const prompt    = document.querySelector('#card-prompt').value.trim();
+  const expected  = document.querySelector('#card-expected').value.trim();
+  const extraInfo = document.querySelector('#card-extra-info')?.value.trim() || undefined;
   const saveBtn = document.querySelector('#card-save-btn');
 
   if (!prompt || !expected) {
@@ -5308,7 +5320,7 @@ async function saveNewCard() {
   try {
     saveNewCard.isSaving = true;
     if (saveBtn) saveBtn.disabled = true;
-    const createdCard = await postJson('/scheduler/cards', { subject, prompt_text: prompt, expected_answer_text: expected });
+    const createdCard = await postJson('/scheduler/cards', { subject, prompt_text: prompt, expected_answer_text: expected, extra_info: extraInfo });
     const nextReview = createdCard?.next_review_at ? new Date(createdCard.next_review_at) : null;
     const now = new Date();
     const releaseDay = nextReview ? nextReview.toDateString() : now.toDateString();
@@ -5327,6 +5339,8 @@ async function saveNewCard() {
     document.querySelector('#card-subject').value = subject;
     document.querySelector('#card-prompt').value = '';
     document.querySelector('#card-expected').value = '';
+    const _extraInfoEl = document.querySelector('#card-extra-info');
+    if (_extraInfoEl) _extraInfoEl.value = '';
     document.querySelector('#card-prompt').focus();
     loadBrowserCards().catch(() => {});
     loadStudyOverview().catch(() => {});
@@ -6291,6 +6305,25 @@ function showStudyCard() {
   const promptEl = document.querySelector('#study-card-prompt');
   const parentContextEl = document.querySelector('#study-card-parent-context');
   const parentPromptEl  = document.querySelector('#study-card-parent-prompt');
+  const extraInfoSection = document.querySelector('#study-extra-info-section');
+  const extraInfoPanel   = document.querySelector('#study-extra-info-panel');
+  const extraInfoContent = document.querySelector('#study-extra-info-content');
+  const extraInfoToggle  = document.querySelector('#study-extra-info-toggle');
+  const extraInfo = item.type === 'card' ? (item.data.extra_info ?? '') : '';
+  if (extraInfoSection) {
+    if (extraInfo && !studyState.voiceMode) {
+      extraInfoSection.classList.remove('hidden');
+      extraInfoContent.textContent = extraInfo;
+      extraInfoPanel.classList.add('hidden');
+      if (extraInfoToggle) {
+        extraInfoToggle.textContent = '';
+        extraInfoToggle.innerHTML = '<span class="study-extra-info-icon">📋</span> Ver información extra';
+        extraInfoToggle.setAttribute('aria-expanded', 'false');
+      }
+    } else {
+      extraInfoSection.classList.add('hidden');
+    }
+  }
   const subject = item.type === 'micro' ? (item.data.parent_subject ?? item.data.subject) : item.data.subject;
   const subjectLabel = subject || '(sin materia)';
 

@@ -549,6 +549,14 @@
               <span id="study-card-parent-prompt"></span>
             </div>
             <p id="study-card-prompt" class="study-card-prompt"></p>
+            <div id="study-extra-info-section" class="study-extra-info-section hidden">
+              <button type="button" id="study-extra-info-toggle" class="study-extra-info-toggle">
+                <span class="study-extra-info-icon">📋</span> Ver información extra
+              </button>
+              <div id="study-extra-info-panel" class="study-extra-info-panel hidden">
+                <div id="study-extra-info-content" class="study-extra-info-content"></div>
+              </div>
+            </div>
             <div id="study-listening-bar" class="study-listening-bar hidden">
               <span class="study-listening-icon">🎧</span>
               <span class="study-listening-label">Escuchá y escribí el Hanzi</span>
@@ -859,6 +867,10 @@
             <button type="button" class="code-wrap-btn" data-target="card-expected" title="Envolver selección en bloque de código">{ } Código</button>
           </div>
           <textarea id="card-expected" rows="3" autocomplete="off"></textarea>
+          <div class="textarea-label-row">
+            <label for="card-extra-info">Información extra (opcional)</label>
+          </div>
+          <textarea id="card-extra-info" rows="3" autocomplete="off" placeholder="Template, referencia, contexto adicional... Se muestra bajo demanda durante el estudio."></textarea>
           <div style="display:flex;gap:8px;margin-top:8px">
             <button type="button" id="card-save-btn" class="btn-primary">Guardar tarjeta</button>
             <button type="button" id="card-cancel-btn" class="btn-secondary">Cancelar</button>
