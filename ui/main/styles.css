@@ -1189,6 +1189,44 @@ textarea:focus, input[type="text"]:focus, select:focus {
   color: var(--text-muted);
 }
 
+.study-extra-info-section {
+  margin-bottom: 14px;
+}
+.study-extra-info-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--primary);
+  background: var(--primary-light, rgba(99,102,241,.08));
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.study-extra-info-toggle:hover {
+  background: var(--primary-light, rgba(99,102,241,.16));
+}
+.study-extra-info-icon {
+  font-size: 1rem;
+}
+.study-extra-info-panel {
+  margin-top: 8px;
+  padding: 12px 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  border-left: 3px solid var(--primary);
+}
+.study-extra-info-content {
+  font-size: 0.97rem;
+  line-height: 1.6;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
 .study-card-prompt {
   font-size: 1.25rem;
   font-weight: 700;

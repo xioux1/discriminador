@@ -66,7 +66,7 @@ function pickTopConcept(concepts = []) {
 
 // ─── Register / upsert a card ─────────────────────────────────────────────────
 schedulerRouter.post('/scheduler/cards', async (req, res) => {
-  const { subject, prompt_text, expected_answer_text } = req.body || {};
+  const { subject, prompt_text, expected_answer_text, extra_info } = req.body || {};
   const userId = req.user.id;
   const normalizedSubject = subject?.trim() || null;
 
@@ -94,10 +94,10 @@ schedulerRouter.post('/scheduler/cards', async (req, res) => {
     }
 
     const result = await dbPool.query(
-      `INSERT INTO cards (subject, prompt_text, expected_answer_text, user_id, next_review_at)
-       VALUES ($1, $2, $3, $4, COALESCE($5, now()))
+      `INSERT INTO cards (subject, prompt_text, expected_answer_text, extra_info, user_id, next_review_at)
+       VALUES ($1, $2, $3, $4, $5, COALESCE($6, now()))
        RETURNING *`,
-      [normalizedSubject, prompt_text.trim(), expected_answer_text.trim(), userId, releaseAt]
+      [normalizedSubject, prompt_text.trim(), expected_answer_text.trim(), extra_info?.trim() || null, userId, releaseAt]
     );
     return res.status(200).json(result.rows[0]);
   } catch (err) {
