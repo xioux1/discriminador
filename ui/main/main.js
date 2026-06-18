@@ -4444,7 +4444,8 @@ function initStudyTab() {
         return;
       }
       closeExamModal();
-      startExamSession(data.cards, subject);
+      const examVoiceMode = Boolean(document.querySelector('#exam-sim-voice-mode-toggle')?.checked);
+      startExamSession(data.cards, subject, examVoiceMode);
     } catch (err) {
       fb.textContent = `Error: ${err.message}`;
       fb.classList.remove('hidden');
@@ -5869,11 +5870,12 @@ function setStudyPromptFeedback(message, type = 'info') {
   feedbackEl.style.color = type === 'error' ? '#c00' : type === 'success' ? '#2f7d32' : '';
 }
 
-function startExamSession(cards, subject) {
+function startExamSession(cards, subject, voiceMode = false) {
   studyState.queue              = cards.map((c) => ({ type: 'card', data: c }));
   studyState.index              = 0;
   studyState.results            = [];
   studyState.examMode           = true;
+  studyState.voiceMode          = voiceMode;
   studyState.examSubject        = subject;
   studyState.examItemResults    = [];
   studyState.pendingMicroGeneration = 0;
