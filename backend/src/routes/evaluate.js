@@ -214,7 +214,7 @@ export { detectCheckMode, parseBinaryCheckOutput };
 const evaluateRouter = Router();
 
 const REQUIRED_FIELDS = [
-  { key: 'prompt_text',          minLength: 1,  maxLength: 2000  },
+  { key: 'prompt_text',          minLength: 1,  maxLength: Infinity },
   { key: 'user_answer_text',     minLength: 1,  maxLength: 10000 },
   { key: 'expected_answer_text', minLength: 1,  maxLength: 5000  },
 ];
@@ -636,7 +636,7 @@ evaluateRouter.post('/evaluate/binary-check', llmRateLimit, async (req, res) => 
     return res.status(422).json({ error: 'validation_error', message: 'Missing required fields.' });
   }
 
-  if (String(prompt_text).length > 2000 || String(user_answer_text).length > 10000 || (expected_answer_text && String(expected_answer_text).length > 5000)) {
+  if (String(user_answer_text).length > 10000 || (expected_answer_text && String(expected_answer_text).length > 5000)) {
     return res.status(422).json({ error: 'validation_error', message: 'One or more fields exceed the maximum allowed length.' });
   }
 
