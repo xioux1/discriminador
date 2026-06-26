@@ -11695,14 +11695,22 @@ async function loadSqlStandard(subject) {
     }
   });
 
-  rewire('sql-standard-validate-btn', async () => {
+  rewire('sql-standard-validate-btn', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    btn.textContent = 'Validando...';
     try {
       const data = await postJson(`/sql-standard/${encodeURIComponent(subject)}/validate-batch`, {});
+      if (!data) throw new Error('Sin respuesta del servidor.');
       showToast(`Validadas: ${data.validated} · Omitidas: ${data.skipped} · Errores: ${data.errors}`, 'success');
       const resultsData = await getJson(`/sql-standard/${encodeURIComponent(subject)}/results`);
-      renderSqlValidationResults(resultsData.results || []);
+      renderSqlValidationResults(resultsData?.results || []);
     } catch (err) {
+      console.error('Validar tarjetas SQL falló:', err);
       showToast(err.message?.includes('estándar') ? 'Primero extraé un estándar.' : 'Error al validar tarjetas.', 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Validar tarjetas SQL';
     }
   });
 
