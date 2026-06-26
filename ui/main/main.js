@@ -11117,14 +11117,17 @@ async function openCurriculumModal(subject) {
   document.querySelector('#curriculum-modal-title').textContent = `Configurar: ${subject}`;
   document.querySelector('#curriculum-modal').classList.remove('hidden');
 
-  // Load existing config + class notes + lineamientos + sql standard
+  // SQL standard section is independent of the rest of the modal's data,
+  // so a failure below must not prevent its buttons from being wired.
+  loadSqlStandard(subject);
+
+  // Load existing config + class notes + lineamientos
   try {
     const [data, classNotesData, lineamientosData] = await Promise.all([
       getJson(`/curriculum/${encodeURIComponent(subject)}`),
       getJson(`/curriculum/${encodeURIComponent(subject)}/class-notes`),
       getJson(`/curriculum/${encodeURIComponent(subject)}/lineamientos`),
     ]);
-    loadSqlStandard(subject);
     document.querySelector('#curriculum-syllabus').value = data.config?.syllabus_text || '';
     document.querySelector('#curriculum-daily-new-limit').value = data.config?.daily_new_cards_limit ?? '';
     document.querySelector('#curriculum-max-micro-per-card').value = data.config?.max_micro_cards_per_card ?? '';
